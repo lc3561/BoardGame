@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import SplendorSpriteMappingTool from './SplendorSpriteMappingTool';
 
 // 辅助函数：合并类名
 function cn(...inputs: (string | undefined | null | false)[]) {
@@ -84,6 +85,19 @@ interface Transform {
 }
 
 export const AssetSlicer = () => {
+    const [searchParams, setSearchParams] = useSearchParams();
+    const [toolMode, setToolMode] = useState<'slicer' | 'splendorMapping'>(() =>
+        searchParams.get('mode') === 'splendor-mapping' ? 'splendorMapping' : 'slicer',
+    );
+
+    useEffect(() => {
+        if (toolMode === 'splendorMapping') {
+            setSearchParams({ mode: 'splendor-mapping' }, { replace: true });
+            return;
+        }
+        setSearchParams({}, { replace: true });
+    }, [setSearchParams, toolMode]);
+
     // 基础状态
     const [sourceImage, setSourceImage] = useState<string | null>(null);
     const [imageName, setImageName] = useState<string>('图片');
@@ -693,6 +707,10 @@ export const AssetSlicer = () => {
 
 
 
+    if (toolMode === 'splendorMapping') {
+        return <SplendorSpriteMappingTool onBackToSlicer={() => setToolMode('slicer')} />;
+    }
+
     return (
         <div
             className={cn(
@@ -715,6 +733,13 @@ export const AssetSlicer = () => {
                         <Link to="/" className="text-[10px] text-gray-500 hover:text-teal-400 font-bold flex items-center gap-1 transition-colors uppercase tracking-wider">
                             ← 返回主页
                         </Link>
+                        <button
+                            type="button"
+                            onClick={() => setToolMode('splendorMapping')}
+                            className="rounded-full border border-gray-700 px-3 py-1 text-[11px] text-gray-300 transition hover:border-amber-400 hover:text-amber-200"
+                        >
+                            Splendor 映射
+                        </button>
                     </div>
                     <h1 className="text-2xl font-black bg-gradient-to-r from-teal-400 to-blue-500 bg-clip-text text-transparent truncate cursor-pointer" onClick={resetView}>
                         素材切片机

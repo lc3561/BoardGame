@@ -156,7 +156,10 @@ const FlameTrailCanvas: React.FC<{
     const rafRef = React.useRef(0);
     const lastTimeRef = React.useRef(0);
     const emittingRef = React.useRef(emitting);
-    emittingRef.current = emitting;
+
+    React.useEffect(() => {
+        emittingRef.current = emitting;
+    }, [emitting]);
 
     // 预解析颜色
     const rgbColors = React.useMemo(() => flameColors.map(hexToRgb), [flameColors]);
@@ -488,7 +491,7 @@ const FlyingEffectItem: React.FC<{
         if (pendingRef.current === 0) {
             setTimeout(() => onComplete(effect.id), 300);
         }
-    }, [effect.id, effect.type, effect.onImpact, onComplete]);
+    }, [effect, onComplete]);
 
     const handlePhaseComplete = React.useCallback(() => {
         pendingRef.current--;
@@ -517,7 +520,7 @@ const FlyingEffectItem: React.FC<{
             onComplete(effect.id);
         }, maxMs);
         return () => window.clearTimeout(timer);
-    }, [effect.id, effect.onImpact, flightDuration, onComplete]);
+    }, [effect, flightDuration, onComplete]);
 
     return (
         <>
@@ -535,6 +538,7 @@ const FlyingEffectItem: React.FC<{
             )}
 
             <motion.div
+                data-testid={`flying-effect-${effect.type}`}
                 className="fixed pointer-events-none"
                 style={{ left: effect.startPos.x, top: effect.startPos.y, zIndex: UI_Z_INDEX.overlayRaised + 1 }}
                 initial={{ opacity: 1 }}

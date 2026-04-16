@@ -1,6 +1,7 @@
 /* @vitest-environment happy-dom */
 import { createElement, type ReactNode } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import '@testing-library/jest-dom/vitest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Capacitor } from '@capacitor/core';
 import {
@@ -19,6 +20,8 @@ import {
     persistLocalMatchSnapshot,
     readLocalMatchSnapshot,
 } from '../../../engine/transport/localSession';
+import { normalizeSetupValuesForFields, resolveSetupFieldOptions } from '../CreateRoomModal';
+import type { GameManifestEntry, GameSetupField } from '../../../games/manifest.types';
 import { resolveActiveMatchExitPayload, shouldPromptExitActiveMatch } from '../roomActions';
 import { RoomList } from '../RoomList';
 import * as matchApi from '../../../services/matchApi';
@@ -33,6 +36,9 @@ import {
 import * as manifestClient from '../../../features/mobile-packages/manifestClient';
 import * as nativeGamePackagePlugin from '../../../features/mobile-packages/nativeGamePackagePlugin';
 import { createDefaultGamePackageState } from '../../../features/mobile-packages/types';
+
+type LobbyStatusSnapshot = { connected: boolean; lastError?: string };
+type LobbyStatusCallback = (status: LobbyStatusSnapshot) => void;
 
 const navigateMock = vi.fn();
 const openModalMock = vi.fn();
@@ -49,7 +55,7 @@ const {
     resolveCriticalImagesMock,
     preloadWarmImagesMock,
 } = vi.hoisted(() => ({
-    getGameByIdMock: vi.fn((gameId: string) => {
+    getGameByIdMock: vi.fn<(gameId: string) => GameManifestEntry | null>((gameId: string) => {
         if (gameId !== 'dicethrone') return null;
         return {
             id: 'dicethrone',
@@ -85,7 +91,7 @@ const {
     preloadWarmImagesMock: vi.fn(),
 }));
 
-const buildMockGameManifest = (override: Record<string, unknown> = {}) => ({
+const buildMockGameManifest = (override: Partial<GameManifestEntry> = {}): GameManifestEntry => ({
     id: 'dicethrone',
     type: 'game',
     enabled: true,
@@ -316,7 +322,7 @@ vi.mock('../../../services/lobbySocket', () => ({
             callback([]);
             return () => {};
         }),
-        subscribeStatus: vi.fn(() => () => {}),
+        subscribeStatus: vi.fn<(callback: LobbyStatusCallback) => () => void>(() => () => {}),
         requestRefresh: vi.fn(),
     },
 }));
@@ -372,41 +378,45 @@ vi.mock('../../common/overlays/ModalBase', () => ({
     ModalBase: ({ children }: { children: ReactNode }) => createElement('div', null, children),
 }));
 
-vi.mock('../CreateRoomModal', () => ({
-    CreateRoomModal: ({
-        isOpen,
-        isLoading,
-        onConfirm,
-        initialPreferences,
-    }: {
-        isOpen: boolean;
-        isLoading?: boolean;
-        onConfirm: (config: unknown) => void;
-        initialPreferences?: unknown;
-    }) => {
-        latestCreateRoomModalProps.current = { isOpen, isLoading, initialPreferences };
-        return isOpen
-            ? createElement('div', null,
-                createElement('button', {
-                    type: 'button',
-                    onClick: () => onConfirm({
-                        roomName: 'AI 房间',
-                        numPlayers: 2,
-                        ttlSeconds: 0,
-                        password: '',
-                        enableAi: true,
-                        seatControllers: {
-                            '0': { type: 'human' },
-                            '1': { type: 'local-ai' },
-                        },
-                        setupSelections: {},
-                    }),
-                }, 'mock-create-room-confirm'),
-                isLoading ? createElement('span', null, 'mock-create-room-loading') : null,
-            )
-            : null;
-    },
-}));
+vi.mock('../CreateRoomModal', async () => {
+    const actual = await vi.importActual<typeof import('../CreateRoomModal')>('../CreateRoomModal');
+    return {
+        ...actual,
+        CreateRoomModal: ({
+            isOpen,
+            isLoading,
+            onConfirm,
+            initialPreferences,
+        }: {
+            isOpen: boolean;
+            isLoading?: boolean;
+            onConfirm: (config: unknown) => void;
+            initialPreferences?: unknown;
+        }) => {
+            latestCreateRoomModalProps.current = { isOpen, isLoading, initialPreferences };
+            return isOpen
+                ? createElement('div', null,
+                    createElement('button', {
+                        type: 'button',
+                        onClick: () => onConfirm({
+                            roomName: 'AI 房间',
+                            numPlayers: 2,
+                            ttlSeconds: 0,
+                            password: '',
+                            enableAi: true,
+                            seatControllers: {
+                                '0': { type: 'human' },
+                                '1': { type: 'local-ai' },
+                            },
+                            setupSelections: {},
+                        }),
+                    }, 'mock-create-room-confirm'),
+                    isLoading ? createElement('span', null, 'mock-create-room-loading') : null,
+                )
+                : null;
+        },
+    };
+});
 
 vi.mock('../../common/overlays/PasswordEntryModal', () => ({
     PasswordEntryModal: (props: Record<string, unknown>) => {
@@ -522,6 +532,58 @@ describe('GameDetailsModal join confirm helpers', () => {
             'dicethrone',
         );
         expect(result?.gameName).toBe('summonerwars');
+    });
+
+    it('resolveSetupFieldOptions 会按人数返回可用选项', () => {
+        const field: GameSetupField = {
+            type: 'select',
+            labelKey: 'games.splendor.setup.startingPlayerId.label',
+            optionsByPlayerCount: {
+                2: [
+                    { value: '0', labelKey: 'games.splendor.setup.startingPlayerId.player1' },
+                    { value: '1', labelKey: 'games.splendor.setup.startingPlayerId.player2' },
+                ],
+                4: [
+                    { value: '0', labelKey: 'games.splendor.setup.startingPlayerId.player1' },
+                    { value: '1', labelKey: 'games.splendor.setup.startingPlayerId.player2' },
+                    { value: '2', labelKey: 'games.splendor.setup.startingPlayerId.player3' },
+                    { value: '3', labelKey: 'games.splendor.setup.startingPlayerId.player4' },
+                ],
+            },
+            default: '0',
+        };
+
+        expect(resolveSetupFieldOptions(field, 2).map((option) => option.value)).toEqual(['0', '1']);
+        expect(resolveSetupFieldOptions(field, 4).map((option) => option.value)).toEqual(['0', '1', '2', '3']);
+    });
+
+    it('normalizeSetupValuesForFields 在人数变化后会回退到合法先手选项', () => {
+        const setupFields: Array<[string, GameSetupField]> = [[
+            'startingPlayerId',
+            {
+                type: 'select',
+                labelKey: 'games.splendor.setup.startingPlayerId.label',
+                optionsByPlayerCount: {
+                    2: [
+                        { value: '0', labelKey: 'games.splendor.setup.startingPlayerId.player1' },
+                        { value: '1', labelKey: 'games.splendor.setup.startingPlayerId.player2' },
+                    ],
+                    4: [
+                        { value: '0', labelKey: 'games.splendor.setup.startingPlayerId.player1' },
+                        { value: '1', labelKey: 'games.splendor.setup.startingPlayerId.player2' },
+                        { value: '2', labelKey: 'games.splendor.setup.startingPlayerId.player3' },
+                        { value: '3', labelKey: 'games.splendor.setup.startingPlayerId.player4' },
+                    ],
+                },
+                default: '0',
+            },
+        ]] as const;
+
+        expect(normalizeSetupValuesForFields(
+            [...setupFields],
+            2,
+            { startingPlayerId: '3' },
+        )).toEqual({ startingPlayerId: '0' });
     });
 });
 
@@ -1974,8 +2036,8 @@ describe('GameDetailsModal create room ai entry', () => {
 
     it('socket 瞬时错误恢复后不再立刻弹服务不可用提示', async () => {
         vi.useFakeTimers();
-        let statusCallback: ((status: { connected: boolean; lastError?: string }) => void) | null = null;
-        vi.mocked(lobbySocket.subscribeStatus).mockImplementationOnce((callback) => {
+        let statusCallback: LobbyStatusCallback | null = null;
+        vi.mocked(lobbySocket.subscribeStatus).mockImplementationOnce((callback: LobbyStatusCallback) => {
             statusCallback = callback;
             return () => {};
         });

@@ -33,7 +33,8 @@ export interface GameSetupSelectOption {
 export interface GameSetupSelectField {
     type: 'select';
     labelKey: string;
-    options: GameSetupSelectOption[];
+    options?: GameSetupSelectOption[];
+    optionsByPlayerCount?: Partial<Record<number, GameSetupSelectOption[]>>;
     default?: string;
 }
 

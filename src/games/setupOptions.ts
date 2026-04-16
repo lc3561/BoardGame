@@ -2,6 +2,7 @@ import type {
     GameManifestEntry,
     GameSetupField,
     GameSetupMultiSelectField,
+    GameSetupSelectOption,
     GameSetupSelectField,
 } from './manifest.types';
 
@@ -16,6 +17,53 @@ export function isMultiSelectField(field: GameSetupField): field is GameSetupMul
     return field.type === 'multi-select';
 }
 
+function getSelectFieldOptions(field: GameSetupSelectField): GameSetupSelectOption[] {
+    if (Array.isArray(field.options) && field.options.length > 0) {
+        return field.options;
+    }
+
+    const optionsByPlayerCount = field.optionsByPlayerCount;
+    if (!optionsByPlayerCount) {
+        return [];
+    }
+
+    const sortedPlayerCounts = Object.keys(optionsByPlayerCount)
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value))
+        .sort((left, right) => left - right);
+
+    for (const playerCount of sortedPlayerCounts) {
+        const options = optionsByPlayerCount[playerCount];
+        if (Array.isArray(options) && options.length > 0) {
+            return options;
+        }
+    }
+
+    return [];
+}
+
+function getSelectAllowedValues(field: GameSetupSelectField): Set<string> {
+    const values = new Set<string>();
+
+    for (const option of getSelectFieldOptions(field)) {
+        values.add(option.value);
+    }
+
+    const optionsByPlayerCount = field.optionsByPlayerCount;
+    if (optionsByPlayerCount) {
+        for (const options of Object.values(optionsByPlayerCount)) {
+            if (!Array.isArray(options)) {
+                continue;
+            }
+            for (const option of options) {
+                values.add(option.value);
+            }
+        }
+    }
+
+    return values;
+}
+
 export function getDefaultSetupSelections(
     gameManifest: Pick<GameManifestEntry, 'setupOptions'> | undefined,
 ): GameSetupSelections {
@@ -27,7 +75,8 @@ export function getDefaultSetupSelections(
             selections[fieldKey] = [...(field.default ?? field.options.map((option) => option.value))];
             continue;
         }
-        selections[fieldKey] = field.default ?? field.options[0]?.value ?? '';
+        const options = getSelectFieldOptions(field);
+        selections[fieldKey] = field.default ?? options[0]?.value ?? '';
     }
 
     return selections;
@@ -38,7 +87,7 @@ export function normalizeSetupSelections(
     rawSelections?: Record<string, unknown> | null,
 ): GameSetupSelections {
     const defaults = getDefaultSetupSelections(gameManifest);
-    const fields = gameManifest.setupOptions ?? {};
+    const fields = gameManifest?.setupOptions ?? {};
 
     if (!rawSelections) {
         return defaults;
@@ -48,9 +97,9 @@ export function normalizeSetupSelections(
 
     for (const [fieldKey, field] of Object.entries(fields)) {
         const rawValue = rawSelections[fieldKey];
-        const allowedValues = new Set(field.options.map((option) => option.value));
 
         if (isMultiSelectField(field)) {
+            const allowedValues = new Set(field.options.map((option) => option.value));
             if (!Array.isArray(rawValue)) {
                 continue;
             }
@@ -60,6 +109,7 @@ export function normalizeSetupSelections(
             continue;
         }
 
+        const allowedValues = getSelectAllowedValues(field);
         if (typeof rawValue === 'string' && allowedValues.has(rawValue)) {
             normalized[fieldKey] = rawValue;
         }

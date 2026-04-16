@@ -8,10 +8,12 @@ import manifest1 from './dicethrone/manifest';
 import { engineConfig as engineConfig1 } from './dicethrone/game';
 import manifest2 from './smashup/manifest';
 import { engineConfig as engineConfig2 } from './smashup/game';
-import manifest3 from './summonerwars/manifest';
-import { engineConfig as engineConfig3 } from './summonerwars/game';
-import manifest4 from './tictactoe/manifest';
-import { engineConfig as engineConfig4 } from './tictactoe/game';
+import manifest3 from './splendor/manifest';
+import { engineConfig as engineConfig3 } from './splendor/game';
+import manifest4 from './summonerwars/manifest';
+import { engineConfig as engineConfig4 } from './summonerwars/game';
+import manifest5 from './tictactoe/manifest';
+import { engineConfig as engineConfig5 } from './tictactoe/game';
 
 const entry0: GameServerManifestEntry = {
     manifest: manifest0,
@@ -38,12 +40,18 @@ const entry4: GameServerManifestEntry = {
     engineConfig: engineConfig4,
 };
 
+const entry5: GameServerManifestEntry = {
+    manifest: manifest5,
+    engineConfig: engineConfig5,
+};
+
 export const GAME_SERVER_MANIFEST: GameServerManifestEntry[] = [
     entry0,
     entry1,
     entry2,
     entry3,
     entry4,
+    entry5,
 ];
 
 export const GAME_SERVER_MANIFEST_BY_ID: Record<string, GameServerManifestEntry> = Object.fromEntries(
