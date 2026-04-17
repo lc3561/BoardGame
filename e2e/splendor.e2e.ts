@@ -488,10 +488,13 @@ test.describe('Splendor E2E', () => {
         await game.screenshot('splendor-discard-resolved', testInfo);
     });
 
-    test('Splendor：映射工具应支持切换图集并导出当前映射配置', async ({ page, game }, testInfo) => {
+    test('Splendor：映射工具应保留其他查询参数并在清空草稿后回到默认映射', async ({ page, game }, testInfo) => {
         test.setTimeout(60000);
 
-        await page.goto('/dev/slicer?mode=splendor-mapping');
+        await page.goto('/dev/slicer?foo=bar');
+        await page.getByRole('button', { name: 'Splendor 映射' }).click();
+
+        await expect.poll(() => page.url(), { timeout: 5000 }).toContain('/dev/slicer?foo=bar&mode=splendor-mapping');
 
         await expect(page.getByTestId('splendor-mapping-frame-grid')).toBeVisible({ timeout: 10000 });
         await expect(page.getByTestId('splendor-mapping-atlas-tier1')).toBeVisible();
@@ -509,6 +512,26 @@ test.describe('Splendor E2E', () => {
             return value.includes("export const NOBLE_CARD_ORDER = [\n    'noble-2',\n    'noble-1',");
         }, { timeout: 5000 }).toBe(true);
 
+        await page.getByRole('button', { name: '清空本地草稿' }).click();
+
+        await expect.poll(async () => {
+            const value = await page.locator('textarea').inputValue();
+            return value.includes("export const NOBLE_CARD_ORDER = [\n    'noble-1',\n    'noble-2',");
+        }, { timeout: 5000 }).toBe(true);
+
+        await expect.poll(async () => page.evaluate((key) => window.localStorage.getItem(key), 'splendor-sprite-mapping-draft-v1')).toBeNull();
+
+        await page.getByRole('button', { name: '切回切片模式' }).click();
+        await expect.poll(() => page.url(), { timeout: 5000 }).toContain('/dev/slicer?foo=bar');
+        await expect.poll(() => page.url(), { timeout: 5000 }).not.toContain('mode=splendor-mapping');
+
+        await page.getByRole('button', { name: 'Splendor 映射' }).click();
+        await expect.poll(() => page.url(), { timeout: 5000 }).toContain('/dev/slicer?foo=bar&mode=splendor-mapping');
+
+        await page.screenshot({
+            path: getEvidenceScreenshotPath('splendor-mapping-tool-query-preserved.png'),
+            fullPage: true,
+        });
         await game.screenshot('splendor-mapping-tool', testInfo);
     });
 

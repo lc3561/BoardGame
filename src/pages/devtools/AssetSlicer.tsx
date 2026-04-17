@@ -91,12 +91,21 @@ export const AssetSlicer = () => {
     );
 
     useEffect(() => {
+        const nextParams = new URLSearchParams(searchParams);
         if (toolMode === 'splendorMapping') {
-            setSearchParams({ mode: 'splendor-mapping' }, { replace: true });
+            if (searchParams.get('mode') === 'splendor-mapping') {
+                return;
+            }
+            nextParams.set('mode', 'splendor-mapping');
+            setSearchParams(nextParams, { replace: true });
             return;
         }
-        setSearchParams({}, { replace: true });
-    }, [setSearchParams, toolMode]);
+        if (!searchParams.has('mode')) {
+            return;
+        }
+        nextParams.delete('mode');
+        setSearchParams(nextParams, { replace: true });
+    }, [searchParams, setSearchParams, toolMode]);
 
     // 基础状态
     const [sourceImage, setSourceImage] = useState<string | null>(null);

@@ -279,6 +279,20 @@ describe('splendor smoke', () => {
         expect(validation.valid).toBe(false);
     });
 
+    test('take two same gems rejects invalid gem colors before reading bank state', () => {
+        const core = startedCore(SplendorDomain.setup(['0', '1'], makeRandom()));
+        const command = {
+            type: 'TAKE_TWO_SAME_GEMS',
+            playerId: '0',
+            payload: { color: 'gold' },
+            timestamp: 1,
+        } as unknown as SplendorCommand;
+
+        const validation = SplendorDomain.validate(stateOf(core), command);
+        expect(validation.valid).toBe(false);
+        expect(validation.error).toBe('invalidGemColor');
+    });
+
     test('reserve open card grants gold when available and refills market', () => {
         const core = startedCore(SplendorDomain.setup(['0', '1'], makeRandom()));
         const cardId = core.market[1][0];

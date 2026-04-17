@@ -30,9 +30,7 @@ export function validate(state: SplendorCore, command: SplendorCommand): Validat
         case 'TAKE_THREE_DIFFERENT_GEMS':
             return validateTakeThree(state, command.payload.colors);
         case 'TAKE_TWO_SAME_GEMS':
-            return state.bank[command.payload.color] >= 4
-                ? { valid: true }
-                : { valid: false, error: 'notEnoughTokensForPair' };
+            return validateTakeTwoSame(state, command.payload.color);
         case 'RESERVE_OPEN_CARD':
             return validateReserveOpen(state, command.payload.tier, command.payload.cardId, command.playerId);
         case 'RESERVE_DECK_TOP_CARD':
@@ -50,6 +48,15 @@ export function validate(state: SplendorCore, command: SplendorCommand): Validat
         default:
             return { valid: false, error: 'unknownCommand' };
     }
+}
+
+function validateTakeTwoSame(state: SplendorCore, color: string): ValidationResult {
+    if (!GEM_COLORS.includes(color as (typeof GEM_COLORS)[number])) {
+        return { valid: false, error: 'invalidGemColor' };
+    }
+    return state.bank[color as (typeof GEM_COLORS)[number]] >= 4
+        ? { valid: true }
+        : { valid: false, error: 'notEnoughTokensForPair' };
 }
 
 function validateHostStartGame(state: SplendorCore, playerId: string): ValidationResult {

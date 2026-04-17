@@ -40,6 +40,13 @@ function readDraftMappingFromStorage(): DraftMapping {
     return next;
 }
 
+function isSameDraftMapping(left: DraftMapping, right: DraftMapping): boolean {
+    return SPLENDOR_SPRITE_ATLASES.every((atlas) =>
+        left[atlas.id].length === right[atlas.id].length
+        && left[atlas.id].every((id, index) => id === right[atlas.id][index]),
+    );
+}
+
 function buildSpriteStyle(imagePath: string, cols: number, rows: number, index: number): React.CSSProperties {
     const col = index % cols;
     const row = Math.floor(index / cols);
@@ -81,10 +88,18 @@ export default function SplendorSpriteMappingTool({
     const [selectedFrameIndex, setSelectedFrameIndex] = useState(0);
     const [draftMapping, setDraftMapping] = useState<DraftMapping>(() => readDraftMappingFromStorage());
     const [copied, setCopied] = useState(false);
+    const defaultDraftMapping = useMemo(() => createDefaultDraftMapping(), []);
 
     useEffect(() => {
+        if (typeof window === 'undefined') {
+            return;
+        }
+        if (isSameDraftMapping(draftMapping, defaultDraftMapping)) {
+            window.localStorage.removeItem(STORAGE_KEY);
+            return;
+        }
         window.localStorage.setItem(STORAGE_KEY, JSON.stringify(draftMapping));
-    }, [draftMapping]);
+    }, [defaultDraftMapping, draftMapping]);
 
     const activeAtlas = SPLENDOR_SPRITE_ATLAS_BY_ID[activeAtlasId];
     const currentOrder = draftMapping[activeAtlasId];
@@ -168,6 +183,13 @@ export default function SplendorSpriteMappingTool({
     };
 
     const restoreAll = () => {
+        setDraftMapping(createDefaultDraftMapping());
+    };
+
+    const clearLocalDraft = () => {
+        if (typeof window !== 'undefined') {
+            window.localStorage.removeItem(STORAGE_KEY);
+        }
         setDraftMapping(createDefaultDraftMapping());
     };
 
@@ -335,7 +357,7 @@ export default function SplendorSpriteMappingTool({
                             </button>
                             <button
                                 type="button"
-                                onClick={() => window.localStorage.removeItem(STORAGE_KEY)}
+                                onClick={clearLocalDraft}
                                 className="rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-300 transition hover:border-rose-400 hover:text-rose-200"
                             >
                                 清空本地草稿
