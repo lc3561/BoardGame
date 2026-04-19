@@ -1,237 +1,238 @@
 /**
  * 召唤师战争 - 幻化能力修复验证测试
- * 
- * 验证幻化能力不会导致卡死，能正常选择目标并复制技能
+ *
+ * 迁移目标：
+ * - 统一使用 ../framework + setupSWOnlineMatch
+ * - 通过当前调试 helper 注入状态，不再依赖旧 fixture 口径
+ * - 保持真实 UI 触发链：阶段推进 -> 出现提示 -> 选择/取消
  */
 
-import { test, expect } from '../fixtures';
-import { waitForTestHarness } from '../helpers/testHarness';
+import type { Page } from '@playwright/test';
+import { test, expect } from '../framework';
+import { waitForTestHarness } from '../helpers/common';
+import {
+  applyCoreState,
+  clickBoardElement,
+  cloneState,
+  closeDebugPanelIfOpen,
+  readCoreState,
+  setupSWOnlineMatch,
+  waitForPhase,
+} from '../helpers/summonerwars';
+
+type CellCoord = { row: number; col: number };
+type UnitExtras = {
+  card?: Record<string, unknown>;
+  [key: string]: unknown;
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- E2E 注入状态为动态 JSON
+type SWCoreState = any;
+
+const createUnit = (
+  owner: '0' | '1',
+  instanceId: string,
+  cardId: string,
+  name: string,
+  abilities: string[],
+  position: CellCoord,
+  extras: UnitExtras = {},
+) => ({
+  instanceId,
+  cardId,
+  card: {
+    id: cardId,
+    cardType: 'unit',
+    name,
+    faction: owner === '0' ? 'trickster' : 'necromancer',
+    cost: 1,
+    life: 3,
+    strength: 2,
+    attackType: 'ranged',
+    attackRange: 3,
+    unitClass: 'common',
+    abilities,
+    deckSymbols: [],
+    ...extras.card,
+  },
+  owner,
+  position,
+  damage: 0,
+  boosts: 0,
+  hasMoved: false,
+  hasAttacked: false,
+  ...extras,
+});
+
+const prepareIllusionScene = (coreState: SWCoreState) => {
+  const next = cloneState(coreState);
+  const rows = next.board.length;
+  const cols = next.board[0]?.length ?? 0;
+
+  for (let row = 0; row < rows; row += 1) {
+    for (let col = 0; col < cols; col += 1) {
+      next.board[row][col] = {
+        ...next.board[row][col],
+        unit: undefined,
+        structure: undefined,
+      };
+    }
+  }
+
+  const witchPosition = { row: Math.min(5, rows - 2), col: Math.min(2, cols - 3) };
+  const targetPosition = { row: witchPosition.row, col: Math.min(witchPosition.col + 2, cols - 1) };
+  const enemyPosition = { row: Math.max(1, witchPosition.row - 3), col: witchPosition.col };
+
+  next.phase = 'summon';
+  next.currentPlayer = '0';
+  next.selectedUnit = undefined;
+  next.abilityUsageCount = {};
+
+  if (next.players?.['0']) {
+    next.players['0'].moveCount = 0;
+    next.players['0'].attackCount = 0;
+    next.players['0'].hasAttackedEnemy = false;
+  }
+
+  next.board[witchPosition.row][witchPosition.col].unit = createUnit(
+    '0',
+    'witch-1',
+    'trickster-mind-witch-test',
+    '心灵巫女',
+    ['illusion'],
+    witchPosition,
+  );
+  next.board[targetPosition.row][targetPosition.col].unit = createUnit(
+    '0',
+    'soldier-1',
+    'trickster-test-soldier',
+    '测试士兵',
+    ['charge', 'ferocity'],
+    targetPosition,
+    {
+      card: {
+        strength: 1,
+        life: 2,
+        attackType: 'melee',
+        attackRange: 1,
+      },
+    },
+  );
+  next.board[enemyPosition.row][enemyPosition.col].unit = createUnit(
+    '1',
+    'enemy-1',
+    'enemy-blocker-test',
+    '敌方士兵',
+    [],
+    enemyPosition,
+    {
+      card: {
+        faction: 'necromancer',
+        attackType: 'melee',
+        attackRange: 1,
+      },
+    },
+  );
+
+  return {
+    core: next,
+    witchPosition,
+    targetPosition,
+  };
+};
+
+const getIllusionPrompt = (page: Page) =>
+  page.locator('text=/幻化|选择.*士兵|Illusion|Select.*common/i').first();
 
 test.describe('召唤师战争 - 幻化能力修复', () => {
-  test('幻化能力正常工作，不会卡死', async ({ summonerWarsMatch }) => {
-    const { page, player1 } = summonerWarsMatch;
+  test('幻化能力正常工作，不会卡死', async ({ browser }, testInfo) => {
+    test.setTimeout(120000);
+    const baseURL = testInfo.project.use.baseURL as string | undefined;
+    const match = await setupSWOnlineMatch(browser, baseURL, 'trickster', 'necromancer');
 
-    // 等待测试工具就绪
-    await waitForTestHarness(page);
-
-    // 构造测试场景：心灵巫女（有幻化能力）+ 附近有士兵
-    await page.evaluate(() => {
-      const harness = window.__BG_TEST_HARNESS__!;
-      
-      // 清空棋盘
-      const state = harness.state.get();
-      for (let row = 0; row < 6; row++) {
-        for (let col = 0; col < 8; col++) {
-          if (state.core.board[row][col].unit) {
-            harness.state.patch({
-              core: {
-                board: {
-                  [row]: {
-                    [col]: { unit: null }
-                  }
-                }
-              }
-            });
-          }
-        }
-      }
-
-      // 放置心灵巫女（玩家0，有幻化能力）
-      harness.state.patch({
-        core: {
-          phase: 'move',
-          currentPlayer: '0',
-          board: {
-            3: {
-              4: {
-                unit: {
-                  instanceId: 'witch-1',
-                  owner: '0',
-                  damage: 0,
-                  boosts: 0,
-                  card: {
-                    id: 'trickster-mind-witch-1',
-                    defId: 'trickster_mind_witch',
-                    type: 'unit',
-                    name: '心灵巫女',
-                    faction: 'trickster',
-                    strength: 1,
-                    life: 3,
-                    cost: 1,
-                    attackType: 'ranged',
-                    attackRange: 3,
-                    unitClass: 'common',
-                    abilities: ['illusion'],
-                    deckSymbols: []
-                  }
-                }
-              }
-            },
-            // 放置一个有技能的士兵（玩家1，3格内）
-            3: {
-              6: {
-                unit: {
-                  instanceId: 'soldier-1',
-                  owner: '1',
-                  damage: 0,
-                  boosts: 0,
-                  card: {
-                    id: 'test-soldier-1',
-                    defId: 'test_soldier',
-                    type: 'unit',
-                    name: '测试士兵',
-                    faction: 'trickster',
-                    strength: 2,
-                    life: 2,
-                    cost: 1,
-                    attackType: 'melee',
-                    attackRange: 1,
-                    unitClass: 'common',
-                    abilities: ['charge', 'ferocity'],
-                    deckSymbols: []
-                  }
-                }
-              }
-            }
-          }
-        }
-      });
-    });
-
-    // 等待 UI 更新
-    await page.waitForTimeout(500);
-
-    // 验证初始状态：心灵巫女在场
-    const witchExists = await page.locator('[data-unit-id="witch-1"]').count();
-    expect(witchExists).toBe(1);
-
-    // 触发移动阶段（幻化是 onPhaseStart 触发）
-    // 由于已经在 move 阶段，需要先推进到下一阶段再回到 move
-    await page.evaluate(() => {
-      const harness = window.__BG_TEST_HARNESS__!;
-      harness.command.dispatch({
-        type: 'sw:advance_phase',
-        payload: {},
-        playerId: '0'
-      });
-    });
-
-    await page.waitForTimeout(300);
-
-    // 推进到下一回合的 move 阶段
-    for (let i = 0; i < 6; i++) {
-      await page.evaluate(() => {
-        const harness = window.__BG_TEST_HARNESS__!;
-        harness.command.dispatch({
-          type: 'sw:advance_phase',
-          payload: {},
-          playerId: harness.state.get().core.currentPlayer
-        });
-      });
-      await page.waitForTimeout(200);
+    if (!match) {
+      test.skip(true, 'Game server unavailable or room creation failed');
+      return;
     }
 
-    // 验证幻化提示出现
-    const illusionPrompt = page.locator('text=/幻化|选择.*士兵/i');
-    await expect(illusionPrompt).toBeVisible({ timeout: 3000 });
+    const { hostPage, hostContext, guestContext } = match;
 
-    // 点击目标士兵（3, 6）
-    const targetCell = page.locator('[data-cell-coord="3-6"]');
-    await targetCell.click();
+    try {
+      await waitForTestHarness(hostPage);
 
-    // 等待命令执行
-    await page.waitForTimeout(500);
+      const baseCore = await readCoreState(hostPage);
+      const { core, witchPosition, targetPosition } = prepareIllusionScene(baseCore);
+      await applyCoreState(hostPage, core);
+      await closeDebugPanelIfOpen(hostPage);
+      await waitForPhase(hostPage, 'summon');
 
-    // 验证：
-    // 1. 幻化提示消失（abilityMode 被清理）
-    await expect(illusionPrompt).not.toBeVisible({ timeout: 2000 });
+      const endPhaseButton = hostPage.getByTestId('sw-end-phase');
+      await expect(endPhaseButton).toBeEnabled({ timeout: 5000 });
+      await endPhaseButton.click({ force: true });
 
-    // 2. 心灵巫女获得了目标士兵的技能
-    const witchAbilities = await page.evaluate(() => {
-      const state = window.__BG_TEST_HARNESS__!.state.get();
-      const witch = state.core.board[3][4].unit;
-      return witch?.tempAbilities ?? [];
-    });
-    
-    expect(witchAbilities).toContain('charge');
-    expect(witchAbilities).toContain('ferocity');
+      const illusionPrompt = getIllusionPrompt(hostPage);
+      await expect(illusionPrompt).toBeVisible({ timeout: 8000 });
+      await waitForPhase(hostPage, 'move');
 
-    // 3. 页面没有卡死（能继续操作）
-    const phaseButton = page.locator('button:has-text("下一阶段")');
-    await expect(phaseButton).toBeEnabled({ timeout: 1000 });
+      await clickBoardElement(hostPage, `[data-cell-coord="${targetPosition.row}-${targetPosition.col}"]`);
+
+      await expect(illusionPrompt).toBeHidden({ timeout: 5000 });
+
+      const stateAfterCopy = await readCoreState(hostPage);
+      const witch = stateAfterCopy.board[witchPosition.row]?.[witchPosition.col]?.unit;
+
+      expect(witch?.tempAbilities ?? []).toEqual(
+        expect.arrayContaining(['charge', 'ferocity']),
+      );
+      await expect(endPhaseButton).toBeEnabled({ timeout: 2000 });
+    } finally {
+      await hostContext.close().catch(() => {});
+      await guestContext.close().catch(() => {});
+    }
   });
 
-  test('幻化能力可以取消', async ({ summonerWarsMatch }) => {
-    const { page } = summonerWarsMatch;
+  test('幻化能力可以取消', async ({ browser }, testInfo) => {
+    test.setTimeout(120000);
+    const baseURL = testInfo.project.use.baseURL as string | undefined;
+    const match = await setupSWOnlineMatch(browser, baseURL, 'trickster', 'necromancer');
 
-    await waitForTestHarness(page);
+    if (!match) {
+      test.skip(true, 'Game server unavailable or room creation failed');
+      return;
+    }
 
-    // 构造相同场景
-    await page.evaluate(() => {
-      const harness = window.__BG_TEST_HARNESS__!;
-      
-      harness.state.patch({
-        core: {
-          phase: 'move',
-          currentPlayer: '0',
-          board: {
-            3: {
-              4: {
-                unit: {
-                  instanceId: 'witch-1',
-                  owner: '0',
-                  damage: 0,
-                  boosts: 0,
-                  card: {
-                    id: 'trickster-mind-witch-1',
-                    defId: 'trickster_mind_witch',
-                    type: 'unit',
-                    name: '心灵巫女',
-                    faction: 'trickster',
-                    strength: 1,
-                    life: 3,
-                    cost: 1,
-                    attackType: 'ranged',
-                    attackRange: 3,
-                    unitClass: 'common',
-                    abilities: ['illusion'],
-                    deckSymbols: []
-                  }
-                }
-              }
-            }
-          }
-        }
-      });
-    });
+    const { hostPage, hostContext, guestContext } = match;
 
-    // 触发幻化
-    await page.evaluate(() => {
-      const harness = window.__BG_TEST_HARNESS__!;
-      for (let i = 0; i < 7; i++) {
-        harness.command.dispatch({
-          type: 'sw:advance_phase',
-          payload: {},
-          playerId: harness.state.get().core.currentPlayer
-        });
-      }
-    });
+    try {
+      await waitForTestHarness(hostPage);
 
-    await page.waitForTimeout(500);
+      const baseCore = await readCoreState(hostPage);
+      const { core, witchPosition } = prepareIllusionScene(baseCore);
+      await applyCoreState(hostPage, core);
+      await closeDebugPanelIfOpen(hostPage);
+      await waitForPhase(hostPage, 'summon');
 
-    // 验证幻化提示出现
-    const illusionPrompt = page.locator('text=/幻化|选择.*士兵/i');
-    await expect(illusionPrompt).toBeVisible({ timeout: 3000 });
+      const endPhaseButton = hostPage.getByTestId('sw-end-phase');
+      await endPhaseButton.click({ force: true });
 
-    // 点击取消按钮
-    const cancelButton = page.locator('button:has-text("取消")');
-    await cancelButton.click();
+      const illusionPrompt = getIllusionPrompt(hostPage);
+      await expect(illusionPrompt).toBeVisible({ timeout: 8000 });
 
-    // 验证提示消失
-    await expect(illusionPrompt).not.toBeVisible({ timeout: 1000 });
+      const cancelButton = hostPage.getByRole('button', { name: /取消|Cancel/i }).first();
+      await expect(cancelButton).toBeVisible({ timeout: 3000 });
+      await cancelButton.click();
 
-    // 验证页面没有卡死
-    const phaseButton = page.locator('button:has-text("下一阶段")');
-    await expect(phaseButton).toBeEnabled({ timeout: 1000 });
+      await expect(illusionPrompt).toBeHidden({ timeout: 5000 });
+
+      const stateAfterCancel = await readCoreState(hostPage);
+      const witch = stateAfterCancel.board[witchPosition.row]?.[witchPosition.col]?.unit;
+
+      expect(witch?.tempAbilities ?? []).not.toContain('charge');
+      expect(witch?.tempAbilities ?? []).not.toContain('ferocity');
+      await expect(endPhaseButton).toBeEnabled({ timeout: 2000 });
+    } finally {
+      await hostContext.close().catch(() => {});
+      await guestContext.close().catch(() => {});
+    }
   });
 });

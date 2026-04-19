@@ -33,6 +33,8 @@ import type {
     MinionPlayedEvent,
     CardsDiscardedEvent,
     FactionSelectedEvent,
+    FactionDeselectedEvent,
+    SeatSwappedEvent,
     AllFactionsSelectedEvent,
     MinionDestroyedEvent,
     MinionMovedEvent,
@@ -502,6 +504,20 @@ function executeCommand(
                 timestamp: now,
             };
             return { events: [deselectedEvt] };
+        }
+
+        case SU_COMMANDS.SWAP_SEAT: {
+            const targetPlayerId = String(command.payload.targetPlayerId) as PlayerId;
+            const seatSwappedEvt: SeatSwappedEvent = {
+                type: SU_EVENTS.SEAT_SWAPPED,
+                payload: {
+                    requesterId: command.playerId as PlayerId,
+                    targetPlayerId,
+                },
+                sourceCommandType: command.type,
+                timestamp: now,
+            };
+            return { events: [seatSwappedEvt] };
         }
 
         case SU_COMMANDS.USE_BASE_ABILITY: {

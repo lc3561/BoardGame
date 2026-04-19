@@ -1,9 +1,10 @@
+import { test } from '../framework';
 /**
  * SmashUp Card Atlas 注册简单验证
  * 只验证 atlas 是否注册，不依赖页面渲染
  */
 
-import { test } from '@playwright/test';
+
 
 test('SmashUp card atlases registration check', async ({ page }) => {
     // 捕获控制台日志

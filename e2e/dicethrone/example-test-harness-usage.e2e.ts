@@ -4,7 +4,8 @@
  * 演示如何使用 TestHarness 进行 E2E 测试
  */
 
-import { test, expect } from '@playwright/test';
+
+import { test, expect } from '../framework';
 import {
     setupDTOnlineMatch,
     selectCharacter,

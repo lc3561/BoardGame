@@ -9,7 +9,8 @@
  * 关键点：当对手拒绝抽疯狂卡时，由修格斯的控制者（而非系统自动）选择消灭对方的哪个随从。
  */
 
-import { test, expect } from '@playwright/test';
+
+import { test, expect } from '../framework';
 import {
     setupSUOnlineMatch,
     readFullState,

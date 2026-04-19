@@ -122,6 +122,11 @@ const loadTutorial8 = async () => {
     return tutorialModule.default;
 };
 
+const loadCriticalImageResolver8 = async () => {
+    const resolverModule = await import('./splendor/criticalImageResolver');
+    return resolverModule.default ?? resolverModule.splendorCriticalImageResolver;
+};
+
 const loadRuntime9 = async (): Promise<GameClientRuntimeModule> => {
     const [gameModule, boardModule, latencyModule] = await Promise.all([
         import('./summonerwars/game'),
@@ -217,6 +222,7 @@ const entry8: GameClientManifestEntry = {
     thumbnail: <Thumbnail8 />,
     loadRuntime: loadRuntime8,
     loadTutorial: loadTutorial8,
+    loadCriticalImageResolver: loadCriticalImageResolver8,
 };
 
 const entry9: GameClientManifestEntry = {

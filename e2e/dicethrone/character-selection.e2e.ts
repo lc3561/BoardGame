@@ -4,8 +4,9 @@
  */
 
 import { mkdirSync } from 'node:fs';
+import { test, expect } from '../framework';
 import { join } from 'node:path';
-import { test, expect, type Page, type BrowserContext } from '@playwright/test';
+import { type Page, type BrowserContext } from '@playwright/test';
 import {
     createGuestId,
     ensureGameServerAvailable,

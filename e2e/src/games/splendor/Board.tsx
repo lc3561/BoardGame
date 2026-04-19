@@ -1,7 +1,6 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { GameBoardProps } from '../../engine/transport/protocol';
-import { getLocalAssetPath } from '../../core';
 import type { CardTier, GemColor, SplendorCommandMap, SplendorCore, TokenColor } from './domain';
 import {
     CARD_DEFS_BY_ID,
@@ -409,8 +408,8 @@ export default function SplendorBoard({ G, dispatch, playerID, matchData, isMult
                                         >
                                             <div className="flex items-center gap-3">
                                                 <div className="h-16 w-16 shrink-0 overflow-hidden rounded-full border border-white/10 bg-black/20">
-                                                    <img
-                                                        src={getLocalAssetPath(SPLENDOR_TOKEN_IMAGE_BY_COLOR[tokenColor])}
+                                                    <OptimizedImage
+                                                        src={SPLENDOR_TOKEN_IMAGE_BY_COLOR[tokenColor]}
                                                         alt={t(COLOR_I18N_KEY[tokenColor])}
                                                         className="h-full w-full object-cover"
                                                     />

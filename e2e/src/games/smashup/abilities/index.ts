@@ -42,6 +42,9 @@ import { registerCowboysAbilities, registerCowboysInteractionHandlers } from './
 import { registerSamuraiAbilities, registerSamuraiInteractionHandlers } from './samurai';
 import { registerVikingsAbilities, registerVikingsInteractionHandlers } from './vikings';
 import { registerTitanAbilities, registerTitanInteractionHandlers } from './titans';
+import { registerWorldChampsAbilities, registerWorldChampsInteractionHandlers } from './world_champs';
+import { registerSkeletonAbilities, registerSkeletonInteractionHandlers } from './skeletons';
+import { registerMermaidsAbilities, registerMermaidsInteractionHandlers } from './mermaids';
 import { registerBuryInteractionHandlers } from '../domain/bury';
 import {
     registerBaseAbilities,
@@ -147,6 +150,12 @@ export function initAllAbilities(): void {
     registerSamuraiInteractionHandlers();
     registerVikingsAbilities();
     registerVikingsInteractionHandlers();
+    registerSkeletonAbilities();
+    registerSkeletonInteractionHandlers();
+    registerMermaidsAbilities();
+    registerMermaidsInteractionHandlers();
+    registerWorldChampsAbilities();
+    registerWorldChampsInteractionHandlers();
     registerTitanAbilities();
     registerTitanInteractionHandlers();
 

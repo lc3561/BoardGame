@@ -843,6 +843,7 @@ export const SU_COMMANDS = {
     // === 新增 ===
     SELECT_FACTION: 'su:select_faction',
     DESELECT_FACTION: 'su:deselect_faction',
+    SWAP_SEAT: 'su:swap_seat',
     USE_BASE_ABILITY: 'su:use_base_ability',
     USE_TALENT: 'su:use_talent',
     /** 激活场上随从的 special 能力（如忍者侍从回手+额外随从） */
@@ -891,6 +892,13 @@ export interface DeselectFactionCommand extends Command<typeof SU_COMMANDS.DESEL
     };
 }
 
+/** 调整选秀阶段座位顺序（影响先后手） */
+export interface SwapSeatCommand extends Command<typeof SU_COMMANDS.SWAP_SEAT> {
+    payload: {
+        targetPlayerId: PlayerId;
+    };
+}
+
 /** 使用基地的主动能力 */
 export interface UseBaseAbilityCommand extends Command<typeof SU_COMMANDS.USE_BASE_ABILITY> {
     payload: {
@@ -933,6 +941,7 @@ export type SmashUpCommand =
     | DiscardToLimitCommand
     | SelectFactionCommand
     | DeselectFactionCommand
+    | SwapSeatCommand
     | UseBaseAbilityCommand
     | UseTalentCommand
     | ActivateSpecialCommand
@@ -1300,6 +1309,7 @@ export type SmashUpEvent =
     | LimitModifiedEvent
     | FactionSelectedEvent
     | FactionDeselectedEvent
+    | SeatSwappedEvent
     | AllFactionsSelectedEvent
     | MinionDestroyedEvent
     | MinionMovedEvent
@@ -1371,6 +1381,13 @@ export interface AllFactionsSelectedEvent extends GameEvent<'su:all_factions_sel
         baseDeck?: string[];
         /** 起手无随从的玩家列表（规则：若无随从“可”重抽一次） */
         mulliganPlayers?: PlayerId[];
+    };
+}
+
+export interface SeatSwappedEvent extends GameEvent<'su:seat_swapped'> {
+    payload: {
+        requesterId: PlayerId;
+        targetPlayerId: PlayerId;
     };
 }
 
@@ -1472,6 +1489,8 @@ export interface OngoingAttachedEvent extends GameEvent<typeof SU_EVENTS.ONGOING
         targetType: 'base' | 'minion';
         targetBaseIndex: number;
         targetMinionUid?: string;
+        /** 为 true 时，会先从 owner 的手牌/牌库/弃牌堆移除该卡，再执行附着（用于持续行动转移） */
+        removeFromDiscard?: boolean;
         /** 额外元数据（如 block_the_path 存储被限制的派系） */
         metadata?: Record<string, unknown>;
     };

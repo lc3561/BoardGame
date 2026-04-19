@@ -4,8 +4,9 @@
  * 验证测试工具的基本功能是否正常工作
  */
 
-import { test, expect } from '@playwright/test';
+
 import { waitForCoreState } from '../helpers/waitForState';
+import { test, expect } from '../framework';
 import {
     setupDTOnlineMatch,
     selectCharacter,

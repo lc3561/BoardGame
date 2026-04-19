@@ -10,7 +10,8 @@
  * - Prompt 目标选择（献祭/散播疯狂牌）
  */
 
-import { test, expect } from '@playwright/test';
+
+import { test, expect } from '../framework';
 import {
     FACTION,
     setupTwoPlayerMatch,

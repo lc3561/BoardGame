@@ -1,8 +1,9 @@
 /**
  * SmashUp 出牌调试 — 检查卡牌和基地选择器
  */
-import { test, expect } from '@playwright/test';
+
 import { setEnglishLocale, disableAudio, blockAudioRequests } from '../helpers/common';
+import { test, expect } from '../framework';
 
 test('SmashUp 出牌调试 — 检查卡牌和基地选择器', async ({ page }) => {
     test.setTimeout(60000);

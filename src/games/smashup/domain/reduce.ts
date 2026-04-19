@@ -165,6 +165,24 @@ export function reduce(state: SmashUpCore, event: SmashUpEvent): SmashUpCore {
             };
         }
 
+        case SU_EVENTS.SEAT_SWAPPED: {
+            const { requesterId, targetPlayerId } = event.payload;
+            const requesterIndex = state.turnOrder.indexOf(requesterId);
+            const targetIndex = state.turnOrder.indexOf(targetPlayerId);
+            if (requesterIndex < 0 || targetIndex < 0 || requesterIndex === targetIndex) {
+                return state;
+            }
+            const nextTurnOrder = [...state.turnOrder];
+            [nextTurnOrder[requesterIndex], nextTurnOrder[targetIndex]] = [nextTurnOrder[targetIndex], nextTurnOrder[requesterIndex]];
+            const currentPlayerId = state.turnOrder[state.currentPlayerIndex] ?? state.turnOrder[0];
+            const nextCurrentPlayerIndex = Math.max(0, nextTurnOrder.indexOf(currentPlayerId));
+            return {
+                ...state,
+                turnOrder: nextTurnOrder,
+                currentPlayerIndex: nextCurrentPlayerIndex,
+            };
+        }
+
         case SU_EVENTS.ALL_FACTIONS_SELECTED: {
             const { readiedPlayers, nextUid, bases, baseDeck } = event.payload;
             const newPlayers: Record<PlayerId, PlayerState> = { ...state.players };
@@ -794,7 +812,31 @@ export function reduce(state: SmashUpCore, event: SmashUpEvent): SmashUpCore {
         }
 
         case SU_EVENTS.ONGOING_ATTACHED: {
-            const { cardUid, defId, ownerId, targetType, targetBaseIndex, targetMinionUid, metadata } = event.payload;
+            const {
+                cardUid,
+                defId,
+                ownerId,
+                targetType,
+                targetBaseIndex,
+                targetMinionUid,
+                removeFromDiscard,
+                metadata,
+            } = event.payload;
+            let nextPlayers = state.players;
+            if (removeFromDiscard) {
+                const owner = state.players[ownerId];
+                if (owner) {
+                    nextPlayers = {
+                        ...state.players,
+                        [ownerId]: {
+                            ...owner,
+                            hand: owner.hand.filter(card => card.uid !== cardUid),
+                            deck: owner.deck.filter(card => card.uid !== cardUid),
+                            discard: owner.discard.filter(card => card.uid !== cardUid),
+                        },
+                    };
+                }
+            }
             if (targetType === 'base') {
                 const newBases = state.bases.map((base, i) => {
                     if (i !== targetBaseIndex) return base;
@@ -803,7 +845,7 @@ export function reduce(state: SmashUpCore, event: SmashUpEvent): SmashUpCore {
                         ongoingActions: [...base.ongoingActions, { uid: cardUid, defId, ownerId, talentUsed: false, ...(metadata ? { metadata } : {}) }],
                     };
                 });
-                return { ...state, bases: newBases };
+                return { ...state, bases: newBases, players: nextPlayers };
             }
             // 附着到随从
             if (targetMinionUid) {
@@ -818,7 +860,7 @@ export function reduce(state: SmashUpCore, event: SmashUpEvent): SmashUpCore {
                         )),
                     };
                 });
-                return { ...state, bases: newBases };
+                return { ...state, bases: newBases, players: nextPlayers };
             }
             return state;
         }

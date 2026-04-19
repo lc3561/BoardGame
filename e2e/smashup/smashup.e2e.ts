@@ -1,5 +1,8 @@
-import { test, expect, type BrowserContext, type Page } from '@playwright/test';
+import { type BrowserContext, type Page } from '@playwright/test';
+import { test, expect } from '../framework';
 import { setChineseLocale } from '../helpers/common';
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 
 const disableTutorial = async (context: BrowserContext | Page) => {
   await context.addInitScript(() => {
@@ -81,7 +84,7 @@ const ensureGameServerAvailable = async (page: Page) => {
 
 const openSmashUpModal = async (page: Page) => {
   await page.goto('/?game=smashup', { waitUntil: 'domcontentloaded' });
-  const heading = page.getByRole('heading', { name: '大杀四方' });
+  const heading = page.getByRole('heading', { name: /Smash Up|大杀四方/i });
   await expect(heading).toBeVisible({ timeout: 15000 });
   return heading;
 };
@@ -101,8 +104,8 @@ test.describe('大杀四方大厅 E2E', () => {
     }
 
     await openSmashUpModal(hostPage);
-    await hostPage.getByRole('button', { name: '创建房间' }).click();
-    const createHeading = hostPage.getByRole('heading', { name: '创建房间' });
+    await hostPage.getByRole('button', { name: /创建房间|Create Room/i }).click();
+    const createHeading = hostPage.getByRole('heading', { name: /创建房间|Create Room/i });
     await expect(createHeading).toBeVisible({ timeout: 10000 });
     const createModal = createHeading.locator('..').locator('..');
 
@@ -110,7 +113,7 @@ test.describe('大杀四方大厅 E2E', () => {
     await expect(threePlayersButton).toBeVisible({ timeout: 5000 });
     await threePlayersButton.click();
 
-    await createModal.getByRole('button', { name: '确认' }).click();
+    await createModal.getByRole('button', { name: /确认|Confirm/i }).click();
     try {
       await hostPage.waitForURL(/\/play\/smashup\/match\//, { timeout: 8000 });
     } catch {
@@ -135,7 +138,7 @@ test.describe('大杀四方大厅 E2E', () => {
     await openSmashUpModal(viewerPage);
 
     const matchShort = matchId.slice(0, 4);
-    const roomTitle = viewerPage.getByText(new RegExp(`对局 #${matchShort} \\(1/3\\)`));
+    const roomTitle = viewerPage.getByText(new RegExp(`(对局|Match) #${matchShort} \\(1/3\\)`));
     await expect(roomTitle).toBeVisible({ timeout: 15000 });
 
     const roomInfo = roomTitle.locator('..').locator('..');
@@ -183,8 +186,8 @@ test.describe('大杀四方大厅 E2E', () => {
     }
 
     await openSmashUpModal(hostPage);
-    await hostPage.getByRole('button', { name: '创建房间' }).click();
-    const createHeading = hostPage.getByRole('heading', { name: '创建房间' });
+    await hostPage.getByRole('button', { name: /创建房间|Create Room/i }).click();
+    const createHeading = hostPage.getByRole('heading', { name: /创建房间|Create Room/i });
     await expect(createHeading).toBeVisible({ timeout: 10000 });
     const createModal = createHeading.locator('..').locator('..');
 
@@ -192,7 +195,7 @@ test.describe('大杀四方大厅 E2E', () => {
     await expect(twoPlayersButton).toBeVisible({ timeout: 5000 });
     await twoPlayersButton.click();
 
-    await createModal.getByRole('button', { name: '确认' }).click();
+    await createModal.getByRole('button', { name: /确认|Confirm/i }).click();
     try {
       await hostPage.waitForURL(/\/play\/smashup\/match\//, { timeout: 8000 });
     } catch {
@@ -206,13 +209,67 @@ test.describe('大杀四方大厅 E2E', () => {
     }
 
     // 等待派系选择界面出现（关键交互面）
-    const factionHeading = hostPage.getByText('选择你的派系');
+    const factionHeading = hostPage.getByText(/选择你的派系|Draft Your Factions/i);
     await expect(factionHeading).toBeVisible({ timeout: 15000 });
 
     // 验证能看到至少一个派系名称（派系卡片上的文本）
     // 使用更宽松的选择器，因为派系名称在卡片上而非按钮中
     const anyFactionName = hostPage.getByText(/外星人|海盗|忍者|恐龙|机器人|巫师/).first();
     await expect(anyFactionName).toBeVisible({ timeout: 5000 });
+
+    await hostContext.close();
+  });
+
+  test('派系选择页应显示 10 周年三派系及实施中横幅', async ({ browser }, testInfo) => {
+    test.setTimeout(180000);
+    const baseURL = testInfo.project.use.baseURL as string | undefined;
+    const hostContext = await browser.newContext({ baseURL });
+    await setChineseLocale(hostContext);
+    await resetMatchStorage(hostContext);
+    await disableTutorial(hostContext);
+    const hostPage = await hostContext.newPage();
+
+    if (!await ensureGameServerAvailable(hostPage)) {
+      test.skip(true, 'Game server unavailable for online tests.');
+    }
+
+    await openSmashUpModal(hostPage);
+    await hostPage.getByRole('button', { name: /创建房间|Create Room/i }).click({ timeout: 30000 });
+    const createHeading = hostPage.getByRole('heading', { name: /创建房间|Create Room/i });
+    await expect(createHeading).toBeVisible({ timeout: 30000 });
+    const createModal = createHeading.locator('..').locator('..');
+
+    const twoPlayersButton = createModal.getByRole('button', { name: /2\s*players|2\s*人/i });
+    await expect(twoPlayersButton).toBeVisible({ timeout: 30000 });
+    await twoPlayersButton.click();
+
+    await createModal.getByRole('button', { name: /确认|Confirm/i }).click({ timeout: 30000 });
+    await hostPage.waitForURL(/\/play\/smashup\/match\//, { timeout: 60000 });
+
+    const hostUrl = new URL(hostPage.url());
+    if (!hostUrl.searchParams.get('playerID')) {
+      hostUrl.searchParams.set('playerID', '0');
+      await hostPage.goto(hostUrl.toString(), { waitUntil: 'domcontentloaded' });
+    }
+
+    const loadingTextPattern = /正在加载对局资源|加载游戏模块|Loading game resources|Loading game module/i;
+    await hostPage.getByText(loadingTextPattern).first().waitFor({ state: 'hidden', timeout: 120000 }).catch(() => {});
+
+    await expect(hostPage.locator('h1').filter({ hasText: /选择你的派系|Draft Your Factions/i })).toBeVisible({ timeout: 120000 });
+
+    await expect(hostPage.getByText(/美人鱼|Mermaids/i).first()).toBeVisible({ timeout: 15000 });
+    await expect(hostPage.getByText(/骷髅|Skeletons/i).first()).toBeVisible({ timeout: 15000 });
+    await expect(hostPage.getByText(/世界冠军|World Champs/i).first()).toBeVisible({ timeout: 15000 });
+
+    await expect(hostPage.getByTestId('faction-implementation-banner-mermaids')).toBeVisible({ timeout: 15000 });
+    await expect(hostPage.getByTestId('faction-implementation-banner-skeletons')).toBeVisible({ timeout: 15000 });
+    await expect(hostPage.getByTestId('faction-implementation-banner-world_champs')).toBeVisible({ timeout: 15000 });
+
+    const sharedDir = join(process.cwd(), 'test-results', 'evidence-screenshots', '_shared');
+    mkdirSync(sharedDir, { recursive: true });
+    const sharedShot = join(sharedDir, 'smashup-10th-factions-selection.png');
+    await hostPage.screenshot({ path: sharedShot, fullPage: false });
+    await hostPage.screenshot({ path: testInfo.outputPath('smashup-10th-factions-selection.png'), fullPage: false });
 
     await hostContext.close();
   });

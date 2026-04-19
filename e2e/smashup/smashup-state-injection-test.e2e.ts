@@ -6,8 +6,9 @@
  * 注意：这个测试跳过派系选择，直接进入游戏后测试状态注入
  */
 
-import { test, expect } from '@playwright/test';
+
 import { initContext, getGameServerBaseURL } from '../helpers/common';
+import { test, expect } from '../framework';
 import {
     waitForTestHarness,
     buildScene,

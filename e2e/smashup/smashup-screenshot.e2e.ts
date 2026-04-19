@@ -2,8 +2,9 @@
  * Smash Up 手牌截图 E2E 测试
  */
 
-import { test, expect } from '@playwright/test';
+
 import { initContext, ensureGameServerAvailable } from '../helpers/common';
+import { test, expect } from '../framework';
 import {
     joinMatchViaAPI,
     seedMatchCredentials,

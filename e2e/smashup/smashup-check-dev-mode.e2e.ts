@@ -2,7 +2,7 @@
  * 检查开发模式状态
  */
 
-import { test } from '@playwright/test';
+import { test } from '../framework';
 import {
     setupTwoPlayerMatch,
     completeFactionSelection,
@@ -33,10 +33,16 @@ test.describe('检查开发模式', () => {
             // 检查环境变量
             const envInfo = await hostPage.evaluate(() => {
                 // 通过全局变量检查
+                const harness = (window as Window & {
+                    __BG_TEST_HARNESS__?: {
+                        state?: { isRegistered?: () => boolean };
+                        command?: { isRegistered?: () => boolean };
+                    };
+                }).__BG_TEST_HARNESS__;
                 const globalCheck = {
                     hasDebugFlag: (window as any).__BG_E2E_DEBUG__,
-                    hasState: !!(window as any).__BG_STATE__,
-                    hasDispatch: !!(window as any).__BG_DISPATCH__,
+                    hasHarnessState: harness?.state?.isRegistered?.() ?? false,
+                    hasHarnessDispatch: harness?.command?.isRegistered?.() ?? false,
                 };
 
                 return {

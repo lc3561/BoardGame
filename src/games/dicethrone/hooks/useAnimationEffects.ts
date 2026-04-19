@@ -339,7 +339,9 @@ export function useAnimationEffects(config: AnimationEffectsConfig): {
     // 当前正在播放的 fxId（用于 advanceQueue 匹配）
     const activeFxIdRef = useRef<string | null>(null);
     // render 阶段计算出的待推送步骤（effect 中消费）
-    const pendingPushRef = useRef<AnimStep[] | null>(null);
+    // 注意：这里必须是“累积队列”，不能被新批次覆盖。
+    // 否则 AI 高频命令下，后一批事件会顶掉前一批，导致动画偶发不播。
+    const pendingPushRef = useRef<AnimStep[]>([]);
 
     /** 推入队列中的下一步，返回是否成功 */
     const pushNextStep = useCallback(() => {
@@ -363,7 +365,9 @@ export function useAnimationEffects(config: AnimationEffectsConfig): {
      * 只在 completedFxId 匹配当前活跃步骤时才推进（避免状态/Token 特效误触发）。
      */
     const advanceQueue = useCallback((completedFxId: string) => {
-        if (completedFxId === activeFxIdRef.current && pendingStepsRef.current.length > 0) {
+        if (completedFxId !== activeFxIdRef.current) return;
+        activeFxIdRef.current = null;
+        if (pendingStepsRef.current.length > 0) {
             pushNextStep();
         }
     }, [pushNextStep]);
@@ -419,34 +423,27 @@ export function useAnimationEffects(config: AnimationEffectsConfig): {
                     damageBuffer.freezeSync(step.bufferKey, step.frozenHp);
                 }
             }
-            // 缓存待推送步骤，effect 中消费
-            pendingPushRef.current = allSteps;
+            // 缓存待推送步骤，effect 中消费（追加，避免覆盖前一批）
+            pendingPushRef.current.push(...allSteps);
         }
     }
 
     // ── 阶段 2：effect 中 commitSync + push FX ──
     useEffect(() => {
-        const steps = pendingPushRef.current;
-        if (!steps) return;
-        pendingPushRef.current = null;
+        const queuedSteps = pendingPushRef.current;
+        if (queuedSteps.length === 0) return;
+        const steps = queuedSteps.splice(0, queuedSteps.length);
 
         // 将 freezeSync 写入的 ref 同步到 React state
         damageBuffer.commitSync();
 
-        // 第一步立即 push，剩余入队
-        const [first, ...rest] = steps;
-        pendingStepsRef.current.push(...rest);
-
-        const fxId = fxBus.push(first.cue, {}, first.params);
-        if (fxId) {
-            fxImpactMapRef.current.set(fxId, { bufferKey: first.bufferKey, damage: first.damage });
-            activeFxIdRef.current = fxId;
-        } else {
+        // 统一入主队列；只有在空闲时才启动播放，避免覆盖正在播放的 active FX。
+        pendingStepsRef.current.push(...steps);
+        if (activeFxIdRef.current === null) {
             pushNextStep();
         }
     }, [
         eventStreamEntries,
-        fxBus,
         pushNextStep,
         damageBuffer,
     ]);

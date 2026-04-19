@@ -2,8 +2,9 @@
  * 调试状态注入问题：对比僵尸测试（通过）和海盗测试（崩溃）
  */
 
-import { test, expect } from '@playwright/test';
+
 import { initContext } from '../helpers/common';
+import { test, expect } from '../framework';
 import {
     readFullState, applyCoreStateDirect,
     gotoLocalSmashUp, waitForHandArea, completeFactionSelectionLocal,

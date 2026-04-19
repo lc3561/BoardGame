@@ -87,6 +87,7 @@
       "settings": "Settings",
       "audio": "Audio",
       "chat": "Chat",
+      "seatSwap": "Seat Swap",
       "actionLog": "Action Log",
       "info": "Info",
       "room": "Room",
@@ -172,6 +173,17 @@
     "toggle": {
       "collapse": "Collapse menu",
       "expand": "Expand menu - draggable"
+    },
+    "seatSwap": {
+      "hint": "Seat swaps mainly affect turn order. Tap a target seat to request a swap.",
+      "waiting": "Waiting for {{player}} to approve the seat swap.",
+      "incoming": "{{player}} requested to swap seats with you.",
+      "pendingOther": "{{requester}} is waiting for {{target}} to respond to a seat swap request.",
+      "approve": "Approve Swap",
+      "reject": "Reject Swap",
+      "cancel": "Cancel Swap Request",
+      "aiBadge": "AI",
+      "seatNumber": "Seat {{seat}}"
     },
     "ai": {
       "forceEndPhase": "Force end AI phase",

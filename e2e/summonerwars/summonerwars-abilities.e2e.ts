@@ -15,7 +15,8 @@
  * 注意：攻击涉及骰子随机，部分测试使用软断言
  */
 
-import { test, expect, type BrowserContext, type Page } from '@playwright/test';
+import { type BrowserContext, type Page } from '@playwright/test';
+import { test, expect } from '../framework';
 import { createDeckByFactionId } from '../src/games/summonerwars/config/factions';
 import { BOARD_COLS, BOARD_ROWS, HAND_SIZE } from '../src/games/summonerwars/domain/helpers';
 import { cloneState } from '../helpers/summonerwars';

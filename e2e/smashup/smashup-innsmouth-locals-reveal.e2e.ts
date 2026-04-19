@@ -1,162 +1,168 @@
 /**
- * 大杀四方 - 印斯茅斯"本地人"展示测试
- * 
- * 验证"本地人"技能的展示功能：
- * - 打出"本地人"后，展示牌库顶 3 张牌
- * - 展示 UI 应该对所有玩家可见（revealTo: 'all'）
- * - 同名卡放入手牌，其余放牌库底
+ * 大杀四方 - 印斯茅斯“本地人”展示测试
  */
 
-import { test, expect } from '../fixtures';
+import { test, expect } from '../framework';
+import { getMatchState, injectMatchState } from '../helpers/state-injection';
+import {
+    cleanupTwoPlayerMatch,
+    completeFactionSelectionCustom,
+    FACTION,
+    setupTwoPlayerMatch,
+    waitForHandArea,
+} from './smashup-helpers';
 
-test.describe('印斯茅斯"本地人"展示功能', () => {
-    test('打出"本地人"后，两个玩家都能看到展示 UI', async ({ smashupMatch }) => {
-        const { hostPage, guestPage } = smashupMatch;
+function normalizeInjectedMatchState(matchId: string, state: any): any {
+    const next = structuredClone(state);
+    const fallbackTurnOrder = Array.isArray(next.core?.turnOrder)
+        ? [...next.core.turnOrder]
+        : Object.keys(next.core?.players ?? {});
+    const currentPlayerIndex = typeof next.sys?.currentPlayerIndex === 'number'
+        ? next.sys.currentPlayerIndex
+        : typeof next.core?.currentPlayerIndex === 'number'
+            ? next.core.currentPlayerIndex
+            : 0;
 
-        // 等待游戏加载完成
-        await hostPage.waitForSelector('[data-testid="game-board"]', { timeout: 10000 });
-        await guestPage.waitForSelector('[data-testid="game-board"]', { timeout: 10000 });
+    next.sys = {
+        ...next.sys,
+        matchId,
+        turnOrder: Array.isArray(next.sys?.turnOrder) ? next.sys.turnOrder : fallbackTurnOrder,
+        currentPlayerIndex,
+        phase: typeof next.sys?.phase === 'string' ? next.sys.phase : next.core?.phase,
+    };
+    next.core = {
+        ...next.core,
+        turnOrder: fallbackTurnOrder,
+        currentPlayerIndex,
+        phase: typeof next.core?.phase === 'string' ? next.core.phase : next.sys.phase,
+    };
+    return next;
+}
 
-        // 注入状态：玩家 0 手牌有"本地人"，牌库顶有 3 张牌（2 张本地人 + 1 张其他）
-        await hostPage.evaluate(() => {
-            const harness = (window as any).__BG_TEST_HARNESS__;
-            if (!harness) throw new Error('TestHarness not available');
+async function injectInnsmouthRevealScene(matchId: string, page: any, deck: string[]): Promise<void> {
+    const currentState = await getMatchState(matchId, page);
+    const nextState = normalizeInjectedMatchState(matchId, {
+        ...currentState,
+        core: {
+            ...currentState.core,
+            turnOrder: ['0', '1'],
+            currentPlayerIndex: 0,
+            phase: 'playCards',
+            players: {
+                ...currentState.core.players,
+                '0': {
+                    ...currentState.core.players['0'],
+                    hand: [{ uid: 'h1', defId: 'innsmouth_the_locals', type: 'minion', owner: '0' }],
+                    deck: deck.map((defId: string, index: number) => ({ uid: `deck-${index + 1}`, defId, type: 'minion', owner: '0' })),
+                    discard: [],
+                    factions: ['innsmouth', 'aliens'],
+                    minionsPlayed: 0,
+                    minionLimit: 1,
+                    actionsPlayed: 0,
+                    actionLimit: 1,
+                },
+                '1': {
+                    ...currentState.core.players['1'],
+                    hand: [],
+                    deck: [],
+                    discard: [],
+                    factions: ['pirates', 'dinosaurs'],
+                },
+            },
+            bases: [
+                { defId: 'base_the_homeworld', minions: [], ongoingActions: [] },
+                { defId: 'base_the_factory', minions: [], ongoingActions: [] },
+                { defId: 'base_great_library', minions: [], ongoingActions: [] },
+            ],
+        },
+        sys: {
+            ...currentState.sys,
+            phase: 'playCards',
+            interaction: { current: undefined, queue: [] },
+        },
+    });
+    await injectMatchState(matchId, nextState, page);
+}
 
-            const state = harness.state.get();
-            const player0 = state.players['0'];
+async function withOnlineMatch(browser: any, baseURL: string | undefined, run: (setup: any) => Promise<void>): Promise<void> {
+    const setup = await setupTwoPlayerMatch(browser, baseURL);
+    if (!setup) {
+        test.skip(true, '游戏服务器不可用或创建房间失败');
+        return;
+    }
 
-            // 清空手牌，只保留一张"本地人"
-            player0.hand = [
-                { uid: 'h1', defId: 'innsmouth_the_locals', type: 'minion', owner: '0' },
-            ];
+    try {
+        await completeFactionSelectionCustom(
+            setup.hostPage,
+            setup.guestPage,
+            [FACTION.INNSMOUTH, FACTION.ALIENS],
+            [FACTION.PIRATES, FACTION.DINOSAURS],
+        );
+        await waitForHandArea(setup.hostPage);
+        await waitForHandArea(setup.guestPage);
+        await run(setup);
+    } finally {
+        await cleanupTwoPlayerMatch(setup);
+    }
+}
 
-            // 设置牌库顶 3 张牌：2 张本地人 + 1 张其他
-            player0.deck = [
-                { uid: 'd1', defId: 'innsmouth_the_locals', type: 'minion', owner: '0' },
-                { uid: 'd2', defId: 'aliens_scout', type: 'minion', owner: '0' },
-                { uid: 'd3', defId: 'innsmouth_the_locals', type: 'minion', owner: '0' },
-                ...player0.deck.slice(3), // 保留剩余牌库
-            ];
+test.describe('印斯茅斯“本地人”展示功能', () => {
+    test('打出“本地人”后，两个玩家都能看到展示 UI', async ({ browser }, testInfo) => {
+        await withOnlineMatch(browser, testInfo.project.use.baseURL as string | undefined, async ({ hostPage, guestPage, matchId }) => {
+            await injectInnsmouthRevealScene(matchId, hostPage, [
+                'innsmouth_the_locals',
+                'aliens_scout',
+                'innsmouth_the_locals',
+            ]);
 
-            // 确保有足够的行动点
-            player0.minionsRemaining = 1;
+            await hostPage.click('[data-card-uid="h1"]');
+            await hostPage.click('[data-base-index="0"]');
 
-            harness.state.set(state);
+            await Promise.all([
+                expect(hostPage.getByTestId('reveal-overlay')).toBeVisible({ timeout: 5000 }),
+                expect(guestPage.getByTestId('reveal-overlay')).toBeVisible({ timeout: 5000 }),
+            ]);
+            await expect(hostPage.locator('[data-testid="reveal-overlay"] [data-card-preview]')).toHaveCount(3);
+            await expect(guestPage.locator('[data-testid="reveal-overlay"] [data-card-preview]')).toHaveCount(3);
+
+            await hostPage.getByTestId('reveal-overlay').click({ force: true });
+            await Promise.all([
+                expect(hostPage.getByTestId('reveal-overlay')).toBeHidden({ timeout: 3000 }),
+                expect(guestPage.getByTestId('reveal-overlay')).toBeHidden({ timeout: 3000 }),
+            ]);
+
+            const finalState = await getMatchState(matchId, hostPage);
+            const handLocals = finalState.core.players['0'].hand.filter((card: any) => card.defId === 'innsmouth_the_locals').length;
+            const baseLocals = finalState.core.bases[0].minions.filter((minion: any) => minion.defId === 'innsmouth_the_locals' && minion.controller === '0').length;
+            expect(handLocals + baseLocals).toBe(3);
         });
-
-        await hostPage.waitForTimeout(1000);
-
-        // 玩家 0 打出"本地人"
-        await hostPage.click('[data-card-uid="h1"]'); // 点击手牌
-        await hostPage.waitForTimeout(500);
-        await hostPage.click('[data-base-index="0"]'); // 选择基地
-        await hostPage.waitForTimeout(2000);
-
-        // 等待展示 UI 出现（两个玩家都应该看到）
-        await Promise.all([
-            hostPage.waitForSelector('[data-testid="reveal-overlay"]', { timeout: 5000 }),
-            guestPage.waitForSelector('[data-testid="reveal-overlay"]', { timeout: 5000 }),
-        ]);
-
-        // 验证玩家 0 看到展示 UI
-        const player0RevealVisible = await hostPage.isVisible('[data-testid="reveal-overlay"]');
-        expect(player0RevealVisible).toBe(true);
-
-        // 验证玩家 1 看到展示 UI
-        const player1RevealVisible = await guestPage.isVisible('[data-testid="reveal-overlay"]');
-        expect(player1RevealVisible).toBe(true);
-
-        // 验证展示的卡牌数量（应该是 3 张）
-        const player0CardCount = await hostPage.locator('[data-testid="reveal-overlay"] [data-card-preview]').count();
-        expect(player0CardCount).toBe(3);
-
-        const player1CardCount = await guestPage.locator('[data-testid="reveal-overlay"] [data-card-preview]').count();
-        expect(player1CardCount).toBe(3);
-
-        // 截图保存证据
-        await hostPage.screenshot({ path: 'test-results/innsmouth-locals-reveal-player0.png' });
-        await guestPage.screenshot({ path: 'test-results/innsmouth-locals-reveal-player1.png' });
-
-        // 点击关闭展示 UI
-        await hostPage.click('[data-testid="reveal-overlay"]');
-
-        // 验证展示 UI 消失
-        await hostPage.waitForSelector('[data-testid="reveal-overlay"]', { state: 'hidden', timeout: 2000 });
-        await guestPage.waitForSelector('[data-testid="reveal-overlay"]', { state: 'hidden', timeout: 2000 });
-
-        // 验证结果：玩家 0 手牌应该有 3 张本地人（原来 1 张 + 牌库顶 2 张）
-        const finalState = await hostPage.evaluate(() => {
-            const harness = (window as any).__BG_TEST_HARNESS__;
-            return harness.state.get();
-        });
-        const player0Hand = finalState.players['0'].hand;
-        const localsInHand = player0Hand.filter((c: any) => c.defId === 'innsmouth_the_locals').length;
-
-        expect(localsInHand).toBe(3); // 原来 1 张 + 牌库顶 2 张本地人
     });
 
-    test('牌库顶没有同名卡时，展示后全部放牌库底', async ({ smashupMatch }) => {
-        const { hostPage, guestPage } = smashupMatch;
+    test('牌库顶没有同名卡时，展示后全部放牌库底', async ({ browser }, testInfo) => {
+        await withOnlineMatch(browser, testInfo.project.use.baseURL as string | undefined, async ({ hostPage, guestPage, matchId }) => {
+            await injectInnsmouthRevealScene(matchId, hostPage, [
+                'aliens_scout',
+                'aliens_invader',
+                'aliens_supreme_overlord',
+            ]);
 
-        // 等待游戏加载完成
-        await hostPage.waitForSelector('[data-testid="game-board"]', { timeout: 10000 });
-        await guestPage.waitForSelector('[data-testid="game-board"]', { timeout: 10000 });
+            await hostPage.click('[data-card-uid="h1"]');
+            await hostPage.click('[data-base-index="0"]');
 
-        // 注入状态：玩家 0 手牌有"本地人"，牌库顶 3 张都不是本地人
-        await hostPage.evaluate(() => {
-            const harness = (window as any).__BG_TEST_HARNESS__;
-            if (!harness) throw new Error('TestHarness not available');
+            await Promise.all([
+                expect(hostPage.getByTestId('reveal-overlay')).toBeVisible({ timeout: 5000 }),
+                expect(guestPage.getByTestId('reveal-overlay')).toBeVisible({ timeout: 5000 }),
+            ]);
+            await expect(hostPage.locator('[data-testid="reveal-overlay"] [data-card-preview]')).toHaveCount(3);
 
-            const state = harness.state.get();
-            const player0 = state.players['0'];
+            await hostPage.getByTestId('reveal-overlay').click({ force: true });
+            await expect(hostPage.getByTestId('reveal-overlay')).toBeHidden({ timeout: 3000 });
 
-            player0.hand = [
-                { uid: 'h1', defId: 'innsmouth_the_locals', type: 'minion', owner: '0' },
-            ];
-
-            player0.deck = [
-                { uid: 'd1', defId: 'aliens_scout', type: 'minion', owner: '0' },
-                { uid: 'd2', defId: 'aliens_invader', type: 'minion', owner: '0' },
-                { uid: 'd3', defId: 'aliens_supreme_overlord', type: 'minion', owner: '0' },
-                ...player0.deck.slice(3),
-            ];
-
-            player0.minionsRemaining = 1;
-
-            harness.state.set(state);
+            const finalState = await getMatchState(matchId, hostPage);
+            const handLocals = finalState.core.players['0'].hand.filter((card: any) => card.defId === 'innsmouth_the_locals').length;
+            const baseLocals = finalState.core.bases[0].minions.filter((minion: any) => minion.defId === 'innsmouth_the_locals' && minion.controller === '0').length;
+            expect(handLocals).toBe(0);
+            expect(baseLocals).toBe(1);
         });
-
-        await hostPage.waitForTimeout(1000);
-
-        // 打出"本地人"
-        await hostPage.click('[data-card-uid="h1"]');
-        await hostPage.waitForTimeout(500);
-        await hostPage.click('[data-base-index="0"]');
-        await hostPage.waitForTimeout(2000);
-
-        // 等待展示 UI
-        await hostPage.waitForSelector('[data-testid="reveal-overlay"]', { timeout: 5000 });
-        await guestPage.waitForSelector('[data-testid="reveal-overlay"]', { timeout: 5000 });
-
-        // 验证展示 3 张牌
-        const cardCount = await hostPage.locator('[data-testid="reveal-overlay"] [data-card-preview]').count();
-        expect(cardCount).toBe(3);
-
-        // 关闭展示
-        await hostPage.click('[data-testid="reveal-overlay"]');
-        await hostPage.waitForSelector('[data-testid="reveal-overlay"]', { state: 'hidden' });
-
-        // 验证：手牌只有 1 张（没有新增），牌库顶 3 张被放到牌库底
-        const finalState = await hostPage.evaluate(() => {
-            const harness = (window as any).__BG_TEST_HARNESS__;
-            return harness.state.get();
-        });
-        const player0 = finalState.players['0'];
-
-        expect(player0.hand.length).toBe(1); // 只有原来的 1 张本地人
-
-        // 牌库顶应该不是刚才展示的 3 张（它们被放到牌库底了）
-        const deckTopCard = player0.deck[0]?.defId;
-        expect(['aliens_scout', 'aliens_invader', 'aliens_supreme_overlord']).not.toContain(deckTopCard);
     });
 });

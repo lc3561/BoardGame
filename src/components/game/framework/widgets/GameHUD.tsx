@@ -15,7 +15,8 @@ import {
     Minimize,
     MessageSquareWarning,
     Users,
-    ListOrdered
+    ListOrdered,
+    ArrowLeftRight,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useUndo, useUndoStatus } from '../../../../contexts/UndoContext';
@@ -39,6 +40,7 @@ import { generateId, copyToClipboard } from '../../../../lib/utils';
 import { OpponentOfflineBanner } from './OpponentOfflineBanner';
 import { logger } from '../../../../lib/logger';
 import { useSmashUpOverlay } from '../../../../games/smashup/ui/SmashUpOverlayContext';
+import { isNativeAndroidRuntime } from '../../../../lib/mobile/androidRuntime';
 
 interface GameHUDProps {
     mode: 'local' | 'online' | 'tutorial' | 'test';
@@ -50,6 +52,7 @@ interface GameHUDProps {
     myPlayerId?: string | null;
     opponentName?: string | null;
     opponentConnected?: boolean;
+    presenceReady?: boolean;
     players?: Array<{
         id: number;
         name?: string;
@@ -60,6 +63,12 @@ interface GameHUDProps {
     onForceExit?: () => void;
     showForceEndAiPhase?: boolean;
     onForceEndAiPhase?: () => boolean | void | Promise<boolean | void>;
+    showSeatSwap?: boolean;
+    seatSwapActionLabel?: string;
+    seatSwapActionActive?: boolean;
+    seatSwapActionColor?: string;
+    onSeatSwapClick?: () => void;
+    seatSwapContent?: FabAction['content'];
     isLoading?: boolean;
 }
 
@@ -111,6 +120,12 @@ export const GameHUD = ({
     onForceExit,
     showForceEndAiPhase,
     onForceEndAiPhase,
+    showSeatSwap,
+    seatSwapActionLabel,
+    seatSwapActionActive,
+    seatSwapActionColor,
+    onSeatSwapClick,
+    seatSwapContent,
     isLoading = false,
 }: GameHUDProps) => {
     const navigate = useNavigate();
@@ -142,6 +157,7 @@ export const GameHUD = ({
     const isOnline = mode === 'online';
     const isLocal = mode === 'local';
     const isTutorial = mode === 'tutorial';
+    const isNativeAndroid = isNativeAndroidRuntime();
     const isSmashUp = _gameId === 'smashup';
     const isSpectator = isOnline && (myPlayerId === null || myPlayerId === undefined);
 
@@ -671,7 +687,8 @@ export const GameHUD = ({
     // ===== 联机模式卫星按钮顺序 =====
     // 注意：FabMenu 会 reverse(items.slice(1)) 后再渲染卫星按钮，
     // 所以这里的 push 顺序与最终视觉顺序相反。
-    // 目标视觉顺序：退出 → 反馈 → 社交 → 全屏 → 强制结束 AI 当前阶段 → 撤回 → 操作日志 → 设置 → 聊天(主按钮)
+    // 目标视觉顺序（从外向内）：退出 → 反馈 → 社交 → 全屏(非 App) → 撤回
+    // → 强制结束 AI 当前阶段 → 换位 → 操作日志 → 设置 → 聊天(主按钮)
 
     const exitAction: FabAction = {
         id: 'exit',
@@ -810,13 +827,15 @@ export const GameHUD = ({
         });
     }
 
-    // 4. 全屏
-    items.push({
-        id: 'fullscreen',
-        icon: isFullscreen ? <Minimize size={20} /> : <Maximize size={20} />,
-        label: isFullscreen ? t('hud.actions.exitFullscreen') : t('hud.actions.fullscreen'),
-        onClick: toggleFullscreen,
-    });
+    // 4. 全屏（App 运行时隐藏）
+    if (!isNativeAndroid) {
+        items.push({
+            id: 'fullscreen',
+            icon: isFullscreen ? <Minimize size={20} /> : <Maximize size={20} />,
+            label: isFullscreen ? t('hud.actions.exitFullscreen') : t('hud.actions.fullscreen'),
+            onClick: toggleFullscreen,
+        });
+    }
 
     // 5. 撤回
     if (!isSpectator) {
@@ -927,6 +946,20 @@ export const GameHUD = ({
                     </button>
                 </div>
             ),
+        });
+    }
+
+    // 5.6 换位（位于操作日志与强制结束 AI 之间）
+    if (showSeatSwap && (seatSwapContent || onSeatSwapClick)) {
+        items.push({
+            id: 'seat-swap',
+            icon: <ArrowLeftRight size={20} />,
+            label: seatSwapActionLabel ?? t('hud.actions.seatSwap'),
+            mobilePopoverVerticalAnchor: 'column',
+            active: seatSwapActionActive,
+            color: seatSwapActionColor,
+            onClick: onSeatSwapClick,
+            content: seatSwapContent,
         });
     }
 

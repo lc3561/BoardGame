@@ -33,6 +33,7 @@ import {
   getStunDestinations,
   getForceDestinations,
   isValidCoord,
+  normalizeUnitBoosts,
   BOARD_ROWS,
   BOARD_COLS,
 } from './helpers';
@@ -1433,7 +1434,7 @@ export function createSummonerWarsInteractionSystem(): EngineSystem<SummonerWars
           if (!sourceUnit) continue;
 
           if (actionId === 'ice_shards_damage') {
-            const hasCharge = (sourceUnit.boosts ?? 0) >= 1;
+            const hasCharge = normalizeUnitBoosts(sourceUnit.boosts) >= 1;
             const options: PromptOption<SwInteractionValue>[] = [
               {
                 id: 'confirm',
@@ -1507,7 +1508,7 @@ export function createSummonerWarsInteractionSystem(): EngineSystem<SummonerWars
           }
 
           if (actionId === 'rapid_fire_extra_attack') {
-            const hasCharge = (sourceUnit.boosts ?? 0) >= 1;
+            const hasCharge = normalizeUnitBoosts(sourceUnit.boosts) >= 1;
             if (!hasCharge) continue;
             const options: PromptOption<SwInteractionValue>[] = [
               {
@@ -1543,7 +1544,7 @@ export function createSummonerWarsInteractionSystem(): EngineSystem<SummonerWars
           }
 
           if (actionId === 'withdraw_push_pull' || actionId === 'withdraw') {
-            const hasCharge = (sourceUnit.boosts ?? 0) >= 1;
+            const hasCharge = normalizeUnitBoosts(sourceUnit.boosts) >= 1;
             const hasMagic = newState.core.players[sourceUnit.owner]?.magic >= 1;
             if (!hasCharge && !hasMagic) continue;
             const options: PromptOption<SwInteractionValue>[] = [];
@@ -1768,7 +1769,7 @@ export function createSummonerWarsInteractionSystem(): EngineSystem<SummonerWars
                   value: { action: 'after_move_spirit_bond', choice: 'self' },
                 },
               ];
-              if ((sourceUnit.boosts ?? 0) >= 1) {
+              if (normalizeUnitBoosts(sourceUnit.boosts) >= 1) {
                 const targets = getPlayerUnits(newState.core, sourceUnit.owner)
                   .filter((unit) => unit.instanceId !== sourceUnitId
                     && manhattanDistance(sourcePosition, unit.position) <= 3)
@@ -1897,7 +1898,7 @@ export function createSummonerWarsInteractionSystem(): EngineSystem<SummonerWars
                   value: { action: 'after_move_frost_axe', choice: 'self' },
                 },
               ];
-              if ((sourceUnit.boosts ?? 0) >= 1) {
+              if (normalizeUnitBoosts(sourceUnit.boosts) >= 1) {
                 const targets = getPlayerUnits(newState.core, sourceUnit.owner)
                   .filter((unit) => unit.instanceId !== sourceUnitId
                     && unit.card.unitClass === 'common'

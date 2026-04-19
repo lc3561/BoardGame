@@ -577,6 +577,26 @@ export function validate(
             return { valid: true };
         }
 
+        case SU_COMMANDS.SWAP_SEAT: {
+            if (phase !== 'factionSelect') {
+                return { valid: false, error: '只能在派系选择阶段换位' };
+            }
+            if (command.playerId !== currentPlayerId) {
+                return { valid: false, error: 'player_mismatch' };
+            }
+            const targetPlayerId = String(command.payload.targetPlayerId ?? '');
+            if (!targetPlayerId) {
+                return { valid: false, error: '目标座位无效' };
+            }
+            if (targetPlayerId === command.playerId) {
+                return { valid: false, error: '不能与自己换位' };
+            }
+            if (!core.turnOrder.some((playerId) => playerId === targetPlayerId)) {
+                return { valid: false, error: '目标玩家不存在' };
+            }
+            return { valid: true };
+        }
+
         case SU_COMMANDS.USE_BASE_ABILITY: {
             if (phase !== 'playCards') {
                 return { valid: false, error: '只能在出牌阶段使用基地能力' };

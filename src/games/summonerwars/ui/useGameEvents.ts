@@ -22,6 +22,7 @@ import { resolveDamageSoundKey, resolveDestroySoundKey } from '../audio.config';
 import type { UseVisualSequenceGateReturn } from '../../../components/game/framework/hooks/useVisualSequenceGate';
 import { useVisualStateBuffer } from '../../../components/game/framework/hooks/useVisualStateBuffer';
 import { useEventStreamCursor } from '../../../engine/hooks';
+import { swAttackDebugLog } from './attackDebug';
 
 const isCellCoord = (value: unknown): value is CellCoord => {
   if (!value || typeof value !== 'object') return false;
@@ -50,8 +51,19 @@ export interface PendingAttack {
   attackType: 'melee' | 'ranged';
   hits: number;
   attackEventId: number;
+  diceResults: DiceFaceResult[];
+  diceCount: number;
+  isOpponentAttack: boolean;
+  damageReduced?: number;
   damages: Array<{ position: CellCoord; damage: number; eventId: number }>;
+  pendingDestroys: PendingDestroyQueueItem[];
 }
+
+type PendingDestroyQueueItem = DestroyEffectData & {
+  isGate?: boolean;
+  destroyEventId: number;
+  soundKey?: string;
+};
 
 /** 临时可视缓存（死亡动画前保留本体） */
 export interface DyingEntity {
@@ -215,9 +227,11 @@ export function useGameEvents({
 
   // 待播放的攻击效果队列
   const pendingAttackRef = useRef<PendingAttack | null>(null);
-
-  // 待延迟播放的摧毁效果（含音效 key）
-  const pendingDestroyRef = useRef<(DestroyEffectData & { isGate?: boolean; destroyEventId: number; soundKey?: string })[]>([]);
+  const pendingAttackQueueRef = useRef<PendingAttack[]>([]);
+  const bufferedAttackRef = useRef<PendingAttack | null>(null);
+  const completedAttackRef = useRef<PendingAttack | null>(null);
+  // 防止同一 eventStream 事件在重连/回滚场景下被重复消费导致攻击动画重复播放
+  const processedAttackEventIdsRef = useRef<Set<number>>(new Set());
 
   // ============================================================================
   // 回调函数稳定化（避免 useLayoutEffect 因回调引用变化而重复执行）
@@ -228,6 +242,8 @@ export function useGameEvents({
   fxBusRef.current = fxBus;
   const onDiceRollSoundRef = useRef(onDiceRollSound);
   onDiceRollSoundRef.current = onDiceRollSound;
+  const coreRef = useRef(core);
+  coreRef.current = core;
   // gate 回调稳定化
   const gateRef = useRef(gate);
   gateRef.current = gate;
@@ -255,6 +271,67 @@ export function useGameEvents({
     const sw = currentInteraction.data?.sw;
     return sw && typeof sw === 'object' && typeof sw.type === 'string' ? sw.type : null;
   })();
+
+  const freezeAttackSnapshot = useCallback((attack: PendingAttack) => {
+    const board = coreRef.current.board;
+    const totalDamageByCell = new Map<string, { position: CellCoord; total: number }>();
+    for (const dmg of attack.damages) {
+      const key = `${dmg.position.row}-${dmg.position.col}`;
+      const existing = totalDamageByCell.get(key);
+      if (existing) {
+        existing.total += dmg.damage;
+      } else {
+        totalDamageByCell.set(key, { position: dmg.position, total: dmg.damage });
+      }
+    }
+
+    if (totalDamageByCell.size === 0) {
+      const targetCell = board[attack.target.row]?.[attack.target.col];
+      if (targetCell?.unit) {
+        damageBuffer.freeze(`${attack.target.row}-${attack.target.col}`, targetCell.unit.damage);
+      } else if (targetCell?.structure) {
+        damageBuffer.freeze(`${attack.target.row}-${attack.target.col}`, targetCell.structure.damage);
+      }
+      return;
+    }
+
+    for (const [key, payload] of totalDamageByCell) {
+      const cell = board[payload.position.row]?.[payload.position.col];
+      const coreDamage = cell?.unit?.damage ?? cell?.structure?.damage;
+      if (typeof coreDamage === 'number') {
+        damageBuffer.freeze(key, Math.max(0, coreDamage - payload.total));
+      }
+    }
+  }, [damageBuffer]);
+
+  const activateAttack = useCallback((attack: PendingAttack) => {
+    pendingAttackRef.current = attack;
+    freezeAttackSnapshot(attack);
+    setDiceResult({
+      results: attack.diceResults,
+      attackType: attack.attackType,
+      hits: attack.hits,
+      isOpponentAttack: attack.isOpponentAttack,
+      damageReduced: attack.damageReduced,
+    });
+    onDiceRollSoundRef.current?.(attack.diceCount);
+  }, [freezeAttackSnapshot]);
+
+  const activateNextAttackFromQueue = useCallback(() => {
+    if (pendingAttackRef.current) return;
+    const nextAttack = pendingAttackQueueRef.current.shift();
+    if (!nextAttack) return;
+    if (!bufferedAttackRef.current) {
+      bufferedAttackRef.current = nextAttack;
+    }
+    swAttackDebugLog('queued_attack_activated', {
+      attackEventId: nextAttack.attackEventId,
+      remainingQueuedAttacks: pendingAttackQueueRef.current.length,
+      damageCount: nextAttack.damages.length,
+      destroyCount: nextAttack.pendingDestroys.length,
+    });
+    activateAttack(nextAttack);
+  }, [activateAttack]);
 
   // ============================================================================
   // 刷新恢复：首次挂载时扫描 EventStream 历史，恢复未完成的交互型阶段技能
@@ -329,11 +406,24 @@ export function useGameEvents({
       console.warn(`[SW-EVENT] event=stream_backlog size=${entries.length} max=${EVENT_STREAM_WARN}`);
     }
 
-    const { entries: newEntries, didReset } = consumeNew();
+    const { entries: newEntries, didReset, didOptimisticRollback } = consumeNew();
 
-    if (didReset) {
+    if (didReset || didOptimisticRollback) {
+      const queuedDestroyCount = pendingAttackQueueRef.current.reduce((count, attack) => count + attack.pendingDestroys.length, 0);
+      swAttackDebugLog('event_stream_reset_or_rollback', {
+        didReset,
+        didOptimisticRollback,
+        hadPendingAttack: !!pendingAttackRef.current,
+        pendingAttackEventId: pendingAttackRef.current?.attackEventId,
+        queuedAttackCount: pendingAttackQueueRef.current.length,
+        pendingDestroyCount: (pendingAttackRef.current?.pendingDestroys.length ?? 0)
+          + (completedAttackRef.current?.pendingDestroys.length ?? 0)
+          + queuedDestroyCount,
+      });
       pendingAttackRef.current = null;
-      pendingDestroyRef.current = [];
+      pendingAttackQueueRef.current = [];
+      bufferedAttackRef.current = null;
+      completedAttackRef.current = null;
       setDiceResult(null);
       setDyingEntities([]);
       damageBuffer.clear();
@@ -341,6 +431,9 @@ export function useGameEvents({
       // 防止撤回后残留的技能按钮仍可点击（如锻造师 frost_axe 充能）
       setAbilityMode(null);
       gateRef.current.reset();
+      if (didReset) {
+        processedAttackEventIdsRef.current.clear();
+      }
     }
 
     if (newEntries.length === 0) return;
@@ -373,81 +466,137 @@ export function useGameEvents({
       }
 
       // 攻击事件 - 显示骰子，效果队列化，开启视觉序列门控
-        if (event.type === SW_EVENTS.UNIT_ATTACKED) {
-          const p = event.payload as {
-            attackType?: 'melee' | 'ranged'; diceResults?: DiceFaceResult[]; hits?: number; diceCount?: number;
-            target?: CellCoord; attacker?: CellCoord;
-          };
-          if (!isCellCoord(p.attacker) || !isCellCoord(p.target) || !p.attackType || typeof p.hits !== 'number') {
-            console.warn('[SW-EVENT] UNIT_ATTACKED payload 异常，跳过骰子与攻击动画', { payload: event.payload });
-            continue;
-          }
-          const normalizedDiceResults = normalizeDiceResults(p.diceResults);
-          const diceCount = p.diceCount
-            ?? normalizedDiceResults?.length
-            ?? (Array.isArray(p.diceResults) ? p.diceResults.length : undefined)
-            ?? 1;
-
-          const diceResultsForUi = normalizedDiceResults
-            ?? Array.from({ length: diceCount }, () => ({ faceIndex: 8, marks: ['melee'] as const }));
-
-          if (!normalizedDiceResults) {
-            console.warn('[SW-EVENT] UNIT_ATTACKED diceResults 不是有效格式，使用兜底骰面继续流程', {
-              diceResults: p.diceResults,
-              diceCount,
-            });
-          }
-          const attackerUnit = core.board[p.attacker.row]?.[p.attacker.col]?.unit;
-          const isOpponentAttack = attackerUnit ? attackerUnit.owner !== myPlayerId : false;
-
-        gateRef.current.beginSequence();
-        pendingAttackRef.current = {
-          attacker: p.attacker, target: p.target,
-          attackType: p.attackType, hits: p.hits, attackEventId: entry.id, damages: [],
-        };
-
-        // 快照目标格及周围格子的当前 damage 值（core 此时已 reduce，需要回退到攻击前的值）
-        // 攻击前的 damage = 当前 damage - 即将到来的伤害（伤害事件紧随攻击事件）
-        // 但此刻伤害事件尚未被本 hook 处理，所以我们先快照当前值，
-        // 后续 UNIT_DAMAGED 事件到来时再从快照中减去对应伤害
-        const targetCell = core.board[p.target.row]?.[p.target.col];
-        if (targetCell?.unit) {
-          damageBuffer.freeze(`${p.target.row}-${p.target.col}`, targetCell.unit.damage);
-        } else if (targetCell?.structure) {
-          damageBuffer.freeze(`${p.target.row}-${p.target.col}`, targetCell.structure.damage);
+      if (event.type === SW_EVENTS.UNIT_ATTACKED) {
+        if (processedAttackEventIdsRef.current.has(entry.id)) {
+          swAttackDebugLog('unit_attacked_skip_duplicate', {
+            eventId: entry.id,
+            attacker: (event.payload as { attacker?: CellCoord }).attacker,
+            target: (event.payload as { target?: CellCoord }).target,
+          });
+          continue;
         }
+        const previousPendingAttackEventId = pendingAttackRef.current?.attackEventId;
+        processedAttackEventIdsRef.current.add(entry.id);
+        // Set 仅保留最近窗口，避免长局内存持续增长
+        if (processedAttackEventIdsRef.current.size > 800) {
+          const [oldestId] = processedAttackEventIdsRef.current;
+          if (oldestId !== undefined) {
+            processedAttackEventIdsRef.current.delete(oldestId);
+          }
+        }
+        const p = event.payload as {
+          attackType?: 'melee' | 'ranged'; diceResults?: DiceFaceResult[]; hits?: number; diceCount?: number;
+          target?: CellCoord; attacker?: CellCoord;
+        };
+        if (!isCellCoord(p.attacker) || !isCellCoord(p.target) || !p.attackType || typeof p.hits !== 'number') {
+          console.warn('[SW-EVENT] UNIT_ATTACKED payload 异常，跳过骰子与攻击动画', { payload: event.payload });
+          swAttackDebugLog('unit_attacked_invalid_payload', {
+            eventId: entry.id,
+            payload: event.payload as Record<string, unknown>,
+          });
+          continue;
+        }
+        const normalizedDiceResults = normalizeDiceResults(p.diceResults);
+        const diceCount = p.diceCount
+          ?? normalizedDiceResults?.length
+          ?? (Array.isArray(p.diceResults) ? p.diceResults.length : undefined)
+          ?? 1;
 
-          onDiceRollSoundRef.current?.(diceCount);
+        const diceResultsForUi = normalizedDiceResults
+          ?? Array.from({ length: diceCount }, () => ({ faceIndex: 8, marks: ['melee'] as const }));
+
+        if (!normalizedDiceResults) {
+          console.warn('[SW-EVENT] UNIT_ATTACKED diceResults 不是有效格式，使用兜底骰面继续流程', {
+            diceResults: p.diceResults,
+            diceCount,
+          });
+          swAttackDebugLog('unit_attacked_use_fallback_dice', {
+            eventId: entry.id,
+            diceCount,
+            rawDiceResults: p.diceResults as unknown,
+          });
+        }
+        const attackerUnit = core.board[p.attacker.row]?.[p.attacker.col]?.unit;
+        const isOpponentAttack = attackerUnit ? attackerUnit.owner !== myPlayerId : false;
 
         // 收集同批次的减伤事件（DAMAGE_REDUCED 在 UNIT_ATTACKED 之前发射）
         const damageReduced = newEntries
           .filter(e => e.event.type === SW_EVENTS.DAMAGE_REDUCED)
           .reduce((sum, e) => sum + ((e.event.payload as { value?: number }).value ?? 0), 0);
 
-          setDiceResult({
-            results: diceResultsForUi, attackType: p.attackType,
-            hits: p.hits, isOpponentAttack,
-            damageReduced: damageReduced > 0 ? damageReduced : undefined,
+        const attack: PendingAttack = {
+          attacker: p.attacker,
+          target: p.target,
+          attackType: p.attackType,
+          hits: p.hits,
+          attackEventId: entry.id,
+          diceResults: diceResultsForUi,
+          diceCount,
+          isOpponentAttack,
+          damageReduced: damageReduced > 0 ? damageReduced : undefined,
+          damages: [],
+          pendingDestroys: [],
+        };
+
+        gateRef.current.beginSequence();
+        bufferedAttackRef.current = attack;
+
+        if (pendingAttackRef.current) {
+          pendingAttackQueueRef.current.push(attack);
+          swAttackDebugLog('unit_attacked_queued', {
+            eventId: entry.id,
+            previousPendingAttackEventId,
+            queuedAttackCount: pendingAttackQueueRef.current.length,
+            attackType: p.attackType,
+            hits: p.hits,
+            diceCount,
+            attacker: p.attacker,
+            target: p.target,
+            isOpponentAttack,
           });
+        } else {
+          swAttackDebugLog('unit_attacked_consumed', {
+            eventId: entry.id,
+            previousPendingAttackEventId,
+            queuedAttackCount: pendingAttackQueueRef.current.length,
+            attackType: p.attackType,
+            hits: p.hits,
+            diceCount,
+            attacker: p.attacker,
+            target: p.target,
+            isOpponentAttack,
+          });
+          activateAttack(attack);
         }
+      }
 
       // 受伤事件 - 存入待播放队列或立即播放
       if (event.type === SW_EVENTS.UNIT_DAMAGED) {
         const p = event.payload as { position: CellCoord; damage: number };
-        if (pendingAttackRef.current) {
-          pendingAttackRef.current.damages.push({ position: p.position, damage: p.damage, eventId: entry.id });
-          // 快照中回退伤害：core 已 reduce 了这笔伤害，但视觉上应保持攻击前的值
-          // 直到动画 impact 时才释放
-          const cellKey = `${p.position.row}-${p.position.col}`;
-          const currentVisual = damageBuffer.get(cellKey, -1);
-          if (currentVisual !== -1) {
-            // 已有快照：保持攻击前的值（即 core.damage - 本次伤害）
-            damageBuffer.freeze(cellKey, currentVisual - p.damage);
-          } else {
-            // 溅射等非主目标：快照为 core 当前值减去本次伤害
-            const cell = core.board[p.position.row]?.[p.position.col];
-            const coreDamage = cell?.unit?.damage ?? cell?.structure?.damage ?? 0;
-            damageBuffer.freeze(cellKey, coreDamage - p.damage);
+        const bufferedAttack = bufferedAttackRef.current;
+        if (bufferedAttack) {
+          bufferedAttack.damages.push({ position: p.position, damage: p.damage, eventId: entry.id });
+          swAttackDebugLog('unit_damaged_buffered_for_attack', {
+            attackEventId: bufferedAttack.attackEventId,
+            damageEventId: entry.id,
+            position: p.position,
+            damage: p.damage,
+            bufferedDamageCount: bufferedAttack.damages.length,
+          });
+          if (bufferedAttack === pendingAttackRef.current) {
+            // 快照中回退伤害：core 已 reduce 了这笔伤害，但视觉上应保持攻击前的值
+            // 直到动画 impact 时才释放
+            const cellKey = `${p.position.row}-${p.position.col}`;
+            const currentVisual = damageBuffer.get(cellKey, -1);
+            if (currentVisual !== -1) {
+              // 已有快照：保持攻击前的值（即 core.damage - 本次伤害）
+              damageBuffer.freeze(cellKey, currentVisual - p.damage);
+            } else {
+              // 溅射等非主目标：快照为 core 当前值减去本次伤害
+              const cell = core.board[p.position.row]?.[p.position.col];
+              const coreDamage = cell?.unit?.damage ?? cell?.structure?.damage ?? 0;
+              damageBuffer.freeze(cellKey, coreDamage - p.damage);
+            }
           }
         } else {
           // 非攻击伤害：如果前面有位移事件，延迟播放特效等移动动画完成
@@ -621,7 +770,7 @@ export function useGameEvents({
     }
   // 依赖数组不包含回调函数，回调通过 ref 访问，避免因回调引用变化导致 effect 重复执行
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [G, activeSwInteractionType, core, myPlayerId, consumeNew]);
+  }, [G, activeSwInteractionType, core, myPlayerId, consumeNew, activateAttack]);
 
   /** 查找被摧毁的卡牌（弃牌堆/手牌兜底） */
   const resolveDestroyedCard = (owner: PlayerId, cardId?: string) => {
@@ -655,7 +804,7 @@ export function useGameEvents({
     }
 
     const destroyEffect: DestroyEffectData = { id: '', position, cardName, type, atlasId, frameIndex };
-    const pending = pendingAttackRef.current;
+    const pending = bufferedAttackRef.current ?? pendingAttackRef.current;
     // 延迟条件：攻击目标位置 或 任何受伤位置（含溅射/反击等）
     const shouldDelay = pending && (
       (pending.target.row === position.row && pending.target.col === position.col)
@@ -665,8 +814,8 @@ export function useGameEvents({
     // 解析摧毁音效 key
     const destroySoundKey = resolveDestroySoundKey(type, isGate);
 
-    if (shouldDelay) {
-      pendingDestroyRef.current.push({ ...destroyEffect, isGate, destroyEventId: 0, soundKey: destroySoundKey });
+    if (shouldDelay && pending) {
+      pending.pendingDestroys.push({ ...destroyEffect, isGate, destroyEventId: 0, soundKey: destroySoundKey });
       if (atlasId !== undefined && frameIndex !== undefined) {
         setDyingEntities(prev => ([
           ...prev,
@@ -688,19 +837,41 @@ export function useGameEvents({
 
   // 关闭骰子结果 → 播放攻击动画
   const handleCloseDiceResult = () => {
+    swAttackDebugLog('dice_overlay_close_requested', {
+      pendingAttackEventId: pendingAttackRef.current?.attackEventId,
+      pendingAttackType: pendingAttackRef.current?.attackType,
+      pendingAttackHits: pendingAttackRef.current?.hits,
+      pendingDamageCount: pendingAttackRef.current?.damages.length ?? 0,
+    });
     setDiceResult(null);
     return pendingAttackRef.current;
   };
 
   // 清理待播放数据
   const clearPendingAttack = useCallback(() => {
+    const currentAttack = pendingAttackRef.current;
+    swAttackDebugLog('pending_attack_cleared', {
+      pendingAttackEventId: currentAttack?.attackEventId,
+      pendingDamageCount: currentAttack?.damages.length ?? 0,
+      pendingDestroyCount: currentAttack?.pendingDestroys.length ?? 0,
+    });
+    completedAttackRef.current = currentAttack;
     pendingAttackRef.current = null;
+    if (bufferedAttackRef.current === currentAttack) {
+      bufferedAttackRef.current = null;
+    }
   }, []);
 
   // 播放延迟的摧毁特效（含音效）+ 结束视觉序列门控
   const flushPendingDestroys = useCallback(() => {
-    if (pendingDestroyRef.current.length > 0) {
-      for (const effect of pendingDestroyRef.current) {
+    const completedAttack = completedAttackRef.current;
+    swAttackDebugLog('flush_pending_destroys', {
+      pendingDestroyCount: completedAttack?.pendingDestroys.length ?? 0,
+      completedAttackEventId: completedAttack?.attackEventId,
+      queuedAttackCount: pendingAttackQueueRef.current.length,
+    });
+    if (completedAttack && completedAttack.pendingDestroys.length > 0) {
+      for (const effect of completedAttack.pendingDestroys) {
         pushDestroyEffectRef.current({
           position: effect.position, cardName: effect.cardName, type: effect.type,
           atlasId: effect.atlasId, frameIndex: effect.frameIndex,
@@ -709,14 +880,15 @@ export function useGameEvents({
           playSound(effect.soundKey);
         }
       }
-      pendingDestroyRef.current = [];
-      setDyingEntities([]);
     }
+    completedAttackRef.current = null;
+    setDyingEntities([]);
     // 释放视觉快照，回归 core 真实值
     damageBuffer.clear();
     // 结束视觉序列，排空交互队列（感染/灵魂转移/念力等延迟到此刻触发）
     gateRef.current.endSequence();
-  }, [damageBuffer]);
+    activateNextAttackFromQueue();
+  }, [activateNextAttackFromQueue, damageBuffer]);
 
   // 释放视觉快照中指定格子的伤害（动画 impact 时调用）
   // 删除快照 key，让 UI 回退到 core 真实值，血条在 impact 瞬间变化

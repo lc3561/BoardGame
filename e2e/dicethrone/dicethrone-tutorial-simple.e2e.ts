@@ -5,8 +5,9 @@
  */
 
 import { mkdirSync } from 'node:fs';
+import { test, expect } from '../framework';
 import { dirname, join } from 'node:path';
-import { test, expect } from '@playwright/test';
+
 import { setChineseLocale } from '../helpers/common';
 import { disableFabMenu, dispatchLocalCommand, waitForTutorialBoardReady } from '../helpers/dicethrone';
 

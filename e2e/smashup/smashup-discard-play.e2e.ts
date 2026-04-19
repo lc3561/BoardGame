@@ -7,7 +7,8 @@
  * 3. 选中后基地高亮 → 点击基地部署
  */
 
-import { test, expect, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { test, expect } from '../framework';
 import {
     initContext,
     dismissViteOverlay,
@@ -65,7 +66,7 @@ const applyCoreStateDirect = async (page: Page, coreState: unknown) => {
 };
 
 const gotoLocalSmashUp = async (page: Page) => {
-    await page.goto('/play/smashup/local', { waitUntil: 'domcontentloaded' });
+    await page.goto('/play/smashup', { waitUntil: 'domcontentloaded' });
     await dismissViteOverlay(page);
     await page.waitForFunction(
         () => {

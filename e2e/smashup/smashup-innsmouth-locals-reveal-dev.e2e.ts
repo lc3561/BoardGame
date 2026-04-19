@@ -1,3 +1,4 @@
+import { test, expect } from '../framework';
 /**
  * 大杀四方 - 印斯茅斯"本地人"展示测试（开发服务器）
  * 
@@ -9,7 +10,7 @@
  * 使用开发服务器（端口 3000）+ 测试模式
  */
 
-import { test, expect } from '@playwright/test';
+
 
 test.describe('印斯茅斯"本地人"展示功能（开发服务器）', () => {
     test('打出"本地人"后应该显示展示 UI', async ({ page }) => {

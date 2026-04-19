@@ -6,7 +6,8 @@
  * - 事件卡选择流程取消后正确回滚
  */
 
-import { test, expect, type Browser } from '@playwright/test';
+import { type Browser } from '@playwright/test';
+import { test, expect } from '../framework';
 import { ensureGameServerAvailable } from '../helpers/common';
 import {
     setupOnlineMatchViaUI,

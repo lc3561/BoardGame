@@ -7,7 +7,8 @@
  * - 撤退（withdraw）：攻击后消耗充能/魔力推拉自身
  */
 
-import { test, expect } from '@playwright/test';
+
+import { test, expect } from '../framework';
 import {
   setupSWOnlineMatch,
   readCoreState,
@@ -482,6 +483,134 @@ const prepareAncestralBondMoveState = (coreState: any) => {
   return { state: next, summonerStart, summonerMoveTo, allyTargetPos };
 };
 
+const prepareSpiritBondNoChargeMoveState = (coreState: any) => {
+  const next = cloneState(coreState);
+  next.currentPlayer = '0';
+  next.phase = 'move';
+  next.selectedUnit = undefined;
+  next.abilityUsage = {};
+  if (next.players?.['0']) {
+    next.players['0'].magic = 3;
+    next.players['0'].moveCount = 0;
+    next.players['0'].attackCount = 0;
+  }
+
+  const board = next.board;
+  for (let row = 0; row < 8; row++) {
+    for (let col = 0; col < 6; col++) {
+      board[row][col].unit = null;
+      board[row][col].structure = null;
+    }
+  }
+
+  const shamanStart = { row: 6, col: 2 };
+  const shamanMoveTo = { row: 5, col: 2 };
+  const allyTargetPos = { row: 4, col: 3 };
+  const mySummonerPos = { row: 7, col: 2 };
+
+  board[mySummonerPos.row][mySummonerPos.col].unit = {
+    instanceId: 'spirit-bond-my-summoner',
+    cardId: 'spirit-bond-my-summoner-card',
+    card: {
+      id: 'barbaric-summoner',
+      cardType: 'unit',
+      name: '阿布亚·石',
+      faction: 'barbaric',
+      cost: 0,
+      life: 10,
+      strength: 5,
+      attackType: 'ranged',
+      attackRange: 3,
+      unitClass: 'summoner',
+      deckSymbols: [],
+      abilities: ['ancestral_bond'],
+    },
+    owner: '0',
+    position: mySummonerPos,
+    damage: 0,
+    boosts: 0,
+    hasMoved: false,
+    hasAttacked: false,
+  };
+
+  board[shamanStart.row][shamanStart.col].unit = {
+    instanceId: 'spirit-bond-shaman',
+    cardId: 'spirit-bond-shaman-card',
+    card: {
+      id: 'barbaric-spirit-mage',
+      cardType: 'unit',
+      name: '祖灵法师',
+      faction: 'barbaric',
+      cost: 1,
+      life: 2,
+      strength: 1,
+      attackType: 'ranged',
+      attackRange: 3,
+      unitClass: 'common',
+      deckSymbols: [],
+      abilities: ['gather_power', 'spirit_bond'],
+    },
+    owner: '0',
+    position: shamanStart,
+    damage: 0,
+    boosts: 0,
+    hasMoved: false,
+    hasAttacked: false,
+  };
+
+  board[allyTargetPos.row][allyTargetPos.col].unit = {
+    instanceId: 'spirit-bond-ally',
+    cardId: 'spirit-bond-ally-card',
+    card: {
+      id: 'barbaric-spirit-mage-ally',
+      cardType: 'unit',
+      name: '祖灵法师（友方目标）',
+      faction: 'barbaric',
+      cost: 1,
+      life: 2,
+      strength: 1,
+      attackType: 'ranged',
+      attackRange: 3,
+      unitClass: 'common',
+      deckSymbols: [],
+      abilities: ['gather_power', 'spirit_bond'],
+    },
+    owner: '0',
+    position: allyTargetPos,
+    damage: 0,
+    boosts: 0,
+    hasMoved: false,
+    hasAttacked: false,
+  };
+
+  board[1][3].unit = {
+    instanceId: 'spirit-bond-enemy-summoner',
+    cardId: 'spirit-bond-enemy-summoner-card',
+    card: {
+      id: 'necro-summoner',
+      cardType: 'unit',
+      name: '亡灵召唤师',
+      faction: 'necromancer',
+      cost: 0,
+      life: 10,
+      strength: 4,
+      attackType: 'ranged',
+      attackRange: 3,
+      unitClass: 'summoner',
+      deckSymbols: [],
+      abilities: [],
+    },
+    owner: '1',
+    position: { row: 1, col: 3 },
+    damage: 0,
+    boosts: 0,
+    hasMoved: false,
+    hasAttacked: false,
+  };
+
+  return { state: next, shamanStart, shamanMoveTo, allyTargetPos };
+};
+
 // ============================================================================
 // 测试用例
 // ============================================================================
@@ -520,8 +649,86 @@ test.describe('炽原精灵阵营特色交互', () => {
     }
   });
 
-  test('祖灵交流：充能自身', async () => {
-    test.skip(true, 'spirit_bond 需要实际移动触发 EventStream，状态注入无法模拟，需要完整移动流程测试');
+  test('祖灵交流：无充能时不能给队友转移，只能充能自身', async ({ browser }, testInfo) => {
+    test.setTimeout(180000);
+    const baseURL = testInfo.project.use.baseURL as string | undefined;
+    const match = await setupSWOnlineMatch(browser, baseURL, 'barbaric', 'necromancer');
+    if (!match) { test.skip(true, 'Game server unavailable or room creation failed.'); return; }
+    const { hostPage, hostContext, guestContext } = match;
+    try {
+      const coreState = await readCoreState(hostPage);
+      const { state: spiritBondCore, shamanStart, shamanMoveTo, allyTargetPos } =
+        prepareSpiritBondNoChargeMoveState(coreState);
+      await applyCoreState(hostPage, spiritBondCore);
+      await closeDebugPanelIfOpen(hostPage);
+      await waitForPhase(hostPage, 'move');
+      await hostPage.waitForTimeout(600);
+
+      await clickBoardElement(hostPage, `[data-testid="sw-unit-${shamanStart.row}-${shamanStart.col}"][data-owner="0"]`);
+      await clickBoardElement(hostPage, `[data-testid="sw-cell-${shamanMoveTo.row}-${shamanMoveTo.col}"]`);
+      await hostPage.waitForTimeout(900);
+
+      const chargeSelfButton = hostPage.locator('button').filter({ hasText: /Charge Self|充能自身/i }).first();
+      await expect(chargeSelfButton).toBeVisible({ timeout: 8000 });
+      const skipButton = hostPage.locator('button').filter({ hasText: /^Skip$|^跳过$/i }).first();
+      await expect(skipButton).toBeVisible({ timeout: 8000 });
+      await closeDebugPanelIfOpen(hostPage);
+
+      await hostPage.screenshot({
+        path: getEvidenceScreenshotPath(testInfo, 'spirit-bond-no-charge-before-click-ally', {
+          filename: 'spirit-bond-no-charge-before-click-ally.png',
+        }),
+        fullPage: false,
+      });
+      const allyUnitBefore = hostPage.locator(`[data-testid="sw-unit-${allyTargetPos.row}-${allyTargetPos.col}"][data-owner="0"]`);
+      await expect(allyUnitBefore).toBeVisible({ timeout: 5000 });
+      await allyUnitBefore.screenshot({
+        path: getEvidenceScreenshotPath(testInfo, 'spirit-bond-no-charge-before-click-ally-unit', {
+          filename: 'spirit-bond-no-charge-before-click-ally-unit.png',
+        }),
+      });
+
+      await clickBoardElement(hostPage, `[data-testid="sw-unit-${allyTargetPos.row}-${allyTargetPos.col}"][data-owner="0"]`);
+      await hostPage.waitForTimeout(900);
+
+      await expect.poll(async () => {
+        const state = await readCoreState(hostPage);
+        const shaman = state?.board?.[shamanMoveTo.row]?.[shamanMoveTo.col]?.unit;
+        const ally = state?.board?.[allyTargetPos.row]?.[allyTargetPos.col]?.unit;
+        return (shaman?.boosts ?? -1) === 0 && (ally?.boosts ?? -1) === 0;
+      }, { timeout: 10000 }).toBe(true);
+
+      await chargeSelfButton.click();
+      await hostPage.waitForTimeout(900);
+
+      await expect.poll(async () => {
+        const state = await readCoreState(hostPage);
+        const shaman = state?.board?.[shamanMoveTo.row]?.[shamanMoveTo.col]?.unit;
+        const ally = state?.board?.[allyTargetPos.row]?.[allyTargetPos.col]?.unit;
+        return (shaman?.boosts ?? -1) === 1 && (ally?.boosts ?? -1) === 0;
+      }, { timeout: 10000 }).toBe(true);
+
+      const skipAfterResolve = hostPage.locator('button').filter({ hasText: /^Skip$|^跳过$/i }).first();
+      await expect(skipAfterResolve).toBeHidden({ timeout: 6000 });
+      await closeDebugPanelIfOpen(hostPage);
+
+      await hostPage.screenshot({
+        path: getEvidenceScreenshotPath(testInfo, 'spirit-bond-no-charge-after-charge-self', {
+          filename: 'spirit-bond-no-charge-after-charge-self.png',
+        }),
+        fullPage: false,
+      });
+      const shamanUnitAfter = hostPage.locator(`[data-testid="sw-unit-${shamanMoveTo.row}-${shamanMoveTo.col}"][data-owner="0"]`);
+      await expect(shamanUnitAfter).toBeVisible({ timeout: 5000 });
+      await shamanUnitAfter.screenshot({
+        path: getEvidenceScreenshotPath(testInfo, 'spirit-bond-no-charge-after-charge-self-shaman-unit', {
+          filename: 'spirit-bond-no-charge-after-charge-self-shaman-unit.png',
+        }),
+      });
+    } finally {
+      void hostContext.close().catch(() => {});
+      void guestContext.close().catch(() => {});
+    }
   });
 
   test('祖灵羁绊：移动后可点击友方单位并完成充能转移', async ({ browser }, testInfo) => {

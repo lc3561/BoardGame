@@ -3,7 +3,8 @@
  * 验证确认选择按钮是否播放音效
  */
 
-import { test, expect } from '@playwright/test';
+
+import { test, expect } from '../framework';
 import {
     initContext,
     openSmashUpModal,

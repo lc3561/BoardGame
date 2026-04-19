@@ -1,4 +1,5 @@
-import { test, expect, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
+import { test, expect } from '../framework';
 
 /**
  * SmashUp 阵营选择音效重复播放问题验证测试

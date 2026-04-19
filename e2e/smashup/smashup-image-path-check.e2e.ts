@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../framework';
 
 /**
  * SmashUp 图片路径检查
@@ -32,7 +32,7 @@ test('SmashUp 图片应该使用 i18n/zh-CN/ 前缀', async ({ page }) => {
     });
 
     // 访问游戏页面
-    await page.goto('/play/smashup/local');
+    await page.goto('/play/smashup');
     
     // 等待游戏加载
     await page.waitForTimeout(5000);

@@ -1,5 +1,5 @@
-import { test } from '@playwright/test';
-import { expect, createSummonerWarsMatch } from '../fixtures';
+import type { Browser, Page } from '@playwright/test';
+import { test, expect } from '../framework';
 import { GameTestContext } from '../framework/GameTestContext';
 import {
   createSWRoomViaAPI,
@@ -25,7 +25,7 @@ import {
   MOBILE_LANDSCAPE_REFERENCE_VIEWPORT,
 } from '../../src/shared/referenceViewports';
 
-async function joinGuestToSelectionMatch(page: import('@playwright/test').Page, matchId: string) {
+async function joinGuestToSelectionMatch(page: Page, matchId: string) {
   const credentials = await joinMatchViaAPI(page, GAME_NAME, matchId, '1', 'Guest-SW-Selection');
   if (!credentials) {
     throw new Error(`Failed to join SummonerWars match: ${matchId}`);
@@ -35,13 +35,58 @@ async function joinGuestToSelectionMatch(page: import('@playwright/test').Page, 
   await page.goto(`/play/${GAME_NAME}/match/${matchId}?playerID=1`, { waitUntil: 'domcontentloaded' });
 }
 
-async function waitForSelectionLayoutStable(page: import('@playwright/test').Page) {
+async function waitForSelectionLayoutStable(page: Page) {
   await expect(page.getByTestId('sw-faction-selection')).toBeVisible({ timeout: 15000 });
   await expect(page.getByTestId('sw-faction-stage')).toBeVisible({ timeout: 15000 });
   await expect(page.getByTestId('sw-faction-grid')).toBeVisible({ timeout: 15000 });
   await expect(page.getByTestId('sw-faction-preview-panel')).toBeVisible({ timeout: 15000 });
   await expect(page.getByTestId('sw-faction-player-rail')).toBeVisible({ timeout: 15000 });
   await page.waitForTimeout(250);
+}
+
+async function createStartedSelectionMatch(browser: Browser, baseURL: string | undefined) {
+  const hostContext = await browser.newContext({ baseURL });
+  await initSWContext(hostContext, '__sw_selection_turn_lock_host');
+  const hostPage = await hostContext.newPage();
+
+  await hostPage.goto('/', { waitUntil: 'domcontentloaded' });
+  if (!(await ensureGameServerAvailable(hostPage))) {
+    await hostContext.close().catch(() => {});
+    return null;
+  }
+
+  const matchId = await createSWRoomViaAPI(hostPage);
+  if (!matchId) {
+    await hostContext.close().catch(() => {});
+    return null;
+  }
+
+  await hostPage.goto(`/play/${GAME_NAME}/match/${matchId}?playerID=0`, { waitUntil: 'domcontentloaded' });
+  await waitForFactionSelectionReady(hostPage);
+
+  const guestContext = await browser.newContext({ baseURL });
+  await initSWContext(guestContext, '__sw_selection_turn_lock_guest');
+  const guestPage = await guestContext.newPage();
+
+  try {
+    await guestPage.goto('/', { waitUntil: 'domcontentloaded' });
+    await joinGuestToSelectionMatch(guestPage, matchId);
+    await waitForFactionSelectionReady(guestPage);
+
+    await selectFactionById(hostPage, 'necromancer');
+    await selectFactionById(guestPage, 'trickster');
+    await clickFactionReady(guestPage);
+    await expect(getFactionStartButton(hostPage)).toBeEnabled();
+    await clickFactionStart(hostPage);
+    await waitForSummonerWarsUI(hostPage, 30000);
+    await waitForSummonerWarsUI(guestPage, 30000);
+
+    return { hostPage, guestPage, hostContext, guestContext, matchId };
+  } catch (error) {
+    await hostContext.close().catch(() => {});
+    await guestContext.close().catch(() => {});
+    throw error;
+  }
 }
 
 test.describe('SummonerWars selection and turn-lock flows', () => {
@@ -354,7 +399,7 @@ test.describe('SummonerWars selection and turn-lock flows', () => {
   test('ui stability keeps end-phase locked for waiting player', async ({ browser }, testInfo) => {
     test.setTimeout(90000);
     const baseURL = testInfo.project.use.baseURL as string | undefined;
-    const setup = await createSummonerWarsMatch(browser, baseURL, 'necromancer', 'trickster');
+    const setup = await createStartedSelectionMatch(browser, baseURL);
 
     if (!setup) {
       test.skip(true, 'Game server unavailable or room creation failed');

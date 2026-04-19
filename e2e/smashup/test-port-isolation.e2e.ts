@@ -4,8 +4,9 @@
  * 验证 E2E 测试环境使用正确的端口（20000/21000），不与开发环境冲突
  */
 
-import { test, expect } from '@playwright/test';
+
 import { ensureGameServerAvailable, getGameServerBaseURL } from '../helpers/common';
+import { test, expect } from '../framework';
 
 test.describe('端口隔离验证', () => {
     test('应该使用测试环境端口范围而不是开发端口', async () => {

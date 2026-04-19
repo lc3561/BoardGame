@@ -3,13 +3,14 @@
  * 通过注入状态直接测试特定卡牌的图片显示
  */
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../framework';
 import {
     setupTwoPlayerMatch,
     completeFactionSelection,
     waitForHandArea,
     cleanupTwoPlayerMatch,
 } from './smashup-helpers';
+import { readCoreState, applyCoreState } from '../helpers/smashup';
 
 test.describe('SmashUp 外星人图集索引验证', () => {
     test('验证 Probe、Terraforming、Crop Circles 的图片', async ({ browser }, testInfo) => {
@@ -28,20 +29,18 @@ test.describe('SmashUp 外星人图集索引验证', () => {
         await waitForHandArea(guestPage);
 
         // 注入测试卡牌到手牌
-        await hostPage.evaluate(() => {
-            const dispatch = (window as any).__BG_DISPATCH__;
-            if (!dispatch) return;
-
-            // 使用 SYS_CHEAT_INJECT_STATE 注入特定卡牌
-            dispatch('SYS_CHEAT_INJECT_STATE', {
-                path: 'players.0.hand',
-                value: [
-                    { uid: 'test-probe', defId: 'alien_probe', type: 'action', owner: '0' },
-                    { uid: 'test-terraform', defId: 'alien_terraform', type: 'action', owner: '0' },
-                    { uid: 'test-crop', defId: 'alien_crop_circles', type: 'action', owner: '0' },
-                ],
-            });
-        });
+        const core = await readCoreState(hostPage) as {
+            players?: Record<string, { hand?: unknown[] }>;
+        };
+        if (!core.players?.['0']) {
+            throw new Error('未找到玩家0状态，无法注入测试手牌');
+        }
+        core.players['0'].hand = [
+            { uid: 'test-probe', defId: 'alien_probe', type: 'action', owner: '0' },
+            { uid: 'test-terraform', defId: 'alien_terraform', type: 'action', owner: '0' },
+            { uid: 'test-crop', defId: 'alien_crop_circles', type: 'action', owner: '0' },
+        ];
+        await applyCoreState(hostPage, core);
 
         await hostPage.waitForTimeout(1000);
 

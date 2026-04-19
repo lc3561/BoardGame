@@ -2,7 +2,8 @@
  * SmashUp 教学调试 - 专注 opponentTurn 步骤
  * 通过注入浏览器端日志收集器来追踪事件流
  */
-import { test, expect, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
+import { test, expect } from '../framework';
 import { setEnglishLocale, disableAudio, blockAudioRequests } from '../helpers/common';
 
 const waitForStep = async (page: Page, stepId: string, timeout = 30000) => {

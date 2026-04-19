@@ -10,8 +10,9 @@
  * 架构验证：optionsGenerator 动态生成选项，确保后续交互看到最新状态
  */
 
-import { test, expect } from '@playwright/test';
-import { 
+
+import { test, expect } from '../framework';
+import {
     readCoreState, 
     applyCoreState,
     completeFactionSelection,

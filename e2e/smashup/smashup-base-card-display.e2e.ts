@@ -3,7 +3,8 @@
  * 验证选择基地时是否正确显示基地卡牌而不是按钮
  */
 
-import { test, expect } from '@playwright/test';
+
+import { test, expect } from '../framework';
 import {
     setupTwoPlayerMatch as setupOnlineMatch,
     cleanupTwoPlayerMatch,

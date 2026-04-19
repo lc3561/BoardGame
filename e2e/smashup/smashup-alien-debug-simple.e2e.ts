@@ -1,9 +1,10 @@
+import { test, expect } from '../framework';
 /**
  * SmashUp 外星人派系 - 调试面板测试（简化版）
  * 使用 addInitScript 在页面加载前注入 __BG_E2E_DEBUG__
  */
 
-import { test, expect } from '@playwright/test';
+
 
 test.describe('SmashUp 调试面板显示测试', () => {
     test('验证调试面板在 E2E 环境中显示', async ({ browser }, testInfo) => {

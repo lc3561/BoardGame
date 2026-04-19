@@ -1,5 +1,5 @@
-import { test, expect } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
+import { test, expect } from '../framework';
 import { join } from 'node:path';
 import { gotoLocalSmashUp } from './smashup-debug-helpers';
 

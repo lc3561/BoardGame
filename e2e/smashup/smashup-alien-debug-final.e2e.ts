@@ -3,7 +3,8 @@
  * 使用 enableE2EDebug 选项启用调试面板
  */
 
-import { test, expect } from '@playwright/test';
+
+import { test, expect } from '../framework';
 import {
     setupTwoPlayerMatch,
     completeFactionSelection,

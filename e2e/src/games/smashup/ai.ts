@@ -10,7 +10,15 @@ import {
     OPTIONAL_SKIP_AI_HINT,
     withAiActionStrategyTags,
 } from '../../engine/ai';
-import type { AiDecisionContext, AiHint, AiLegalAction, GameAiRuntime, LocalAiActionScorer } from '../../engine/ai';
+import type {
+    AiAssignmentEvaluation,
+    AiDecisionContext,
+    AiHint,
+    AiLegalAction,
+    GameAiRuntime,
+    LocalAiActionEvaluation,
+    LocalAiActionScorer,
+} from '../../engine/ai';
 import { getFreshSimpleChoiceOptions, type InteractionDescriptor as EngineInteractionDescriptor, type PromptMultiConfig } from '../../engine/systems/InteractionSystem';
 import {
     SU_COMMANDS,
@@ -91,6 +99,7 @@ type SmashUpCardAiMetrics = {
     control: number;
 };
 type SmashUpPlayKind = 'minion' | 'action';
+type SmashUpAssignmentMode = 'secure' | 'pressure';
 
 const isInteractionControlValue = (value: unknown): boolean => {
     if (!value || typeof value !== 'object') return false;
@@ -544,6 +553,200 @@ const getSmashUpEvaluatorScale = (context: AiDecisionContext): number => {
         default:
             return 1;
     }
+};
+
+const clampSmashUpAssignmentScore = (value: number): number => {
+    if (!Number.isFinite(value)) return 0;
+    return Math.min(180, Math.max(-120, Number(value.toFixed(3))));
+};
+
+const resolveSmashUpAssignmentMode = (args: {
+    ownVp: number;
+    bestOpponentVp: number;
+    hasUrgentPressure: boolean;
+}): SmashUpAssignmentMode => {
+    const vpDeficit = args.bestOpponentVp - args.ownVp;
+    if (vpDeficit >= 1) return 'pressure';
+    if (args.hasUrgentPressure && vpDeficit <= 0) return 'secure';
+    return 'pressure';
+};
+
+const getSmashUpAssignmentSourceId = (action: AiLegalAction): string | null => {
+    if (typeof action.metadata?.cardUid === 'string') {
+        return `card:${action.metadata.cardUid}`;
+    }
+    if (typeof action.metadata?.minionUid === 'string') {
+        return `minion:${action.metadata.minionUid}`;
+    }
+    if (typeof action.metadata?.titanUid === 'string') {
+        return `titan:${action.metadata.titanUid}`;
+    }
+    if (typeof action.metadata?.ongoingCardUid === 'string') {
+        return `ongoing:${action.metadata.ongoingCardUid}`;
+    }
+    return null;
+};
+
+const canEvaluateSmashUpAssignment = (action: AiLegalAction): boolean => {
+    return action.kind === 'play-minion'
+        || action.kind === 'play-action'
+        || action.kind === 'activate-special'
+        || action.kind === 'use-talent';
+};
+
+const buildSmashUpAssignmentIntent = (args: {
+    action: AiLegalAction;
+    mode: SmashUpAssignmentMode;
+    basePotential: SmashUpBasePotential;
+    gapBefore: number;
+    projectedMargin: number | null;
+    scoringEligible: boolean;
+}): { score: number; reason: string; metadata: Record<string, unknown> } | null => {
+    const { action, mode, basePotential, gapBefore, projectedMargin, scoringEligible } = args;
+    const baseSwing = basePotential.ownAward - basePotential.bestOpponentAward;
+    let score = basePotential.score * 0.16 + baseSwing * 24;
+
+    if (projectedMargin !== null && projectedMargin >= 0) {
+        score += 46 + Math.min(20, projectedMargin * 4);
+    } else if (gapBefore <= 2) {
+        score += 24 - gapBefore * 6;
+    } else if (gapBefore >= 8) {
+        score -= 14;
+    }
+
+    if (scoringEligible) score += 36;
+
+    if (mode === 'secure') {
+        score += basePotential.bestOpponentAward > basePotential.ownAward ? 28 : 10;
+        if (basePotential.breakNow && basePotential.ownAward === 0) {
+            score -= 34 + basePotential.bestOpponentAward * 10;
+        }
+    } else {
+        score += basePotential.ownAward * 22;
+        if (basePotential.breakNow && basePotential.ownAward > 0) {
+            score += 22 + basePotential.ownAward * 8;
+        }
+    }
+
+    if (action.kind === 'play-minion') {
+        score += 8;
+    } else if (action.kind === 'play-action') {
+        score += 4;
+    } else if (action.kind === 'activate-special' || action.kind === 'use-talent') {
+        score += scoringEligible ? 7 : 2;
+    }
+
+    if (score === 0) return null;
+    return {
+        score: clampSmashUpAssignmentScore(score),
+        reason: mode === 'secure'
+            ? '同一资源优先投向可阻止对手抢分的关键基地'
+            : '同一资源优先投向能提升我方 VP swing 的基地',
+        metadata: {
+            mode,
+            baseSwing,
+            ownAward: basePotential.ownAward,
+            bestOpponentAward: basePotential.bestOpponentAward,
+            gapBefore,
+            projectedMargin,
+            scoringEligible,
+        },
+    };
+};
+
+const evaluateSmashUpAssignments = (args: {
+    context: AiDecisionContext;
+    baseEvaluations: LocalAiActionEvaluation[];
+}): AiAssignmentEvaluation[] => {
+    const state = args.context.visibleState as SmashUpState;
+    const playerId = args.context.playerId;
+    const player = state.core.players[playerId];
+    if (!player) return [];
+
+    const bestOpponentVp = getSmashUpPlayerIds(state)
+        .filter((candidatePlayerId) => candidatePlayerId !== playerId)
+        .reduce((best, candidatePlayerId) => Math.max(best, state.core.players[candidatePlayerId]?.vp ?? 0), 0);
+
+    const hasUrgentPressure = args.baseEvaluations.some((evaluation) => hasUrgentBasePressure(evaluation.action));
+    const assignmentMode = resolveSmashUpAssignmentMode({
+        ownVp: player.vp,
+        bestOpponentVp,
+        hasUrgentPressure,
+    });
+
+    const groupedAssignments = new Map<string, Array<AiAssignmentEvaluation & { baseScore: number }>>();
+    for (const evaluation of args.baseEvaluations) {
+        const action = evaluation.action;
+        if (!canEvaluateSmashUpAssignment(action)) continue;
+
+        const sourceId = getSmashUpAssignmentSourceId(action);
+        if (!sourceId) continue;
+
+        const baseIndex = getProjectedBaseIndex(action);
+        if (baseIndex === null) continue;
+        const basePotential = evaluateBasePotential(state, playerId, baseIndex);
+        if (!basePotential) continue;
+
+        const gapBefore = typeof action.metadata?.gapBefore === 'number'
+            ? action.metadata.gapBefore
+            : basePotential.gapBefore;
+        const projectedMargin = typeof action.metadata?.projectedMargin === 'number'
+            ? action.metadata.projectedMargin
+            : null;
+        const scoringEligible = action.metadata?.scoringEligible === true || action.metadata?.scoringBase === true;
+        const intent = buildSmashUpAssignmentIntent({
+            action,
+            mode: assignmentMode,
+            basePotential,
+            gapBefore,
+            projectedMargin,
+            scoringEligible,
+        });
+        if (!intent) continue;
+
+        const assignments = groupedAssignments.get(sourceId) ?? [];
+        assignments.push({
+            actionId: action.actionId,
+            score: intent.score,
+            reason: intent.reason,
+            metadata: {
+                ...intent.metadata,
+                sourceId,
+                baseIndex,
+            },
+            baseScore: intent.score,
+        });
+        groupedAssignments.set(sourceId, assignments);
+    }
+
+    const finalAssignments: AiAssignmentEvaluation[] = [];
+    for (const [sourceId, assignments] of groupedAssignments.entries()) {
+        const ranked = [...assignments].sort((left, right) => right.baseScore - left.baseScore);
+        for (let index = 0; index < ranked.length; index += 1) {
+            const candidate = ranked[index];
+            const ordinalAdjustment = index === 0
+                ? 12
+                : index === 1
+                    ? -8
+                    : -14 - (index - 2) * 2;
+            const score = clampSmashUpAssignmentScore(candidate.baseScore + ordinalAdjustment);
+            if (score === 0) continue;
+            finalAssignments.push({
+                actionId: candidate.actionId,
+                score,
+                reason: `${candidate.reason}（资源分配排序 #${index + 1}）`,
+                metadata: {
+                    ...(candidate.metadata ?? {}),
+                    sourceId,
+                    assignmentMode,
+                    assignmentRank: index + 1,
+                    ordinalAdjustment,
+                },
+            });
+        }
+    }
+
+    return finalAssignments;
 };
 
 const estimateImmediateActionUrgency = (action: AiLegalAction): number => {
@@ -1851,6 +2054,18 @@ const baselineLocalPolicy = createLookaheadLocalAiPolicy({
     maxReasonCount: 3,
     projectAction({ context, action }) {
         return projectSmashUpAction({ context, action });
+    },
+    candidateLoop: {
+        enabled: true,
+        maxIterations: 3,
+        batchSize: 5,
+        stopOnUtility: 0.9,
+    },
+    evaluateAssignments({ context, baseEvaluations }) {
+        return evaluateSmashUpAssignments({
+            context,
+            baseEvaluations,
+        });
     },
 });
 

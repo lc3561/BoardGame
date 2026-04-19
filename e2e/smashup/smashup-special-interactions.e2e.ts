@@ -11,7 +11,8 @@
  * 7. Protection 保护：robot_warbot（战争机器人）
  */
 
-import { test, expect } from '@playwright/test';
+
+import { test, expect } from '../framework';
 import {
     setupTwoPlayerMatch,
     cleanupTwoPlayerMatch,

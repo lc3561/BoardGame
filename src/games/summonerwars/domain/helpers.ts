@@ -574,6 +574,17 @@ export function clampMagic(value: number): number {
   return Math.max(MAGIC_MIN, Math.min(MAGIC_MAX, value));
 }
 
+/** 将任意输入归一化为有限数值（非法值回退为 fallback） */
+export function normalizeFiniteNumber(value: unknown, fallback = 0): number {
+  const numeric = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+/** 归一化单位充能值：非法值/负值统一按 0 处理 */
+export function normalizeUnitBoosts(value: unknown): number {
+  return Math.max(0, normalizeFiniteNumber(value, 0));
+}
+
 /** 检查是否有足够魔力 */
 export function hasEnoughMagic(state: SummonerWarsCore, playerId: PlayerId, cost: number): boolean {
   return state.players[playerId].magic >= cost;

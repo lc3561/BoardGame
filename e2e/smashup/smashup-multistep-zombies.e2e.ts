@@ -12,8 +12,9 @@
  * - 其他选项 → PromptOverlay（z-index:300）
  */
 
-import { test, expect } from '@playwright/test';
+
 import { initContext } from '../helpers/common';
+import { test, expect } from '../framework';
 import {
     closeDebugPanel, readFullState, applyCoreStateDirect,
     gotoLocalSmashUp, waitForHandArea, completeFactionSelectionLocal,

@@ -5,7 +5,7 @@
  * 验证策略：直接截图手牌中的外星人卡牌，人工检查图片是否正确
  */
 
-import { test } from '@playwright/test';
+import { test } from '../framework';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -14,6 +14,7 @@ import {
     waitForHandArea,
     cleanupTwoPlayerMatch,
 } from './smashup-helpers';
+import { readCoreState } from '../helpers/smashup';
 
 test.describe('SmashUp 外星人卡牌图片视觉验证', () => {
     test('截图手牌中的外星人卡牌', async ({ browser }, testInfo) => {
@@ -61,16 +62,13 @@ test.describe('SmashUp 外星人卡牌图片视觉验证', () => {
             });
 
             // 获取手牌信息用于日志
-            const handInfo = await hostPage.evaluate(() => {
-                const state = (window as any).__BG_STATE__;
-                if (!state?.core?.players?.['0']?.hand) return null;
-
-                const hand = state.core.players['0'].hand;
-                return hand.map((c: any) => ({
-                    defId: c.defId,
-                    type: c.type,
-                }));
-            });
+            const core = await readCoreState(hostPage) as {
+                players?: Record<string, { hand?: Array<{ defId?: string; type?: string }> }>;
+            };
+            const handInfo = core.players?.['0']?.hand?.map((c) => ({
+                defId: c.defId,
+                type: c.type,
+            })) ?? null;
 
             console.log('[测试] ✅ 已截图手牌区域');
             console.log('[测试] 📸 alien-hand-area.png - 手牌特写');

@@ -326,6 +326,35 @@ function createTargetedAbilityCore(): SummonerWarsCore {
     return core;
 }
 
+function createCandidateLoopStressSummonCore(): SummonerWarsCore {
+    resetInstanceCounter();
+    const core = createInitializedCore(['0', '1'], aiTestRandom, {
+        faction0: 'necromancer',
+        faction1: 'paladin',
+    });
+    core.phase = 'summon';
+    core.currentPlayer = '0';
+
+    for (let index = 0; index < 8; index += 1) {
+        const testUnitCard: UnitCard = {
+            id: `test-ai-loop-unit-${index}`,
+            cardType: 'unit',
+            name: `测试循环单位${index + 1}`,
+            unitClass: 'common',
+            faction: 'necromancer',
+            strength: 2 + (index % 2),
+            life: 3 + (index % 3),
+            cost: 1,
+            attackType: 'melee',
+            attackRange: 1,
+            deckSymbols: [],
+        };
+        core.players['0'].hand.push(testUnitCard);
+    }
+
+    return core;
+}
+
 function createChargedFuneralPyre(cardId = 'necro-funeral-pyre-0-0'): EventCard {
     return {
         id: cardId,
@@ -953,6 +982,39 @@ const testCases: TestCase<SummonerWarsExpectation>[] = [
         },
     },
     {
+        name: '魔力阶段 - 攻击阶段事件卡也可弃牌获得魔力',
+        setup: (playerIds, random) => {
+            const core = createInitializedCore(playerIds, random);
+            core.phase = 'magic';
+            core.players['0'].magic = 0;
+            const attackPhaseEvent: EventCard = {
+                id: 'attack-phase-event-discard',
+                cardType: 'event',
+                name: '攻击阶段事件',
+                eventType: 'common',
+                faction: 'necromancer',
+                cost: 4,
+                playPhase: 'attack',
+                effect: '测试：仅攻击阶段可施放',
+                deckSymbols: [],
+            };
+            core.players['0'].hand.push(attackPhaseEvent);
+            const sys = createInitialSystemState(playerIds, []);
+            return { core, sys };
+        },
+        commands: [
+            {
+                type: SW_COMMANDS.DISCARD_FOR_MAGIC,
+                playerId: '0',
+                payload: { cardIds: ['attack-phase-event-discard'] },
+            },
+        ],
+        expect: {
+            phase: 'magic',
+            player0Magic: 1,
+        },
+    },
+    {
         name: '魔力阶段 - 弃多张牌获得对应魔力',
         setup: (playerIds, random) => {
             const core = createInitializedCore(playerIds, random);
@@ -1193,9 +1255,12 @@ describe('召唤师战争本地 AI', () => {
         });
         const threatEval = evaluations.find((item) => item.actionId === threatAttack?.actionId);
         const championEval = evaluations.find((item) => item.actionId === championAttack?.actionId);
+        const threatAssignmentScore = threatEval?.contributions.find((item) => item.scorerId === 'assignment-first')?.score ?? -Infinity;
+        const championAssignmentScore = championEval?.contributions.find((item) => item.scorerId === 'assignment-first')?.score ?? -Infinity;
 
         expect(threatAttack?.metadata?.strategyTags).toContain('summoner-defense');
         expect(threatEval?.contributions.some((item) => item.scorerId === 'strategy-profile-fit' && item.score > 0)).toBe(true);
+        expect(threatAssignmentScore).toBeGreaterThan(championAssignmentScore);
         expect(threatEval?.finalScore ?? -Infinity).toBeGreaterThan(championEval?.finalScore ?? -Infinity);
         expect(decision?.actionId).toBe(threatAttack?.actionId);
     });
@@ -1303,6 +1368,40 @@ describe('召唤师战争本地 AI', () => {
         expect(inspireAbilityScore).toBeGreaterThan(prepareAbilityScore);
         expect(inspireEval?.finalScore ?? -Infinity).toBeGreaterThan(prepareEval?.finalScore ?? -Infinity);
         expect(decision?.actionId).toBe(inspireAction?.actionId);
+    });
+
+    it('高动作密度下应启用 candidate loop 批次搜索，并产出 lookahead 前瞻贡献', async () => {
+        const core = createCandidateLoopStressSummonCore();
+        const sys = createInitialSystemState(['0', '1'], []);
+        const context = buildAiDecisionContext({
+            gameId: 'summonerwars',
+            matchId: 'local:summonerwars-candidate-loop-search',
+            playerId: '0',
+            visibleState: { core, sys },
+            rulesVersion: null,
+            decisionBudgetMs: 250,
+            source: 'local',
+            seatController: { type: 'local-ai', difficulty: 'hard' },
+        });
+
+        expect(context.legalActions.length).toBeGreaterThan(15);
+
+        const decision = await summonerWarsAiRuntime.localPolicies?.baseline.decide(context);
+        const evaluations = (decision?.providerMetadata?.evaluations ?? []) as Array<{
+            actionId: string;
+            searched: boolean;
+            contributions: Array<{ scorerId: string }>;
+        }>;
+
+        expect(evaluations.length).toBe(context.legalActions.length);
+        expect(evaluations.some((item) => item.searched === true)).toBe(true);
+        expect(evaluations.some((item) => item.searched === false)).toBe(true);
+        expect(
+            evaluations.some((item) => item.contributions.some((contribution) => contribution.scorerId === 'lookahead')),
+        ).toBe(true);
+        expect(
+            evaluations.some((item) => item.contributions.some((contribution) => contribution.scorerId === 'relative-utility')),
+        ).toBe(true);
     });
 
     it('带目标的 activated ability 会生成多条动作并优先强化冠军目标', async () => {

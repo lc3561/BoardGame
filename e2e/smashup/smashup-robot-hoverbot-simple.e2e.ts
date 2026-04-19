@@ -1,3 +1,4 @@
+import { test, expect } from '../framework';
 /**
  * 盘旋机器人简化测试 - 直接验证修复效果
  * 
@@ -7,7 +8,7 @@
  * 3. 选项可以点击
  */
 
-import { test, expect } from '@playwright/test';
+
 
 test.describe('盘旋机器人交互修复验证', () => {
     test('验证 _source: static 修复生效', async ({ page }) => {

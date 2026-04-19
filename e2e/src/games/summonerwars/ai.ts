@@ -709,6 +709,170 @@ const buildSummonerWarsFeatureSnapshot = (args: {
     };
 };
 
+type SummonerWarsAssignmentMode = 'defense' | 'pressure';
+
+const clampAssignmentScore = (value: number): number => {
+    if (!Number.isFinite(value)) return 0;
+    return Math.min(160, Math.max(-120, value));
+};
+
+const resolveSummonerWarsAssignmentMode = (args: {
+    pressureRatio: number;
+    underEmergency: boolean;
+}): SummonerWarsAssignmentMode => {
+    if (args.underEmergency || args.pressureRatio >= 1) {
+        return 'defense';
+    }
+    return 'pressure';
+};
+
+const readPressureRatioFromFeatureSnapshot = (
+    context: AiDecisionContext,
+    fallbackThreat: ReturnType<typeof estimateSummonerThreat>,
+): number => {
+    const snapshot = context.featureSnapshot;
+    if (!snapshot || typeof snapshot !== 'object') {
+        return fallbackThreat.remainingLife > 0
+            ? Number((fallbackThreat.directThreatDamage / fallbackThreat.remainingLife).toFixed(3))
+            : 0;
+    }
+
+    const threat = (snapshot as Record<string, unknown>).threat;
+    if (!threat || typeof threat !== 'object') {
+        return fallbackThreat.remainingLife > 0
+            ? Number((fallbackThreat.directThreatDamage / fallbackThreat.remainingLife).toFixed(3))
+            : 0;
+    }
+
+    const pressureRatio = (threat as Record<string, unknown>).pressureRatio;
+    if (typeof pressureRatio === 'number' && Number.isFinite(pressureRatio)) {
+        return pressureRatio;
+    }
+
+    return fallbackThreat.remainingLife > 0
+        ? Number((fallbackThreat.directThreatDamage / fallbackThreat.remainingLife).toFixed(3))
+        : 0;
+};
+
+const buildSummonerWarsAssignmentIntent = (args: {
+    action: AiLegalAction;
+    mode: SummonerWarsAssignmentMode;
+    pressureRatio: number;
+    sourceUnit: BoardUnit;
+    ownSummoner: BoardUnit | null;
+    enemySummoner: BoardUnit | null;
+}): {
+    score: number;
+    reason: string;
+    metadata?: Record<string, unknown>;
+} | null => {
+    const { action, mode, pressureRatio, sourceUnit, ownSummoner, enemySummoner } = args;
+    let score = 0;
+    const reasons: string[] = [];
+
+    if (mode === 'defense' && ownSummoner) {
+        const distanceToOwnSummoner = manhattanDistance(sourceUnit.position, ownSummoner.position);
+        score += Math.max(0, 5 - distanceToOwnSummoner) * 5;
+    }
+    if (mode === 'pressure' && enemySummoner) {
+        const distanceToEnemySummoner = manhattanDistance(sourceUnit.position, enemySummoner.position);
+        score += Math.max(0, 6 - distanceToEnemySummoner) * 4;
+    }
+
+    if (action.kind === 'declare-attack') {
+        const targetType = readActionMetadataString(action, 'targetType') ?? 'unknown';
+        const targetIsThreateningSummoner = readActionMetadataBoolean(action, 'targetIsThreateningSummoner') === true;
+        const targetIsGate = readActionMetadataBoolean(action, 'targetIsGate') === true;
+        const lethalLikely = readActionMetadataBoolean(action, 'lethalLikely') === true;
+
+        if (targetIsThreateningSummoner) {
+            score += mode === 'defense' ? 95 : 36;
+            reasons.push('优先清理正在威胁召唤师的目标');
+        }
+        if (targetType === 'summoner') {
+            score += mode === 'pressure' ? 32 : -18;
+        } else if (targetType === 'champion') {
+            score += 22;
+        } else if (targetType === 'common') {
+            score += 10;
+        } else if (targetType === 'structure') {
+            score += targetIsGate
+                ? (mode === 'pressure' ? 18 : -28)
+                : 6;
+        }
+        if (lethalLikely) {
+            score += mode === 'pressure' ? 24 : 14;
+        }
+    } else if (action.kind === 'move-unit') {
+        const distanceToEnemySummonerBefore = readActionMetadataNumber(action, 'distanceToEnemySummonerBefore');
+        const distanceToEnemySummonerAfter = readActionMetadataNumber(action, 'distanceToEnemySummonerAfter');
+        const distanceToOwnSummonerBefore = readActionMetadataNumber(action, 'distanceToOwnSummonerBefore');
+        const distanceToOwnSummonerAfter = readActionMetadataNumber(action, 'distanceToOwnSummonerAfter');
+        const directThreatDamageBefore = readActionMetadataNumber(action, 'directThreatDamageBefore');
+        const directThreatDamageAfter = readActionMetadataNumber(action, 'directThreatDamageAfter');
+        const nearbyEnemyPressureBefore = readActionMetadataNumber(action, 'nearbyEnemyPressureBefore');
+        const nearbyEnemyPressureAfter = readActionMetadataNumber(action, 'nearbyEnemyPressureAfter');
+        const attackTargetsAfterMove = readActionMetadataNumber(action, 'attackTargetsAfterMove') ?? 0;
+
+        if (distanceToEnemySummonerBefore !== null && distanceToEnemySummonerAfter !== null && distanceToEnemySummonerAfter < distanceToEnemySummonerBefore) {
+            score += mode === 'pressure'
+                ? (distanceToEnemySummonerBefore - distanceToEnemySummonerAfter) * 16
+                : (distanceToEnemySummonerBefore - distanceToEnemySummonerAfter) * 5;
+        }
+        if (distanceToOwnSummonerBefore !== null && distanceToOwnSummonerAfter !== null && distanceToOwnSummonerAfter < distanceToOwnSummonerBefore) {
+            score += mode === 'defense'
+                ? (distanceToOwnSummonerBefore - distanceToOwnSummonerAfter) * 16
+                : (distanceToOwnSummonerBefore - distanceToOwnSummonerAfter) * 4;
+        }
+        if (directThreatDamageBefore !== null && directThreatDamageAfter !== null && directThreatDamageAfter < directThreatDamageBefore) {
+            score += (directThreatDamageBefore - directThreatDamageAfter) * 28 + (mode === 'defense' ? 30 : 8);
+            reasons.push('移动后能明显降低召唤师即时受伤风险');
+        }
+        if (nearbyEnemyPressureBefore !== null && nearbyEnemyPressureAfter !== null && nearbyEnemyPressureAfter < nearbyEnemyPressureBefore) {
+            score += (nearbyEnemyPressureBefore - nearbyEnemyPressureAfter) * (mode === 'defense' ? 8 : 3);
+        }
+        if (attackTargetsAfterMove > 0) {
+            score += attackTargetsAfterMove * (mode === 'pressure' ? 10 : 5);
+        }
+    } else if (action.kind === 'summon-unit' || action.kind === 'build-structure') {
+        const distanceToEnemySummoner = readActionMetadataNumber(action, 'distanceToEnemySummoner') ?? 99;
+        const distanceToOwnSummoner = readActionMetadataNumber(action, 'distanceToOwnSummoner') ?? 99;
+        const isGate = readActionMetadataBoolean(action, 'isGate') === true;
+
+        if (mode === 'defense') {
+            score += Math.max(0, 5 - distanceToOwnSummoner) * 8;
+            if (isGate) score -= 8;
+            reasons.push('承压回合优先补防线');
+        } else {
+            score += Math.max(0, 7 - distanceToEnemySummoner) * 8;
+            if (isGate) score += 18;
+            reasons.push('低压回合优先推进前线');
+        }
+    } else if (action.kind === 'activate-ability') {
+        const enemySummonerPressureCount = (readActionMetadataNumber(action, 'adjacentEnemySummonerPressureCount') ?? 0)
+            + (readActionMetadataNumber(action, 'allEnemySummonerPressureCount') ?? 0);
+        const adjacentAllyCount = readActionMetadataNumber(action, 'adjacentAllyCount') ?? 0;
+        const allAllyCount = readActionMetadataNumber(action, 'allAllyCount') ?? 0;
+        const supportCount = adjacentAllyCount + allAllyCount;
+        score += enemySummonerPressureCount * (mode === 'pressure' ? 24 : 10);
+        score += supportCount * (mode === 'defense' ? 9 : 6);
+    }
+
+    if (pressureRatio >= 1 && mode === 'defense' && action.kind === 'advance-phase') {
+        score -= 24;
+    }
+
+    if (score === 0) return null;
+    return {
+        score: clampAssignmentScore(Number(score.toFixed(3))),
+        reason: reasons[0] ?? (mode === 'defense' ? '优先安排单位回防' : '优先安排单位前压'),
+        metadata: {
+            mode,
+            pressureRatio,
+        },
+    };
+};
+
 const evaluateSummonerWarsAssignments = (args: {
     context: AiDecisionContext;
     baseEvaluations: LocalAiActionEvaluation[];
@@ -720,49 +884,80 @@ const evaluateSummonerWarsAssignments = (args: {
     const ownSummoner = getSummoner(state.core, playerId);
     const enemySummoner = getSummoner(state.core, enemyPlayerId);
     const threat = estimateSummonerThreat(state.core, playerId);
+    const pressureRatio = readPressureRatioFromFeatureSnapshot(args.context, threat);
     const underEmergency = threat.remainingLife > 0 && threat.directThreatDamage >= Math.max(1, threat.remainingLife - 1);
+    const assignmentMode = resolveSummonerWarsAssignmentMode({
+        pressureRatio,
+        underEmergency,
+    });
     const ownUnitsById = new Map(getPlayerUnits(state.core, playerId).map((unit) => [unit.instanceId, unit] as const));
 
-    return args.baseEvaluations
-        .map((evaluation): AiAssignmentEvaluation | null => {
+    const baseAssignments = args.baseEvaluations
+        .map((evaluation): (AiAssignmentEvaluation & { sourceUnitId: string; baseScore: number }) | null => {
             const sourceUnitId = readActionMetadataString(evaluation.action, 'sourceUnitId');
             if (!sourceUnitId) return null;
             const sourceUnit = ownUnitsById.get(sourceUnitId);
             if (!sourceUnit) return null;
-
-            if (underEmergency && ownSummoner) {
-                const distanceToOwnSummoner = manhattanDistance(sourceUnit.position, ownSummoner.position);
-                const score = Math.max(0, 5 - distanceToOwnSummoner) * 6;
-                if (score <= 0) return null;
-                return {
-                    actionId: evaluation.action.actionId,
-                    score,
-                    reason: '优先分配靠近己方召唤师的单位进行回防',
-                    metadata: {
-                        mode: 'defense',
-                        distanceToOwnSummoner,
-                    },
-                };
-            }
-
-            if (!enemySummoner) return null;
-            const distanceToEnemySummoner = manhattanDistance(sourceUnit.position, enemySummoner.position);
-            const pressureScore = Math.max(0, 6 - distanceToEnemySummoner) * 5;
-            const targetType = readActionMetadataString(evaluation.action, 'targetType');
-            const score = pressureScore + (targetType === 'summoner' ? 10 : 0);
-            if (score <= 0) return null;
+            const intent = buildSummonerWarsAssignmentIntent({
+                action: evaluation.action,
+                mode: assignmentMode,
+                pressureRatio,
+                sourceUnit,
+                ownSummoner,
+                enemySummoner,
+            });
+            if (!intent) return null;
 
             return {
                 actionId: evaluation.action.actionId,
-                score,
-                reason: '优先分配更接近压制目标的单位推进前线',
+                score: intent.score,
+                reason: intent.reason,
                 metadata: {
-                    mode: 'pressure',
-                    distanceToEnemySummoner,
+                    ...(intent.metadata ?? {}),
+                    baseScore: intent.score,
                 },
+                sourceUnitId,
+                baseScore: intent.score,
             };
         })
-        .filter((item): item is AiAssignmentEvaluation => item !== null);
+        .filter((item): item is AiAssignmentEvaluation & { sourceUnitId: string; baseScore: number } => item !== null);
+
+    const assignmentsBySourceUnit = new Map<string, Array<AiAssignmentEvaluation & { sourceUnitId: string; baseScore: number }>>();
+    for (const assignment of baseAssignments) {
+        const existing = assignmentsBySourceUnit.get(assignment.sourceUnitId) ?? [];
+        existing.push(assignment);
+        assignmentsBySourceUnit.set(assignment.sourceUnitId, existing);
+    }
+
+    const finalAssignments: AiAssignmentEvaluation[] = [];
+    for (const [sourceUnitId, group] of assignmentsBySourceUnit.entries()) {
+        const ranked = [...group].sort((left, right) => right.baseScore - left.baseScore);
+        for (let index = 0; index < ranked.length; index += 1) {
+            const candidate = ranked[index];
+            const ordinalAdjustment = index === 0
+                ? 14
+                : index === 1
+                    ? -6
+                    : -12 - (index - 2) * 2;
+            const score = clampAssignmentScore(candidate.baseScore + ordinalAdjustment);
+            if (score === 0) continue;
+            finalAssignments.push({
+                actionId: candidate.actionId,
+                score,
+                reason: `${candidate.reason}（单位任务排序 #${index + 1}）`,
+                metadata: {
+                    ...(candidate.metadata ?? {}),
+                    sourceUnitId,
+                    assignmentMode,
+                    assignmentRank: index + 1,
+                    ordinalAdjustment,
+                    pressureRatio,
+                },
+            });
+        }
+    }
+
+    return finalAssignments;
 };
 
 /** 计算在指定位置放置传送门后新增的召唤位置数量 */
@@ -2725,6 +2920,250 @@ const featureSnapshotScorer: LocalAiActionScorer = {
     },
 };
 
+const getSummonerWarsEvaluatorScale = (context: AiDecisionContext): number => {
+    switch (context.difficulty.evaluatorProfile) {
+        case 'basic':
+            return 0.5;
+        case 'balanced':
+            return 0.78;
+        case 'strong':
+            return 1;
+        case 'expert':
+            return 1.2;
+        default:
+            return 1;
+    }
+};
+
+const readFeatureSnapshotSection = (
+    context: AiDecisionContext,
+    section: 'threat' | 'control' | 'objective' | 'frontline',
+): Record<string, unknown> | null => {
+    const snapshot = context.featureSnapshot;
+    if (!snapshot || typeof snapshot !== 'object') return null;
+    const value = (snapshot as Record<string, unknown>)[section];
+    return value && typeof value === 'object'
+        ? (value as Record<string, unknown>)
+        : null;
+};
+
+const projectSummonerWarsAction = (args: {
+    context: AiDecisionContext;
+    action: AiLegalAction;
+}): { score: number; reason: string; metadata?: Record<string, unknown> } | null => {
+    const { context, action } = args;
+    const scale = getSummonerWarsEvaluatorScale(context);
+    const threat = readFeatureSnapshotSection(context, 'threat');
+    const objective = readFeatureSnapshotSection(context, 'objective');
+    const control = readFeatureSnapshotSection(context, 'control');
+
+    const pressureRatio = typeof threat?.pressureRatio === 'number' ? threat.pressureRatio : 0;
+    const centerControlDelta = typeof control?.centerControlDelta === 'number' ? control.centerControlDelta : 0;
+    const antiThreatActions = typeof objective?.antiThreatActions === 'number' ? objective.antiThreatActions : 0;
+
+    if (action.kind === 'declare-attack') {
+        const targetType = readActionMetadataString(action, 'targetType') ?? 'unknown';
+        const targetLifeRemaining = readActionMetadataNumber(action, 'targetLifeRemaining') ?? 0;
+        const attackerStrength = readActionMetadataNumber(action, 'attackerStrength') ?? 0;
+        const lethalLikely = readActionMetadataBoolean(action, 'lethalLikely') === true;
+        const targetIsThreateningSummoner = readActionMetadataBoolean(action, 'targetIsThreateningSummoner') === true;
+        const targetIsGate = readActionMetadataBoolean(action, 'targetIsGate') === true;
+
+        let score = 0;
+        if (targetType === 'summoner') score += 56;
+        if (targetType === 'champion') score += 30;
+        if (targetType === 'structure') score += targetIsGate ? 26 : 12;
+        if (targetType === 'common') score += 14;
+        if (lethalLikely) score += 44 + Math.min(20, targetLifeRemaining * 3);
+        if (!lethalLikely && attackerStrength > 0 && targetLifeRemaining > 0) {
+            score += Math.max(0, 18 - Math.abs(targetLifeRemaining - attackerStrength) * 3);
+        }
+        if (targetIsThreateningSummoner) {
+            score += pressureRatio >= 1 ? 90 : 28;
+        }
+        if (targetIsGate && pressureRatio < 1) {
+            score += 16;
+        }
+
+        if (score === 0) return null;
+        return {
+            score: Number((score * scale).toFixed(3)),
+            reason: targetIsThreateningSummoner
+                ? '前瞻评估：先清除威胁召唤师的目标可显著降低后续风险'
+                : targetType === 'summoner'
+                    ? '前瞻评估：持续压制敌方召唤师可扩大回合收益'
+                    : '前瞻评估：当前攻击目标具备更高战术兑现价值',
+            metadata: {
+                targetType,
+                lethalLikely,
+                pressureRatio,
+            },
+        };
+    }
+
+    if (action.kind === 'move-unit') {
+        const attackTargetsAfterMove = readActionMetadataNumber(action, 'attackTargetsAfterMove') ?? 0;
+        const distanceToEnemySummonerBefore = readActionMetadataNumber(action, 'distanceToEnemySummonerBefore');
+        const distanceToEnemySummonerAfter = readActionMetadataNumber(action, 'distanceToEnemySummonerAfter');
+        const directThreatDamageBefore = readActionMetadataNumber(action, 'directThreatDamageBefore');
+        const directThreatDamageAfter = readActionMetadataNumber(action, 'directThreatDamageAfter');
+        const nearbyEnemyPressureBefore = readActionMetadataNumber(action, 'nearbyEnemyPressureBefore');
+        const nearbyEnemyPressureAfter = readActionMetadataNumber(action, 'nearbyEnemyPressureAfter');
+        const centerScore = readActionMetadataNumber(action, 'centerScore') ?? 0;
+        const nearOwnGateAfterMove = readActionMetadataBoolean(action, 'nearOwnGateAfterMove') === true;
+        const sourceIsSummoner = readActionMetadataBoolean(action, 'sourceIsSummoner') === true;
+
+        let score = attackTargetsAfterMove * 16 + centerScore * 4;
+        if (distanceToEnemySummonerBefore !== null && distanceToEnemySummonerAfter !== null && distanceToEnemySummonerAfter < distanceToEnemySummonerBefore) {
+            score += (distanceToEnemySummonerBefore - distanceToEnemySummonerAfter) * 10;
+        }
+        if (directThreatDamageBefore !== null && directThreatDamageAfter !== null && directThreatDamageAfter < directThreatDamageBefore) {
+            score += (directThreatDamageBefore - directThreatDamageAfter) * 26;
+        }
+        if (nearbyEnemyPressureBefore !== null && nearbyEnemyPressureAfter !== null && nearbyEnemyPressureAfter < nearbyEnemyPressureBefore) {
+            score += (nearbyEnemyPressureBefore - nearbyEnemyPressureAfter) * 6;
+        }
+        if (nearOwnGateAfterMove) score += 14;
+        if (sourceIsSummoner && pressureRatio >= 1) score += 30;
+        if (centerControlDelta < 0 && centerScore >= 2) score += 20;
+
+        if (score === 0) return null;
+        return {
+            score: Number((score * scale).toFixed(3)),
+            reason: pressureRatio >= 1
+                ? '前瞻评估：该移动线能降低召唤师受压并保留后续反击机会'
+                : '前瞻评估：该移动线可同时争夺站位与后续攻击窗口',
+            metadata: {
+                attackTargetsAfterMove,
+                pressureRatio,
+            },
+        };
+    }
+
+    if (action.kind === 'summon-unit') {
+        const centerScore = readActionMetadataNumber(action, 'centerScore') ?? 0;
+        const distanceToEnemySummoner = readActionMetadataNumber(action, 'distanceToEnemySummoner') ?? 99;
+        const distanceToOwnSummoner = readActionMetadataNumber(action, 'distanceToOwnSummoner') ?? 99;
+        const cost = readActionMetadataNumber(action, 'cost') ?? 0;
+        const strength = readActionMetadataNumber(action, 'strength') ?? 0;
+        const life = readActionMetadataNumber(action, 'life') ?? 0;
+        const nearForwardGate = readActionMetadataBoolean(action, 'nearForwardGate') === true;
+
+        let score = strength * 10 + life * 4 - cost * 5 + centerScore * 3;
+        score += Math.max(0, 7 - distanceToEnemySummoner) * 3;
+        if (pressureRatio >= 1) {
+            score += Math.max(0, 5 - distanceToOwnSummoner) * 8;
+        } else {
+            score += Math.max(0, 6 - distanceToEnemySummoner) * 4;
+        }
+        if (nearForwardGate) score += 18;
+
+        return {
+            score: Number((score * scale).toFixed(3)),
+            reason: pressureRatio >= 1
+                ? '前瞻评估：当前召唤更偏向保护召唤师并稳住防线'
+                : '前瞻评估：当前召唤更偏向前压与扩大战线控制',
+            metadata: {
+                distanceToEnemySummoner,
+                distanceToOwnSummoner,
+                nearForwardGate,
+            },
+        };
+    }
+
+    if (action.kind === 'build-structure') {
+        const isGate = readActionMetadataBoolean(action, 'isGate') === true;
+        const life = readActionMetadataNumber(action, 'life') ?? 0;
+        const cost = readActionMetadataNumber(action, 'cost') ?? 0;
+        const centerScore = readActionMetadataNumber(action, 'centerScore') ?? 0;
+        const frontRowScore = readActionMetadataNumber(action, 'frontRowScore') ?? 0;
+        const summonRangeExtension = readActionMetadataNumber(action, 'summonRangeExtension') ?? 0;
+        const blocksEnemySummon = readActionMetadataNumber(action, 'blocksEnemySummon') ?? 0;
+
+        let score = isGate
+            ? 42 + frontRowScore * 9 + summonRangeExtension * 18 + blocksEnemySummon * 24
+            : 18 + life * 7 - cost * 5;
+        score += centerScore * 3;
+        if (!isGate && pressureRatio >= 1) {
+            score += 20;
+        }
+
+        return {
+            score: Number((score * scale).toFixed(3)),
+            reason: isGate
+                ? '前瞻评估：传送门前推能扩大召唤覆盖并压制敌方召唤位'
+                : '前瞻评估：防御建筑可提升关键区域生存与站位稳定性',
+            metadata: {
+                isGate,
+                summonRangeExtension,
+                blocksEnemySummon,
+            },
+        };
+    }
+
+    if (action.kind === 'activate-ability') {
+        const selfChargeGain = readActionMetadataNumber(action, 'selfChargeGain') ?? 0;
+        const adjacentAllyCount = readActionMetadataNumber(action, 'adjacentAllyCount') ?? 0;
+        const adjacentChampionCount = readActionMetadataNumber(action, 'adjacentChampionCount') ?? 0;
+        const allAllyCount = readActionMetadataNumber(action, 'allAllyCount') ?? 0;
+        const allChampionCount = readActionMetadataNumber(action, 'allChampionCount') ?? 0;
+        const enemySummonerPressureCount = (readActionMetadataNumber(action, 'adjacentEnemySummonerPressureCount') ?? 0)
+            + (readActionMetadataNumber(action, 'allEnemySummonerPressureCount') ?? 0);
+        const costsAttackAction = readActionMetadataBoolean(action, 'costsAttackAction') === true;
+
+        let score = selfChargeGain * 20
+            + (adjacentAllyCount + allAllyCount) * 11
+            + (adjacentChampionCount + allChampionCount) * 16
+            + enemySummonerPressureCount * 18;
+        if (costsAttackAction) score -= 12;
+        if (pressureRatio >= 1 && enemySummonerPressureCount === 0) score -= 8;
+
+        if (score === 0) return null;
+        return {
+            score: Number((score * scale).toFixed(3)),
+            reason: '前瞻评估：优先选择能在本回合放大战场联动收益的技能',
+            metadata: {
+                selfChargeGain,
+                adjacentAllyCount,
+                allAllyCount,
+            },
+        };
+    }
+
+    if (action.kind === 'discard-for-magic') {
+        const keepValue = readActionMetadataNumber(action, 'keepValue') ?? 0;
+        return {
+            score: Number((-keepValue * 0.08 * scale).toFixed(3)),
+            reason: '前瞻评估：优先牺牲保留价值较低的手牌换取资源',
+            metadata: { keepValue },
+        };
+    }
+
+    if (action.kind === 'advance-phase') {
+        const proactiveActions = context.legalActions.filter((candidate) => {
+            return candidate.actionId !== action.actionId
+                && candidate.kind !== 'interaction-cancel'
+                && candidate.kind !== 'discard-for-magic';
+        }).length;
+        let score = proactiveActions > 0 ? -26 : 24;
+        if (pressureRatio >= 1 && antiThreatActions > 0) {
+            score -= 48;
+        }
+        return {
+            score: Number((score * scale).toFixed(3)),
+            reason: proactiveActions > 0
+                ? '前瞻评估：当前仍有可兑现动作，不宜提前结束阶段'
+                : '前瞻评估：阶段收益接近耗尽，可推进流程',
+            metadata: {
+                proactiveActions,
+                antiThreatActions,
+            },
+        };
+    }
+
+    return null;
+};
+
 const baselineLocalPolicy = createLookaheadLocalAiPolicy({
     id: 'baseline',
     scorers: [
@@ -2762,6 +3201,12 @@ const baselineLocalPolicy = createLookaheadLocalAiPolicy({
         return evaluateSummonerWarsAssignments({
             context,
             baseEvaluations,
+        });
+    },
+    projectAction({ context, action }) {
+        return projectSummonerWarsAction({
+            context,
+            action,
         });
     },
 });

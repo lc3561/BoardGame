@@ -1737,6 +1737,59 @@ test.describe('DiceThrone Simple Start', () => {
         }
     });
 
+    test('Online AI setup HUD seat swap: should render entry and swap with AI immediately', async ({ browser }, testInfo) => {
+        test.setTimeout(120000);
+        const baseURL = testInfo.project.use.baseURL as string | undefined;
+
+        const setup = await setupDTOnlineAiRoom(browser, baseURL);
+        if (!setup) {
+            test.skip(true, 'DiceThrone AI 联机房间创建失败');
+            return;
+        }
+
+        try {
+            const { hostPage, matchId } = setup;
+            await waitForCharacterSelection(hostPage, 20000);
+            await applyOnlineMatchState(matchId, hostPage, (state) => {
+                const next = structuredClone(state);
+                next.core = {
+                    ...next.core,
+                    hostStarted: false,
+                    phase: 'setup',
+                    seatingOrder: Array.isArray(next.core?.seatingOrder) && next.core.seatingOrder.length > 0
+                        ? next.core.seatingOrder
+                        : ['0', '1'],
+                };
+                next.sys = {
+                    ...next.sys,
+                    phase: 'setup',
+                };
+                return next;
+            });
+            await waitForPhase(hostPage, 'setup', 10000);
+
+            await expect(hostPage.locator('[data-fab-id="chat"]')).toBeVisible({ timeout: 10000 });
+            await hostPage.locator('[data-fab-id="chat"]').click();
+            await expect(hostPage.locator('[data-fab-id="seat-swap"]')).toBeVisible({ timeout: 10000 });
+
+            await clearEvidenceScreenshotsForTest(testInfo);
+            await saveEvidenceScreenshot(hostPage, testInfo, '30-online-ai-hud-seat-swap-entry');
+
+            await hostPage.locator('[data-fab-id="seat-swap"]').click();
+            await expect(hostPage.getByTestId('hud-seat-swap-seat-1')).toBeVisible({ timeout: 10000 });
+            await expect(hostPage.getByTestId('hud-seat-swap-seat-1').getByText(/^AI$/)).toBeVisible({ timeout: 5000 });
+
+            await saveEvidenceScreenshot(hostPage, testInfo, '31-online-ai-hud-seat-swap-before-click');
+
+            await hostPage.getByTestId('hud-seat-swap-seat-1').click();
+            await waitForSeatingOrder(matchId, hostPage, ['1', '0']);
+
+            await saveEvidenceScreenshot(hostPage, testInfo, '32-online-ai-hud-seat-swap-after-click');
+        } finally {
+            await setup.hostContext.close();
+        }
+    });
+
     test('Online AI 首轮 batch 被拒后应自动重试并完成隐藏 multistep-choice', async ({ browser }, testInfo) => {
         test.setTimeout(120000);
         const baseURL = testInfo.project.use.baseURL as string | undefined;

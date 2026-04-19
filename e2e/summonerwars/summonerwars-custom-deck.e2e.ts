@@ -10,7 +10,8 @@
  * - 遮罩层关闭抽屉
  */
 
-import { test, expect, type Locator, type Page } from '@playwright/test';
+import { type Locator, type Page } from '@playwright/test';
+import { test, expect } from '../framework';
 import { ensureGameServerAvailable, waitForMatchAvailable } from '../helpers/common';
 import { clearEvidenceScreenshotsForTest, getEvidenceScreenshotPath } from '../framework/evidenceScreenshots';
 import {

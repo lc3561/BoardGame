@@ -56,7 +56,6 @@ import {
     isCardPlayableInResponseWindow,
     getActiveDice,
     getSeatingOrder,
-    isTeamMode,
 } from './rules';
 import { RESOURCE_IDS } from './resources';
 import { STATUS_IDS, DICETHRONE_COMMANDS, TOKEN_IDS } from './ids';
@@ -298,7 +297,7 @@ const validatePlayerUnready = (
 };
 
 /**
- * 验证移动座位命令（2v2 setup 阶段）
+ * 验证移动座位命令（setup 阶段）
  */
 const validateMoveSeat = (
     state: DiceThroneCore,
@@ -310,7 +309,8 @@ const validateMoveSeat = (
         return fail('invalid_phase');
     }
 
-    if (!isTeamMode(state)) {
+    const seatingOrder = getSeatingOrder(state);
+    if (seatingOrder.length < 2) {
         return fail('invalid_mode');
     }
 
@@ -323,7 +323,6 @@ const validateMoveSeat = (
         return fail('player_not_found');
     }
 
-    const seatingOrder = getSeatingOrder(state);
     const sourceSeatIndex = seatingOrder.indexOf(movingPlayerId);
     if (sourceSeatIndex < 0) {
         return fail('player_not_found');
@@ -342,7 +341,7 @@ const validateMoveSeat = (
 };
 
 /**
- * 验证申请换位命令（2v2 setup 阶段）
+ * 验证申请换位命令（setup 阶段）
  */
 const validateRequestSeatSwap = (
     state: DiceThroneCore,
@@ -354,7 +353,8 @@ const validateRequestSeatSwap = (
         return fail('invalid_phase');
     }
 
-    if (!isTeamMode(state)) {
+    const seatingOrder = getSeatingOrder(state);
+    if (seatingOrder.length < 2) {
         return fail('invalid_mode');
     }
 
@@ -375,7 +375,7 @@ const validateRequestSeatSwap = (
 };
 
 /**
- * 验证响应换位命令（2v2 setup 阶段）
+ * 验证响应换位命令（setup 阶段）
  */
 const validateRespondSeatSwap = (
     state: DiceThroneCore,
@@ -385,10 +385,6 @@ const validateRespondSeatSwap = (
 ): ValidationResult => {
     if (phase !== 'setup') {
         return fail('invalid_phase');
-    }
-
-    if (!isTeamMode(state)) {
-        return fail('invalid_mode');
     }
 
     const pendingRequest = state.seatSwapRequest;
@@ -404,7 +400,7 @@ const validateRespondSeatSwap = (
 };
 
 /**
- * 验证取消换位命令（2v2 setup 阶段）
+ * 验证取消换位命令（setup 阶段）
  */
 const validateCancelSeatSwap = (
     state: DiceThroneCore,
@@ -414,10 +410,6 @@ const validateCancelSeatSwap = (
 ): ValidationResult => {
     if (phase !== 'setup') {
         return fail('invalid_phase');
-    }
-
-    if (!isTeamMode(state)) {
-        return fail('invalid_mode');
     }
 
     const pendingRequest = state.seatSwapRequest;
