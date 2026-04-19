@@ -11,7 +11,7 @@ const repoRoot = process.cwd();
 const devBundleDir = process.env.DEV_BUNDLE_DIR || path.join('temp', 'dev-bundles');
 const devStartupTimeoutMs = Number(process.env.DEV_STARTUP_TIMEOUT_MS) || 300000;
 const DEFAULT_DEV_PORTS = Object.freeze({
-    frontend: 4173,
+    frontend: 4273,
     gameServer: 18000,
     apiServer: 18001,
 });

@@ -73,9 +73,9 @@ function collectOwnedBuriedCards(
     state: SmashUpCore,
     playerId: PlayerId,
     options?: { baseIndex?: number; maxPower?: number },
-): Array<{ cardUid: string; defId: string; baseIndex: number; label: string }> {
+): Array<{ cardUid: string; defId: string; baseIndex: number; baseDefId: string; label: string }> {
     const maxPower = options?.maxPower ?? 3;
-    const result: Array<{ cardUid: string; defId: string; baseIndex: number; label: string }> = [];
+    const result: Array<{ cardUid: string; defId: string; baseIndex: number; baseDefId: string; label: string }> = [];
     state.bases.forEach((base, baseIndex) => {
         if (options?.baseIndex !== undefined && options.baseIndex !== baseIndex) return;
         const baseName = getBaseDef(base.defId)?.name ?? `基地 ${baseIndex + 1}`;
@@ -87,6 +87,7 @@ function collectOwnedBuriedCards(
                 cardUid: buried.uid,
                 defId: buried.defId,
                 baseIndex,
+                baseDefId: base.defId,
                 label: `${cardName} @ ${baseName}`,
             });
         });
@@ -144,26 +145,6 @@ function buildDiscardMinionOptions(cards: CardInstance[]) {
     }));
 }
 
-function queueDiscardSelectionForBury(
-    matchState: AbilityContext['matchState'],
-    playerId: PlayerId,
-    sourceId: string,
-    title: string,
-    targetBaseIndex: number,
-    cards: CardInstance[],
-    now: number,
-) {
-    const interaction = createSimpleChoice(
-        `${sourceId}_${now}`,
-        playerId,
-        title,
-        [createSkipOption('跳过'), ...buildDiscardMinionOptions(cards)],
-        { sourceId, targetType: 'discard' },
-    );
-    (interaction.data as { continuationContext?: GraveyardContinuation }).continuationContext = { targetBaseIndex };
-    return queueInteraction(matchState, interaction);
-}
-
 function skeletonsReturnedOneOnPlay(ctx: AbilityContext): AbilityResult {
     const handTargets = getLowPowerHandCards(ctx.state, ctx.playerId, 3);
     if (handTargets.length === 0) {
@@ -219,7 +200,7 @@ function skeletonsDigEmUpOnPlay(ctx: AbilityContext): AbilityResult {
         buriedTargets.map((target, index) => ({
             id: `buried-${index}`,
             label: target.label,
-            value: { cardUid: target.cardUid, baseIndex: target.baseIndex, defId: target.defId },
+            value: { cardUid: target.cardUid, baseIndex: target.baseIndex, baseDefId: target.baseDefId, defId: target.defId },
             _source: 'static' as const,
             displayMode: 'card' as const,
         })),
@@ -251,7 +232,7 @@ function skeletonsBurstForthSpecial(ctx: AbilityContext): AbilityResult {
         buriedTargets.map((target, index) => ({
             id: `buried-${index}`,
             label: target.label,
-            value: { cardUid: target.cardUid, baseIndex: target.baseIndex, defId: target.defId },
+            value: { cardUid: target.cardUid, baseIndex: target.baseIndex, baseDefId: target.baseDefId, defId: target.defId },
             _source: 'static' as const,
             displayMode: 'card' as const,
         })),
@@ -265,17 +246,17 @@ function skeletonsGraveyardTalent(ctx: AbilityContext): AbilityResult {
     if (cards.length === 0) {
         return { events: [buildAbilityFeedback(ctx.playerId, 'feedback.discard_empty', ctx.now)] };
     }
+    const interaction = createSimpleChoice(
+        `skeletons_graveyard_${ctx.now}`,
+        ctx.playerId,
+        '墓园：选择一张力量 3 或以下的随从埋葬到此基地',
+        [createSkipOption('跳过'), ...buildDiscardMinionOptions(cards)],
+        { sourceId: 'skeletons_graveyard', targetType: 'discard' },
+    );
+    (interaction.data as { continuationContext?: GraveyardContinuation }).continuationContext = { targetBaseIndex: ctx.baseIndex };
     return {
         events: [],
-        matchState: queueDiscardSelectionForBury(
-            ctx.matchState,
-            ctx.playerId,
-            'skeletons_graveyard',
-            '墓园：选择一张力量 3 或以下的随从埋葬到此基地',
-            ctx.baseIndex,
-            cards,
-            ctx.now,
-        ),
+        matchState: queueInteraction(ctx.matchState, interaction),
     };
 }
 
@@ -284,17 +265,17 @@ function skeletonsLordOfBonesTalent(ctx: AbilityContext): AbilityResult {
     if (cards.length === 0) {
         return { events: [buildAbilityFeedback(ctx.playerId, 'feedback.discard_empty', ctx.now)] };
     }
+    const interaction = createSimpleChoice(
+        `skeletons_lord_of_bones_${ctx.now}`,
+        ctx.playerId,
+        '白骨领主：选择一张力量 3 或以下的随从埋葬到此基地',
+        [createSkipOption('跳过'), ...buildDiscardMinionOptions(cards)],
+        { sourceId: 'skeletons_lord_of_bones', targetType: 'discard' },
+    );
+    (interaction.data as { continuationContext?: GraveyardContinuation }).continuationContext = { targetBaseIndex: ctx.baseIndex };
     return {
         events: [],
-        matchState: queueDiscardSelectionForBury(
-            ctx.matchState,
-            ctx.playerId,
-            'skeletons_lord_of_bones',
-            '白骨领主：选择一张力量 3 或以下的随从埋葬到此基地',
-            ctx.baseIndex,
-            cards,
-            ctx.now,
-        ),
+        matchState: queueInteraction(ctx.matchState, interaction),
     };
 }
 

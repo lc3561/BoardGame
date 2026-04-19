@@ -89,7 +89,7 @@ export const REVOLVER_2: AbilityDef = {
     id: 'revolver',
     name: '左轮手枪 II',
     type: 'offensive',
-    description: '3/4/5 个子弹：分别造成 4/5/6 点伤害。若至少有 4 颗骰子点数相同，则施加击倒。',
+    description: '3/4/5 个子弹：分别造成 4/5/6 点伤害。若至少有 4 颗骰子骰面相同，则施加击倒。',
     sfxKey: GUNSLINGER_SFX_SHOT,
     variants: [
         {
@@ -97,7 +97,7 @@ export const REVOLVER_2: AbilityDef = {
             trigger: { type: 'diceSet', faces: { [FACE.BULLET]: 3 } },
             effects: [
                 damage(4, '造成 4 点伤害。'),
-                custom('gunslinger-revolver-2-four-kind', '若至少有 4 颗骰子点数相同，则施加击倒。', 'preDefense'),
+                custom('gunslinger-revolver-2-four-kind', '若至少有 4 颗骰子骰面相同，则施加击倒。', 'preDefense'),
             ],
             priority: 1,
         },
@@ -106,7 +106,7 @@ export const REVOLVER_2: AbilityDef = {
             trigger: { type: 'diceSet', faces: { [FACE.BULLET]: 4 } },
             effects: [
                 damage(5, '造成 5 点伤害。'),
-                custom('gunslinger-revolver-2-four-kind', '若至少有 4 颗骰子点数相同，则施加击倒。', 'preDefense'),
+                custom('gunslinger-revolver-2-four-kind', '若至少有 4 颗骰子骰面相同，则施加击倒。', 'preDefense'),
             ],
             priority: 2,
         },
@@ -115,7 +115,7 @@ export const REVOLVER_2: AbilityDef = {
             trigger: { type: 'diceSet', faces: { [FACE.BULLET]: 5 } },
             effects: [
                 damage(6, '造成 6 点伤害。'),
-                custom('gunslinger-revolver-2-four-kind', '若至少有 4 颗骰子点数相同，则施加击倒。', 'preDefense'),
+                custom('gunslinger-revolver-2-four-kind', '若至少有 4 颗骰子骰面相同，则施加击倒。', 'preDefense'),
             ],
             priority: 3,
         },

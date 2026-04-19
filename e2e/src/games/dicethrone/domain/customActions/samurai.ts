@@ -77,10 +77,14 @@ function createSingleOpponentInteraction(
     } as InteractionRequestedEvent;
 }
 
-function getMaxDuplicateValueCount(state: CustomActionContext['state']): number {
-    const counts = new Map<number, number>();
+function getMaxDuplicateFaceCount(state: CustomActionContext['state']): number {
+    const counts = new Map<string, number>();
     for (const die of getActiveDice(state)) {
-        counts.set(die.value, (counts.get(die.value) ?? 0) + 1);
+        const face = typeof die.symbol === 'string' && die.symbol.length > 0
+            ? die.symbol
+            : (Array.isArray(die.symbols) && typeof die.symbols[0] === 'string' ? die.symbols[0] : null);
+        if (!face) continue;
+        counts.set(face, (counts.get(face) ?? 0) + 1);
     }
     return Math.max(0, ...counts.values());
 }
@@ -187,7 +191,7 @@ function handleKatanaSliceThreshold(
 ): DiceThroneEvent[] {
     const defenderId = ctx.defenderId;
     if (!defenderId) return [];
-    if (getMaxDuplicateValueCount(state) < threshold) return [];
+    if (getMaxDuplicateFaceCount(state) < threshold) return [];
 
     const shameEvent = createGrantTokenEvent(state, defenderId, TOKEN_IDS.SHAME, 1, sourceAbilityId, timestamp);
     return shameEvent ? [shameEvent] : [];

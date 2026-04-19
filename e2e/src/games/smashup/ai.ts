@@ -749,6 +749,55 @@ const evaluateSmashUpAssignments = (args: {
     return finalAssignments;
 };
 
+const RELATIVE_UTILITY_ACTION_KINDS = new Set<AiLegalAction['kind']>([
+    'play-minion',
+    'play-action',
+    'activate-special',
+    'use-talent',
+]);
+
+const RELATIVE_UTILITY_WEIGHT = 9;
+const relativeUtilityByActionIdCache = new WeakMap<AiDecisionContext, Map<string, number>>();
+
+const shouldApplySmashUpRelativeUtility = (context: AiDecisionContext): boolean => {
+    if (context.responseWindow) return false;
+    const state = context.visibleState as SmashUpState;
+    return !state.sys.responseWindow?.current;
+};
+
+const buildRelativeUtilityByActionId = (context: AiDecisionContext): Map<string, number> => {
+    const cached = relativeUtilityByActionIdCache.get(context);
+    if (cached) return cached;
+
+    const utilityMap = new Map<string, number>();
+    if (!shouldApplySmashUpRelativeUtility(context)) {
+        relativeUtilityByActionIdCache.set(context, utilityMap);
+        return utilityMap;
+    }
+
+    const candidates = context.legalActions.filter((action) => RELATIVE_UTILITY_ACTION_KINDS.has(action.kind));
+    if (candidates.length <= 1) {
+        relativeUtilityByActionIdCache.set(context, utilityMap);
+        return utilityMap;
+    }
+
+    const rawScores = candidates.map((action) => ({
+        actionId: action.actionId,
+        score: projectSmashUpAction({ context, action })?.score ?? 0,
+    }));
+    const minScore = rawScores.reduce((best, item) => Math.min(best, item.score), Number.POSITIVE_INFINITY);
+    const maxScore = rawScores.reduce((best, item) => Math.max(best, item.score), Number.NEGATIVE_INFINITY);
+    const denominator = maxScore > minScore ? (maxScore - minScore) : 0;
+
+    for (const item of rawScores) {
+        const relativeUtility = denominator > 0 ? (item.score - minScore) / denominator : 1;
+        utilityMap.set(item.actionId, Number(relativeUtility.toFixed(3)));
+    }
+
+    relativeUtilityByActionIdCache.set(context, utilityMap);
+    return utilityMap;
+};
+
 const estimateImmediateActionUrgency = (action: AiLegalAction): number => {
     const scoringEligible = action.metadata?.scoringEligible === true || action.metadata?.scoringBase === true;
     const projectedMargin = typeof action.metadata?.projectedMargin === 'number'
@@ -1980,6 +2029,27 @@ const urgentBaseTempoScorer: LocalAiActionScorer = {
     },
 };
 
+const limitedRelativeUtilityScorer: LocalAiActionScorer = {
+    id: 'relative-utility-smashup-limited',
+    score(context, action) {
+        if (!RELATIVE_UTILITY_ACTION_KINDS.has(action.kind)) return null;
+        if (!shouldApplySmashUpRelativeUtility(context)) return null;
+
+        const utilityMap = buildRelativeUtilityByActionId(context);
+        if (utilityMap.size <= 1) return null;
+
+        const relativeUtility = utilityMap.get(action.actionId);
+        if (relativeUtility === undefined) return null;
+
+        const score = Number((((relativeUtility - 0.5) * 2) * RELATIVE_UTILITY_WEIGHT).toFixed(3));
+        if (score === 0) return null;
+        return {
+            score,
+            reason: `阶段内相对效用 ${(relativeUtility * 100).toFixed(0)}%`,
+        };
+    },
+};
+
 const responsePassScorer: LocalAiActionScorer = {
     id: 'response-pass-control',
     score(context, action) {
@@ -2047,6 +2117,7 @@ const baselineLocalPolicy = createLookaheadLocalAiPolicy({
         minionTempoScorer,
         actionTempoScorer,
         urgentBaseTempoScorer,
+        limitedRelativeUtilityScorer,
         responsePassScorer,
         discardScorer,
         advancePhaseScorer,

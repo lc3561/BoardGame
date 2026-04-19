@@ -10,7 +10,7 @@ function resolvePort(value, fallback) {
 
 // 开发环境端口始终读取当前 .env，避免测试脚本误把本地开发前端当成 E2E 服务。
 export const DEV_SERVER_PORTS = Object.freeze({
-  frontend: resolvePort(process.env.VITE_DEV_PORT, devRuntimePorts?.frontend ?? 4173),
+  frontend: resolvePort(process.env.VITE_DEV_PORT, devRuntimePorts?.frontend ?? 4273),
   gameServer: resolvePort(process.env.GAME_SERVER_PORT, devRuntimePorts?.gameServer ?? 18000),
   apiServer: resolvePort(process.env.API_SERVER_PORT, devRuntimePorts?.apiServer ?? 18001),
 });

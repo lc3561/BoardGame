@@ -350,7 +350,7 @@ describe('月精灵 Custom Action 运行时行为断言', () => {
     });
 
     describe('moon_elf-elusive-step-resolve-2 (打不到我II)', () => {
-        it('0弓2足：无伤害，授予50%减伤护盾（足≥2触发）', () => {
+        it('4足1月：造成4伤害，授予50%减伤护盾（足≥2触发）', () => {
             // dice: [4,5,4,5,6] → 0弓, 4足, 1月
             const dice = [4, 5, 4, 5, 6].map(v => createMoonElfDie(v));
             const state = createState({ dice });
@@ -358,11 +358,11 @@ describe('月精灵 Custom Action 运行时行为断言', () => {
             const handler = getCustomActionHandler('moon_elf-elusive-step-resolve-2')!;
             const events = handler(buildCtx(state, 'moon_elf-elusive-step-resolve-2'));
 
-            expect(eventsOfType(events, 'DAMAGE_DEALT')).toHaveLength(0); // 0弓→无伤害
+            expect((eventsOfType(events, 'DAMAGE_DEALT')[0] as any).payload.amount).toBe(4); // 4足→4伤害
             expect(eventsOfType(events, 'DAMAGE_SHIELD_GRANTED')).toHaveLength(1); // 足≥2→50%减伤护盾
         });
 
-        it('2弓2足：造成2伤害（弓面数），授予50%减伤护盾', () => {
+        it('2弓2足：造成2伤害（足面数），授予50%减伤护盾', () => {
             // dice: [1,2,4,5,6] → 2弓, 2足, 1月
             const dice = [1, 2, 4, 5, 6].map(v => createMoonElfDie(v));
             const state = createState({ dice });
@@ -370,14 +370,14 @@ describe('月精灵 Custom Action 运行时行为断言', () => {
             const handler = getCustomActionHandler('moon_elf-elusive-step-resolve-2')!;
             const events = handler(buildCtx(state, 'moon_elf-elusive-step-resolve-2'));
 
-            expect((eventsOfType(events, 'DAMAGE_DEALT')[0] as any).payload.amount).toBe(2); // 2弓→2伤害
+            expect((eventsOfType(events, 'DAMAGE_DEALT')[0] as any).payload.amount).toBe(2); // 2足→2伤害
             const shield = eventsOfType(events, 'DAMAGE_SHIELD_GRANTED');
             expect(shield).toHaveLength(1); // 足≥2→50%减伤护盾
             expect((shield[0] as any).payload.reductionPercent).toBe(50);
             expect(eventsOfType(events, 'TOKEN_GRANTED')).toHaveLength(0); // 无闪避效果
         });
 
-        it('3弓1足：造成3伤害，无减伤（足<2）', () => {
+        it('3弓1足：造成1伤害，无减伤（足<2）', () => {
             // dice: [1,2,3,4,6] → 3弓, 1足, 1月
             const dice = [1, 2, 3, 4, 6].map(v => createMoonElfDie(v));
             const state = createState({ dice });
@@ -385,11 +385,11 @@ describe('月精灵 Custom Action 运行时行为断言', () => {
             const handler = getCustomActionHandler('moon_elf-elusive-step-resolve-2')!;
             const events = handler(buildCtx(state, 'moon_elf-elusive-step-resolve-2'));
 
-            expect((eventsOfType(events, 'DAMAGE_DEALT')[0] as any).payload.amount).toBe(3); // 3弓→3伤害
+            expect((eventsOfType(events, 'DAMAGE_DEALT')[0] as any).payload.amount).toBe(1); // 1足→1伤害
             expect(eventsOfType(events, 'PREVENT_DAMAGE')).toHaveLength(0); // 足<2→无减伤
         });
 
-        it('5弓0足：造成5伤害，无减伤', () => {
+        it('5弓0足：无伤害，无减伤', () => {
             // dice: [1,1,2,2,3] → 5弓, 0足, 0月
             const dice = [1, 1, 2, 2, 3].map(v => createMoonElfDie(v));
             const state = createState({ dice });
@@ -397,7 +397,7 @@ describe('月精灵 Custom Action 运行时行为断言', () => {
             const handler = getCustomActionHandler('moon_elf-elusive-step-resolve-2')!;
             const events = handler(buildCtx(state, 'moon_elf-elusive-step-resolve-2'));
 
-            expect((eventsOfType(events, 'DAMAGE_DEALT')[0] as any).payload.amount).toBe(5); // 5弓→5伤害
+            expect(eventsOfType(events, 'DAMAGE_DEALT')).toHaveLength(0); // 0足→无伤害
             expect(eventsOfType(events, 'PREVENT_DAMAGE')).toHaveLength(0); // 0足→无减伤
         });
     });

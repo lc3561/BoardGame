@@ -230,6 +230,7 @@ export function useGameEvents({
   const pendingAttackQueueRef = useRef<PendingAttack[]>([]);
   const bufferedAttackRef = useRef<PendingAttack | null>(null);
   const completedAttackRef = useRef<PendingAttack | null>(null);
+  const closedAttackEventIdRef = useRef<number | null>(null);
   // 防止同一 eventStream 事件在重连/回滚场景下被重复消费导致攻击动画重复播放
   const processedAttackEventIdsRef = useRef<Set<number>>(new Set());
 
@@ -306,6 +307,7 @@ export function useGameEvents({
 
   const activateAttack = useCallback((attack: PendingAttack) => {
     pendingAttackRef.current = attack;
+    closedAttackEventIdRef.current = null;
     freezeAttackSnapshot(attack);
     setDiceResult({
       results: attack.diceResults,
@@ -424,6 +426,7 @@ export function useGameEvents({
       pendingAttackQueueRef.current = [];
       bufferedAttackRef.current = null;
       completedAttackRef.current = null;
+      closedAttackEventIdRef.current = null;
       setDiceResult(null);
       setDyingEntities([]);
       damageBuffer.clear();
@@ -837,14 +840,27 @@ export function useGameEvents({
 
   // 关闭骰子结果 → 播放攻击动画
   const handleCloseDiceResult = () => {
+    const pending = pendingAttackRef.current;
+    if (!pending) {
+      swAttackDebugLog('dice_overlay_close_requested_without_pending_attack', {});
+      setDiceResult(null);
+      return null;
+    }
+    if (closedAttackEventIdRef.current === pending.attackEventId) {
+      swAttackDebugLog('dice_overlay_close_duplicate_ignored', {
+        pendingAttackEventId: pending.attackEventId,
+      });
+      return null;
+    }
+    closedAttackEventIdRef.current = pending.attackEventId;
     swAttackDebugLog('dice_overlay_close_requested', {
-      pendingAttackEventId: pendingAttackRef.current?.attackEventId,
-      pendingAttackType: pendingAttackRef.current?.attackType,
-      pendingAttackHits: pendingAttackRef.current?.hits,
-      pendingDamageCount: pendingAttackRef.current?.damages.length ?? 0,
+      pendingAttackEventId: pending.attackEventId,
+      pendingAttackType: pending.attackType,
+      pendingAttackHits: pending.hits,
+      pendingDamageCount: pending.damages.length,
     });
     setDiceResult(null);
-    return pendingAttackRef.current;
+    return pending;
   };
 
   // 清理待播放数据

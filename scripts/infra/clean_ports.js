@@ -8,7 +8,7 @@ import { withWindowsHide } from './windows-hide.js';
 
 await assertChildProcessSupport('开发端口清理');
 
-const defaultPorts = [4173, 5173, 18000, 18001];
+const defaultPorts = [4273, 4173, 5173, 18000, 18001];
 const envPorts = process.env.CLEAN_PORTS
     ? process.env.CLEAN_PORTS.split(',').map((value) => Number(value.trim()))
     : [];

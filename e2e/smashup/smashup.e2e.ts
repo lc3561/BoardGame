@@ -261,12 +261,32 @@ test.describe('大杀四方大厅 E2E', () => {
     await expect(hostPage.getByText(/骷髅|Skeletons/i).first()).toBeVisible({ timeout: 15000 });
     await expect(hostPage.getByText(/世界冠军|World Champs/i).first()).toBeVisible({ timeout: 15000 });
 
-    await expect(hostPage.getByTestId('faction-implementation-banner-mermaids')).toBeVisible({ timeout: 15000 });
-    await expect(hostPage.getByTestId('faction-implementation-banner-skeletons')).toBeVisible({ timeout: 15000 });
-    await expect(hostPage.getByTestId('faction-implementation-banner-world_champs')).toBeVisible({ timeout: 15000 });
+    const mermaidsName = hostPage.getByText(/美人鱼|Mermaids/i).first();
+    const skeletonsName = hostPage.getByText(/骷髅|Skeletons/i).first();
+    const worldChampsName = hostPage.getByText(/世界冠军|World Champs/i).first();
+
+    const mermaidsBanner = hostPage.getByTestId('faction-implementation-banner-mermaids');
+    const skeletonsBanner = hostPage.getByTestId('faction-implementation-banner-skeletons');
+    const worldChampsBanner = hostPage.getByTestId('faction-implementation-banner-world_champs');
+
+    await expect(mermaidsBanner).toBeVisible({ timeout: 15000 });
+    await expect(skeletonsBanner).toBeVisible({ timeout: 15000 });
+    await expect(worldChampsBanner).toBeVisible({ timeout: 15000 });
 
     const sharedDir = join(process.cwd(), 'test-results', 'evidence-screenshots', '_shared');
     mkdirSync(sharedDir, { recursive: true });
+    await mermaidsName.scrollIntoViewIfNeeded();
+    await mermaidsName.screenshot({ path: join(sharedDir, 'smashup-10th-factions-mermaids-name.png') });
+    await mermaidsBanner.screenshot({ path: join(sharedDir, 'smashup-10th-factions-mermaids-banner.png') });
+
+    await skeletonsName.scrollIntoViewIfNeeded();
+    await skeletonsName.screenshot({ path: join(sharedDir, 'smashup-10th-factions-skeletons-name.png') });
+    await skeletonsBanner.screenshot({ path: join(sharedDir, 'smashup-10th-factions-skeletons-banner.png') });
+
+    await worldChampsName.scrollIntoViewIfNeeded();
+    await worldChampsName.screenshot({ path: join(sharedDir, 'smashup-10th-factions-world-champs-name.png') });
+    await worldChampsBanner.screenshot({ path: join(sharedDir, 'smashup-10th-factions-world-champs-banner.png') });
+
     const sharedShot = join(sharedDir, 'smashup-10th-factions-selection.png');
     await hostPage.screenshot({ path: sharedShot, fullPage: false });
     await hostPage.screenshot({ path: testInfo.outputPath('smashup-10th-factions-selection.png'), fullPage: false });

@@ -139,7 +139,7 @@ export default defineConfig(({ mode }) => {
   const cliHost = readCliFlag('host')
   const devPort = Number.isFinite(cliPort) && cliPort > 0
     ? cliPort
-    : Number(env.VITE_DEV_PORT) || 4173
+    : Number(env.VITE_DEV_PORT) || 4273
   const serverHost = cliHost || '0.0.0.0'
   const hmrHost = cliHost && cliHost !== '0.0.0.0' ? cliHost : 'localhost'
   const gameServerPort = Number(env.GAME_SERVER_PORT) || 18000

@@ -81,6 +81,7 @@ const resolveStatusNewTotal = (
 
 const normalizeSelectedAbilityId = (abilityId: string): string => {
     if (abilityId === 'shadow-guard') return 'shadow-defense';
+    if (abilityId === 'shadow-step') return 'elusive-step';
     return abilityId;
 };
 

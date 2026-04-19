@@ -106,3 +106,56 @@ npm run test:e2e:ci:file -- e2e/summonerwars/summonerwars.e2e.ts "移动横屏�
   - 该用例覆盖移动横屏下 seat-swap 面板的视口边界、按钮列对齐与交换后状态收口。
 - `docs/mobile-adaptation.md`
   - 增加共享 FAB/HUD 双端联动门禁条款。
+
+## 补充修复：移动横屏“开始按钮消失”强制等比回归（2026-04-19）
+
+### 问题描述
+
+- 用户反馈：`summonerwars` 阵营选择页在手机横屏紧凑视口下，开始按钮会“放不下/看不见”。
+- 目标：恢复 PC 同构等比缩放，取消“放不下就改位”的补丁路径。
+
+### 本轮实现
+
+- `src/games/summonerwars/ui/FactionSelectionAdapter.tsx`
+  - 移除移动端特化舞台参数：不再使用 `620` 的移动参考高度，也不再使用 `900px` 宽度 cap。
+  - 移动横屏统一按 `1280x720` 参考舞台等比缩放，保持与 PC 同构比例。
+  - 缩放边距改为按舞台容器真实内边距计算（`12px` 横向 / `4px` 纵向），避免过度缩小导致“和 PC 密度差距过大”。
+  - 舞台容器在移动横屏改为“顶部对齐 + 水平居中”，避免浏览器视口口径差造成的下沿溢出误判。
+  - 取消“右侧浮动操作轨”分支，恢复到同一布局结构下的等比缩放渲染。
+- `e2e/summonerwars/summonerwars-selection.e2e.ts`
+  - `mobile landscape capped viewport ...` 用例改为“严格 16:9 等比缩放”断言，校验舞台 style 宽高与 `--sw-selection-inline-unit/--sw-selection-block-unit` 同步。
+  - 保留紧凑横屏可达性用例：`tight mobile landscape keeps host start button visible under proportional scaling`。
+  - `mobile landscape keeps faction selection aligned with pc composition` 的边界断言改为“等比参数 + 关键区可见可达 + 稳定横向边界”，去掉在移动浏览器口径下不稳定的底边硬阈值。
+
+### 执行命令
+
+```bash
+npm run test:e2e:ci:file -- e2e/summonerwars/summonerwars-selection.e2e.ts "mobile landscape capped viewport keeps faction selection in strict 16:9 proportional scale"
+npm run test:e2e:ci:file -- e2e/summonerwars/summonerwars-selection.e2e.ts "tight mobile landscape keeps host start button visible under proportional scaling"
+npm run test:e2e:ci:file -- e2e/summonerwars/summonerwars-selection.e2e.ts "mobile landscape keeps faction selection aligned with pc composition"
+```
+
+结果：三条用例均通过。
+
+### 关键截图与肉眼结论
+
+1. capped 横屏等比缩放证据
+   `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\summonerwars\summonerwars-selection.e2e\mobile-landscape-capped-viewport-keeps-faction-selection-in-strict-16-9-proportional-scale\selection-phone-landscape-capped-entry.png`
+
+- 我实际看到：阵营卡、标题、底部信息块保持同一套 PC 构图关系，没有出现横向拉伸或竖向压扁。
+- 我实际看到：主内容位于中心视区，不是“缩在左上角”。
+- 是否达标：达标（等比缩放方向正确）。
+
+2. 紧凑横屏开始按钮可达证据
+   `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\summonerwars\summonerwars-selection.e2e\tight-mobile-landscape-keeps-host-start-button-visible-under-proportional-scaling\selection-phone-landscape-tight-start-visible.png`
+
+- 我实际看到：`开始游戏` 按钮本体在紧凑横屏里完整可见，没有被挤出视口。
+- 我实际看到：操作区仍在原布局链路内，未再走“右侧浮动补丁位”。
+- 是否达标：达标（紧凑横屏下开始按钮可见且可点）。
+
+3. 基线横屏（非紧凑）对照
+   `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\summonerwars\summonerwars-selection.e2e\mobile-landscape-keeps-faction-selection-aligned-with-pc-composition\selection-phone-landscape-both-picked.png`
+
+- 我实际看到：主构图仍是 PC 同构缩放路线，未被误修成窄布局；战区与 HUD 在同一坐标系。
+- 我实际看到：右侧仍保留操作轨（等待态文案可见），没有出现整体左上角缩放偏移。
+- 是否达标：达标（补充修复未破坏既有横屏基线）。

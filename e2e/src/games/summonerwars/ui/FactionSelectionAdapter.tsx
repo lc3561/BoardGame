@@ -31,11 +31,9 @@ import { useToast } from '../../../contexts/ToastContext';
 import { CustomDeckCard } from './CustomDeckCard';
 import { getSummonerAtlasIdByFaction } from './helpers/customDeckHelpers';
 import { useRuntimeViewport } from '../../../hooks/ui/useRuntimeViewport';
-import { SUMMONER_WARS_MOBILE_BOARD_REFERENCE_WIDTH_PX } from './layoutConstants';
 
 const FACTION_SELECTION_REFERENCE_WIDTH_PX = 1280;
 const FACTION_SELECTION_REFERENCE_HEIGHT_PX = 720;
-const FACTION_SELECTION_MOBILE_REFERENCE_HEIGHT_PX = 620;
 
 // 玩家配色
 const PLAYER_COLORS: Record<string, { bg: string; border: string; text: string; glow: string }> = {
@@ -93,6 +91,10 @@ export const FactionSelection: React.FC<FactionSelectionProps> = ({
   const layoutViewportHeight = typeof window !== 'undefined' ? window.innerHeight : viewport.height;
   const isMobileViewport = layoutViewportWidth <= 1023;
   const isLandscapeMobileViewport = isMobileViewport && layoutViewportWidth > layoutViewportHeight;
+  const stageFrameInlinePaddingPx = isLandscapeMobileViewport ? 6 : 0;
+  const stageFrameBlockPaddingPx = isLandscapeMobileViewport ? 2 : 0;
+  const stageHorizontalInsetPx = stageFrameInlinePaddingPx * 2;
+  const stageVerticalInsetPx = stageFrameBlockPaddingPx * 2;
   
   // 确保精灵图注册表已初始化（使用当前语言）
   useEffect(() => {
@@ -220,21 +222,16 @@ export const FactionSelection: React.FC<FactionSelectionProps> = ({
   const myFaction = selectedFactions[currentPlayerId];
   const hasSelected = myFaction && myFaction !== 'unselected';
 
-  const selectionReferenceHeightPx = isLandscapeMobileViewport
-    ? FACTION_SELECTION_MOBILE_REFERENCE_HEIGHT_PX
-    : FACTION_SELECTION_REFERENCE_HEIGHT_PX;
+  const selectionReferenceHeightPx = FACTION_SELECTION_REFERENCE_HEIGHT_PX;
   const selectionStageScale = isLandscapeMobileViewport
     ? Math.min(
-      Math.max((layoutViewportWidth - 16) / FACTION_SELECTION_REFERENCE_WIDTH_PX, 0),
-      Math.max((layoutViewportHeight - 32) / selectionReferenceHeightPx, 0),
+      Math.max((layoutViewportWidth - stageHorizontalInsetPx) / FACTION_SELECTION_REFERENCE_WIDTH_PX, 0),
+      Math.max((layoutViewportHeight - stageVerticalInsetPx) / selectionReferenceHeightPx, 0),
       1
     )
     : 1;
   const selectionStageLogicalWidth = isLandscapeMobileViewport
-    ? Math.min(
-      SUMMONER_WARS_MOBILE_BOARD_REFERENCE_WIDTH_PX,
-      Math.round(FACTION_SELECTION_REFERENCE_WIDTH_PX * selectionStageScale)
-    )
+    ? Math.round(FACTION_SELECTION_REFERENCE_WIDTH_PX * selectionStageScale)
     : null;
   const selectionStageLogicalHeight = isLandscapeMobileViewport
     ? Math.round(selectionReferenceHeightPx * selectionStageScale)
@@ -261,8 +258,17 @@ export const FactionSelection: React.FC<FactionSelectionProps> = ({
       : '1vh',
   } as React.CSSProperties;
   const stageFrameStyle = isLandscapeMobileViewport
-    ? { paddingInline: '6px', paddingBlock: '2px' } as React.CSSProperties
+    ? { paddingInline: `${stageFrameInlinePaddingPx}px`, paddingBlock: `${stageFrameBlockPaddingPx}px` } as React.CSSProperties
     : undefined;
+  const selectionRootStyle = {
+    zIndex: UI_Z_INDEX.overlay,
+    ...(isMobileViewport
+      ? {
+        width: `${layoutViewportWidth}px`,
+        height: `${layoutViewportHeight}px`,
+      }
+      : {}),
+  } as React.CSSProperties;
   const titleSectionStyle = {
     paddingTop: isLandscapeMobileViewport ? blockUnit(2.2) : blockUnit(3),
     paddingBottom: isLandscapeMobileViewport ? blockUnit(1.2) : blockUnit(2),
@@ -277,6 +283,17 @@ export const FactionSelection: React.FC<FactionSelectionProps> = ({
   } as React.CSSProperties;
   const mainContentStyle = {
     paddingInline: inlineUnit(4),
+  } as React.CSSProperties;
+  const titleHeadingStyle = {
+    filter: 'drop-shadow(0 0 15px rgba(245,158,11,0.4))',
+    fontSize: 'clamp(24px, calc(var(--sw-selection-inline-unit) * 2.2), 42px)',
+  } as React.CSSProperties;
+  const titleSubtitleStyle = {
+    marginTop: blockUnit(0.5),
+    fontSize: 'clamp(12px, calc(var(--sw-selection-inline-unit) * 0.75), 16px)',
+  } as React.CSSProperties;
+  const previewPlaceholderTextStyle = {
+    fontSize: 'clamp(10px, calc(var(--sw-selection-inline-unit) * 0.7), 14px)',
   } as React.CSSProperties;
   const gridStyle = {
     gap: inlineUnit(0.8),
@@ -449,7 +466,7 @@ export const FactionSelection: React.FC<FactionSelectionProps> = ({
       data-game-id="summonerwars"
       data-mobile-layout-preset="board-shell"
       className="fixed inset-0 flex flex-col bg-[#0d1117] overflow-hidden select-none text-white font-sans w-screen h-screen"
-      style={{ zIndex: UI_Z_INDEX.overlay }}
+      style={selectionRootStyle}
     >
       {/* 背景氛围层 - 动态流光 */}
       <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden">
@@ -472,7 +489,13 @@ export const FactionSelection: React.FC<FactionSelectionProps> = ({
         }} />
       </div>
 
-      <div className="relative z-10 flex h-full w-full items-center justify-center" style={stageFrameStyle}>
+      <div
+        className={clsx(
+          'relative z-10 flex h-full w-full justify-center',
+          isLandscapeMobileViewport ? 'items-start' : 'items-center'
+        )}
+        style={stageFrameStyle}
+      >
         <div
           data-testid="sw-faction-stage"
           className="relative flex h-full w-full max-w-full min-w-0 flex-col overflow-hidden"
@@ -488,14 +511,14 @@ export const FactionSelection: React.FC<FactionSelectionProps> = ({
               initial={{ y: -20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               data-testid="sw-faction-title"
-              className="text-[clamp(24px,2.2vw,42px)] font-black tracking-[0.3em] text-transparent bg-clip-text bg-gradient-to-b from-amber-200 via-amber-500 to-amber-700"
-              style={{ filter: 'drop-shadow(0 0 15px rgba(245,158,11,0.4))' }}
+              className="font-black tracking-[0.3em] text-transparent bg-clip-text bg-gradient-to-b from-amber-200 via-amber-500 to-amber-700"
+              style={titleHeadingStyle}
             >
               {t('factionSelection.title')}
             </motion.h1>
             <p
-              className="text-[clamp(12px,0.75vw,16px)] font-light uppercase tracking-[0.5em] text-amber-100/40"
-              style={{ marginTop: blockUnit(0.5) }}
+              className="font-light uppercase tracking-[0.5em] text-amber-100/40"
+              style={titleSubtitleStyle}
             >
               {t('factionSelection.subtitle')}
             </p>
@@ -638,7 +661,7 @@ export const FactionSelection: React.FC<FactionSelectionProps> = ({
                     className="aspect-[4/3] rounded-lg border border-dashed border-white/10 flex items-center justify-center"
                     style={{ height: blockUnit(24) }}
                   >
-                    <span className="text-[clamp(10px,0.7vw,14px)] text-white/20">
+                    <span className="text-white/20" style={previewPlaceholderTextStyle}>
                       {t('factionSelection.hoverToPreview')}
                     </span>
                   </motion.div>
@@ -789,6 +812,26 @@ const FactionCard: React.FC<FactionCardProps> = ({
   faction, index, isSelectedByMe, occupyingPlayers, t, onSelect, onHover, onMagnify,
 }) => {
   const atlasId = getSummonerAtlasIdByFaction(faction.id);
+  const footerStyle = {
+    paddingTop: 'calc(var(--sw-selection-inline-unit) * 2)',
+    paddingBottom: 'calc(var(--sw-selection-inline-unit) * 0.4)',
+    paddingInline: 'calc(var(--sw-selection-inline-unit) * 0.5)',
+  } as React.CSSProperties;
+  const factionNameStyle = {
+    fontSize: 'clamp(10px, calc(var(--sw-selection-inline-unit) * 0.75), 16px)',
+  } as React.CSSProperties;
+  const magnifyButtonStyle = {
+    padding: 'calc(var(--sw-selection-inline-unit) * 0.2)',
+  } as React.CSSProperties;
+  const magnifyIconStyle = {
+    width: 'clamp(14px, calc(var(--sw-selection-inline-unit) * 1), 20px)',
+    height: 'clamp(14px, calc(var(--sw-selection-inline-unit) * 1), 20px)',
+  } as React.CSSProperties;
+  const occupyingPlayersStyle = {
+    top: 'calc(var(--sw-selection-inline-unit) * 0.3)',
+    right: 'calc(var(--sw-selection-inline-unit) * 0.3)',
+    gap: 'calc(var(--sw-selection-inline-unit) * 0.2)',
+  } as React.CSSProperties;
 
   return (
     <motion.div
@@ -830,17 +873,21 @@ const FactionCard: React.FC<FactionCardProps> = ({
       </div>
 
       {/* 底部渐变遮罩 + 阵营名 + 放大按钮 */}
-      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/40 to-transparent pt-[2vw] pb-[0.4vw] px-[0.5vw] flex items-end justify-between">
-        <div className="text-[clamp(10px,0.75vw,16px)] font-bold text-white/90 tracking-wide drop-shadow-md">
+      <div
+        className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/40 to-transparent flex items-end justify-between"
+        style={footerStyle}
+      >
+        <div className="font-bold text-white/90 tracking-wide drop-shadow-md" style={factionNameStyle}>
           {t(faction.nameKey)}
         </div>
         {/* 放大查看按钮 */}
         <button
-          className="text-white/50 hover:text-white/90 transition-colors duration-150 p-[0.2vw] cursor-pointer"
+          className="text-white/50 hover:text-white/90 transition-colors duration-150 cursor-pointer"
+          style={magnifyButtonStyle}
           onClick={(e) => onMagnify(faction.id, e)}
           title={t('actions.magnify')}
         >
-          <svg width="clamp(14px,1vw,20px)" height="clamp(14px,1vw,20px)" viewBox="0 0 20 20" fill="currentColor">
+          <svg style={magnifyIconStyle} viewBox="0 0 20 20" fill="currentColor">
             <path d="M5 8a1 1 0 011-1h1V6a1 1 0 012 0v1h1a1 1 0 110 2H9v1a1 1 0 11-2 0V9H6a1 1 0 01-1-1z" />
             <path fillRule="evenodd" d="M8 14A6 6 0 108 2a6 6 0 000 12zm0-2a4 4 0 100-8 4 4 0 000 8z" clipRule="evenodd" />
             <path d="M12.293 11.293a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414l-3-3a1 1 0 010-1.414z" />
@@ -858,7 +905,7 @@ const FactionCard: React.FC<FactionCardProps> = ({
 
       {/* P1/P2 占用标记 */}
       {occupyingPlayers.length > 0 && (
-        <div className="absolute top-[0.3vw] right-[0.3vw] flex gap-[0.2vw]">
+        <div className="absolute flex" style={occupyingPlayersStyle}>
           {occupyingPlayers.map(pid => {
             const colors = PLAYER_COLORS[pid as '0' | '1'];
             return (
@@ -866,9 +913,9 @@ const FactionCard: React.FC<FactionCardProps> = ({
                 key={pid}
                 className="rounded-full flex items-center justify-center font-black shadow-lg border border-white/60"
                 style={{
-                  width: 'clamp(16px, 1.3vw, 28px)',
-                  height: 'clamp(16px, 1.3vw, 28px)',
-                  fontSize: 'clamp(8px, 0.5vw, 12px)',
+                  width: 'clamp(16px, calc(var(--sw-selection-inline-unit) * 1.3), 28px)',
+                  height: 'clamp(16px, calc(var(--sw-selection-inline-unit) * 1.3), 28px)',
+                  fontSize: 'clamp(8px, calc(var(--sw-selection-inline-unit) * 0.5), 12px)',
                   backgroundColor: colors.bg,
                   color: colors.text,
                   boxShadow: `0 0 8px ${colors.glow}`,
@@ -1058,6 +1105,26 @@ const ActionButton: React.FC<ActionButtonProps> = ({
         paddingBlock: 'calc(var(--sw-selection-block-unit) * 0.9)',
       } satisfies React.CSSProperties
     : undefined;
+  const desktopStartButtonStyle = !isLandscapeMobileViewport
+    ? {
+      paddingInline: 'calc(var(--sw-selection-inline-unit) * 2.5)',
+      paddingBlock: 'calc(var(--sw-selection-block-unit) * 0.7)',
+      fontSize: 'clamp(12px, calc(var(--sw-selection-inline-unit) * 0.9), 18px)',
+    } satisfies React.CSSProperties
+    : undefined;
+  const desktopSecondaryButtonStyle = !isLandscapeMobileViewport
+    ? {
+      paddingInline: 'calc(var(--sw-selection-inline-unit) * 2)',
+      paddingBlock: 'calc(var(--sw-selection-block-unit) * 0.6)',
+      fontSize: 'clamp(11px, calc(var(--sw-selection-inline-unit) * 0.85), 16px)',
+    } satisfies React.CSSProperties
+    : undefined;
+  const startButtonStyle = isLandscapeMobileViewport
+    ? mobileActionButtonStyle
+    : desktopStartButtonStyle;
+  const secondaryButtonStyle = isLandscapeMobileViewport
+    ? mobileActionButtonStyle
+    : desktopSecondaryButtonStyle;
 
   if (isHost && hasSelected) {
     return (
@@ -1070,13 +1137,13 @@ const ActionButton: React.FC<ActionButtonProps> = ({
         className={clsx(
           isLandscapeMobileViewport
             ? 'rounded-xl text-[clamp(11px,calc(var(--sw-selection-inline-unit)*0.56),15px)] font-black tracking-[0.08em] leading-tight uppercase text-center'
-            : 'px-[2.5vw] py-[0.7vw] rounded-xl text-[clamp(12px,0.9vw,18px)] font-black tracking-[0.2em] uppercase',
+            : 'rounded-xl font-black tracking-[0.2em] uppercase',
           'border-2 transition-[background-color,border-color,opacity,transform,box-shadow] duration-200',
           everyoneReady
             ? 'bg-gradient-to-b from-amber-400 via-amber-600 to-amber-700 text-white border-amber-300 shadow-[0_4px_0_#92400e,0_8px_20px_rgba(245,158,11,0.25)] hover:brightness-110 active:translate-y-[2px] active:shadow-[0_2px_0_#92400e] cursor-pointer'
             : 'bg-white/5 text-white/20 border-white/10 cursor-not-allowed'
         )}
-        style={mobileActionButtonStyle}
+        style={startButtonStyle}
       >
         {everyoneReady
           ? t('factionSelection.start')
@@ -1095,10 +1162,10 @@ const ActionButton: React.FC<ActionButtonProps> = ({
         className={clsx(
           isLandscapeMobileViewport
             ? 'rounded-xl text-[clamp(11px,calc(var(--sw-selection-inline-unit)*0.56),15px)] font-bold tracking-[0.08em] leading-tight text-center'
-            : 'px-[2vw] py-[0.6vw] rounded-xl text-[clamp(11px,0.85vw,16px)] font-bold tracking-wider',
+            : 'rounded-xl font-bold tracking-wider',
           'bg-gradient-to-b from-emerald-400 to-emerald-600 text-white border-2 border-emerald-300 shadow-[0_3px_0_#047857] hover:brightness-110 active:translate-y-[2px] active:shadow-none cursor-pointer transition-[transform] duration-200'
         )}
-        style={mobileActionButtonStyle}
+        style={secondaryButtonStyle}
       >
         {t('factionSelection.ready')}
       </motion.button>
@@ -1115,10 +1182,10 @@ const ActionButton: React.FC<ActionButtonProps> = ({
         className={clsx(
           isLandscapeMobileViewport
             ? 'rounded-xl text-[clamp(11px,calc(var(--sw-selection-inline-unit)*0.56),15px)] font-bold tracking-[0.08em] leading-tight text-center'
-            : 'px-[2vw] py-[0.6vw] rounded-xl text-[clamp(11px,0.85vw,16px)] font-bold tracking-wider',
+            : 'rounded-xl font-bold tracking-wider',
           'border-2 bg-white/5 text-emerald-400/70 border-emerald-400/30 hover:bg-red-500/20 hover:text-red-400 hover:border-red-400/50 cursor-pointer transition-all duration-200'
         )}
-        style={mobileActionButtonStyle}
+        style={secondaryButtonStyle}
       >
         {t('factionSelection.cancelReady')}
       </motion.button>

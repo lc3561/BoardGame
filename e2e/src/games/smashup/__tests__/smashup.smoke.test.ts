@@ -1671,6 +1671,9 @@ describe('smashup', () => {
         expect(
             evaluations.some((item) => item.contributions.some((contribution) => contribution.scorerId === 'assignment-first')),
         ).toBe(true);
+        expect(
+            evaluations.some((item) => item.contributions.some((contribution) => contribution.scorerId === 'relative-utility-smashup-limited')),
+        ).toBe(true);
     });
 
     it('Smash Up baseline AI 会优先把随从投向能直接改写高价值评分的关键基地', async () => {
@@ -1980,9 +1983,18 @@ describe('smashup', () => {
             source: 'local',
         });
         const chosenAction = legalActions.find((action) => action.actionId === decision?.actionId);
+        const evaluations = (decision?.providerMetadata?.evaluations ?? []) as Array<{
+            actionId?: string;
+            contributions: Array<{ scorerId: string }>;
+        }>;
 
         expect(legalActions.some((action) => action.kind === 'response-pass')).toBe(true);
         expect(chosenAction?.kind).toBe('response-pass');
+        expect(
+            evaluations
+                .flatMap((item) => item.contributions ?? [])
+                .some((contribution) => contribution.scorerId === 'relative-utility-smashup-limited'),
+        ).toBe(false);
     });
 
     it('Smash Up baseline AI 在同一局面下重复决策应保持稳定，不应表现为完全随机', async () => {

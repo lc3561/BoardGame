@@ -45,41 +45,23 @@ export const RIGHTEOUS_COMBAT_2: AbilityDef = {
     type: 'offensive',
     description: abilityText('righteous-combat-2', 'description'),
     sfxKey: PALADIN_SFX_HEAVY,
-    variants: [
-        // 执着 (Tenacity) - 2 Sword + 1 Helm
+    trigger: { type: 'diceSet', faces: { [FACES.SWORD]: 3, [FACES.HELM]: 2 } },
+    effects: [
+        damage(5, abilityEffectText('righteous-combat-2', 'damage5')),
         {
-            id: 'righteous-combat-2-tenacity',
-            trigger: { type: 'diceSet', faces: { [FACES.SWORD]: 2, [FACES.HELM]: 1 } },
-            tags: ['unblockable'],
-            effects: [
-                heal(2, abilityEffectText('righteous-combat-2', 'heal2')),
-                damage(2, abilityEffectText('righteous-combat-2', 'damage2Unblockable'), { tags: ['unblockable'] })
-            ],
-            priority: 0
-        },
-        // 主技能: 3 Sword + 2 Helm (5 Dice)
-        {
-            id: 'righteous-combat-2-main',
-            trigger: { type: 'diceSet', faces: { [FACES.SWORD]: 3, [FACES.HELM]: 2 } },
-            effects: [
-                damage(5, abilityEffectText('righteous-combat-2', 'damage5')),
-                {
-                    description: abilityEffectText('righteous-combat-2', 'roll3'),
-                    action: {
-                        type: 'rollDie',
-                        target: 'self',
-                        diceCount: 3,
-                        conditionalEffects: [
-                            { face: FACES.HELM, bonusDamage: 1 },
-                            { face: FACES.SWORD, bonusDamage: 2 },
-                            { face: FACES.HEART, heal: 2 },
-                            { face: FACES.PRAY, cp: 1 },
-                        ]
-                    },
-                    timing: 'withDamage'
-                }
-            ],
-            priority: 1
+            description: abilityEffectText('righteous-combat-2', 'roll3'),
+            action: {
+                type: 'rollDie',
+                target: 'self',
+                diceCount: 3,
+                conditionalEffects: [
+                    { face: FACES.HELM, bonusDamage: 1 },
+                    { face: FACES.SWORD, bonusDamage: 2 },
+                    { face: FACES.HEART, heal: 2 },
+                    { face: FACES.PRAY, cp: 1 },
+                ]
+            },
+            timing: 'withDamage'
         }
     ]
 };

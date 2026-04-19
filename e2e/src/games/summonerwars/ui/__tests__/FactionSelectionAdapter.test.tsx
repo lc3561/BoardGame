@@ -335,14 +335,18 @@ describe('FactionSelection', () => {
     expect(screen.getByText('factionSelection.ready')).toBeInTheDocument();
   });
 
-  it('手机横屏命中 900px cap 时 inline unit 应与舞台宽度一致', () => {
+  it('手机横屏应保持 1280x720 的等比缩放舞台参数', () => {
     setViewportSize(1000, 500);
 
     render(<FactionSelection {...defaultProps} />);
 
     const stage = screen.getByTestId('sw-faction-stage');
-    expect(stage).toHaveStyle({ width: '900px' });
-    expect(stage).toHaveStyle({ height: '468px' });
-    expect(stage.style.getPropertyValue('--sw-selection-inline-unit')).toBe('9px');
+    const expectedScale = Math.min((1000 - 12) / 1280, (500 - 4) / 720, 1);
+    const expectedWidthPx = Math.round(1280 * expectedScale);
+    const expectedHeightPx = Math.round(720 * expectedScale);
+    expect(stage).toHaveStyle({ width: `${expectedWidthPx}px` });
+    expect(stage).toHaveStyle({ height: `${expectedHeightPx}px` });
+    expect(stage.style.getPropertyValue('--sw-selection-inline-unit')).toBe(`${expectedWidthPx / 100}px`);
+    expect(stage.style.getPropertyValue('--sw-selection-block-unit')).toBe(`${expectedHeightPx / 100}px`);
   });
 });

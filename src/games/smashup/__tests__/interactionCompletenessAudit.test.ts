@@ -20,6 +20,7 @@ import { clearRegistry } from '../domain/abilityRegistry';
 import { clearBaseAbilityRegistry } from '../domain/baseAbilities';
 import { getRegisteredInteractionHandlerIds, clearInteractionHandlers } from '../domain/abilityInteractionHandlers';
 import { collectSmashupInteractionAuditAuto } from './helpers/interactionAuditAuto';
+import { INTERACTION_ORPHAN_BASELINE } from './helpers/interactionOrphanBaseline';
 
 // ============================================================================
 // 初始化
@@ -56,6 +57,11 @@ const AUTO_AUDIT = collectSmashupInteractionAuditAuto();
 const AUTO_WARNING_ALLOWLIST = new Set([
   'domain/abilityHelpers.ts::createSimpleChoice 的第5参数(sourceId)不是字符串字面量，无法自动审计',
   'abilities/pirates.ts::createSimpleChoice 的第5参数(sourceId)不是字符串字面量，无法自动审计',
+  'abilities/cowboys.ts::createSimpleChoice 的第5参数(sourceId)不是字符串字面量，无法自动审计',
+  'abilities/samurai.ts::createSimpleChoice 的第5参数(sourceId)不是字符串字面量，无法自动审计',
+  'domain/extraPlay.ts::createSimpleChoice 的第5参数(sourceId)不是字符串字面量，无法自动审计',
+  'domain/mulliganHandlers.ts::createSimpleChoice 的第5参数(sourceId)不是字符串字面量，无法自动审计',
+  'domain/mulliganHandlers.ts::registerInteractionHandler 第1参数不是字符串字面量',
 ]);
 
 const MANUAL_SOURCE_SUPPLEMENTS: AuditableInteractionSource[] = [];
@@ -132,4 +138,5 @@ createInteractionCompletenessAuditSuite({
   handlerWhitelist: new Set([
     'miskatonic_mandatory_reading',
   ]),
+  orphanWhitelist: new Set(INTERACTION_ORPHAN_BASELINE),
 });

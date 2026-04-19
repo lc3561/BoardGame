@@ -365,13 +365,12 @@ function handleElusiveStepResolve2(context: CustomActionContext): DiceThroneEven
     const events: DiceThroneEvent[] = [];
     const faceCounts = getFaceCounts(getActiveDice(state));
     const footCount = faceCounts[FACE.FOOT] ?? 0;
-    const bowCount = faceCounts[FACE.BOW] ?? 0;
     // 闃插尽涓婁笅鏂囷細ctx.attackerId = 闃插尽鑰咃紝ctx.defenderId = 鍘熸敾鍑昏€?
     const opponentId = ctx.defenderId;
 
-    // 閫犳垚 1脳寮撻潰鏁?浼ゅ锛堝崌绾х増鏀逛负寮撻潰璁＄畻锛?
-    if (bowCount > 0) {
-        events.push(dealDamage(context, opponentId, bowCount, sourceAbilityId, timestamp));
+    // II 级仍按足面数造成反伤；此前误取 bowCount，导致全足面时只给护盾不造成伤害。
+    if (footCount > 0) {
+        events.push(dealDamage(context, opponentId, footCount, sourceAbilityId, timestamp));
     }
 
     // 瓒抽潰鈮?鏃讹紝鎺堜簣 50% 鍑忎激鎶ょ浘

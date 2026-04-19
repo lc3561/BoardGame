@@ -75,18 +75,13 @@ function getOtherBases(state: AbilityContext['state'], fromBaseIndex: number) {
         .filter(base => base.baseIndex !== fromBaseIndex);
 }
 
-function queueMoveTargetPrompt(
+function buildMoveMinionOptions(
     ctx: AbilityContext,
-    sourceId: string,
-    title: string,
     targets: ReturnType<typeof collectMinionsOnBase>,
-    options?: { includeSkip?: boolean; reason?: string; grantExtraAction?: boolean },
-): AbilityResult {
-    if (targets.length === 0) {
-        return { events: [buildAbilityFeedback(ctx.playerId, 'feedback.no_valid_targets', ctx.now)] };
-    }
-    const promptOptions = [
-        ...(options?.includeSkip ? [createSkipOption('跳过（不移动）')] : []),
+    includeSkip: boolean = false,
+) {
+    return [
+        ...(includeSkip ? [createSkipOption('跳过（不移动）')] : []),
         ...buildMinionTargetOptions(targets, {
             state: ctx.state,
             sourcePlayerId: ctx.playerId,
@@ -96,75 +91,97 @@ function queueMoveTargetPrompt(
             respectActionProtection: true,
         }),
     ];
-    const interaction = createSimpleChoice(
-        `${sourceId}_${ctx.now}`,
-        ctx.playerId,
-        title,
-        promptOptions,
-        { sourceId, targetType: 'minion' },
-    );
-    if (options?.reason) {
-        (interaction.data as { continuationContext?: Partial<MoveContinuation> }).continuationContext = {
-            reason: options.reason,
-            grantExtraAction: options.grantExtraAction,
-        };
-    }
-    return { events: [], matchState: queueInteraction(ctx.matchState, interaction) };
 }
 
 function mermaidsCharmerTalent(ctx: AbilityContext): AbilityResult {
     const targets = collectMinionsOnBase(ctx.state, ctx.baseIndex, controller => controller !== ctx.playerId);
-    return queueMoveTargetPrompt(
-        ctx,
-        'mermaids_charmer',
+    if (targets.length === 0) {
+        return { events: [buildAbilityFeedback(ctx.playerId, 'feedback.no_valid_targets', ctx.now)] };
+    }
+    const interaction = createSimpleChoice(
+        `mermaids_charmer_${ctx.now}`,
+        ctx.playerId,
         '魅惑者：选择另一位玩家在此基地的一个随从',
-        targets,
-        { reason: 'mermaids_charmer' },
+        buildMoveMinionOptions(ctx, targets),
+        { sourceId: 'mermaids_charmer', targetType: 'minion' },
     );
+    (interaction.data as { continuationContext?: Partial<MoveContinuation> }).continuationContext = {
+        reason: 'mermaids_charmer',
+    };
+    return { events: [], matchState: queueInteraction(ctx.matchState, interaction) };
 }
 
 function mermaidsMermaidQueenOnPlay(ctx: AbilityContext): AbilityResult {
     const targets = collectMinionsOnBase(ctx.state, ctx.baseIndex, controller => controller !== ctx.playerId);
-    return queueMoveTargetPrompt(
-        ctx,
-        'mermaids_mermaid_queen',
+    if (targets.length === 0) {
+        return { events: [buildAbilityFeedback(ctx.playerId, 'feedback.no_valid_targets', ctx.now)] };
+    }
+    const interaction = createSimpleChoice(
+        `mermaids_mermaid_queen_${ctx.now}`,
+        ctx.playerId,
         '美人鱼女王：你可以将此基地的一张对手随从移动到另一个基地',
-        targets,
-        { includeSkip: true, reason: 'mermaids_mermaid_queen' },
+        buildMoveMinionOptions(ctx, targets, true),
+        { sourceId: 'mermaids_mermaid_queen', targetType: 'minion' },
     );
+    (interaction.data as { continuationContext?: Partial<MoveContinuation> }).continuationContext = {
+        reason: 'mermaids_mermaid_queen',
+    };
+    return { events: [], matchState: queueInteraction(ctx.matchState, interaction) };
 }
 
 function mermaidsCaptiveAudienceOnPlay(ctx: AbilityContext): AbilityResult {
     const targets = collectMinionsOnBase(ctx.state, ctx.baseIndex, controller => controller !== ctx.playerId);
-    return queueMoveTargetPrompt(
-        ctx,
-        'mermaids_captive_audience',
+    if (targets.length === 0) {
+        return { events: [buildAbilityFeedback(ctx.playerId, 'feedback.no_valid_targets', ctx.now)] };
+    }
+    const interaction = createSimpleChoice(
+        `mermaids_captive_audience_${ctx.now}`,
+        ctx.playerId,
         '俘虏观众：选择另一位玩家在此基地的一个随从',
-        targets,
-        { reason: 'mermaids_captive_audience' },
+        buildMoveMinionOptions(ctx, targets),
+        { sourceId: 'mermaids_captive_audience', targetType: 'minion' },
     );
+    (interaction.data as { continuationContext?: Partial<MoveContinuation> }).continuationContext = {
+        reason: 'mermaids_captive_audience',
+    };
+    return { events: [], matchState: queueInteraction(ctx.matchState, interaction) };
 }
 
 function mermaidsBecalmedShoresTalent(ctx: AbilityContext): AbilityResult {
     const targets = collectMinionsOnBase(ctx.state, ctx.baseIndex, controller => controller === ctx.playerId);
-    return queueMoveTargetPrompt(
-        ctx,
-        'mermaids_becalmed_shores',
+    if (targets.length === 0) {
+        return { events: [buildAbilityFeedback(ctx.playerId, 'feedback.no_valid_targets', ctx.now)] };
+    }
+    const interaction = createSimpleChoice(
+        `mermaids_becalmed_shores_${ctx.now}`,
+        ctx.playerId,
         '静风海岸：选择你在此基地的一个随从并移动到另一个基地',
-        targets,
-        { reason: 'mermaids_becalmed_shores' },
+        buildMoveMinionOptions(ctx, targets),
+        { sourceId: 'mermaids_becalmed_shores', targetType: 'minion' },
     );
+    (interaction.data as { continuationContext?: Partial<MoveContinuation> }).continuationContext = {
+        reason: 'mermaids_becalmed_shores',
+    };
+    return { events: [], matchState: queueInteraction(ctx.matchState, interaction) };
 }
 
 function mermaidsUltimateSongOnPlay(ctx: AbilityContext): AbilityResult {
     const targets = collectMinionsOnBase(ctx.state, ctx.baseIndex, controller => controller === ctx.playerId);
-    return queueMoveTargetPrompt(
-        ctx,
-        'mermaids_ultimate_song',
+    if (targets.length === 0) {
+        return { events: [buildAbilityFeedback(ctx.playerId, 'feedback.no_valid_targets', ctx.now)] };
+    }
+    const interaction = createSimpleChoice(
+        `mermaids_ultimate_song_${ctx.now}`,
+        ctx.playerId,
         '终极歌声：选择你在此基地的一个随从并移动到另一个基地',
-        targets,
-        { reason: 'mermaids_ultimate_song', grantExtraAction: true },
+        buildMoveMinionOptions(ctx, targets),
+        { sourceId: 'mermaids_ultimate_song', targetType: 'minion' },
     );
+    (interaction.data as { continuationContext?: Partial<MoveContinuation> }).continuationContext = {
+        reason: 'mermaids_ultimate_song',
+        grantExtraAction: true,
+    };
+    return { events: [], matchState: queueInteraction(ctx.matchState, interaction) };
 }
 
 function mermaidsSirenSongOnPlay(ctx: AbilityContext): AbilityResult {

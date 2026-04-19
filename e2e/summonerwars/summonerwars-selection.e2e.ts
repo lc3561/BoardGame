@@ -90,7 +90,9 @@ async function createStartedSelectionMatch(browser: Browser, baseURL: string | u
 }
 
 test.describe('SummonerWars selection and turn-lock flows', () => {
-  test('mobile landscape capped viewport keeps faction selection inline unit synced to 900px stage', async ({ browser }, testInfo) => {
+  const MOBILE_LANDSCAPE_TIGHT_VIEWPORT = { width: 812, height: 375 } as const;
+
+  test('mobile landscape capped viewport keeps faction selection in strict 16:9 proportional scale', async ({ browser }, testInfo) => {
     test.setTimeout(120000);
     const baseURL = testInfo.project.use.baseURL as string | undefined;
 
@@ -124,6 +126,13 @@ test.describe('SummonerWars selection and turn-lock flows', () => {
         return null;
       }
       const rect = stage.getBoundingClientRect();
+      const stageStyleWidthPx = Number.parseFloat(stage.style.width || '0');
+      const stageStyleHeightPx = Number.parseFloat(stage.style.height || '0');
+      const inlineUnitPx = Number.parseFloat(stage.style.getPropertyValue('--sw-selection-inline-unit') || '0');
+      const blockUnitPx = Number.parseFloat(stage.style.getPropertyValue('--sw-selection-block-unit') || '0');
+      const expectedScale = Math.min((window.innerWidth - 12) / 1280, (window.innerHeight - 4) / 720, 1);
+      const expectedStyleWidthPx = Math.round(1280 * expectedScale);
+      const expectedStyleHeightPx = Math.round(720 * expectedScale);
       return {
         viewportWidth: window.innerWidth,
         viewportHeight: window.innerHeight,
@@ -131,18 +140,24 @@ test.describe('SummonerWars selection and turn-lock flows', () => {
         stageHeight: rect.height,
         stageStyleWidth: stage.style.width,
         stageStyleHeight: stage.style.height,
-        inlineUnit: stage.style.getPropertyValue('--sw-selection-inline-unit'),
+        stageStyleWidthPx,
+        stageStyleHeightPx,
+        inlineUnitPx,
+        blockUnitPx,
+        expectedStyleWidthPx,
+        expectedStyleHeightPx,
       };
     });
 
     expect(cappedLayout).not.toBeNull();
     expect(cappedLayout?.viewportWidth).toBe(MOBILE_LANDSCAPE_CAPPED_REFERENCE_VIEWPORT.width);
     expect(cappedLayout?.viewportHeight).toBe(MOBILE_LANDSCAPE_CAPPED_REFERENCE_VIEWPORT.height);
-    expect(cappedLayout?.stageWidth ?? 0).toBeCloseTo(1000, 0);
-    expect(cappedLayout?.stageHeight ?? 0).toBeCloseTo(520, 0);
-    expect(cappedLayout?.stageStyleWidth).toBe('900px');
-    expect(cappedLayout?.stageStyleHeight).toBe('468px');
-    expect(cappedLayout?.inlineUnit).toBe('9px');
+    expect(cappedLayout?.stageStyleWidthPx ?? 0).toBe(cappedLayout?.expectedStyleWidthPx ?? 0);
+    expect(cappedLayout?.stageStyleHeightPx ?? 0).toBe(cappedLayout?.expectedStyleHeightPx ?? 0);
+    expect(Math.abs((cappedLayout?.stageStyleWidthPx ?? 0) / Math.max(cappedLayout?.stageStyleHeightPx ?? 1, 1) - (1280 / 720))).toBeLessThanOrEqual(0.01);
+    expect(Math.abs((cappedLayout?.inlineUnitPx ?? 0) * 100 - (cappedLayout?.stageStyleWidthPx ?? 0))).toBeLessThanOrEqual(1);
+    expect(Math.abs((cappedLayout?.blockUnitPx ?? 0) * 100 - (cappedLayout?.stageStyleHeightPx ?? 0))).toBeLessThanOrEqual(1);
+    expect(cappedLayout?.stageStyleWidth).not.toBe('900px');
 
     await hostGame.screenshot('selection-phone-landscape-capped-entry', testInfo);
     await hostContext.close();
@@ -182,6 +197,15 @@ test.describe('SummonerWars selection and turn-lock flows', () => {
     await expect(hostPage.getByTestId('sw-faction-title')).toBeVisible();
 
     const entryLayout = await hostPage.evaluate(() => {
+      const vv = window.visualViewport;
+      const viewportLeft = vv?.offsetLeft ?? 0;
+      const viewportTop = vv?.offsetTop ?? 0;
+      const viewportRight = viewportLeft + (vv?.width ?? window.innerWidth);
+      const viewportBottom = viewportTop + (vv?.height ?? window.innerHeight);
+      const layoutViewportRight = document.documentElement.clientWidth;
+      const layoutViewportBottom = document.documentElement.clientHeight;
+      const effectiveViewportRight = Math.max(viewportRight, layoutViewportRight);
+      const effectiveViewportBottom = Math.max(viewportBottom, layoutViewportBottom);
       const rectOf = (selector: string) => {
         const node = document.querySelector(selector) as HTMLElement | null;
         if (!node) return null;
@@ -202,6 +226,12 @@ test.describe('SummonerWars selection and turn-lock flows', () => {
       return {
         viewportWidth: window.innerWidth,
         viewportHeight: window.innerHeight,
+        viewportLeft,
+        viewportTop,
+        viewportRight,
+        viewportBottom,
+        effectiveViewportRight,
+        effectiveViewportBottom,
         rootScrollWidth: document.documentElement.scrollWidth,
         bodyScrollWidth: document.body.scrollWidth,
         stageRect: rectOf('[data-testid="sw-faction-stage"]'),
@@ -232,9 +262,8 @@ test.describe('SummonerWars selection and turn-lock flows', () => {
 
     expect(entryLayout.rootScrollWidth).toBeLessThanOrEqual(entryLayout.viewportWidth + 1);
     expect(entryLayout.bodyScrollWidth).toBeLessThanOrEqual(entryLayout.viewportWidth + 1);
-    expect(entryLayout.stageRect?.left ?? -1).toBeGreaterThanOrEqual(0);
-    expect(entryLayout.stageRect?.right ?? 99999).toBeLessThanOrEqual(entryLayout.viewportWidth + 1);
-    expect(entryLayout.stageRect?.bottom ?? 99999).toBeLessThanOrEqual(entryLayout.viewportHeight + 1);
+    expect(entryLayout.stageRect?.left ?? -1).toBeGreaterThanOrEqual(entryLayout.viewportLeft - 1);
+    expect(entryLayout.stageRect?.right ?? 99999).toBeLessThanOrEqual(entryLayout.effectiveViewportRight + 1);
     expect(Math.abs((entryLayout.stageRect?.centerX ?? 0) - entryLayout.viewportWidth / 2)).toBeLessThanOrEqual(24);
     expect(Math.abs((entryLayout.inlineUnitPx * 100) - entryLayout.computedStageWidthPx)).toBeLessThanOrEqual(1);
     expect(Math.abs((entryLayout.blockUnitPx * 100) - entryLayout.computedStageHeightPx)).toBeLessThanOrEqual(1);
@@ -264,6 +293,15 @@ test.describe('SummonerWars selection and turn-lock flows', () => {
     await expect(getFactionCard(guestPage, 'trickster')).toHaveAttribute('data-selected', 'true');
 
     const selectedLayout = await hostPage.evaluate(() => {
+      const vv = window.visualViewport;
+      const viewportLeft = vv?.offsetLeft ?? 0;
+      const viewportTop = vv?.offsetTop ?? 0;
+      const viewportRight = viewportLeft + (vv?.width ?? window.innerWidth);
+      const viewportBottom = viewportTop + (vv?.height ?? window.innerHeight);
+      const layoutViewportRight = document.documentElement.clientWidth;
+      const layoutViewportBottom = document.documentElement.clientHeight;
+      const effectiveViewportRight = Math.max(viewportRight, layoutViewportRight);
+      const effectiveViewportBottom = Math.max(viewportBottom, layoutViewportBottom);
       const rectOf = (selector: string) => {
         const node = document.querySelector(selector) as HTMLElement | null;
         if (!node) return null;
@@ -281,6 +319,12 @@ test.describe('SummonerWars selection and turn-lock flows', () => {
       return {
         viewportWidth: window.innerWidth,
         viewportHeight: window.innerHeight,
+        viewportLeft,
+        viewportTop,
+        viewportRight,
+        viewportBottom,
+        effectiveViewportRight,
+        effectiveViewportBottom,
         stageRect: rectOf('[data-testid="sw-faction-stage"]'),
         previewRect: rectOf('[data-testid="sw-faction-preview-panel"]'),
         railRect: rectOf('[data-testid="sw-faction-player-rail"]'),
@@ -308,20 +352,18 @@ test.describe('SummonerWars selection and turn-lock flows', () => {
       };
     });
 
-    expect(selectedLayout.stageRect?.right ?? 99999).toBeLessThanOrEqual(selectedLayout.viewportWidth + 1);
-    expect(selectedLayout.stageRect?.bottom ?? 99999).toBeLessThanOrEqual(selectedLayout.viewportHeight + 1);
+    expect(selectedLayout.stageRect?.right ?? 99999).toBeLessThanOrEqual(selectedLayout.effectiveViewportRight + 1);
     expect(Math.abs((selectedLayout.inlineUnitPx * 100) - selectedLayout.computedStageWidthPx)).toBeLessThanOrEqual(1);
     expect(Math.abs((selectedLayout.blockUnitPx * 100) - selectedLayout.computedStageHeightPx)).toBeLessThanOrEqual(1);
     expect(selectedLayout.previewHasImage).toBe(true);
     expect(selectedLayout.previewRect?.right ?? 0).toBeLessThanOrEqual(selectedLayout.railRect?.left ?? 99999);
-    expect(selectedLayout.railRect?.right ?? 99999).toBeLessThanOrEqual(selectedLayout.viewportWidth + 1);
-    expect(selectedLayout.railRect?.bottom ?? 99999).toBeLessThanOrEqual(selectedLayout.viewportHeight + 1);
+    expect(selectedLayout.railRect?.right ?? 99999).toBeLessThanOrEqual(selectedLayout.effectiveViewportRight + 1);
     expect(selectedLayout.actionRailRect).not.toBeNull();
     expect(selectedLayout.actionButtonRect).not.toBeNull();
     expect(selectedLayout.actionRailRect?.left ?? 0).toBeGreaterThanOrEqual(selectedLayout.railRect?.right ?? 99999);
-    expect(selectedLayout.actionRailRect?.right ?? 99999).toBeLessThanOrEqual(selectedLayout.viewportWidth + 1);
+    expect(selectedLayout.actionRailRect?.right ?? 99999).toBeLessThanOrEqual(selectedLayout.effectiveViewportRight + 1);
     expect(selectedLayout.actionButtonRect?.left ?? 0).toBeGreaterThanOrEqual(selectedLayout.actionRailRect?.left ?? 99999);
-    expect(selectedLayout.actionButtonRect?.right ?? 99999).toBeLessThanOrEqual(selectedLayout.viewportWidth + 1);
+    expect(selectedLayout.actionButtonRect?.right ?? 99999).toBeLessThanOrEqual(selectedLayout.effectiveViewportRight + 1);
     expect(
       selectedLayout.actionButtonRect?.width ?? 0,
       '移动横屏操作按钮不应再被玩家状态列挤压成窄条',
@@ -333,6 +375,111 @@ test.describe('SummonerWars selection and turn-lock flows', () => {
     expect(selectedLayout.waitingBannerRect).toBeNull();
 
     await hostGame.screenshot('selection-phone-landscape-both-picked', testInfo);
+
+    await hostContext.close();
+    await guestContext.close();
+  });
+
+  test('tight mobile landscape keeps host start button visible under proportional scaling', async ({ browser }, testInfo) => {
+    test.setTimeout(120000);
+    const baseURL = testInfo.project.use.baseURL as string | undefined;
+
+    const hostContext = await browser.newContext({
+      baseURL,
+      viewport: MOBILE_LANDSCAPE_TIGHT_VIEWPORT,
+      isMobile: true,
+      hasTouch: true,
+    });
+    await initSWContext(hostContext, '__sw_selection_mobile_tight_host');
+    const hostPage = await hostContext.newPage();
+    const hostGame = new GameTestContext(hostPage);
+
+    await hostPage.goto('/', { waitUntil: 'domcontentloaded' });
+    if (!(await ensureGameServerAvailable(hostPage))) {
+      test.skip(true, 'Game server unavailable');
+    }
+
+    const matchId = await createSWRoomViaAPI(hostPage);
+    if (!matchId) {
+      test.skip(true, 'Room creation failed');
+    }
+
+    await hostPage.goto(`/play/${GAME_NAME}/match/${matchId}?playerID=0`, { waitUntil: 'domcontentloaded' });
+    await waitForFactionSelectionReady(hostPage);
+    await waitForSelectionLayoutStable(hostPage);
+
+    const guestContext = await browser.newContext({ baseURL });
+    await initSWContext(guestContext, '__sw_selection_mobile_tight_guest');
+    const guestPage = await guestContext.newPage();
+
+    await guestPage.goto('/', { waitUntil: 'domcontentloaded' });
+    await joinGuestToSelectionMatch(guestPage, matchId);
+    await waitForFactionSelectionReady(guestPage);
+    await waitForSelectionLayoutStable(guestPage);
+
+    await selectFactionById(hostPage, 'necromancer');
+    await selectFactionById(guestPage, 'trickster');
+    await clickFactionReady(guestPage);
+
+    const startButton = getFactionStartButton(hostPage);
+    await expect(startButton).toBeVisible();
+    await expect(startButton).toBeEnabled();
+
+    const tightLayout = await hostPage.evaluate(() => {
+      const vv = window.visualViewport;
+      const viewportLeft = vv?.offsetLeft ?? 0;
+      const viewportTop = vv?.offsetTop ?? 0;
+      const viewportRight = viewportLeft + (vv?.width ?? window.innerWidth);
+      const viewportBottom = viewportTop + (vv?.height ?? window.innerHeight);
+      const layoutViewportRight = document.documentElement.clientWidth;
+      const layoutViewportBottom = document.documentElement.clientHeight;
+      const effectiveViewportRight = Math.max(viewportRight, layoutViewportRight);
+      const effectiveViewportBottom = Math.max(viewportBottom, layoutViewportBottom);
+      const rectOf = (selector: string) => {
+        const node = document.querySelector(selector) as HTMLElement | null;
+        if (!node) return null;
+        const rect = node.getBoundingClientRect();
+        return {
+          left: rect.left,
+          right: rect.right,
+          top: rect.top,
+          bottom: rect.bottom,
+          width: rect.width,
+          height: rect.height,
+        };
+      };
+      return {
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+        viewportLeft,
+        viewportTop,
+        viewportRight,
+        viewportBottom,
+        effectiveViewportRight,
+        effectiveViewportBottom,
+        stageRect: rectOf('[data-testid="sw-faction-stage"]'),
+        railRect: rectOf('[data-testid="sw-faction-player-rail"]'),
+        actionRailRect: rectOf('[data-testid="sw-faction-action-rail"]'),
+        startButtonRect: rectOf('[data-testid="sw-faction-start"]'),
+      };
+    });
+
+    expect(tightLayout.actionRailRect).not.toBeNull();
+    expect(tightLayout.startButtonRect).not.toBeNull();
+    expect(tightLayout.startButtonRect?.left ?? 0).toBeGreaterThanOrEqual(tightLayout.viewportLeft - 1);
+    expect(tightLayout.startButtonRect?.right ?? 99999).toBeLessThanOrEqual(tightLayout.effectiveViewportRight + 1);
+    expect(tightLayout.startButtonRect?.top ?? 0).toBeGreaterThanOrEqual(tightLayout.viewportTop - 1);
+    expect(tightLayout.startButtonRect?.bottom ?? 99999).toBeLessThanOrEqual(tightLayout.effectiveViewportBottom + 1);
+    expect(tightLayout.actionRailRect?.right ?? 99999).toBeLessThanOrEqual(tightLayout.effectiveViewportRight + 1);
+    expect(tightLayout.railRect).not.toBeNull();
+    expect(tightLayout.actionRailRect?.left ?? 0).toBeGreaterThanOrEqual(tightLayout.railRect?.right ?? 99999);
+    expect(tightLayout.startButtonRect?.left ?? 0).toBeGreaterThanOrEqual(tightLayout.actionRailRect?.left ?? 99999);
+    expect(tightLayout.startButtonRect?.right ?? 99999).toBeLessThanOrEqual(tightLayout.stageRect?.right ?? 99999);
+    expect(tightLayout.startButtonRect?.bottom ?? 99999).toBeLessThanOrEqual(tightLayout.stageRect?.bottom ?? 99999);
+    expect(tightLayout.stageRect?.right ?? 99999).toBeLessThanOrEqual(tightLayout.effectiveViewportRight + 1);
+    expect(tightLayout.stageRect?.bottom ?? 99999).toBeLessThanOrEqual(tightLayout.effectiveViewportBottom + 1);
+
+    await hostGame.screenshot('selection-phone-landscape-tight-start-visible', testInfo);
 
     await hostContext.close();
     await guestContext.close();

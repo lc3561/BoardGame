@@ -275,7 +275,7 @@ function tricksterHideoutPodTalent(ctx: AbilityContext): AbilityResult {
         ctx.playerId,
         '藏身处：选择要交换进来的“打出到基地上”的持续战术（或跳过）',
         options as any[],
-        { sourceId: 'trickster_hideout_pod_swap', targetType: 'hand' },
+        { sourceId: 'trickster_hideout_pod_swap', targetType: 'generic' },
     );
     return {
         events: [],
