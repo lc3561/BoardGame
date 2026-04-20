@@ -20,6 +20,8 @@ export type { CardSpotlightQueueProps } from './CardSpotlightQueue';
 export type { CardListOverlayProps, CardListItem } from './CardListOverlay';
 export { CharacterSelectionSkeleton } from './CharacterSelectionSkeleton';
 export type { CharacterSelectionSkeletonProps } from './CharacterSelectionSkeleton';
+export { ImplementationStatusRibbon } from './ImplementationStatusRibbon';
+export type { ImplementationStatusRibbonProps } from './ImplementationStatusRibbon';
 export { TutorialSelectionGate } from './TutorialSelectionGate';
 export type { TutorialSelectionGateProps } from './TutorialSelectionGate';
 export type { MobileBattlefieldViewportProps, MobileBoardShellProps } from './MobileBoardShell';

@@ -20,7 +20,7 @@ import { X, Check, Search, Layers, ZoomIn, Pencil, Lock, BookOpen } from 'lucide
 import { UI_Z_INDEX } from '../../../core';
 import { GameButton } from './GameButton';
 import { CardMagnifyOverlay } from './CardMagnifyOverlay';
-import { CharacterSelectionBadge } from '../../../components/game/framework/CharacterSelectionBadge';
+import { ImplementationStatusRibbon } from '../../../components/game/framework/ImplementationStatusRibbon';
 
 interface Props {
     core: SmashUpCore;
@@ -122,13 +122,6 @@ export const FactionSelection: React.FC<Props> = ({ core, dispatch, playerID }) 
     };
 
     const useDesktopLikeLandscapeLayout = isMobileLandscape;
-    const badgeInlineUnit = (value: number) => `${value}rem`;
-    const implementationBadge = {
-        id: 'under_construction',
-        labelKey: 'common:status_tags.under_construction',
-        tone: 'warning' as const,
-        variant: 'disabled-overlay' as const,
-    };
     const selectionGridClassName = useDesktopLikeLandscapeLayout
         ? 'mx-auto grid w-fit max-w-none grid-cols-[repeat(5,160px)] justify-center gap-x-6 gap-y-3.5 pb-28'
         : 'mx-auto grid w-full max-w-[920px] grid-cols-4 justify-items-center gap-3 lg:max-w-none xl:grid-cols-4 2xl:grid-cols-5 lg:gap-6 pb-24 lg:pb-28';
@@ -288,18 +281,11 @@ export const FactionSelection: React.FC<Props> = ({ core, dispatch, playerID }) 
                             </div>
 
                             {showImplementationBanner && (
-                                <div
-                                    className="absolute inset-0 z-40 overflow-hidden pointer-events-none"
+                                <ImplementationStatusRibbon
+                                    label={t('ui.faction_implementation_in_progress', { defaultValue: '实施中' })}
                                     data-testid={`faction-implementation-banner-${group.groupId}`}
-                                >
-                                    <CharacterSelectionBadge
-                                        badge={implementationBadge}
-                                        label={t('ui.faction_implementation_in_progress', { defaultValue: '实施中' })}
-                                        inlineUnit={badgeInlineUnit}
-                                        testId={`faction-implementation-banner-label-${group.groupId}`}
-                                        mode="overlay"
-                                    />
-                                </div>
+                                    testId={`faction-implementation-banner-${group.groupId}`}
+                                />
                             )}
                         </div>
 
@@ -538,12 +524,10 @@ export const FactionSelection: React.FC<Props> = ({ core, dispatch, playerID }) 
                                                                     data-testid="faction-detail-implementation-banner"
                                                                 >
                                                                     <div className="relative h-10 overflow-hidden rounded-sm border border-amber-200/90 bg-amber-100/60">
-                                                                        <CharacterSelectionBadge
-                                                                            badge={implementationBadge}
+                                                                        <ImplementationStatusRibbon
                                                                             label={t('ui.faction_implementation_in_progress', { defaultValue: '实施中' })}
-                                                                            inlineUnit={badgeInlineUnit}
                                                                             testId="faction-detail-implementation-banner-label"
-                                                                            mode="overlay"
+                                                                            className="absolute inset-0 z-40 overflow-hidden pointer-events-none"
                                                                         />
                                                                     </div>
                                                                 </div>
