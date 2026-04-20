@@ -3388,7 +3388,25 @@ export function registerTitanAbilities(): void {
     registerTrigger('ninjas_invisible_ninja', 'onCardReturnedToHand', invisibleNinjaTriggered, { optional: true, baseScoped: false });
 
     registerAbility('killer_plants_killer_kudzu', 'special', killerKudzuSpecial);
-    registerAbility('killer_plants_killer_kudzu', 'talent', killerKudzuTalent);
+    registerAbility('killer_plants_killer_kudzu', 'talent', {
+        execute: killerKudzuTalent,
+        validateUse: (ctx) => {
+            const titan = getTitanByUid(ctx.state, ctx.cardUid);
+            if (!titan || titan.location.zone !== 'base' || titan.controllerId !== ctx.playerId) {
+                return '该泰坦当前不在可发动状态';
+            }
+            if (titan.powerCounters <= 0) {
+                return '该泰坦没有足够的力量指示物';
+            }
+            const player = ctx.state.players[ctx.playerId];
+            const hasCandidate = (player?.discard ?? []).some(card => {
+                if (card.type !== 'minion') return false;
+                const def = getCardDef(card.defId) as MinionCardDef | undefined;
+                return (def?.power ?? 0) <= titan.powerCounters;
+            });
+            return hasCandidate ? null : '弃牌堆中没有可打出的有效随从';
+        },
+    });
     registerTitanSpecialValidator('killer_plants_killer_kudzu', ({ titan }) =>
         titan.location.zone === 'setaside' && titan.powerCounters >= 3 ? null : 'This titan must be set aside with at least 3 counters');
     registerTitanTalentValidator('killer_plants_killer_kudzu', ({ state, playerId, titan }) => {

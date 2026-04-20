@@ -446,8 +446,14 @@ export function registerSkeletonAbilities(): void {
     registerAbility('skeletons_dig_em_up', 'onPlay', skeletonsDigEmUpOnPlay);
     registerAbility('skeletons_burst_forth', 'special', skeletonsBurstForthSpecial);
     registerAbility('skeletons_gravestones', 'special', skeletonsNoopSpecial);
-    registerAbility('skeletons_graveyard', 'talent', skeletonsGraveyardTalent);
-    registerAbility('skeletons_lord_of_bones', 'talent', skeletonsLordOfBonesTalent);
+    registerAbility('skeletons_graveyard', 'talent', {
+        execute: skeletonsGraveyardTalent,
+        validateUse: (ctx) => getLowPowerDiscardCards(ctx.state, ctx.playerId, 3).length > 0 ? null : '弃牌堆中没有可埋葬的力量 3 或以下随从',
+    });
+    registerAbility('skeletons_lord_of_bones', 'talent', {
+        execute: skeletonsLordOfBonesTalent,
+        validateUse: (ctx) => getLowPowerDiscardCards(ctx.state, ctx.playerId, 3).length > 0 ? null : '弃牌堆中没有可埋葬的力量 3 或以下随从',
+    });
     registerAbility('skeletons_spooky_scary', 'onPlay', skeletonsSpookyScaryOnPlay);
     registerAbility('skeletons_grave_goods', 'onPlay', skeletonsGraveGoodsOnPlay);
     registerAbility('skeletons_hearse_fleet', 'onPlay', skeletonsHearseFleetOnPlay);

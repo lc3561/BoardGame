@@ -53,7 +53,13 @@ function appendPendingBodyShopDistribution(
 export function registerFrankensteinAbilities(): void {
     // 随从能力
     registerAbility('frankenstein_lab_assistant', 'onPlay', frankensteinLabAssistant);
-    registerAbility('frankenstein_the_monster', 'talent', frankensteinTheMonster);
+    registerAbility('frankenstein_the_monster', 'talent', {
+        execute: frankensteinTheMonster,
+        validateUse: (ctx) => {
+            const minion = ctx.state.bases[ctx.baseIndex]?.minions.find(candidate => candidate.uid === ctx.cardUid);
+            return (minion?.powerCounters ?? 0) >= 1 ? null : '该随从当前无法发动天赋：没有+1力量指示物';
+        },
+    });
     registerAbility('frankenstein_herr_doktor', 'talent', frankensteinHerrDoktor);
     registerAbility('frankenstein_igor', 'onDestroy', frankensteinIgorOnDestroy);
 

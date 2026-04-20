@@ -6,7 +6,7 @@
  */
 
 import type { PlayerId, RandomFn, MatchState } from '../../../engine/types';
-import type { SmashUpCore, SmashUpEvent, AbilityTag, ActiveDuel } from './types';
+import type { SmashUpCore, SmashUpEvent, AbilityTag, ActiveDuel, ValidationResult } from './types';
 import { getTitanDef } from '../data/cards';
 
 // ============================================================================
@@ -43,25 +43,49 @@ export interface AbilityResult {
 /** 能力执行函数签名 */
 export type AbilityExecutor = (ctx: AbilityContext) => AbilityResult;
 
+/** 可选的发动前校验：返回 null 表示可发动，否则返回错误原因 */
+export type AbilityUseValidator = (ctx: AbilityContext) => string | null;
+
+export interface RegisteredAbility {
+    execute: AbilityExecutor;
+    validateUse?: AbilityUseValidator;
+}
+
+export type AbilityRegistration = AbilityExecutor | RegisteredAbility;
+
 // ============================================================================
 // 注册表实现
 // ============================================================================
 
-/** 内部存储：defId → Map<AbilityTag, AbilityExecutor> */
-const registry = new Map<string, Map<AbilityTag, AbilityExecutor>>();
+/** 内部存储：defId → Map<AbilityTag, RegisteredAbility> */
+const registry = new Map<string, Map<AbilityTag, RegisteredAbility>>();
+
+function normalizeRegistration(registration: AbilityRegistration): RegisteredAbility {
+    return typeof registration === 'function'
+        ? { execute: registration }
+        : registration;
+}
 
 /** 注册一个能力执行函数 */
 export function registerAbility(
     defId: string,
     tag: AbilityTag,
-    executor: AbilityExecutor
+    registration: AbilityRegistration
 ): void {
     let tagMap = registry.get(defId);
     if (!tagMap) {
         tagMap = new Map();
         registry.set(defId, tagMap);
     }
-    tagMap.set(tag, executor);
+    tagMap.set(tag, normalizeRegistration(registration));
+}
+
+/** 按 defId + tag 解析能力定义 */
+export function resolveAbilityDefinition(
+    defId: string,
+    tag: AbilityTag
+): RegisteredAbility | undefined {
+    return registry.get(defId)?.get(tag);
 }
 
 /** 按 defId + tag 解析能力执行函数 */
@@ -69,7 +93,7 @@ export function resolveAbility(
     defId: string,
     tag: AbilityTag
 ): AbilityExecutor | undefined {
-    return registry.get(defId)?.get(tag);
+    return resolveAbilityDefinition(defId, tag)?.execute;
 }
 
 /** 快捷：解析 onPlay 能力 */
@@ -80,6 +104,12 @@ export function resolveOnPlay(defId: string): AbilityExecutor | undefined {
 /** 快捷：解析 talent 能力 */
 export function resolveTalent(defId: string): AbilityExecutor | undefined {
     return resolveAbility(defId, 'talent');
+}
+
+export function validateTalentUse(ctx: AbilityContext): ValidationResult {
+    const validator = resolveAbilityDefinition(ctx.defId, 'talent')?.validateUse;
+    const error = validator?.(ctx) ?? null;
+    return error ? { valid: false, error } : { valid: true };
 }
 
 /** 快捷：解析 special 能力 */
@@ -142,9 +172,9 @@ export function registerPodAbilityAliases(): void {
         // 如果 _pod 版本已经有自己的注册，跳过（不覆盖最新定制)
         if (registry.has(podDefId)) continue;
 
-        const podTagMap = new Map<AbilityTag, AbilityExecutor>();
-        for (const [tag, executor] of tagMap.entries()) {
-            podTagMap.set(tag, executor);
+        const podTagMap = new Map<AbilityTag, RegisteredAbility>();
+        for (const [tag, definition] of tagMap.entries()) {
+            podTagMap.set(tag, definition);
         }
         registry.set(podDefId, podTagMap);
     }

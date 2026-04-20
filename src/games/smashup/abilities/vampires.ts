@@ -99,9 +99,21 @@ function registerVampirePodAbilities(): void {
     registerAbility('vampire_wolf_pact_pod_action', 'onPlay', vampireWolfPactPodActionOnPlay);
 
     // Talents
-    registerAbility('vampire_the_count_pod', 'talent', vampireCountPodTalent);
-    registerAbility('vampire_nightstalker_pod', 'talent', vampireNightstalkerPodTalent);
-    registerAbility('vampire_stakeout_pod', 'talent', vampireStakeoutPodTalent);
+    registerAbility('vampire_the_count_pod', 'talent', {
+        execute: vampireCountPodTalent,
+        validateUse: (ctx) => ctx.state.bases.some(base => base.minions.length > 0) ? null : '当前没有可选择的随从目标',
+    });
+    registerAbility('vampire_nightstalker_pod', 'talent', {
+        execute: vampireNightstalkerPodTalent,
+        validateUse: (ctx) => (ctx.state.destroyedMinionByPlayersThisTurn ?? []).includes(ctx.playerId) ? null : '本回合你还没有消灭过随从',
+    });
+    registerAbility('vampire_stakeout_pod', 'talent', {
+        execute: vampireStakeoutPodTalent,
+        validateUse: (ctx) => {
+            const decreased = ctx.state.basePowerDecreasedPlayersThisTurn?.[ctx.baseIndex] ?? [];
+            return decreased.some(pid => pid !== ctx.playerId) ? null : '本回合还没有其他玩家降低过该基地战力';
+        },
+    });
 
     // Specials implemented via triggers after destroy (see ongoing effects)
 }

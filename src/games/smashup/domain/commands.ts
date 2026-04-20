@@ -15,7 +15,7 @@ import { canPlayFromDiscard } from './discardPlayability';
 import { getTitanByUid, isSpecialLimitBlocked } from './abilityHelpers';
 import { canUseActiveBaseAbility, getActiveBaseAbilityOptions, hasActiveBaseAbility } from './baseAbilities';
 import { getActionPlayRestrictionError, getMinionPlayRestrictionError, validateActionPlaySemantics } from './playLegality';
-import { resolveOngoingActivation, resolveSpecial, resolveTalent } from './abilityRegistry';
+import { resolveOngoingActivation, resolveSpecial, resolveTalent, validateTalentUse } from './abilityRegistry';
 import { validateTitanOngoingActivation, validateTitanSpecialActivation, validateTitanTalentUse } from './titanAbilityValidators';
 import {
     actionLikeNeedsResponseWindowBase,
@@ -674,6 +674,19 @@ export function validate(
                 if (!oDef || !('abilityTags' in oDef) || !oDef.abilityTags?.includes('talent')) {
                     return { valid: false, error: '该持续行动卡没有天赋能力' };
                 }
+                const talentValidation = validateTalentUse({
+                    state: core,
+                    matchState: state,
+                    playerId: command.playerId,
+                    cardUid: ongoingCardUid,
+                    defId: ongoing.defId,
+                    baseIndex,
+                    random: Math.random,
+                    now,
+                });
+                if (!talentValidation.valid) {
+                    return talentValidation;
+                }
                 return { valid: true };
             }
 
@@ -709,13 +722,18 @@ export function validate(
                 return { valid: false, error: '该随从没有天赋能力' };
             }
 
-            // 约束：部分天赋需要满足额外条件，否则不应允许发动（避免误消耗 TALENT_USED）
-            // 怪物（frankenstein_the_monster）：需要至少 1 个 +1 力量指示物
-            if (
-                (targetMinion.defId === 'frankenstein_the_monster' || targetMinion.defId === 'frankenstein_the_monster_pod')
-                && (targetMinion.powerCounters ?? 0) < 1
-            ) {
-                return { valid: false, error: '该随从当前无法发动天赋：没有+1力量指示物' };
+            const talentValidation = validateTalentUse({
+                state: core,
+                matchState: state,
+                playerId: command.playerId,
+                cardUid: minionUid,
+                defId: targetMinion.defId,
+                baseIndex,
+                random: Math.random,
+                now,
+            });
+            if (!talentValidation.valid) {
+                return talentValidation;
             }
             return { valid: true };
         }
