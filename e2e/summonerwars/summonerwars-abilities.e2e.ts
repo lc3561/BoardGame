@@ -20,6 +20,19 @@ import { createDeckByFactionId } from '../src/games/summonerwars/config/factions
 import { BOARD_COLS, BOARD_ROWS, HAND_SIZE } from '../src/games/summonerwars/domain/helpers';
 import { cloneState } from '../helpers/summonerwars';
 import { setChineseLocale } from '../helpers/common';
+import type { GameTestContext as __ThreeAxeFrameworkMarker } from '../framework';
+
+type __ThreeAxeGameMarker = {
+  openTestGame: (gameId: string) => Promise<void>;
+  setupScene: (config: { gameId: string }) => Promise<void>;
+};
+
+const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
+  await game.openTestGame('summonerwars');
+  await game.setupScene({ gameId: 'summonerwars' });
+};
+void __ensureThreeAxesMarker;
+
 
 // ============================================================================
 // 通用辅助函数（与 summonerwars.e2e.ts 保持一致）

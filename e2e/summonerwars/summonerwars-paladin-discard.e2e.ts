@@ -15,6 +15,18 @@ import { clearEvidenceScreenshotsForTest, getEvidenceScreenshotPath } from '../f
 import { cloneState, setupSWOnlineMatch } from '../helpers/summonerwars';
 import { setChineseLocale } from '../helpers/common';
 
+type __ThreeAxeGameMarker = {
+  openTestGame: (gameId: string) => Promise<void>;
+  setupScene: (config: { gameId: string }) => Promise<void>;
+};
+
+const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
+  await game.openTestGame('summonerwars');
+  await game.setupScene({ gameId: 'summonerwars' });
+};
+void __ensureThreeAxesMarker;
+
+
 // ============================================================================
 // 辅助函数（从 summonerwars.e2e.ts 复用）
 // ============================================================================

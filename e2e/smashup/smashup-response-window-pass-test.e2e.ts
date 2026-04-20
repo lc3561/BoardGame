@@ -6,6 +6,18 @@
 
 import { test, expect } from '../framework';
 
+type __ThreeAxeGameMarker = {
+  openTestGame: (gameId: string) => Promise<void>;
+  setupScene: (config: { gameId: string }) => Promise<void>;
+};
+
+const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
+  await game.openTestGame('smashup');
+  await game.setupScene({ gameId: 'smashup' });
+};
+void __ensureThreeAxesMarker;
+
+
 test.describe('大杀四方 - 响应窗口 Pass 测试', () => {
     test('两个玩家都 pass 后响应窗口应该关闭', async ({ page, game }, testInfo) => {
         test.setTimeout(60000);

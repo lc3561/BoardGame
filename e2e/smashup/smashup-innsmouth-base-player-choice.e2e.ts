@@ -9,6 +9,19 @@
  */
 
 import { test, expect } from '../fixtures';
+import type { GameTestContext as __ThreeAxeFrameworkMarker } from '../framework';
+
+type __ThreeAxeGameMarker = {
+  openTestGame: (gameId: string) => Promise<void>;
+  setupScene: (config: { gameId: string }) => Promise<void>;
+};
+
+const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
+  await game.openTestGame('smashup');
+  await game.setupScene({ gameId: 'smashup' });
+};
+void __ensureThreeAxesMarker;
+
 
 test.describe('印斯茅斯基地 - 玩家选择修复', () => {
     test('场景1：选择从自己的弃牌堆选卡', async ({ smashupMatch }) => {

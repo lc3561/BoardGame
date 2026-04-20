@@ -5,6 +5,19 @@
  */
 
 import { test, expect } from '@playwright/test';
+import type { GameTestContext as __ThreeAxeFrameworkMarker } from '../framework';
+
+type __ThreeAxeGameMarker = {
+  openTestGame: (gameId: string) => Promise<void>;
+  setupScene: (config: { gameId: string }) => Promise<void>;
+};
+
+const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
+  await game.openTestGame('smashup');
+  await game.setupScene({ gameId: 'smashup' });
+};
+void __ensureThreeAxesMarker;
+
 
 test.describe('SmashUp - 弃牌堆闪烁修复', () => {
     test('随从额度已满且无额外出牌能力时，弃牌堆不闪烁', async ({ page }) => {

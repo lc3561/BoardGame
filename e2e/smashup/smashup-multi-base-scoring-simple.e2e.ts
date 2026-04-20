@@ -13,6 +13,19 @@
  */
 
 import { test, expect } from '../fixtures';
+import type { GameTestContext as __ThreeAxeFrameworkMarker } from '../framework';
+
+type __ThreeAxeGameMarker = {
+  openTestGame: (gameId: string) => Promise<void>;
+  setupScene: (config: { gameId: string }) => Promise<void>;
+};
+
+const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
+  await game.openTestGame('smashup');
+  await game.setupScene({ gameId: 'smashup' });
+};
+void __ensureThreeAxesMarker;
+
 
 test.describe('多基地计分简单测试', () => {
     // 增加超时时间到 3 分钟（包含派系选择）

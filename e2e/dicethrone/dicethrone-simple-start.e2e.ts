@@ -24,6 +24,18 @@ import { GUNSLINGER_CARDS } from '../../src/games/dicethrone/heroes/gunslinger/c
 import { VENGEANCE_2 } from '../../src/games/dicethrone/heroes/paladin/abilities';
 import { PALADIN_CARDS } from '../../src/games/dicethrone/heroes/paladin/cards';
 import { SAMURAI_CARDS } from '../../src/games/dicethrone/heroes/samurai/cards';
+
+type __ThreeAxeGameMarker = {
+  openTestGame: (gameId: string) => Promise<void>;
+  setupScene: (config: { gameId: string }) => Promise<void>;
+};
+
+const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
+  await game.openTestGame('dicethrone');
+  await game.setupScene({ gameId: 'dicethrone' });
+};
+void __ensureThreeAxesMarker;
+
 import {
     claimDTSeatViaAPI,
     cleanupDTMatch,

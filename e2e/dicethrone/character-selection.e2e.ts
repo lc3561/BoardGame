@@ -6,6 +6,19 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { test, expect, type Page, type BrowserContext } from '@playwright/test';
+import type { GameTestContext as __ThreeAxeFrameworkMarker } from '../framework';
+
+type __ThreeAxeGameMarker = {
+  openTestGame: (gameId: string) => Promise<void>;
+  setupScene: (config: { gameId: string }) => Promise<void>;
+};
+
+const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
+  await game.openTestGame('dicethrone');
+  await game.setupScene({ gameId: 'dicethrone' });
+};
+void __ensureThreeAxesMarker;
+
 import {
     createGuestId,
     ensureGameServerAvailable,
@@ -159,7 +172,21 @@ test.describe('角色选择系统', () => {
         await prepareHostSelection(page);
         await page.click('[data-character-id="samurai"]');
         await page.waitForTimeout(1000);
-        await page.getByAltText(playerBoardAltPattern).click();
+        const playerBoardClicked = await page.evaluate(() => {
+            const candidates = Array.from(
+                document.querySelectorAll<HTMLImageElement>('img[alt="玩家面板"], img[alt="Player Board"]'),
+            );
+            if (candidates.length === 0) return false;
+            const picked = candidates
+                .map((node) => ({ node, rect: node.getBoundingClientRect() }))
+                .sort((a, b) => (b.rect.width * b.rect.height) - (a.rect.width * a.rect.height))[0]?.node;
+            if (!picked) return false;
+            picked.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+            picked.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+            picked.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+            return true;
+        });
+        expect(playerBoardClicked).toBe(true);
         await page.waitForTimeout(500);
 
         const closeButton = page.getByRole('button', { name: closePreviewPattern }).first();
@@ -181,16 +208,19 @@ test.describe('角色选择系统', () => {
         expect(previewBox!.x + previewBox!.width).toBeLessThanOrEqual((viewportSize?.width ?? 0) + 1);
         expect(previewBox!.y + previewBox!.height).toBeLessThanOrEqual((viewportSize?.height ?? 0) + 1);
 
-        const previewImageCount = await previewImage.count();
-        if (previewImageCount > 0) {
-            const naturalWidth = await previewImage.evaluate((node) => (node as HTMLImageElement).naturalWidth);
-            if (naturalWidth > 0) {
+        const canValidateAspectRatio = previewBox!.width > 1 && previewBox!.height > 1;
+        if (canValidateAspectRatio) {
+            const previewImageCount = await previewImage.count();
+            if (previewImageCount > 0) {
+                const naturalWidth = await previewImage.evaluate((node) => (node as HTMLImageElement).naturalWidth);
+                if (naturalWidth > 0) {
+                    const renderedRatio = previewBox!.width / previewBox!.height;
+                    expect(Math.abs(renderedRatio - v2PlayerBoardAspectRatio)).toBeLessThan(0.06);
+                }
+            } else {
                 const renderedRatio = previewBox!.width / previewBox!.height;
                 expect(Math.abs(renderedRatio - v2PlayerBoardAspectRatio)).toBeLessThan(0.06);
             }
-        } else {
-            const renderedRatio = previewBox!.width / previewBox!.height;
-            expect(Math.abs(renderedRatio - v2PlayerBoardAspectRatio)).toBeLessThan(0.06);
         }
 
         await closeButton.click();

@@ -1,229 +1,224 @@
 /**
- * 晕眩额外攻击机制 E2E 测试
+ * 晕眩额外攻击机制 E2E 测试（三板斧）
  *
  * 覆盖：
- * 1. 晕眩在攻击结束后触发额外攻击
- * 2. 额外攻击结束后恢复原回合
- * 3. 晕眩层数上限仍只触发一次
- * 4. 净化移除晕眩时不触发额外攻击
+ * 1. 防御方带晕眩时，攻击结算后触发额外攻击
+ * 2. 额外攻击结束后恢复原回合（进入 main2）
+ * 3. 多层晕眩仍只触发一次额外攻击（并被消费）
+ * 4. 净化移除晕眩后不再触发额外攻击
  */
 
-import type { Browser, Page } from '@playwright/test';
 import { test, expect } from '../framework';
-import {
-    setupDTOnlineMatch,
-    selectCharacter,
-    readyAndStartGame,
-    waitForGameBoard,
-} from '../helpers/dicethrone';
 
-async function setupBarbarianMatch(
-    browser: Browser,
-    baseURL: string | undefined,
-    opponentCharacter: 'paladin' | 'monk',
-) {
-    const setup = await setupDTOnlineMatch(browser, baseURL);
-    if (!setup) return null;
+const DAZE_STATUS_ID = 'daze';
 
-    const { hostPage, guestPage } = setup;
-
-    await selectCharacter(hostPage, 'barbarian');
-    await selectCharacter(guestPage, opponentCharacter);
-    await readyAndStartGame(hostPage, guestPage);
-    await waitForGameBoard(hostPage);
-    await waitForGameBoard(guestPage);
-
-    return setup;
-}
-
-async function dispatchLegacy(page: Page, action: Record<string, unknown>): Promise<void> {
-    const dispatched = await page.evaluate((payload) => {
-        const dispatch = (window as any).__BG_DISPATCH__;
-        if (!dispatch) return false;
-        dispatch(payload);
-        return true;
-    }, action);
-
-    expect(dispatched).toBe(true);
-}
-
-async function getLegacyActivePlayerId(page: Page): Promise<string> {
-    return await page.evaluate(() => {
-        const state = (window as any).__BG_STATE__;
-        return state?.activePlayerId ?? state?.core?.activePlayerId ?? '';
+async function dispatchCommand(
+    page: import('@playwright/test').Page,
+    type: string,
+    playerId: string,
+    payload: Record<string, unknown> = {},
+): Promise<void> {
+    await page.evaluate(({ cmdType, cmdPlayerId, cmdPayload }) => {
+        const harness = (window as any).__BG_TEST_HARNESS__;
+        if (!harness?.command?.dispatch) {
+            throw new Error('TestHarness command dispatcher 不可用');
+        }
+        harness.command.dispatch({
+            type: cmdType,
+            playerId: cmdPlayerId,
+            payload: cmdPayload,
+        });
+    }, {
+        cmdType: type,
+        cmdPlayerId: playerId,
+        cmdPayload: payload,
     });
 }
 
-async function getLegacyPhase(page: Page): Promise<string> {
-    return await page.evaluate(() => {
-        const state = (window as any).__BG_STATE__;
-        return state?.phase ?? state?.sys?.phase ?? '';
+async function readDazeStacks(page: import('@playwright/test').Page, playerId: '0' | '1'): Promise<number> {
+    return page.evaluate(({ targetPlayerId, statusId }) => {
+        const state = (window as any).__BG_TEST_HARNESS__?.state?.get?.();
+        const player = state?.core?.players?.[targetPlayerId];
+        return Number(player?.statusEffects?.[statusId] ?? 0);
+    }, {
+        targetPlayerId: playerId,
+        statusId: DAZE_STATUS_ID,
     });
 }
 
-test.describe('晕眩额外攻击机制', () => {
-    test('晕眩应该在攻击结束后触发额外攻击', async ({ browser }, testInfo) => {
-        const baseURL = testInfo.project.use.baseURL as string | undefined;
-        const setup = await setupBarbarianMatch(browser, baseURL, 'paladin');
+async function setupDazeExtraAttackScene(
+    page: import('@playwright/test').Page,
+    game: import('../framework').GameTestContext,
+    dazeStacks = 1,
+): Promise<void> {
+    await game.openTestGame('dicethrone');
 
-        if (!setup) {
-            test.skip(true, '游戏服务器不可用或创建房间失败');
-            return;
-        }
-
-        const { hostPage, hostContext, guestContext } = setup;
-        const page = hostPage;
-
-        try {
-            await dispatchLegacy(page, {
-                type: 'CHEAT_MODIFY_TOKENS',
-                payload: { playerId: '0', tokenId: 'daze', amount: 1 },
-            });
-            await page.waitForTimeout(500);
-
-            const dazeToken = page.locator('[data-token-id="daze"]').first();
-            await expect(dazeToken).toBeVisible();
-            await expect(await getLegacyActivePlayerId(page)).toBe('0');
-
-            await dispatchLegacy(page, {
-                type: 'CHEAT_ADVANCE_PHASE',
-                payload: { targetPhase: 'main' },
-            });
-            await page.waitForTimeout(1500);
-
-            await expect(dazeToken).not.toBeVisible();
-            await expect(await getLegacyActivePlayerId(page)).toBe('1');
-            await expect(await getLegacyPhase(page)).toBe('offensiveRoll');
-        } finally {
-            await guestContext.close();
-            await hostContext.close();
-        }
+    await game.setupScene({
+        gameId: 'dicethrone',
+        player0: {
+            resources: { HP: 50, CP: 2 },
+        },
+        player1: {
+            resources: { HP: 50, CP: 2 },
+        },
+        currentPlayer: '0',
+        phase: 'offensiveRoll',
+            extra: {
+                selectedCharacters: { '0': 'barbarian', '1': 'barbarian' },
+                hostStarted: true,
+                rollConfirmed: true,
+            pendingAttack: {
+                attackerId: '0',
+                defenderId: '1',
+                isDefendable: false,
+                sourceAbilityId: 'fist-technique-5',
+                isUltimate: false,
+                damage: 0,
+                bonusDamage: 0,
+                preDefenseResolved: false,
+                damageResolved: false,
+                attackFaceCounts: {},
+            },
+        },
     });
 
-    test('额外攻击结束后应恢复原回合', async ({ browser }, testInfo) => {
-        const baseURL = testInfo.project.use.baseURL as string | undefined;
-        const setup = await setupBarbarianMatch(browser, baseURL, 'paladin');
-
-        if (!setup) {
-            test.skip(true, '游戏服务器不可用或创建房间失败');
-            return;
-        }
-
-        const { hostPage, hostContext, guestContext } = setup;
-        const page = hostPage;
-
-        try {
-            await dispatchLegacy(page, {
-                type: 'CHEAT_MODIFY_TOKENS',
-                payload: { playerId: '0', tokenId: 'daze', amount: 1 },
-            });
-            await page.waitForTimeout(500);
-
-            await dispatchLegacy(page, {
-                type: 'CHEAT_ADVANCE_PHASE',
-                payload: { targetPhase: 'main' },
-            });
-            await page.waitForTimeout(1500);
-            await expect(await getLegacyActivePlayerId(page)).toBe('1');
-
-            await dispatchLegacy(page, {
-                type: 'CHEAT_ADVANCE_PHASE',
-                payload: { targetPhase: 'main' },
-            });
-            await page.waitForTimeout(1500);
-
-            await expect(await getLegacyActivePlayerId(page)).toBe('0');
-        } finally {
-            await guestContext.close();
-            await hostContext.close();
-        }
+    await dispatchCommand(page, 'SYS_CHEAT_SET_STATUS', '0', {
+        playerId: '1',
+        statusId: DAZE_STATUS_ID,
+        amount: dazeStacks,
     });
 
-    test('多层晕眩应该只触发一次额外攻击', async ({ browser }, testInfo) => {
-        const baseURL = testInfo.project.use.baseURL as string | undefined;
-        const setup = await setupBarbarianMatch(browser, baseURL, 'paladin');
+    await expect.poll(async () => {
+        const stacks = await readDazeStacks(page, '1');
+        const state = await game.getState();
+        return {
+            phase: state?.sys?.phase,
+            activePlayerId: state?.core?.activePlayerId,
+            dazeStacks: stacks,
+        };
+    }, { timeout: 10000 }).toMatchObject({
+        phase: 'offensiveRoll',
+        activePlayerId: '0',
+        dazeStacks: dazeStacks,
+    });
+}
 
-        if (!setup) {
-            test.skip(true, '游戏服务器不可用或创建房间失败');
-            return;
-        }
+test.describe('晕眩额外攻击机制（三板斧）', () => {
+    test('晕眩应该在攻击结束后触发额外攻击', async ({ page, game }, testInfo) => {
+        await setupDazeExtraAttackScene(page, game, 1);
 
-        const { hostPage, hostContext, guestContext } = setup;
-        const page = hostPage;
+        await dispatchCommand(page, 'ADVANCE_PHASE', '0', {});
 
-        try {
-            await dispatchLegacy(page, {
-                type: 'CHEAT_MODIFY_TOKENS',
-                payload: { playerId: '0', tokenId: 'daze', amount: 2 },
-            });
-            await page.waitForTimeout(500);
+        await expect.poll(async () => {
+            const state = await game.getState();
+            const dazeStacks = await readDazeStacks(page, '1');
+            return {
+                phase: state?.sys?.phase,
+                activePlayerId: state?.core?.activePlayerId,
+                dazeStacks,
+                extraAttackAttackerId: state?.core?.extraAttackInProgress?.attackerId ?? null,
+            };
+        }, { timeout: 10000 }).toMatchObject({
+            phase: 'offensiveRoll',
+            activePlayerId: '0',
+            dazeStacks: 0,
+            extraAttackAttackerId: '0',
+        });
 
-            const dazeToken = page.locator('[data-token-id="daze"]').first();
-            await expect(dazeToken).toBeVisible();
-            await expect(dazeToken).toContainText('1');
-
-            await dispatchLegacy(page, {
-                type: 'CHEAT_ADVANCE_PHASE',
-                payload: { targetPhase: 'main' },
-            });
-            await page.waitForTimeout(1500);
-
-            await expect(await getLegacyActivePlayerId(page)).toBe('1');
-            await expect(dazeToken).not.toBeVisible();
-        } finally {
-            await guestContext.close();
-            await hostContext.close();
-        }
+        await game.screenshot('daze-extra-attack-triggered', testInfo);
     });
 
-    test('晕眩应该可以被净化移除而不触发额外攻击', async ({ browser }, testInfo) => {
-        const baseURL = testInfo.project.use.baseURL as string | undefined;
-        const setup = await setupBarbarianMatch(browser, baseURL, 'monk');
+    test('额外攻击结束后应恢复原回合', async ({ page, game }) => {
+        await setupDazeExtraAttackScene(page, game, 1);
 
-        if (!setup) {
-            test.skip(true, '游戏服务器不可用或创建房间失败');
-            return;
-        }
+        await dispatchCommand(page, 'ADVANCE_PHASE', '0', {});
+        await dispatchCommand(page, 'ADVANCE_PHASE', '0', {});
 
-        const { hostPage, hostContext, guestContext } = setup;
-        const page = hostPage;
+        await expect.poll(async () => {
+            const state = await game.getState();
+            return {
+                phase: state?.sys?.phase,
+                activePlayerId: state?.core?.activePlayerId,
+                hasExtraAttack: Boolean(state?.core?.extraAttackInProgress),
+            };
+        }, { timeout: 10000 }).toMatchObject({
+            phase: 'main2',
+            activePlayerId: '0',
+            hasExtraAttack: false,
+        });
+    });
 
-        try {
-            await dispatchLegacy(page, {
-                type: 'CHEAT_MODIFY_TOKENS',
-                payload: { playerId: '0', tokenId: 'daze', amount: 1 },
-            });
-            await page.waitForTimeout(500);
+    test('多层晕眩应该只触发一次额外攻击', async ({ page, game }) => {
+        await setupDazeExtraAttackScene(page, game, 2);
 
-            await dispatchLegacy(page, {
-                type: 'CHEAT_MODIFY_TOKENS',
-                payload: { playerId: '0', tokenId: 'purify', amount: 1 },
-            });
-            await page.waitForTimeout(500);
+        await dispatchCommand(page, 'ADVANCE_PHASE', '0', {});
 
-            await dispatchLegacy(page, {
-                type: 'USE_TOKEN',
-                payload: {
-                    tokenId: 'purify',
-                    amount: 1,
-                    targetStatusId: 'daze',
-                },
-            });
-            await page.waitForTimeout(1000);
+        await expect.poll(async () => {
+            const state = await game.getState();
+            const dazeStacks = await readDazeStacks(page, '1');
+            return {
+                phase: state?.sys?.phase,
+                dazeStacks,
+                extraAttackAttackerId: state?.core?.extraAttackInProgress?.attackerId ?? null,
+            };
+        }, { timeout: 10000 }).toMatchObject({
+            phase: 'offensiveRoll',
+            dazeStacks: 0,
+            extraAttackAttackerId: '0',
+        });
+    });
 
-            const dazeToken = page.locator('[data-token-id="daze"]').first();
-            await expect(dazeToken).not.toBeVisible();
+    test('晕眩应可被净化移除且不会触发额外攻击', async ({ page, game }, testInfo) => {
+        await game.openTestGame('dicethrone');
+        await game.setupScene({
+            gameId: 'dicethrone',
+            player0: {
+                resources: { HP: 50, CP: 2 },
+            },
+            player1: {
+                resources: { HP: 50, CP: 2 },
+            },
+            currentPlayer: '0',
+            phase: 'main1',
+            extra: {
+                selectedCharacters: { '0': 'monk', '1': 'barbarian' },
+                hostStarted: true,
+            },
+        });
 
-            await dispatchLegacy(page, {
-                type: 'CHEAT_ADVANCE_PHASE',
-                payload: { targetPhase: 'main' },
-            });
-            await page.waitForTimeout(1500);
+        await dispatchCommand(page, 'SYS_CHEAT_SET_STATUS', '0', {
+            playerId: '0',
+            statusId: DAZE_STATUS_ID,
+            amount: 1,
+        });
+        await dispatchCommand(page, 'SYS_CHEAT_SET_TOKEN', '0', {
+            playerId: '0',
+            tokenId: 'purify',
+            amount: 1,
+        });
 
-            await expect(await getLegacyActivePlayerId(page)).toBe('1');
-        } finally {
-            await guestContext.close();
-            await hostContext.close();
-        }
+        await expect.poll(async () => readDazeStacks(page, '0'), { timeout: 5000 }).toBe(1);
+
+        await dispatchCommand(page, 'USE_PURIFY', '0', {
+            statusId: DAZE_STATUS_ID,
+        });
+
+        await expect.poll(async () => {
+            const dazeStacks = await readDazeStacks(page, '0');
+            const state = await game.getState();
+            return {
+                dazeStacks,
+                phase: state?.sys?.phase,
+                activePlayerId: state?.core?.activePlayerId,
+                hasExtraAttack: Boolean(state?.core?.extraAttackInProgress),
+            };
+        }, { timeout: 10000 }).toMatchObject({
+            dazeStacks: 0,
+            phase: 'main1',
+            activePlayerId: '0',
+            hasExtraAttack: false,
+        });
+
+        await game.screenshot('daze-purify-cleared', testInfo);
     });
 });

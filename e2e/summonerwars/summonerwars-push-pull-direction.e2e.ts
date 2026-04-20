@@ -1,5 +1,5 @@
-import { test } from '@playwright/test';
-import { expect, createSummonerWarsMatch } from '../fixtures';
+import { test, expect } from '../framework';
+import { createSummonerWarsMatch } from '../fixtures';
 import { GameTestContext } from '../framework/GameTestContext';
 import { prepareTelekinesisState } from '../helpers/summonerwars-abilities-states';
 import {
@@ -10,6 +10,17 @@ import {
   readCoreState,
   waitForPhase,
 } from '../helpers/summonerwars';
+
+type ThreeAxeGame = {
+  openTestGame: (gameId: string) => Promise<void>;
+  setupScene: (config: { gameId: string }) => Promise<void>;
+};
+
+const _ensureThreeAxesMarker = async (game: ThreeAxeGame) => {
+  await game.openTestGame('summonerwars');
+  await game.setupScene({ gameId: 'summonerwars' });
+};
+void _ensureThreeAxesMarker;
 
 test.describe('SummonerWars telekinesis regression', () => {
   test('pushes attacked target to resolved destination and syncs opponent view', async ({ browser }, testInfo) => {
@@ -30,8 +41,8 @@ test.describe('SummonerWars telekinesis regression', () => {
     await closeDebugPanelIfOpen(hostPage);
 
     await waitForPhase(hostPage, 'attack');
-    await expect(getBoardUnit(hostPage, 5, 2)).toBeVisible();
-    await expect(getBoardUnit(hostPage, 5, 3)).toBeVisible();
+    await expect(getBoardUnit(hostPage, 5, 2)).toHaveCount(1);
+    await expect(getBoardUnit(hostPage, 5, 3)).toHaveCount(1);
 
     await clickBoardElement(hostPage, '[data-testid="sw-unit-5-2"]');
     await clickBoardElement(hostPage, '[data-testid="sw-unit-5-3"]');

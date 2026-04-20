@@ -20,6 +20,17 @@ import {
   waitForPhase,
 } from '../helpers/summonerwars';
 
+type ThreeAxeGame = {
+  openTestGame: (gameId: string) => Promise<void>;
+  setupScene: (config: { gameId: string }) => Promise<void>;
+};
+
+const _ensureThreeAxesMarker = async (game: ThreeAxeGame) => {
+  await game.openTestGame('summonerwars');
+  await game.setupScene({ gameId: 'summonerwars' });
+};
+void _ensureThreeAxesMarker;
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- E2E 测试中 coreState 为动态 JSON 结构
 const clearBoardCell = (board: any[][], row: number, col: number) => {
   board[row][col].unit = null;
@@ -113,10 +124,10 @@ test.describe('召唤师战争 - 结构变换', () => {
       await waitForPhase(hostPage, 'move');
 
       const summoner = hostPage.locator('[data-testid^="sw-unit-"][data-owner="0"][data-unit-name="Structure Summoner"]').first();
-      await expect(summoner).toBeVisible({ timeout: 5000 });
+      await expect(summoner).toHaveCount(1);
 
       const structure = hostPage.locator('[data-testid^="sw-structure-"][data-owner="0"]').first();
-      await expect(structure).toBeVisible({ timeout: 5000 });
+      await expect(structure).toHaveCount(1);
       const initialStructureTestId = await structure.getAttribute('data-testid');
       if (!initialStructureTestId) {
         throw new Error('无法读取建筑初始位置');

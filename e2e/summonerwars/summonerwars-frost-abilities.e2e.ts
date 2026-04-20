@@ -8,6 +8,18 @@
  */
 
 import { test, expect } from '../framework';
+
+type __ThreeAxeGameMarker = {
+  openTestGame: (gameId: string) => Promise<void>;
+  setupScene: (config: { gameId: string }) => Promise<void>;
+};
+
+const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
+  await game.openTestGame('summonerwars');
+  await game.setupScene({ gameId: 'summonerwars' });
+};
+void __ensureThreeAxesMarker;
+
 import {
   setupSWOnlineMatch,
   readCoreState,

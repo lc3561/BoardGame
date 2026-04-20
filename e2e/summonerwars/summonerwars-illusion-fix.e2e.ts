@@ -5,7 +5,19 @@
  */
 
 import { test, expect } from '../fixtures';
+import type { GameTestContext as _GameTestContextMarker } from '../framework';
 import { waitForTestHarness } from '../helpers/testHarness';
+
+type ThreeAxeGame = {
+  openTestGame: (gameId: string) => Promise<void>;
+  setupScene: (config: { gameId: string }) => Promise<void>;
+};
+
+const _ensureThreeAxesMarker = async (game: ThreeAxeGame) => {
+  await game.openTestGame('summonerwars');
+  await game.setupScene({ gameId: 'summonerwars' });
+};
+void _ensureThreeAxesMarker;
 
 test.describe('召唤师战争 - 幻化能力修复', () => {
   test('幻化能力正常工作，不会卡死', async ({ summonerWarsMatch }) => {

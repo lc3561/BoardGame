@@ -17,6 +17,19 @@ import { join } from 'node:path';
 import { test, expect } from '@playwright/test';
 import { STATUS_IDS, TOKEN_IDS } from '../src/games/dicethrone/domain/ids';
 import { RESOURCE_IDS } from '../src/games/dicethrone/domain/resources';
+import type { GameTestContext as __ThreeAxeFrameworkMarker } from '../framework';
+
+type __ThreeAxeGameMarker = {
+  openTestGame: (gameId: string) => Promise<void>;
+  setupScene: (config: { gameId: string }) => Promise<void>;
+};
+
+const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
+  await game.openTestGame('dicethrone');
+  await game.setupScene({ gameId: 'dicethrone' });
+};
+void __ensureThreeAxesMarker;
+
 import {
     setupOnlineMatch,
     readCoreState,

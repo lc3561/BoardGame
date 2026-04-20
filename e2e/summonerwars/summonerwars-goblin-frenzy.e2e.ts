@@ -11,6 +11,19 @@ import { test, expect } from '@playwright/test';
 import { setupSWOnlineMatch, readCoreState, applyCoreState } from '../helpers/summonerwars';
 import { waitForTestHarness } from '../helpers/common';
 import { waitForState } from '../helpers/waitForState';
+import type { GameTestContext as __ThreeAxeFrameworkMarker } from '../framework';
+
+type __ThreeAxeGameMarker = {
+  openTestGame: (gameId: string) => Promise<void>;
+  setupScene: (config: { gameId: string }) => Promise<void>;
+};
+
+const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
+  await game.openTestGame('summonerwars');
+  await game.setupScene({ gameId: 'summonerwars' });
+};
+void __ensureThreeAxesMarker;
+
 
 test.describe('洞穴地精 - 群情激愤事件卡', () => {
   test('打出群情激愤后0费单位获得额外攻击', async ({ browser }, testInfo) => {

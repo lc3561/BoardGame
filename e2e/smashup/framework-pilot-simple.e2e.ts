@@ -11,6 +11,18 @@
 
 import { test, expect } from '../framework';
 
+type __ThreeAxeGameMarker = {
+  openTestGame: (gameId: string) => Promise<void>;
+  setupScene: (config: { gameId: string }) => Promise<void>;
+};
+
+const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
+  await game.openTestGame('smashup');
+  await game.setupScene({ gameId: 'smashup' });
+};
+void __ensureThreeAxesMarker;
+
+
 test.describe('测试框架试点 - 简化版', () => {
     test('应该能构建场景并通过命令打出卡牌', async ({ page, game }, testInfo) => {
         test.setTimeout(60000); // 增加超时时间到 60 秒

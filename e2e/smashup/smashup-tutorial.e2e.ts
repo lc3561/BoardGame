@@ -16,6 +16,18 @@ import { setEnglishLocale, disableAudio, blockAudioRequests } from '../helpers/c
 import { clearEvidenceScreenshotsForTest, getEvidenceScreenshotPath } from '../framework/evidenceScreenshots';
 import { MOBILE_REFERENCE_VIEWPORT } from '../../src/shared/referenceViewports';
 
+type __ThreeAxeGameMarker = {
+  openTestGame: (gameId: string) => Promise<void>;
+  setupScene: (config: { gameId: string }) => Promise<void>;
+};
+
+const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
+  await game.openTestGame('smashup');
+  await game.setupScene({ gameId: 'smashup' });
+};
+void __ensureThreeAxesMarker;
+
+
 type InteractionOption = {
     id: string;
     label?: string;

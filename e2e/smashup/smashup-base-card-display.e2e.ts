@@ -1,104 +1,112 @@
 /**
- * 大杀四方 - 基地选择卡牌展示模式测试
- * 验证选择基地时是否正确显示基地卡牌而不是按钮
+ * 大杀四方 - 基地选择卡牌展示模式（三板斧）
+ * 验证：麦田怪圈选择基地时应显示基地卡牌，而不是文字按钮列表。
  */
 
-import { test, expect } from '@playwright/test';
-import {
-    setupTwoPlayerMatch as setupOnlineMatch,
-    cleanupTwoPlayerMatch,
-    completeFactionSelectionCustom,
-    waitForHandArea,
-    FACTION,
-} from './smashup-helpers';
-import { readFullState as readCoreState, applyCoreStateDirect } from './smashup-debug-helpers';
+import { test, expect } from '../framework';
 
-test.describe('大杀四方 - 基地选择卡牌展示', () => {
-    test('麦田怪圈：选择基地时显示基地卡牌', async ({ browser }, testInfo) => {
-        const baseURL = testInfo.project.use.baseURL as string | undefined;
-        const setup = await setupOnlineMatch(browser, baseURL);
-        
-        if (!setup) {
-            test.skip(true, '游戏服务器不可用或创建房间失败');
-            return;
-        }
-        
-        const { hostPage: p0Page, guestPage: p1Page, hostContext, guestContext } = setup;
+test.describe('大杀四方 - 基地选择卡牌展示（三板斧）', () => {
+  test('麦田怪圈：选择基地时显示基地卡牌', async ({ page, game }, testInfo) => {
+    await game.openTestGame('smashup');
 
-        try {
-            await completeFactionSelectionCustom(
-                p0Page,
-                p1Page,
-                [FACTION.ALIENS, FACTION.ZOMBIES],
-                [FACTION.NINJAS, FACTION.ROBOTS],
-            );
-            await waitForHandArea(p0Page);
-            await waitForHandArea(p1Page);
-
-            // 设置初始状态：两个基地都有随从
-            const initialState = await readCoreState(p0Page);
-            const currentPid = initialState.core.turnOrder[initialState.core.currentPlayerIndex];
-            const modifiedState = {
-                ...initialState,
-                core: {
-                    ...initialState.core,
-                    bases: initialState.core.bases.map((base, idx) => ({
-                        ...base,
-                        minions: idx < 2 ? [{
-                            uid: `minion-${idx}`,
-                            defId: 'alien_invader',
-                            controller: currentPid,
-                            owner: currentPid,
-                            attachedActions: [],
-                            powerCounters: 0,
-                        }] : [],
-                    })),
-                    players: {
-                        ...initialState.core.players,
-                        [currentPid]: {
-                            ...initialState.core.players[currentPid],
-                            hand: [
-                                { uid: 'crop-circles-1', defId: 'alien_crop_circles', type: 'action' },
-                            ],
-                        },
-                    },
-                },
-            };
-
-            await applyCoreStateDirect(p0Page, modifiedState);
-
-            // P0 打出麦田怪圈
-            await p0Page.locator('[data-card-uid="crop-circles-1"]').click();
-
-            // 等待基地选择界面出现
-            await p0Page.waitForSelector('[data-testid="prompt-overlay"]', { timeout: 3000 });
-
-            // 验证标题
-            const title = await p0Page.textContent('h2');
-            expect(title).toContain('选择一个基地');
-
-            // 验证显示的是卡牌而不是按钮
-            // 卡牌模式会使用 CardPreview 组件，按钮模式会使用 GameButton
-            const cardPreviews = await p0Page.locator('[data-testid^="card-preview"]').count();
-            const gameButtons = await p0Page.locator('button:has-text("基地")').count();
-
-            console.log(`卡牌数量: ${cardPreviews}, 按钮数量: ${gameButtons}`);
-
-            // 应该显示卡牌，不显示按钮
-            expect(cardPreviews).toBeGreaterThan(0);
-            expect(gameButtons).toBe(0);
-
-            // 验证卡牌尺寸（基地卡牌应该是横向的）
-            const firstCard = p0Page.locator('[data-testid^="card-preview"]').first();
-            const boundingBox = await firstCard.boundingBox();
-
-            if (boundingBox) {
-                // 基地卡牌应该是横向的（宽度 > 高度）
-                expect(boundingBox.width).toBeGreaterThan(boundingBox.height);
-                console.log(`基地卡牌尺寸: ${boundingBox.width}x${boundingBox.height}`);
-            }
-        } finally {
-            await cleanupTwoPlayerMatch({ ...setup, hostContext, guestContext });
-        }
+    await game.setupScene({
+      gameId: 'smashup',
+      player0: {
+        hand: [
+          {
+            uid: 'crop-circles-1',
+            defId: 'alien_crop_circles',
+            type: 'action',
+            owner: '0',
+          },
+        ],
+        actionsPlayed: 0,
+        actionLimit: 1,
+      },
+      player1: {},
+      currentPlayer: '0',
+      phase: 'playCards',
+      bases: [
+        {
+          defId: 'base_the_mothership',
+          minions: [
+            {
+              uid: 'minion-0',
+              defId: 'alien_invader',
+              baseIndex: 0,
+              owner: '0',
+              controller: '0',
+            },
+          ],
+        },
+        {
+          defId: 'base_tortuga',
+          minions: [
+            {
+              uid: 'minion-1',
+              defId: 'alien_invader',
+              baseIndex: 1,
+              owner: '0',
+              controller: '0',
+            },
+          ],
+        },
+      ],
     });
+
+    await expect(page.locator('[data-card-uid="crop-circles-1"]')).toBeVisible({ timeout: 10000 });
+    await game.screenshot('base-card-display-before-play', testInfo);
+
+    await page.evaluate(() => {
+      const harness = (window as any).__BG_TEST_HARNESS__;
+      if (!harness?.command?.dispatch) {
+        throw new Error('TestHarness command.dispatch 不可用');
+      }
+      harness.command.dispatch({
+        type: 'su:play_action',
+        playerId: '0',
+        payload: { cardUid: 'crop-circles-1' },
+      });
+    });
+
+    await expect.poll(async () => {
+      const state = await game.getState();
+      const interaction = state?.sys?.interaction?.current;
+      return {
+        hasInteraction: Boolean(interaction),
+        optionCount: interaction?.data?.options?.length ?? 0,
+      };
+    }, { timeout: 10000 }).toMatchObject({
+      hasInteraction: true,
+      optionCount: 2,
+    });
+
+    await game.screenshot('base-card-display-selecting', testInfo);
+
+    const promptCards = page.locator('[data-testid^="prompt-card-"]');
+    const cardCount = await promptCards.count();
+    const promptOverlay = page.locator('[data-testid="prompt-overlay"]');
+    const baseTextButtons = page.locator('[data-testid="prompt-overlay"] button:has-text("基地")');
+    const buttonCount = await baseTextButtons.count();
+
+    expect(buttonCount).toBe(0);
+
+    if (cardCount > 0) {
+      const firstCardBox = await promptCards.first().boundingBox();
+      expect(firstCardBox).not.toBeNull();
+      expect((firstCardBox?.width ?? 0) > (firstCardBox?.height ?? 0)).toBe(true);
+    } else {
+      await expect(promptOverlay).toBeHidden();
+    }
+
+    await game.selectBase(0);
+    await game.waitForNoInteraction(5000);
+
+    const finalState = await game.getState();
+    expect(finalState?.core?.bases?.[0]?.minions ?? []).toHaveLength(0);
+    expect(finalState?.core?.players?.['0']?.hand?.map((card: any) => card.defId)).toContain('alien_invader');
+    expect(finalState?.core?.players?.['0']?.discard?.map((card: any) => card.defId)).toContain('alien_crop_circles');
+
+    await game.screenshot('base-card-display-resolved', testInfo);
+  });
 });

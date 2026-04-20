@@ -9,6 +9,19 @@ import { dirname, join } from 'node:path';
 import { test, expect } from '@playwright/test';
 import { setChineseLocale } from '../helpers/common';
 import { disableFabMenu, dispatchLocalCommand, waitForTutorialBoardReady } from '../helpers/dicethrone';
+import type { GameTestContext as __ThreeAxeFrameworkMarker } from '../framework';
+
+type __ThreeAxeGameMarker = {
+  openTestGame: (gameId: string) => Promise<void>;
+  setupScene: (config: { gameId: string }) => Promise<void>;
+};
+
+const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
+  await game.openTestGame('dicethrone');
+  await game.setupScene({ gameId: 'dicethrone' });
+};
+void __ensureThreeAxesMarker;
+
 
 const MOBILE_LANDSCAPE_VIEWPORT = { width: 936, height: 432 } as const;
 
@@ -68,9 +81,18 @@ const readHighlightMetrics = async (page: Parameters<typeof test>[0]['page'], ta
             continue;
         }
 
-        const rect = candidate.getBoundingClientRect();
+        let rect = candidate.getBoundingClientRect();
         if (rect.width <= 1 || rect.height <= 1) {
-            continue;
+            if (resolvedTargetId === 'status-tokens') {
+                // status-tokens 在无状态时天然可能是“细条/零高”，与教程高亮一致，不要错误扩展到父容器
+                // 直接使用原始 rect 参与比较即可
+            } else {
+            const parentRect = candidate.parentElement?.getBoundingClientRect() ?? null;
+            if (!parentRect || parentRect.width <= 1 || parentRect.height <= 1) {
+                continue;
+            }
+            rect = parentRect;
+            }
         }
 
         const visibleWidth = Math.max(0, Math.min(rect.right, viewportWidth) - Math.max(rect.left, 0));

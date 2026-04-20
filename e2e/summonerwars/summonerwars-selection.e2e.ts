@@ -1,6 +1,18 @@
-import { test } from '@playwright/test';
-import { expect, createSummonerWarsMatch } from '../fixtures';
+import type { Page } from '@playwright/test';
+import { test, expect } from '../framework';
 import { GameTestContext } from '../framework/GameTestContext';
+
+type __ThreeAxeGameMarker = {
+  openTestGame: (gameId: string) => Promise<void>;
+  setupScene: (config: { gameId: string }) => Promise<void>;
+};
+
+const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
+  await game.openTestGame('summonerwars');
+  await game.setupScene({ gameId: 'summonerwars' });
+};
+void __ensureThreeAxesMarker;
+
 import {
   createSWRoomViaAPI,
   GAME_NAME,
@@ -11,6 +23,7 @@ import {
   getPlayerStatusCard,
   initSWContext,
   selectFactionById,
+  setupSWOnlineMatch,
   waitForFactionSelectionReady,
   waitForSummonerWarsUI,
 } from '../helpers/summonerwars';
@@ -25,7 +38,7 @@ import {
   MOBILE_LANDSCAPE_REFERENCE_VIEWPORT,
 } from '../../src/shared/referenceViewports';
 
-async function joinGuestToSelectionMatch(page: import('@playwright/test').Page, matchId: string) {
+async function joinGuestToSelectionMatch(page: Page, matchId: string) {
   const credentials = await joinMatchViaAPI(page, GAME_NAME, matchId, '1', 'Guest-SW-Selection');
   if (!credentials) {
     throw new Error(`Failed to join SummonerWars match: ${matchId}`);
@@ -35,7 +48,7 @@ async function joinGuestToSelectionMatch(page: import('@playwright/test').Page, 
   await page.goto(`/play/${GAME_NAME}/match/${matchId}?playerID=1`, { waitUntil: 'domcontentloaded' });
 }
 
-async function waitForSelectionLayoutStable(page: import('@playwright/test').Page) {
+async function waitForSelectionLayoutStable(page: Page) {
   await expect(page.getByTestId('sw-faction-selection')).toBeVisible({ timeout: 15000 });
   await expect(page.getByTestId('sw-faction-stage')).toBeVisible({ timeout: 15000 });
   await expect(page.getByTestId('sw-faction-grid')).toBeVisible({ timeout: 15000 });
@@ -354,7 +367,7 @@ test.describe('SummonerWars selection and turn-lock flows', () => {
   test('ui stability keeps end-phase locked for waiting player', async ({ browser }, testInfo) => {
     test.setTimeout(90000);
     const baseURL = testInfo.project.use.baseURL as string | undefined;
-    const setup = await createSummonerWarsMatch(browser, baseURL, 'necromancer', 'trickster');
+    const setup = await setupSWOnlineMatch(browser, baseURL, 'necromancer', 'trickster');
 
     if (!setup) {
       test.skip(true, 'Game server unavailable or room creation failed');

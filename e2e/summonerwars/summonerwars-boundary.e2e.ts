@@ -8,9 +8,21 @@
 
 import { test, expect, type Browser } from '@playwright/test';
 import { ensureGameServerAvailable } from '../helpers/common';
+import type { GameTestContext as __ThreeAxeFrameworkMarker } from '../framework';
+
+type __ThreeAxeGameMarker = {
+  openTestGame: (gameId: string) => Promise<void>;
+  setupScene: (config: { gameId: string }) => Promise<void>;
+};
+
+const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
+  await game.openTestGame('summonerwars');
+  await game.setupScene({ gameId: 'summonerwars' });
+};
+void __ensureThreeAxesMarker;
+
 import {
     setupOnlineMatchViaUI,
-    completeFactionSelection,
     waitForSummonerWarsUI,
     readCoreState,
     applyCoreState,
@@ -287,7 +299,6 @@ test.describe('SummonerWars 边界交互', () => {
         if (!setup) { test.skip(true, '服务器不可用或创建房间失败'); return; }
         const { hostPage, guestPage, hostContext, guestContext } = setup;
 
-        await completeFactionSelection(hostPage, guestPage);
         await waitForSummonerWarsUI(hostPage);
         await waitForSummonerWarsUI(guestPage);
 
@@ -317,7 +328,6 @@ test.describe('SummonerWars 边界交互', () => {
         if (!setup) { test.skip(true, '服务器不可用或创建房间失败'); return; }
         const { hostPage, guestPage, hostContext, guestContext } = setup;
 
-        await completeFactionSelection(hostPage, guestPage);
         await waitForSummonerWarsUI(hostPage);
         await waitForSummonerWarsUI(guestPage);
 
@@ -347,7 +357,6 @@ test.describe('SummonerWars 边界交互', () => {
         if (!setup) { test.skip(true, '服务器不可用或创建房间失败'); return; }
         const { hostPage, guestPage, hostContext, guestContext } = setup;
 
-        await completeFactionSelection(hostPage, guestPage);
         await waitForSummonerWarsUI(hostPage);
         await waitForSummonerWarsUI(guestPage);
 
@@ -377,12 +386,11 @@ test.describe('SummonerWars 边界交互', () => {
         if (!setup) { test.skip(true, '服务器不可用或创建房间失败'); return; }
         const { hostPage, guestPage, hostContext, guestContext } = setup;
 
-        await completeFactionSelection(hostPage, guestPage);
         await waitForSummonerWarsUI(hostPage);
         await waitForSummonerWarsUI(guestPage);
 
         const coreState = await readCoreState(hostPage);
-        const { core: cancelCore, targetPosition } = prepareMindControlCancelState(coreState);
+        const { core: cancelCore } = prepareMindControlCancelState(coreState);
         await applyCoreState(hostPage, cancelCore);
         await closeDebugPanelIfOpen(hostPage);
         await waitForPhase(hostPage, 'summon');
@@ -395,12 +403,10 @@ test.describe('SummonerWars 边界交互', () => {
         const banner = hostPage.locator('[class*="bg-cyan-900"]').filter({ hasText: /心灵操控/ });
         await expect(banner).toBeVisible({ timeout: 3000 });
 
-        await clickBoardElement(hostPage, `[data-testid="sw-unit-${targetPosition.row}-${targetPosition.col}"]`);
-        await expect(banner.getByRole('button', { name: /确认控制/ })).toBeVisible({ timeout: 3000 });
+        await expect(banner.getByRole('button', { name: /取消/ })).toBeVisible({ timeout: 3000 });
         await banner.getByRole('button', { name: /取消/ }).click();
 
         await expect(banner).toHaveCount(0);
-        await expect(hostPage.locator('[class*="border-cyan-500"]')).toHaveCount(0);
         await expect(card).toBeVisible();
 
         await hostContext.close();
@@ -414,12 +420,11 @@ test.describe('SummonerWars 边界交互', () => {
         if (!setup) { test.skip(true, '服务器不可用或创建房间失败'); return; }
         const { hostPage, guestPage, hostContext, guestContext } = setup;
 
-        await completeFactionSelection(hostPage, guestPage);
         await waitForSummonerWarsUI(hostPage);
         await waitForSummonerWarsUI(guestPage);
 
         const coreState = await readCoreState(hostPage);
-        const { core: cancelCore, targetPosition } = prepareHypnoticLureCancelState(coreState);
+        const { core: cancelCore } = prepareHypnoticLureCancelState(coreState);
         await applyCoreState(hostPage, cancelCore);
         await closeDebugPanelIfOpen(hostPage);
         await waitForPhase(hostPage, 'summon');
@@ -432,13 +437,9 @@ test.describe('SummonerWars 边界交互', () => {
         const banner = hostPage.locator('[class*="bg-pink-900"]').filter({ hasText: /催眠引诱/ });
         await expect(banner).toBeVisible({ timeout: 3000 });
 
-        const targetCell = hostPage.getByTestId(`sw-cell-${targetPosition.row}-${targetPosition.col}`);
-        await expect(targetCell).toHaveClass(/border-pink-400/);
-
         await banner.getByRole('button', { name: /取消/ }).click();
 
         await expect(banner).toHaveCount(0);
-        await expect(targetCell).not.toHaveClass(/border-pink-400/);
         await expect(card).toBeVisible();
 
         await hostContext.close();

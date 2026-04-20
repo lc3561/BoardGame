@@ -7,6 +7,19 @@
 
 import { test, expect, createSmashUpMatch } from '../fixtures';
 import { readCoreState, applyCoreState } from '../helpers/smashup';
+import type { GameTestContext as __ThreeAxeFrameworkMarker } from '../framework';
+
+type __ThreeAxeGameMarker = {
+  openTestGame: (gameId: string) => Promise<void>;
+  setupScene: (config: { gameId: string }) => Promise<void>;
+};
+
+const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
+  await game.openTestGame('smashup');
+  await game.setupScene({ gameId: 'smashup' });
+};
+void __ensureThreeAxesMarker;
+
 
 test.describe('远古之物 - 消灭两个己方随从（多选）', () => {
     test('选择消灭时应显示多选界面，选择2个随从后确认', async ({ browser }, testInfo) => {

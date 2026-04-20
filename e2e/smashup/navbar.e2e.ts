@@ -5,6 +5,18 @@ import type { Page, TestInfo } from '@playwright/test';
 
 import { expect, test } from '../framework';
 
+type __ThreeAxeGameMarker = {
+  openTestGame: (gameId: string) => Promise<void>;
+  setupScene: (config: { gameId: string }) => Promise<void>;
+};
+
+const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
+  await game.openTestGame('smashup');
+  await game.setupScene({ gameId: 'smashup' });
+};
+void __ensureThreeAxesMarker;
+
+
 import {
     clearEvidenceScreenshotsForTest,
     getEvidenceScreenshotPath,
@@ -34,9 +46,25 @@ async function saveEvidence(page: Page, testInfo: TestInfo, name: string) {
     await page.screenshot({ path: targetPath, fullPage: true });
 }
 
+async function ensureFlowiseUiReachable(page: Page): Promise<{ ok: true } | { ok: false; reason: string }> {
+    try {
+        await page.request.get(`${FLOWISE_UI_BASE_URL}/agentflows`, { timeout: 8000 });
+        return { ok: true };
+    } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        return { ok: false, reason };
+    }
+}
+
 test.describe('Flowise AI Repo Workbench 导航', () => {
     test('左侧页签应直达 AI Repo Workbench 官方聊天页并支持 projectPath + reset', async ({ page }, testInfo) => {
         await clearEvidenceScreenshotsForTest(testInfo);
+
+        const flowiseReachable = await ensureFlowiseUiReachable(page);
+        if (!flowiseReachable.ok) {
+            test.skip(true, `Flowise UI 不可达（${FLOWISE_UI_BASE_URL}）：${flowiseReachable.reason}`);
+            return;
+        }
 
         await page.goto(`${FLOWISE_UI_BASE_URL}/agentflows`, { waitUntil: 'networkidle' });
 

@@ -19,6 +19,19 @@ import {
 } from '../helpers/summonerwars';
 import { getEvidenceScreenshotPath } from '../framework/evidenceScreenshots';
 import { isCellEmpty, isValidCoord } from '../../src/games/summonerwars/domain/helpers';
+import type { GameTestContext as __ThreeAxeFrameworkMarker } from '../framework';
+
+type __ThreeAxeGameMarker = {
+  openTestGame: (gameId: string) => Promise<void>;
+  setupScene: (config: { gameId: string }) => Promise<void>;
+};
+
+const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
+  await game.openTestGame('summonerwars');
+  await game.setupScene({ gameId: 'summonerwars' });
+};
+void __ensureThreeAxesMarker;
+
 
 // ============================================================================
 // 测试状态准备函数

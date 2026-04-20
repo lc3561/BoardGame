@@ -1,96 +1,71 @@
 /**
- * 调试状态注入问题：对比僵尸测试（通过）和海盗测试（崩溃）
+ * SmashUp 状态注入稳定性对比（三板斧）
  */
+import type { Page } from '@playwright/test';
+import { test, expect } from '../framework';
 
-import { test, expect } from '@playwright/test';
-import { initContext } from '../helpers/common';
-import {
-    readFullState, applyCoreStateDirect,
-    gotoLocalSmashUp, waitForHandArea, completeFactionSelectionLocal,
-    getCurrentPlayer, makeCard, makeMinion,
-    FACTION,
-} from './smashup-debug-helpers';
+async function expectNoFriendlyError(page: Page) {
+  const hasFriendlyError = await page.getByText(/Something went wrong/i).isVisible().catch(() => false);
+  expect(hasFriendlyError).toBe(false);
+}
 
-test.describe('SmashUp 状态注入调试', () => {
-    test.setTimeout(120000);
-
-    test.beforeEach(async ({ context }) => {
-        await initContext(context, { storageKey: '__smashup_debug_reset' });
+test.describe('SmashUp 状态注入稳定性（三板斧）', () => {
+  test('僵尸场景注入后页面不崩溃', async ({ page, game }, testInfo) => {
+    await game.openTestGame('smashup');
+    await game.setupScene({
+      gameId: 'smashup',
+      player0: {
+        hand: ['zombie_outbreak'],
+        deck: [],
+        discard: [],
+        factions: ['zombies', 'pirates'],
+        actionsPlayed: 0,
+        actionLimit: 1,
+      },
+      player1: {
+        hand: [],
+        deck: [],
+        discard: [],
+        factions: ['ninjas', 'aliens'],
+      },
+      bases: [{ defId: 'base_the_mothership', minions: [] }],
+      currentPlayer: '0',
+      phase: 'playCards',
     });
 
-    test('僵尸派系 - 状态注入后不崩溃', async ({ page }) => {
-        await gotoLocalSmashUp(page);
-        await completeFactionSelectionLocal(page, [FACTION.ZOMBIES, FACTION.PIRATES, FACTION.NINJAS, FACTION.ALIENS]);
-        await waitForHandArea(page);
+    await expect(page.getByTestId('su-hand-area')).toBeVisible({ timeout: 10000 });
+    await expectNoFriendlyError(page);
+    await game.screenshot('state-injection-debug-zombie-stable', testInfo);
+  });
 
-        const fullState = await readFullState(page);
-        const core = (fullState.core ?? fullState) as Record<string, unknown>;
-        const { currentPid, player } = getCurrentPlayer(core);
-        const nextUid = (core.nextUid as number) ?? 100;
-
-        const hand = player.hand as any[];
-        hand.length = 0;
-        hand.push(makeCard(`card_${nextUid}`, 'zombie_outbreak', 'action', currentPid));
-        core.nextUid = nextUid + 1;
-
-        const bases = core.bases as any[];
-        for (const base of bases) {
-            base.minions = [];
-        }
-
-        player.actionsPlayed = 0;
-        player.actionLimit = 1;
-        player.minionsPlayed = 0;
-        player.minionLimit = 1;
-
-        await applyCoreStateDirect(page, core);
-        await page.waitForTimeout(2000);
-
-        // 检查页面是否崩溃
-        const hasError = await page.locator('text=Something went wrong').isVisible().catch(() => false);
-        expect(hasError).toBe(false);
-
-        // 检查手牌区是否可见
-        const handArea = page.getByTestId('su-hand-area');
-        await expect(handArea).toBeVisible({ timeout: 5000 });
+  test('海盗场景注入后页面不崩溃', async ({ page, game }, testInfo) => {
+    await game.openTestGame('smashup');
+    await game.setupScene({
+      gameId: 'smashup',
+      player0: {
+        hand: ['pirate_cannon'],
+        deck: [],
+        discard: [],
+        factions: ['pirates', 'ninjas'],
+        actionsPlayed: 0,
+        actionLimit: 1,
+      },
+      player1: {
+        hand: [],
+        deck: [],
+        discard: [],
+        factions: ['robots', 'aliens'],
+      },
+      bases: [{
+        defId: 'base_the_mothership',
+        minions: [{ uid: 'enemy-minion-1', defId: 'zombie_walker', owner: '1', controller: '1', basePower: 2 }],
+      }],
+      currentPlayer: '0',
+      phase: 'playCards',
     });
 
-    test('海盗派系 - 状态注入后崩溃', async ({ page }) => {
-        await gotoLocalSmashUp(page);
-        await completeFactionSelectionLocal(page, [FACTION.PIRATES, FACTION.NINJAS, FACTION.ROBOTS, FACTION.ALIENS]);
-        await waitForHandArea(page);
-
-        const fullState = await readFullState(page);
-        const core = (fullState.core ?? fullState) as Record<string, unknown>;
-        const { currentPid, player } = getCurrentPlayer(core);
-        const turnOrder = core.turnOrder as string[];
-        const opponentPid = turnOrder.find(p => p !== currentPid)!;
-        const nextUid = (core.nextUid as number) ?? 100;
-
-        const hand = player.hand as any[];
-        hand.length = 0;
-        hand.push(makeCard(`card_${nextUid}`, 'pirate_cannon', 'action', currentPid));
-
-        const bases = core.bases as any[];
-        for (const base of bases) {
-            base.minions = [];
-        }
-        bases[0].minions = [
-            makeMinion(`m_${nextUid + 1}`, 'zombie_walker', opponentPid, opponentPid, 2),
-        ];
-        core.nextUid = nextUid + 2;
-        player.actionsPlayed = 0;
-        player.actionLimit = 1;
-
-        await applyCoreStateDirect(page, core);
-        await page.waitForTimeout(2000);
-
-        // 检查页面是否崩溃
-        const hasError = await page.locator('text=Something went wrong').isVisible().catch(() => false);
-        expect(hasError).toBe(false);
-
-        // 检查手牌区是否可见
-        const handArea = page.getByTestId('su-hand-area');
-        await expect(handArea).toBeVisible({ timeout: 5000 });
-    });
+    await expect(page.getByTestId('su-hand-area')).toBeVisible({ timeout: 10000 });
+    await expectNoFriendlyError(page);
+    await game.screenshot('state-injection-debug-pirate-stable', testInfo);
+  });
 });

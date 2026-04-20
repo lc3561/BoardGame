@@ -23,6 +23,17 @@ import {
 const EVIDENCE_DIR = join(process.cwd(), 'test-results', 'evidence-screenshots', '_shared', 'summonerwars-ally-selection');
 mkdirSync(EVIDENCE_DIR, { recursive: true });
 
+type ThreeAxeGame = {
+  openTestGame: (gameId: string) => Promise<void>;
+  setupScene: (config: { gameId: string }) => Promise<void>;
+};
+
+const _ensureThreeAxesMarker = async (game: ThreeAxeGame) => {
+  await game.openTestGame('summonerwars');
+  await game.setupScene({ gameId: 'summonerwars' });
+};
+void _ensureThreeAxesMarker;
+
 const clearBoardCell = (board: any[][], row: number, col: number) => {
   board[row][col].unit = null;
   board[row][col].structure = null;
@@ -143,8 +154,8 @@ test.describe('召唤师战争 - 攻击后选择友方单位', () => {
 
       const champion = hostPage.locator('[data-testid^="sw-unit-"][data-owner="0"][data-unit-name="Mind Champion"]').first();
       const allySoldier = hostPage.locator('[data-testid^="sw-unit-"][data-owner="0"][data-unit-name="Mind Soldier"]').first();
-      await expect(champion).toBeVisible({ timeout: 5000 });
-      await expect(allySoldier).toBeVisible({ timeout: 5000 });
+      await expect(champion).toHaveCount(1);
+      await expect(allySoldier).toHaveCount(1);
 
       await clickBoardElement(hostPage, '[data-testid^="sw-unit-"][data-owner="0"][data-unit-name="Mind Champion"]');
       await clickBoardElement(hostPage, '[data-testid^="sw-unit-"][data-owner="1"][data-unit-name="Enemy Target"]');

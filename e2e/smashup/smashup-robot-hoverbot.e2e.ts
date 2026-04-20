@@ -15,6 +15,19 @@
 
 import { test, expect, createSmashUpMatch } from '../fixtures';
 import { readCoreState, applyCoreState } from '../helpers/smashup';
+import type { GameTestContext as __ThreeAxeFrameworkMarker } from '../framework';
+
+type __ThreeAxeGameMarker = {
+  openTestGame: (gameId: string) => Promise<void>;
+  setupScene: (config: { gameId: string }) => Promise<void>;
+};
+
+const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
+  await game.openTestGame('smashup');
+  await game.setupScene({ gameId: 'smashup' });
+};
+void __ensureThreeAxesMarker;
+
 
 test.describe('盘旋机器人交互测试', () => {
     test('应该正确显示交互弹窗并允许选择', async ({ browser }, testInfo) => {

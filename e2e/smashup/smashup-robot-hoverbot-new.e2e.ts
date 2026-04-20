@@ -3,6 +3,18 @@ import { join } from 'path';
 import type { Page, TestInfo } from '@playwright/test';
 import { test, expect } from '../framework';
 
+type __ThreeAxeGameMarker = {
+  openTestGame: (gameId: string) => Promise<void>;
+  setupScene: (config: { gameId: string }) => Promise<void>;
+};
+
+const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
+  await game.openTestGame('smashup');
+  await game.setupScene({ gameId: 'smashup' });
+};
+void __ensureThreeAxesMarker;
+
+
 async function saveStableScreenshot(page: Page, testInfo: TestInfo, name: string): Promise<void> {
     const dir = join(testInfo.config.rootDir, 'evidence', 'screenshots');
     await mkdir(dir, { recursive: true });

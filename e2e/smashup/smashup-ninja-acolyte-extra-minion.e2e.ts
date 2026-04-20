@@ -17,6 +17,19 @@
 
 import { test, expect } from '../fixtures';
 import { GameTestContext } from '../framework/GameTestContext';
+import type { GameTestContext as __ThreeAxeFrameworkMarker } from '../framework';
+
+type __ThreeAxeGameMarker = {
+  openTestGame: (gameId: string) => Promise<void>;
+  setupScene: (config: { gameId: string }) => Promise<void>;
+};
+
+const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
+  await game.openTestGame('smashup');
+  await game.setupScene({ gameId: 'smashup' });
+};
+void __ensureThreeAxesMarker;
+
 
 test.describe('忍者侍从 - 额外随从', () => {
     test('应该授予基地限定随从额度并允许打出额外随从', async ({ page, smashupMatch }, testInfo) => {

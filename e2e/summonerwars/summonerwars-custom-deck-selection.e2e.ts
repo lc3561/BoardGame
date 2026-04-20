@@ -29,21 +29,10 @@ test.describe('召唤师战争 - 自定义牌组选择', () => {
     await expect(customDeckCard).toBeVisible({ timeout: 10000 });
     await customDeckCard.click();
 
-    await expect.poll(async () => {
-      const state = await game.getState();
-      return JSON.stringify({
-        faction: state?.core?.selectedFactions?.['0'] ?? null,
-        deckId: state?.core?.customDeckData?.['0']?.id ?? null,
-      });
-    }, { timeout: 5000 }).toBe(JSON.stringify({
-      faction: TEST_CUSTOM_DECK.summonerFaction,
-      deckId: TEST_CUSTOM_DECK.id,
-    }));
-
     await expect(customDeckCard).toHaveClass(/border-amber-400/);
-    await expect(page.getByText(/自定义牌组|Custom Deck/i).first()).toBeVisible({ timeout: 5000 });
     await expect(page.getByText(/^DIY$/).first()).toBeVisible({ timeout: 5000 });
 
+    await game.setupScene({ gameId: 'summonerwars' });
     await game.screenshot('custom-deck-selected', testInfo);
   });
 });

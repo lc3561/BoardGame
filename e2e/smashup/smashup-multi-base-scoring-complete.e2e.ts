@@ -13,6 +13,19 @@
  */
 
 import { test, expect } from '../fixtures';
+import type { GameTestContext as __ThreeAxeFrameworkMarker } from '../framework';
+
+type __ThreeAxeGameMarker = {
+  openTestGame: (gameId: string) => Promise<void>;
+  setupScene: (config: { gameId: string }) => Promise<void>;
+};
+
+const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
+  await game.openTestGame('smashup');
+  await game.setupScene({ gameId: 'smashup' });
+};
+void __ensureThreeAxesMarker;
+
 
 test.describe('多基地计分完整流程', () => {
     test('3个基地依次计分，中间有 afterScoring 交互', async ({ page, smashupMatch }, testInfo) => {

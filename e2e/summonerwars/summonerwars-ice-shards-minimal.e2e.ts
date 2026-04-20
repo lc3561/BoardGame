@@ -1,5 +1,4 @@
 import { test, expect } from '../framework';
-import { applyCoreState } from '../helpers/summonerwars';
 import type { CellCoord, SummonerWarsCore, UnitCard } from '../src/games/summonerwars/domain/types';
 import { createDeckByFactionId } from '../src/games/summonerwars/config/factions';
 import { createInitializedCore, placeTestUnit, resetInstanceCounter } from '../src/games/summonerwars/__tests__/test-helpers';
@@ -98,29 +97,28 @@ const buildIceShardsSmokeCore = (): { core: SummonerWarsCore; enemyPos: CellCoor
 };
 
 test.describe('召唤师战争 - ice_shards 最小化链路', () => {
-  test('build 结束时出现 confirm/skip 选择', async ({ page, game }, testInfo) => {
-    await game.openTestGame('summonerwars');
+    test('build 结束时出现 confirm/skip 选择', async ({ page, game }, testInfo) => {
+        await game.openTestGame('summonerwars');
 
-    const { core, enemyPos } = buildIceShardsSmokeCore();
-    const baseState = await game.getState();
-    await applyCoreState(page, {
-      ...(baseState ?? {}),
-      core,
-      sys: {
-        ...(baseState?.sys ?? {}),
-        phase: core.phase,
-        flowHalted: false,
-        summonerWars: {
-          ...(baseState?.sys?.summonerWars ?? {}),
-          phaseEndAbilityResolved: {},
-        },
-        interaction: {
-          ...(baseState?.sys?.interaction ?? {}),
-          current: null,
-          queue: [],
-        },
-      },
-    });
+        const { core, enemyPos } = buildIceShardsSmokeCore();
+        await game.setupScene({
+            gameId: 'summonerwars',
+            phase: core.phase,
+            extra: {
+                core,
+                sys: {
+                    phase: core.phase,
+                    flowHalted: false,
+                    summonerWars: {
+                        phaseEndAbilityResolved: {},
+                    },
+                    interaction: {
+                        current: null,
+                        queue: [],
+                    },
+                },
+            },
+        });
 
     await expect(page.getByTestId('sw-map-container')).toBeVisible({ timeout: 10000 });
     await expect(page.getByTestId('sw-end-phase')).toBeVisible({ timeout: 5000 });

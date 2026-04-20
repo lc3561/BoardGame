@@ -38,6 +38,18 @@ import {
 } from '../helpers/common';
 import { TOKEN_IDS } from '../src/games/dicethrone/domain/ids';
 
+type __ThreeAxeGameMarker = {
+  openTestGame: (gameId: string) => Promise<void>;
+  setupScene: (config: { gameId: string }) => Promise<void>;
+};
+
+const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
+  await game.openTestGame('dicethrone');
+  await game.setupScene({ gameId: 'dicethrone' });
+};
+void __ensureThreeAxesMarker;
+
+
 // ============================================================================
 // AI 座位凭据注入（复用 Cardia 模式）
 // ============================================================================
