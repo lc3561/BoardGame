@@ -8,9 +8,19 @@
  * - 其他选项 → PromptOverlay（z-index:300）
  */
 
-import { test, expect } from '@playwright/test';
+
 import { initContext } from '../helpers/common';
-import type { GameTestContext as __ThreeAxeFrameworkMarker } from '../framework';
+import { test, expect } from '../framework';
+import {
+    closeDebugPanel, readFullState, applyCoreStateDirect,
+    gotoLocalSmashUp, waitForHandArea, completeFactionSelectionLocal,
+    getCurrentPlayer, makeCard, makeMinion, waitForPrompt, isPromptVisible,
+    clickPromptOption, clickPromptOptionByText, clickHandCard,
+    waitForBaseSelect, clickHighlightedBase, isBaseSelectMode,
+    waitForMinionSelect, clickHighlightedMinion, isMinionSelectMode,
+    FACTION,
+} from './smashup-debug-helpers';
+
 
 type __ThreeAxeGameMarker = {
   openTestGame: (gameId: string) => Promise<void>;
@@ -22,16 +32,6 @@ const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
   await game.setupScene({ gameId: 'smashup' });
 };
 void __ensureThreeAxesMarker;
-
-import {
-    closeDebugPanel, readFullState, applyCoreStateDirect,
-    gotoLocalSmashUp, waitForHandArea, completeFactionSelectionLocal,
-    getCurrentPlayer, makeCard, makeMinion, waitForPrompt, isPromptVisible,
-    clickPromptOption, clickPromptOptionByText, clickHandCard,
-    waitForBaseSelect, clickHighlightedBase, isBaseSelectMode,
-    waitForMinionSelect, clickHighlightedMinion, isMinionSelectMode,
-    FACTION,
-} from './smashup-debug-helpers';
 
 // ============================================================================
 // 忍者派系

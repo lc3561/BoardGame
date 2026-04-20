@@ -192,6 +192,22 @@ export function validateCommand(
       return { valid: true };
     }
 
+    case SW_COMMANDS.SWAP_SEAT: {
+      if (core.hostStarted) return { valid: false, error: '游戏已开始，无法换位' };
+      const requesterId = ((command.playerId as PlayerId | undefined) ?? playerId);
+      const targetPlayerId = payload.targetPlayerId;
+      if (targetPlayerId !== '0' && targetPlayerId !== '1') {
+        return { valid: false, error: '目标座位无效' };
+      }
+      if (requesterId === targetPlayerId) {
+        return { valid: false, error: '不能与自己换位' };
+      }
+      if (!core.players[targetPlayerId]) {
+        return { valid: false, error: '目标玩家不存在' };
+      }
+      return { valid: true };
+    }
+
     case SW_COMMANDS.PLAYER_READY: {
       if (core.hostStarted) return { valid: false, error: '游戏已开始' };
       const cmdPlayerId = command.playerId as PlayerId;

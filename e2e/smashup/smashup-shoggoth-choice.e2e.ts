@@ -9,20 +9,8 @@
  * 关键点：当对手拒绝抽疯狂卡时，由修格斯的控制者（而非系统自动）选择消灭对方的哪个随从。
  */
 
-import { test, expect } from '@playwright/test';
-import type { GameTestContext as __ThreeAxeFrameworkMarker } from '../framework';
 
-type __ThreeAxeGameMarker = {
-  openTestGame: (gameId: string) => Promise<void>;
-  setupScene: (config: { gameId: string }) => Promise<void>;
-};
-
-const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
-  await game.openTestGame('smashup');
-  await game.setupScene({ gameId: 'smashup' });
-};
-void __ensureThreeAxesMarker;
-
+import { test, expect } from '../framework';
 import {
     setupSUOnlineMatch,
     readFullState,
@@ -39,6 +27,18 @@ import {
     clickHighlightedMinionByIndex,
     type SUMatchSetup,
 } from './smashup-debug-helpers';
+
+
+type __ThreeAxeGameMarker = {
+  openTestGame: (gameId: string) => Promise<void>;
+  setupScene: (config: { gameId: string }) => Promise<void>;
+};
+
+const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
+  await game.openTestGame('smashup');
+  await game.setupScene({ gameId: 'smashup' });
+};
+void __ensureThreeAxesMarker;
 
 /** 等待随从部署模式的基地高亮（ring-green-400） */
 async function waitForDeployBaseSelect(page: import('@playwright/test').Page, timeout = 10000) {

@@ -7,8 +7,9 @@
  * 3. 验证单位可以进行额外攻击
  */
 
-import { test, expect } from '@playwright/test';
+
 import { setupSWOnlineMatch, readCoreState, applyCoreState } from '../helpers/summonerwars';
+import { test, expect } from '../framework';
 import { waitForTestHarness } from '../helpers/common';
 import { waitForState } from '../helpers/waitForState';
 import type { GameTestContext as __ThreeAxeFrameworkMarker } from '../framework';

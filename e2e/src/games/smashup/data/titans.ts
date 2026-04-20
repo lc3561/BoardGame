@@ -16,7 +16,7 @@ export const TITAN_CARD_DEFS: TitanCardDef[] = [
         type: 'titan',
         name: 'Invisible Ninja',
         faction: SMASHUP_FACTION_IDS.NINJAS,
-        abilityTags: ['special', 'ongoing', 'talent'],
+        abilityTags: ['special', 'ongoing'],
         summonMode: 'explicit',
         previewRef: { type: 'atlas', atlasId: 'tts_atlas_8789f47742', index: 1 },
     },

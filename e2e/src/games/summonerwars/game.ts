@@ -165,6 +165,7 @@ const adapterConfig = {
     maxPlayers: 2,
     commandTypes: [
         SW_COMMANDS.SELECT_FACTION,
+        SW_COMMANDS.SWAP_SEAT,
         SW_COMMANDS.SELECT_CUSTOM_DECK,
         SW_COMMANDS.PLAYER_READY,
         SW_COMMANDS.PLAYER_UNREADY,

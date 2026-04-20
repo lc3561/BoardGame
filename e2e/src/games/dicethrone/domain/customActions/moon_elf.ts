@@ -325,13 +325,15 @@ function handleElusiveStepResolve1(context: CustomActionContext): DiceThroneEven
     const { attackerId, sourceAbilityId, state, timestamp, ctx } = context;
     const events: DiceThroneEvent[] = [];
     const faceCounts = getFaceCounts(getActiveDice(state));
+    const bowCount = faceCounts[FACE.BOW] ?? 0;
     const footCount = faceCounts[FACE.FOOT] ?? 0;
     // 闃插尽涓婁笅鏂囷細ctx.attackerId = 闃插尽鑰咃紝ctx.defenderId = 鍘熸敾鍑昏€?
     const opponentId = ctx.defenderId;
 
-    // 姣忎釜瓒抽潰閫犳垚1浼ゅ
-    if (footCount > 0) {
-        events.push(dealDamage(context, opponentId, footCount, sourceAbilityId, timestamp));
+    // Missed Me: for every 2 Bow, deal 1 damage.
+    const reflectedDamage = Math.floor(bowCount / 2);
+    if (reflectedDamage > 0) {
+        events.push(dealDamage(context, opponentId, reflectedDamage, sourceAbilityId, timestamp));
     }
 
     // 瓒抽潰鈮?鏃讹紝鎺堜簣 50% 鍑忎激鎶ょ浘
@@ -364,14 +366,15 @@ function handleElusiveStepResolve2(context: CustomActionContext): DiceThroneEven
     const { attackerId, sourceAbilityId, state, timestamp, ctx } = context;
     const events: DiceThroneEvent[] = [];
     const faceCounts = getFaceCounts(getActiveDice(state));
-    const footCount = faceCounts[FACE.FOOT] ?? 0;
     const bowCount = faceCounts[FACE.BOW] ?? 0;
+    const footCount = faceCounts[FACE.FOOT] ?? 0;
     // 闃插尽涓婁笅鏂囷細ctx.attackerId = 闃插尽鑰咃紝ctx.defenderId = 鍘熸敾鍑昏€?
     const opponentId = ctx.defenderId;
 
-    // 閫犳垚 1脳寮撻潰鏁?浼ゅ锛堝崌绾х増鏀逛负寮撻潰璁＄畻锛?
-    if (bowCount > 0) {
-        events.push(dealDamage(context, opponentId, bowCount, sourceAbilityId, timestamp));
+    // Missed Me II follows the same reflect rule: every 2 Bow deals 1 damage.
+    const reflectedDamage = Math.floor(bowCount / 2);
+    if (reflectedDamage > 0) {
+        events.push(dealDamage(context, opponentId, reflectedDamage, sourceAbilityId, timestamp));
     }
 
     // 瓒抽潰鈮?鏃讹紝鎺堜簣 50% 鍑忎激鎶ょ浘

@@ -1108,7 +1108,7 @@
     },
     "righteous-combat-2": {
       "name": "Righteous Combat II",
-      "description": "Two variants: Tenacity and Righteous Combat",
+      "description": "3 Sword + 2 Helm: Deal 5 damage, then roll 3 dice for bonus effects",
       "effects": {
         "heal2": "Heal 2",
         "damage2Unblockable": "Deal 2 undefendable damage",
@@ -1462,14 +1462,14 @@
     },
     "elusive-step": {
       "name": "Elusive Step",
-      "description": "Defensive phase (5 dice): if ≥2 Foot, block half damage (round up); for each Foot, deal 1 damage",
+      "description": "Defensive phase (5 dice): if ≥2 Foot, block half damage (round up); for every 2 Bow, deal 1 damage",
       "effects": {
         "resolveDefense": "Resolve defense"
       }
     },
     "elusive-step-2": {
       "name": "Elusive Step II",
-      "description": "Defensive phase (5 dice): if ≥2 Foot, block half damage (round up); deal 1 × Bow count damage",
+      "description": "Defensive phase (5 dice): if ≥2 Foot, block half damage (round up); for every 2 Bow, deal 1 damage",
       "effects": {
         "resolveDefense": "Resolve defense"
       }
@@ -1958,11 +1958,11 @@
     },
     "katana-slice-2": {
       "name": "Katana Slice II",
-      "description": "3/4/5 Katana: deal 6/7/8 damage. If at least 4 dice show the same pip value, inflict 1 Shame."
+      "description": "3/4/5 Katana: deal 6/7/8 damage. If at least 4 dice show the same symbol, inflict 1 Shame."
     },
     "katana-slice-3": {
       "name": "Katana Slice III",
-      "description": "3/4/5 Katana: deal 6/7/8 damage. If at least 3 dice show the same pip value, inflict 1 Shame."
+      "description": "3/4/5 Katana: deal 6/7/8 damage. If at least 3 dice show the same symbol, inflict 1 Shame."
     },
     "wakizashi": {
       "name": "Wakizashi",
@@ -2080,7 +2080,7 @@
     },
     "upgrade-revolver-2": {
       "name": "Revolver II",
-      "description": "Upgrade your Revolver. 3/4/5 bullets deal 4/5/6 damage. If at least 4 dice show the same result, also inflict Knockdown."
+      "description": "Upgrade your Revolver. 3/4/5 bullets deal 4/5/6 damage. If at least 4 dice show the same symbol, also inflict Knockdown."
     },
     "upgrade-bounty-hunter-2": {
       "name": "Bounty Hunter II",
@@ -2689,3 +2689,4 @@
     "ariaPanel": "Game Over Panel"
   }
 }
+

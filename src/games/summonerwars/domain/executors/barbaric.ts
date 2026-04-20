@@ -5,7 +5,15 @@
 import type { GameEvent } from '../../../../engine/types';
 import type { CellCoord } from '../types';
 import { SW_EVENTS } from '../types';
-import { getUnitAt, manhattanDistance, isValidCoord, isForceMovePathClear, isInStraightLine, getStraightLinePath } from '../helpers';
+import {
+  getUnitAt,
+  manhattanDistance,
+  isValidCoord,
+  isForceMovePathClear,
+  isInStraightLine,
+  getStraightLinePath,
+  normalizeUnitBoosts,
+} from '../helpers';
 import { abilityExecutorRegistry } from './registry';
 import type { SWAbilityContext } from './types';
 
@@ -28,7 +36,7 @@ abilityExecutorRegistry.register('ancestral_bond', (ctx: SWAbilityContext) => {
     timestamp,
   });
   // 转移自身所有充能到目标
-  const selfCharges = sourceUnit.boosts ?? 0;
+  const selfCharges = normalizeUnitBoosts(sourceUnit.boosts);
   if (selfCharges > 0) {
     events.push({
       type: SW_EVENTS.UNIT_CHARGED,
@@ -88,7 +96,7 @@ abilityExecutorRegistry.register('withdraw', (ctx: SWAbilityContext) => {
   if (!wdNewPos) return { events };
 
   if (wdCostType === 'charge') {
-    if ((sourceUnit.boosts ?? 0) < 1) return { events };
+    if (normalizeUnitBoosts(sourceUnit.boosts) < 1) return { events };
     events.push({
       type: SW_EVENTS.UNIT_CHARGED,
       payload: { position: sourcePosition, delta: -1, sourceAbilityId: 'withdraw' },
@@ -126,7 +134,7 @@ abilityExecutorRegistry.register('withdraw', (ctx: SWAbilityContext) => {
 abilityExecutorRegistry.register('rapid_fire', (ctx: SWAbilityContext) => {
   const events: GameEvent[] = [];
   const { sourceUnit, sourcePosition, timestamp } = ctx;
-  if ((sourceUnit.boosts ?? 0) < 1) return { events };
+  if (normalizeUnitBoosts(sourceUnit.boosts) < 1) return { events };
   events.push({
     type: SW_EVENTS.UNIT_CHARGED,
     payload: { position: sourcePosition, delta: -1, sourceAbilityId: 'rapid_fire' },
@@ -159,7 +167,7 @@ abilityExecutorRegistry.register('spirit_bond', (ctx: SWAbilityContext) => {
   } else if (sbChoice === 'transfer') {
     const sbTargetPos = payload.targetPosition as CellCoord | undefined;
     if (!sbTargetPos) return { events };
-    if ((sourceUnit.boosts ?? 0) < 1) return { events };
+    if (normalizeUnitBoosts(sourceUnit.boosts) < 1) return { events };
     const sbTarget = getUnitAt(core, sbTargetPos);
     if (!sbTarget || sbTarget.owner !== playerId) return { events };
     const sbDist = manhattanDistance(sourcePosition, sbTargetPos);

@@ -300,6 +300,7 @@ describe('SmashUp 能力行为审计', () => {
                 'vampire_opportunist',             // onMinionDestroyed 触发放指示物
                 'vampire_summon_wolves',            // onTurnStart 触发放指示物（在卡上）
                 'giant_ant_the_show_must_go_on',    // 巨蚁：持续保护语义，非静态 powerModifier
+                'world_champs_shark_tattoo',        // 世界冠军：持续阶段通过放置 +1 指示物实现，不是静态 powerModifier
             ]);
             const entities = buildEntities();
             const { powerModifierIds } = getRegisteredModifierIds();

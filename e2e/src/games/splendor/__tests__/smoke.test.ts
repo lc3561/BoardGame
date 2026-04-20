@@ -6,9 +6,12 @@ import { formatSplendorActionEntry } from '../game';
 import type { ActionLogEntry, ActionLogSegment, Command, GameEvent, RandomFn } from '../../../engine/types';
 import { SPLENDOR_AUDIO_CONFIG } from '../audio.config';
 import type { AudioEvent } from '../../../lib/audio/types';
+import { SPLENDOR_ASSETS } from '../assets';
+import { splendorCriticalImageResolver, _testExports as criticalImageResolverTestExports } from '../criticalImageResolver';
 
 const stateOf = (core: SplendorCore) => ({ core, sys: {} as any });
 const startedCore = (core: SplendorCore): SplendorCore => ({ ...core, hostStarted: true });
+const { SPLENDOR_CRITICAL_IMAGE_PATHS } = criticalImageResolverTestExports;
 
 const makeRandom = (): RandomFn => ({
     random: () => 0.5,
@@ -54,6 +57,24 @@ describe('splendor smoke', () => {
         expect(core.bank.gold).toBe(5);
         expect(core.market[1].length).toBeGreaterThan(0);
         expect(core.nobleIds).toHaveLength(3);
+    });
+
+    test('critical image resolver preloads splendor first-paint assets', () => {
+        const pregame = splendorCriticalImageResolver({
+            core: { hostStarted: false } as Partial<SplendorCore> as SplendorCore,
+        }, undefined, '0');
+        const playing = splendorCriticalImageResolver({
+            core: { hostStarted: true } as Partial<SplendorCore> as SplendorCore,
+        }, undefined, '0');
+
+        expect(pregame.phaseKey).toBe('splendor:pregame:0');
+        expect(playing.phaseKey).toBe('splendor:playing:0');
+        expect(pregame.warm).toEqual([]);
+        expect(pregame.critical).toEqual(SPLENDOR_CRITICAL_IMAGE_PATHS);
+        expect(pregame.critical).toContain(SPLENDOR_ASSETS.BOARD_DESK);
+        expect(pregame.critical).toContain(SPLENDOR_ASSETS.THUMBNAIL);
+        expect(pregame.critical).toContain(SPLENDOR_ASSETS.CARD_LEVEL_1);
+        expect(pregame.critical).toContain(SPLENDOR_ASSETS.NOBLES);
     });
 
     test('audio config maps gem gains and gold gains to different sounds', () => {

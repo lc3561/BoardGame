@@ -1,5 +1,6 @@
-import { test, expect, type Page } from '@playwright/test';
-import type { GameTestContext as __ThreeAxeFrameworkMarker } from '../framework';
+import { type Page } from '@playwright/test';
+import { test, expect } from '../framework';
+
 
 type __ThreeAxeGameMarker = {
   openTestGame: (gameId: string) => Promise<void>;
@@ -11,7 +12,6 @@ const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
   await game.setupScene({ gameId: 'smashup' });
 };
 void __ensureThreeAxesMarker;
-
 
 /**
  * SmashUp 阵营选择音效重复播放问题验证测试

@@ -13,8 +13,9 @@
  */
 
 import { mkdirSync } from 'node:fs';
+import { test, expect } from '../framework';
 import { join } from 'node:path';
-import { test, expect } from '@playwright/test';
+
 import { STATUS_IDS, TOKEN_IDS } from '../src/games/dicethrone/domain/ids';
 import { RESOURCE_IDS } from '../src/games/dicethrone/domain/resources';
 import type { GameTestContext as __ThreeAxeFrameworkMarker } from '../framework';

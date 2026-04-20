@@ -1636,7 +1636,7 @@
     },
     "righteous-combat-2": {
       "name": "正义战法 II",
-      "description": "包含执着与正义战法两个变体",
+      "description": "3剑+2盔：造成5点伤害，然后投掷3骰结算额外效果",
       "effects": {
         "heal2": "恢复2点生命值",
         "damage2Unblockable": "造成2点不可防御伤害",
@@ -1990,14 +1990,14 @@
     },
     "elusive-step": {
       "name": "打不到我",
-      "description": "防御阶段（5骰）：若足面≥2，抵挡一半伤害（向上取整）；每有足面，造成1伤害",
+      "description": "防御阶段（5骰）：若足面≥2，抵挡一半伤害（向上取整）；每有2个弓面，造成1伤害",
       "effects": {
         "resolveDefense": "防御结算"
       }
     },
     "elusive-step-2": {
       "name": "打不到我 II",
-      "description": "防御阶段（5骰）：若足面≥2，防止一半伤害（向上取整）；造成1×弓面数伤害",
+      "description": "防御阶段（5骰）：若足面≥2，防止一半伤害（向上取整）；每有2个弓面，造成1伤害",
       "effects": {
         "resolveDefense": "防御结算"
       }
@@ -2014,11 +2014,11 @@
     },
     "katana-slice-2": {
       "name": "太刀斩 II",
-      "description": "3/4/5 武士刀：造成 6/7/8 点伤害。若至少有 4 颗骰子点数相同，施加 1 层耻辱。"
+      "description": "3/4/5 武士刀：造成 6/7/8 点伤害。若至少有 4 颗骰子骰面相同，施加 1 层耻辱。"
     },
     "katana-slice-3": {
       "name": "太刀斩 III",
-      "description": "3/4/5 武士刀：造成 6/7/8 点伤害。若至少有 3 颗骰子点数相同，施加 1 层耻辱。"
+      "description": "3/4/5 武士刀：造成 6/7/8 点伤害。若至少有 3 颗骰子骰面相同，施加 1 层耻辱。"
     },
     "wakizashi": {
       "name": "胁差",
@@ -2156,7 +2156,7 @@
     },
     "upgrade-revolver-2": {
       "name": "左轮手枪 II",
-      "description": "升级你的左轮手枪。3/4/5 个子弹分别造成 4/5/6 点伤害。若至少有 4 颗骰子点数相同，则施加击倒。"
+      "description": "升级你的左轮手枪。3/4/5 个子弹分别造成 4/5/6 点伤害。若至少有 4 颗骰子骰面相同，则施加击倒。"
     },
     "upgrade-bounty-hunter-2": {
       "name": "赏金猎人 II",

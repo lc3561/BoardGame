@@ -11,8 +11,15 @@
  *    - 麦田怪圈(Crop Circles): 索引 43
  */
 
-import { test, expect } from '@playwright/test';
-import type { GameTestContext as __ThreeAxeFrameworkMarker } from '../framework';
+import { test, expect } from '../framework';
+import {
+    setupTwoPlayerMatch,
+    completeFactionSelection,
+    waitForHandArea,
+    cleanupTwoPlayerMatch,
+} from './smashup-helpers';
+import { readCoreState } from '../helpers/smashup';
+
 
 type __ThreeAxeGameMarker = {
   openTestGame: (gameId: string) => Promise<void>;
@@ -24,13 +31,6 @@ const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
   await game.setupScene({ gameId: 'smashup' });
 };
 void __ensureThreeAxesMarker;
-
-import {
-    setupTwoPlayerMatch,
-    completeFactionSelection,
-    waitForHandArea,
-    cleanupTwoPlayerMatch,
-} from './smashup-helpers';
 
 test.describe('SmashUp 外星人 - 适居化图片验证', () => {
     test('验证适居化(Terraforming)显示正确的图片', async ({ browser }, testInfo) => {
@@ -62,23 +62,17 @@ test.describe('SmashUp 外星人 - 适居化图片验证', () => {
             await hostPage.waitForSelector('[data-testid="su-debug-deal"]', { timeout: 5000 });
 
             // 查找牌库中的适居化卡牌索引
-            const deckInfo = await hostPage.evaluate(() => {
-                const state = (window as any).__BG_STATE__;
-                if (!state?.core?.players?.['0']?.deck) return null;
-
-                const deck = state.core.players['0'].deck;
-                const terraformIndex = deck.findIndex((c: any) => c.defId === 'alien_terraform');
-                const probeIndex = deck.findIndex((c: any) => c.defId === 'alien_probe');
-                const cropIndex = deck.findIndex((c: any) => c.defId === 'alien_crop_circles');
-
-                return {
-                    deckLength: deck.length,
-                    terraformIndex,
-                    probeIndex,
-                    cropIndex,
-                    deck: deck.map((c: any, i: number) => ({ idx: i, defId: c.defId })),
-                };
-            });
+            const core = await readCoreState(hostPage) as {
+                players?: Record<string, { deck?: Array<{ defId?: string }> }>;
+            };
+            const deck = core.players?.['0']?.deck;
+            const deckInfo = deck ? {
+                deckLength: deck.length,
+                terraformIndex: deck.findIndex((c) => c.defId === 'alien_terraform'),
+                probeIndex: deck.findIndex((c) => c.defId === 'alien_probe'),
+                cropIndex: deck.findIndex((c) => c.defId === 'alien_crop_circles'),
+                deck: deck.map((c, i) => ({ idx: i, defId: c.defId })),
+            } : null;
 
             console.log('[测试] 牌库信息:', deckInfo);
 
@@ -155,16 +149,14 @@ test.describe('SmashUp 外星人 - 适居化图片验证', () => {
             await hostPage.waitForSelector('[data-testid="su-debug-deal"]', { timeout: 5000 });
 
             // 查找两张卡牌的索引
-            const deckInfo = await hostPage.evaluate(() => {
-                const state = (window as any).__BG_STATE__;
-                if (!state?.core?.players?.['0']?.deck) return null;
-
-                const deck = state.core.players['0'].deck;
-                return {
-                    probeIndex: deck.findIndex((c: any) => c.defId === 'alien_probe'),
-                    terraformIndex: deck.findIndex((c: any) => c.defId === 'alien_terraform'),
-                };
-            });
+            const core = await readCoreState(hostPage) as {
+                players?: Record<string, { deck?: Array<{ defId?: string }> }>;
+            };
+            const deck = core.players?.['0']?.deck;
+            const deckInfo = deck ? {
+                probeIndex: deck.findIndex((c) => c.defId === 'alien_probe'),
+                terraformIndex: deck.findIndex((c) => c.defId === 'alien_terraform'),
+            } : null;
 
             if (!deckInfo || deckInfo.probeIndex === -1 || deckInfo.terraformIndex === -1) {
                 console.log('[测试] 牌库中缺少必要卡牌，跳过测试');

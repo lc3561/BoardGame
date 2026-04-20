@@ -1,4 +1,7 @@
-import { describe, expect, test } from 'vitest';
+import React from 'react';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { setAssetsBaseUrl } from '../../../core/AssetLoader';
 import { SPLENDOR_CARD_DEFS, SPLENDOR_NOBLE_DEFS } from '../domain/data';
 import {
     LEVEL_1_CARD_ORDER,
@@ -11,8 +14,24 @@ import {
     getDevelopmentCardSpriteStyle,
     getNobleSpriteStyle,
 } from '../sprites';
+import { SpritePreview } from '../ui/SpritePreview';
+import { renderSplendorCardPreview } from '../cardPreview';
+import Thumbnail from '../thumbnail';
+
+vi.mock('react-i18next', () => ({
+    useTranslation: () => ({
+        t: (key: string, options?: { defaultValue?: string }) => options?.defaultValue ?? key,
+        i18n: {
+            language: 'zh-CN',
+        },
+    }),
+}));
 
 describe('splendor sprite mapping', () => {
+    beforeEach(() => {
+        setAssetsBaseUrl('/assets');
+    });
+
     test('level order arrays match expected counts and contain unique ids', () => {
         expect(LEVEL_1_CARD_ORDER).toHaveLength(40);
         expect(LEVEL_2_CARD_ORDER).toHaveLength(30);
@@ -77,5 +96,30 @@ describe('splendor sprite mapping', () => {
         expect(LEVEL_3_CARD_ORDER.slice(8, 12).every((id) => id.startsWith('t3-black-'))).toBe(true);
         expect(LEVEL_3_CARD_ORDER.slice(12, 16).every((id) => id.startsWith('t3-red-'))).toBe(true);
         expect(LEVEL_3_CARD_ORDER.slice(16, 20).every((id) => id.startsWith('t3-blue-'))).toBe(true);
+    });
+
+    test('thumbnail renders the localized compressed cover', () => {
+        const html = renderToStaticMarkup(React.createElement(Thumbnail));
+
+        expect(html).toContain('src="/assets/i18n/zh-CN/splendor/compressed/picture.webp"');
+    });
+
+    test('sprite preview backgrounds use localized compressed atlases', () => {
+        const cardHtml = renderToStaticMarkup(
+            React.createElement(SpritePreview, { preview: { kind: 'card', cardId: 't1-white-1', tier: 1 } }),
+        );
+        const nobleHtml = renderToStaticMarkup(
+            React.createElement(SpritePreview, { preview: { kind: 'noble', nobleId: 'noble-1' } }),
+        );
+
+        expect(cardHtml).toContain('/assets/i18n/zh-CN/splendor/compressed/level-1-cards.webp');
+        expect(nobleHtml).toContain('/assets/i18n/zh-CN/splendor/compressed/nobles.webp');
+    });
+
+    test('card preview renderer uses localized compressed atlases', () => {
+        const preview = renderSplendorCardPreview('t1-white-1');
+        const html = renderToStaticMarkup(preview);
+
+        expect(html).toContain('/assets/i18n/zh-CN/splendor/compressed/level-1-cards.webp');
     });
 });

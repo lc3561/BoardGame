@@ -1063,7 +1063,8 @@ const OnlineGameHudBridge = ({
     isLoading?: boolean;
     seatControllers: Record<string, AiSeatController>;
 }) => {
-    const { matchPlayers, isConnected } = useGameClient();
+    const { t: tGame } = useTranslation('game');
+    const { state, dispatch, matchPlayers, isConnected } = useGameClient();
     const hudPresence = useMemo(() => resolveOnlineHudPresence({
         fallbackPlayers,
         transportPlayers: matchPlayers,
@@ -1072,6 +1073,255 @@ const OnlineGameHudBridge = ({
         seatControllers,
     }), [fallbackPlayers, isConnected, matchPlayers, myPlayerId, seatControllers]);
     const canForceEndAiPhase = Boolean(showForceEndAiPhase && onForceEndAiPhase);
+    const normalizedMyPlayerId = myPlayerId != null ? String(myPlayerId) : null;
+    const seatNameByPlayerId = useMemo(() => {
+        const map = new Map<string, string>();
+        for (const player of hudPresence.players) {
+            const normalizedId = String(player.id);
+            map.set(
+                normalizedId,
+                player.name?.trim()
+                    ? player.name
+                    : tGame('hud.status.player', { id: normalizedId }),
+            );
+        }
+        return map;
+    }, [hudPresence.players, tGame]);
+    const seatSwapContext = useMemo(() => {
+        const seatSwapMode = gameId === 'dicethrone'
+            ? 'request'
+            : (gameId === 'smashup' || gameId === 'summonerwars')
+                ? 'instant'
+                : null;
+        if (!seatSwapMode) {
+            return null;
+        }
+        if (!state || normalizedMyPlayerId == null) {
+            return null;
+        }
+        const core = state.core;
+        if (!core || typeof core !== 'object') {
+            return null;
+        }
+        const coreRecord = core as Record<string, unknown>;
+        const sysPhase = state.sys?.phase;
+        const corePhase = typeof coreRecord.phase === 'string' ? coreRecord.phase : null;
+        const hasFactionSelectionState = (
+            (coreRecord.factionSelection && typeof coreRecord.factionSelection === 'object')
+            || (coreRecord.selectedFactions && typeof coreRecord.selectedFactions === 'object')
+        );
+        const isSetupNotStarted = coreRecord.hostStarted === false;
+        const canUseSeatSwap = (
+            seatSwapMode === 'request'
+                ? (
+                    sysPhase === 'setup'
+                    || sysPhase === 'factionSelect'
+                    || corePhase === 'setup'
+                    || corePhase === 'factionSelect'
+                )
+                : (
+                    isSetupNotStarted
+                    && (
+                        sysPhase === 'setup'
+                        || sysPhase === 'factionSelect'
+                        || corePhase === 'factionSelect'
+                        || hasFactionSelectionState
+                    )
+                )
+        );
+        if (!canUseSeatSwap) {
+            return null;
+        }
+        const seatingOrderFromCore = Array.isArray(coreRecord.seatingOrder)
+            ? coreRecord.seatingOrder.filter((pid): pid is string => typeof pid === 'string')
+            : [];
+        const turnOrderFromCore = Array.isArray(coreRecord.turnOrder)
+            ? coreRecord.turnOrder.filter((pid): pid is string => typeof pid === 'string')
+            : [];
+        const seatingOrderFromPlayers = (coreRecord.players && typeof coreRecord.players === 'object')
+            ? Object.keys(coreRecord.players as Record<string, unknown>).filter((pid): pid is string => typeof pid === 'string')
+            : [];
+        const startingPlayerId = typeof coreRecord.startingPlayerId === 'string'
+            ? coreRecord.startingPlayerId
+            : null;
+        const seatingOrderFromStartingPlayer = (
+            startingPlayerId
+            && seatingOrderFromPlayers.length > 1
+            && seatingOrderFromPlayers.includes(startingPlayerId)
+        )
+            ? [startingPlayerId, ...seatingOrderFromPlayers.filter((pid) => pid !== startingPlayerId)]
+            : [];
+        const seatingOrder = seatingOrderFromCore.length > 0
+            ? seatingOrderFromCore
+            : turnOrderFromCore.length > 0
+                ? turnOrderFromCore
+                : seatingOrderFromStartingPlayer.length > 0
+                    ? seatingOrderFromStartingPlayer
+                    : seatingOrderFromPlayers;
+        if (seatingOrder.length < 2 || !seatingOrder.includes(normalizedMyPlayerId)) {
+            return null;
+        }
+
+        const seatControllerTypeByPlayerId: Record<string, string> = {};
+        const coreSeatControllers = (coreRecord.seatControllers && typeof coreRecord.seatControllers === 'object')
+            ? coreRecord.seatControllers as Record<string, unknown>
+            : {};
+        for (const pid of seatingOrder) {
+            const coreController = coreSeatControllers[pid];
+            if (coreController && typeof coreController === 'object' && typeof (coreController as { type?: unknown }).type === 'string') {
+                seatControllerTypeByPlayerId[pid] = (coreController as { type: string }).type;
+                continue;
+            }
+            const hudControllerType = seatControllers[pid]?.type;
+            if (typeof hudControllerType === 'string') {
+                seatControllerTypeByPlayerId[pid] = hudControllerType;
+            }
+        }
+
+        let pendingSeatSwapRequest: { requesterId: string; targetPlayerId: string } | null = null;
+        if (seatSwapMode === 'request' && coreRecord.seatSwapRequest && typeof coreRecord.seatSwapRequest === 'object') {
+            const request = coreRecord.seatSwapRequest as { requesterId?: unknown; targetPlayerId?: unknown };
+            if (typeof request.requesterId === 'string' && typeof request.targetPlayerId === 'string') {
+                pendingSeatSwapRequest = {
+                    requesterId: request.requesterId,
+                    targetPlayerId: request.targetPlayerId,
+                };
+            }
+        }
+
+        return {
+            seatSwapMode,
+            seatingOrder,
+            seatControllerTypeByPlayerId,
+            pendingSeatSwapRequest,
+        };
+    }, [gameId, normalizedMyPlayerId, seatControllers, state]);
+    const seatSwapContent = useMemo(() => {
+        if (!seatSwapContext || normalizedMyPlayerId == null) {
+            return undefined;
+        }
+        const { seatSwapMode, seatingOrder, seatControllerTypeByPlayerId, pendingSeatSwapRequest } = seatSwapContext;
+        const isSeatSwapPending = seatSwapMode === 'request' && Boolean(pendingSeatSwapRequest);
+        const isRequester = pendingSeatSwapRequest?.requesterId === normalizedMyPlayerId;
+        const isTarget = pendingSeatSwapRequest?.targetPlayerId === normalizedMyPlayerId;
+        const resolveSeatPlayerName = (playerId: string) => (
+            seatNameByPlayerId.get(playerId)
+            ?? tGame('hud.status.player', { id: playerId })
+        );
+        const pendingHintText = (() => {
+            if (seatSwapMode !== 'request' || !pendingSeatSwapRequest) {
+                return tGame('hud.seatSwap.hint');
+            }
+            if (isRequester) {
+                return tGame('hud.seatSwap.waiting', {
+                    player: resolveSeatPlayerName(pendingSeatSwapRequest.targetPlayerId),
+                });
+            }
+            if (isTarget) {
+                return tGame('hud.seatSwap.incoming', {
+                    player: resolveSeatPlayerName(pendingSeatSwapRequest.requesterId),
+                });
+            }
+            return tGame('hud.seatSwap.pendingOther', {
+                requester: resolveSeatPlayerName(pendingSeatSwapRequest.requesterId),
+                target: resolveSeatPlayerName(pendingSeatSwapRequest.targetPlayerId),
+            });
+        })();
+
+        return ({ closePanel }: { closePanel: () => void }) => (
+            <div className="space-y-3">
+                <p className="text-xs text-white/70">{pendingHintText}</p>
+                <div className="space-y-2">
+                    {seatingOrder.map((seatPlayerId, seatIndex) => {
+                        const isSelfSeat = seatPlayerId === normalizedMyPlayerId;
+                        const isAiSeat = (seatControllerTypeByPlayerId[seatPlayerId] ?? 'human') !== 'human';
+                        const isSeatRequester = pendingSeatSwapRequest?.requesterId === seatPlayerId;
+                        const isSeatTarget = pendingSeatSwapRequest?.targetPlayerId === seatPlayerId;
+                        return (
+                            <button
+                                key={`hud-seat-swap-seat-${seatPlayerId}`}
+                                type="button"
+                                disabled={isSeatSwapPending || isSelfSeat}
+                                onClick={() => {
+                                    if (seatSwapMode === 'request') {
+                                        dispatch('REQUEST_SEAT_SWAP', { targetPlayerId: seatPlayerId });
+                                    } else if (gameId === 'smashup') {
+                                        dispatch('su:swap_seat', { targetPlayerId: seatPlayerId });
+                                    } else if (gameId === 'summonerwars') {
+                                        dispatch('sw:swap_seat', { targetPlayerId: seatPlayerId });
+                                    }
+                                    closePanel();
+                                }}
+                                className={`w-full rounded-md border px-3 py-2 text-left text-xs transition-colors ${
+                                    isSeatRequester || isSeatTarget
+                                        ? 'border-amber-400/45 bg-amber-500/12 text-amber-100'
+                                        : 'border-white/12 bg-white/5 text-white/85 hover:bg-white/10'
+                                } ${
+                                    isSeatSwapPending || isSelfSeat
+                                        ? 'cursor-default opacity-70'
+                                        : ''
+                                }`}
+                                data-testid={`hud-seat-swap-seat-${seatPlayerId}`}
+                            >
+                                <div className="flex items-center justify-between gap-2">
+                                    <span className="font-semibold text-white/88">
+                                        {tGame('hud.seatSwap.seatNumber', { seat: seatIndex + 1 })}
+                                    </span>
+                                    {isAiSeat && (
+                                        <span className="rounded-full border border-sky-300/45 bg-sky-500/20 px-2 py-0.5 text-[10px] font-bold text-sky-200">
+                                            {tGame('hud.seatSwap.aiBadge')}
+                                        </span>
+                                    )}
+                                </div>
+                                <div className="mt-1 truncate text-white/75">{resolveSeatPlayerName(seatPlayerId)}</div>
+                            </button>
+                        );
+                    })}
+                </div>
+
+                {seatSwapMode === 'request' && isTarget && (
+                    <div className="grid grid-cols-2 gap-2">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                dispatch('RESPOND_SEAT_SWAP', { approve: true });
+                                closePanel();
+                            }}
+                            className="rounded-md border border-emerald-500/45 bg-emerald-500/15 px-3 py-2 text-xs font-bold text-emerald-200 transition-colors hover:bg-emerald-500/28"
+                            data-testid="hud-seat-swap-approve"
+                        >
+                            {tGame('hud.seatSwap.approve')}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                dispatch('RESPOND_SEAT_SWAP', { approve: false });
+                                closePanel();
+                            }}
+                            className="rounded-md border border-rose-500/45 bg-rose-500/15 px-3 py-2 text-xs font-bold text-rose-200 transition-colors hover:bg-rose-500/28"
+                            data-testid="hud-seat-swap-reject"
+                        >
+                            {tGame('hud.seatSwap.reject')}
+                        </button>
+                    </div>
+                )}
+
+                {seatSwapMode === 'request' && isRequester && (
+                    <button
+                        type="button"
+                        onClick={() => {
+                            dispatch('CANCEL_SEAT_SWAP', {});
+                            closePanel();
+                        }}
+                        className="w-full rounded-md border border-white/18 bg-white/8 px-3 py-2 text-xs font-bold text-white/85 transition-colors hover:bg-white/14"
+                        data-testid="hud-seat-swap-cancel"
+                    >
+                        {tGame('hud.seatSwap.cancel')}
+                    </button>
+                )}
+            </div>
+        );
+    }, [dispatch, gameId, normalizedMyPlayerId, seatNameByPlayerId, seatSwapContext, tGame]);
 
     return (
         <GameHUD
@@ -1090,6 +1340,9 @@ const OnlineGameHudBridge = ({
             onForceExit={onForceExit}
             showForceEndAiPhase={canForceEndAiPhase}
             onForceEndAiPhase={canForceEndAiPhase ? onForceEndAiPhase : undefined}
+            showSeatSwap={Boolean(seatSwapContext)}
+            seatSwapActionActive={Boolean(seatSwapContext?.pendingSeatSwapRequest)}
+            seatSwapContent={seatSwapContent}
             isLoading={isLoading}
         />
     );

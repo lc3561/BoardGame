@@ -221,10 +221,7 @@ export const DiceResultOverlay: React.FC<DiceResultOverlayProps> = ({
             style={{ zIndex: UI_Z_INDEX.overlayRaised }}
             onClick={closeNow}
           >
-            <div
-              className="flex flex-col items-center gap-[0.8vw]"
-              style={{ transform: isOpponentAttack ? 'rotate(180deg)' : 'none' }}
-            >
+            <div className="flex flex-col items-center gap-[0.8vw]">
               {/* 标题（无背景框） */}
               <div className="text-center">
                 <div className="flex items-center justify-center gap-[0.5vw] text-[1.3vw] font-black tracking-wider text-white" style={{ textShadow: '0 0 1vw rgba(255,255,255,0.3)' }}>

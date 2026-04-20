@@ -17,7 +17,7 @@ import {
   getPlayerUnits, hasAvailableActions, isCellEmpty,
   getAdjacentCells,
   manhattanDistance, getStructureAt, findUnitPositionByInstanceId, getSummoner,
-  getUnitAbilities, hasStableAbility, getForceDestinations,
+  getUnitAbilities, hasStableAbility, getForceDestinations, normalizeUnitBoosts,
 } from '../domain/helpers';
 import { isUndeadCard, getBaseCardId, CARD_IDS } from '../domain/ids';
 import { getSummonerWarsUIHints } from '../domain/uiHints';
@@ -357,7 +357,7 @@ export function useCellInteraction({
       const sourcePos = findUnitPositionByInstanceId(core, abilityMode.sourceUnitId);
       if (!sourcePos) return [];
       const sourceUnit = core.board[sourcePos.row]?.[sourcePos.col]?.unit;
-      if (!sourceUnit || (sourceUnit.boosts ?? 0) < 1) return [];
+      if (!sourceUnit || normalizeUnitBoosts(sourceUnit.boosts) < 1) return [];
       return getPlayerUnits(core, myPlayerId as '0' | '1')
         .filter(u => {
           if (u.instanceId === abilityMode.sourceUnitId) return false;
@@ -373,7 +373,7 @@ export function useCellInteraction({
       // spirit_bond 转移需要充能，充能不足时不高亮目标
       if (abilityMode.abilityId === 'spirit_bond') {
         const sourceUnit = core.board[sourcePos.row]?.[sourcePos.col]?.unit;
-        if (!sourceUnit || (sourceUnit.boosts ?? 0) < 1) return [];
+        if (!sourceUnit || normalizeUnitBoosts(sourceUnit.boosts) < 1) return [];
       }
       return getPlayerUnits(core, myPlayerId as '0' | '1')
         .filter(u => {

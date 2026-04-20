@@ -75,6 +75,7 @@ import { useRuntimeViewport } from '../../hooks/ui/useRuntimeViewport';
 import type { InteractionDescriptor, PromptOption } from '../../engine/systems/InteractionSystem';
 import { INTERACTION_COMMANDS } from '../../engine/systems/InteractionSystem';
 import { shouldBlockHandInteraction } from './ui/handInteractionBusy';
+import { swAttackDebugLog } from './ui/attackDebug';
 
 type Props = GameBoardProps<SummonerWarsCore>;
 
@@ -690,10 +691,24 @@ export const SummonerWarsBoard: React.FC<Props> = ({
   // 关闭骰子结果 → 播放攻击动画
   const handleCloseDiceResult = () => {
     const pending = rawCloseDiceResult();
-    if (!pending) return;
+    if (!pending) {
+      swAttackDebugLog('board_close_dice_no_pending_attack', {});
+      return;
+    }
+    swAttackDebugLog('board_close_dice_received_pending_attack', {
+      attackEventId: pending.attackEventId,
+      attackType: pending.attackType,
+      hits: pending.hits,
+      attacker: pending.attacker,
+      target: pending.target,
+      damageCount: pending.damages.length,
+    });
 
-    // 未命中：跳过所有攻击动画和音效，直接清理
+    // 未命中：直接清理并推进。
     if (pending.hits === 0) {
+      swAttackDebugLog('board_attack_miss_skip_fx', {
+        attackEventId: pending.attackEventId,
+      });
       clearPendingAttack();
       flushPendingDestroys();
       return;
@@ -703,6 +718,11 @@ export const SummonerWarsBoard: React.FC<Props> = ({
       // 远程攻击：骰子结束后稍作延迟再播放气浪特效
       // 注意：不在此处 clearPendingAttack，确保 180ms 内到达的 UNIT_DESTROYED 事件仍能排队
       const attackSnapshot = { ...pending };
+      swAttackDebugLog('board_schedule_ranged_shockwave', {
+        attackEventId: attackSnapshot.attackEventId,
+        delayMs: 180,
+        damageCount: attackSnapshot.damages.length,
+      });
       window.setTimeout(() => {
         clearPendingAttack();
         const hitIntensity = attackSnapshot.hits >= 3 ? 'strong' : 'normal';
@@ -712,11 +732,25 @@ export const SummonerWarsBoard: React.FC<Props> = ({
         pendingRangedShakeRef.current = attackSnapshot.hits >= 3;
         // 远程攻击音 + 震动：由 COMBAT_SHOCKWAVE 的 FeedbackPack 自动处理
         const attackSoundKey = resolveAttackSoundKey(attackSnapshot.attackType, core, attackSnapshot.attacker);
+        swAttackDebugLog('board_push_ranged_shockwave', {
+          attackEventId: attackSnapshot.attackEventId,
+          attackType: attackSnapshot.attackType,
+          hitIntensity,
+          pendingRangedDamageCount: pendingRangedDamagesRef.current.length,
+          attacker: attackSnapshot.attacker,
+          target: attackSnapshot.target,
+        });
         fxBus.push(SW_FX.COMBAT_SHOCKWAVE, { cell: attackSnapshot.target, intensity: hitIntensity }, { attackType: attackSnapshot.attackType, source: attackSnapshot.attacker, soundKey: attackSoundKey });
         // 伤害特效和 flushPendingDestroys 由 handleFxComplete 在气浪完成时触发
       }, 180);
     } else {
-      // 近战攻击：启动卡牌本体碰撞动画
+      // 近战攻击：立即启动卡牌本体碰撞动画。
+      swAttackDebugLog('board_start_melee_attack_anim', {
+        attackEventId: pending.attackEventId,
+        attacker: pending.attacker,
+        target: pending.target,
+        hits: pending.hits,
+      });
       setAttackAnimState({ attacker: pending.attacker, target: pending.target, hits: pending.hits });
     }
   };
@@ -725,6 +759,11 @@ export const SummonerWarsBoard: React.FC<Props> = ({
   const handleAttackHit = () => {
     const pending = pendingAttackRef.current;
     if (!pending) return;
+    swAttackDebugLog('board_melee_attack_hit', {
+      attackEventId: pending.attackEventId,
+      damageCount: pending.damages.length,
+      hits: pending.hits,
+    });
 
     // 释放视觉快照：impact 瞬间让血条变化
     const impactPositions = pending.damages.map(d => d.position);
@@ -735,6 +774,12 @@ export const SummonerWarsBoard: React.FC<Props> = ({
     const hitIntensity = pending.hits >= 3 ? 'strong' : 'normal';
     // 近战攻击音 + 震动：由 COMBAT_SHOCKWAVE 的 FeedbackPack 自动处理
     const attackSoundKey = resolveAttackSoundKey(pending.attackType, core, pending.attacker);
+    swAttackDebugLog('board_push_melee_shockwave', {
+      attackEventId: pending.attackEventId,
+      hitIntensity,
+      attacker: pending.attacker,
+      target: pending.target,
+    });
     fxBus.push(SW_FX.COMBAT_SHOCKWAVE, { cell: pending.target, intensity: hitIntensity }, { attackType: pending.attackType, source: pending.attacker, soundKey: attackSoundKey });
     for (const dmg of pending.damages) {
       // 受伤音：由 COMBAT_DAMAGE 的 FeedbackPack 自动处理
@@ -745,6 +790,9 @@ export const SummonerWarsBoard: React.FC<Props> = ({
 
   // 近战攻击回弹完成回调（卡牌回到原位后触发，flush 摧毁效果）
   const handleAttackReturn = () => {
+    swAttackDebugLog('board_melee_attack_return', {
+      attackEventId: pendingAttackRef.current?.attackEventId,
+    });
     clearPendingAttack();
     flushPendingDestroys();
     setAttackAnimState(null);
@@ -752,6 +800,12 @@ export const SummonerWarsBoard: React.FC<Props> = ({
 
   // FX 特效完成回调：远程气浪到达目标时播放伤害特效 + flush 摧毁
   const handleFxComplete = useCallback((id: string, cue: string) => {
+    swAttackDebugLog('board_fx_complete', {
+      fxId: id,
+      cue,
+      waitingForShockwave: waitingForShockwaveRef.current,
+      pendingRangedDamageCount: pendingRangedDamagesRef.current.length,
+    });
     if (waitingForShockwaveRef.current && cue === SW_FX.COMBAT_SHOCKWAVE) {
       waitingForShockwaveRef.current = false;
 
@@ -766,6 +820,10 @@ export const SummonerWarsBoard: React.FC<Props> = ({
         const damageSoundKey = resolveDamageSoundKey(dmg.damage);
         fxBus.push(SW_FX.COMBAT_DAMAGE, { cell: dmg.position, intensity: dmg.damage >= 3 ? 'strong' : 'normal' }, { damageAmount: dmg.damage, soundKey: damageSoundKey });
       }
+      swAttackDebugLog('board_ranged_shockwave_resolved', {
+        fxId: id,
+        replayedDamageCount: pendingRangedDamagesRef.current.length,
+      });
       pendingRangedDamagesRef.current = [];
       pendingRangedShakeRef.current = false;
       flushPendingDestroys();
@@ -1659,6 +1717,7 @@ export const SummonerWarsBoard: React.FC<Props> = ({
                 hits={diceResult?.hits ?? 0}
                 damageReduced={diceResult?.damageReduced}
                 isOpponentAttack={diceResult?.isOpponentAttack ?? false}
+                duration={3000}
                 onClose={handleCloseDiceResult}
               />
 

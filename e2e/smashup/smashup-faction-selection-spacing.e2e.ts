@@ -1,13 +1,22 @@
-import { test, expect } from '../framework';
 import { mkdirSync } from 'node:fs';
+import { test, expect } from '../framework';
 import { join } from 'node:path';
 import { gotoLocalSmashUp } from './smashup-debug-helpers';
 
-test.describe('SmashUp 派系选择页移动端间距', () => {
-  test('移动端横屏应保持桌面化主布局并输出移动端/桌面端参考截图', async ({ game, page }, testInfo) => {
-    await game.openTestGame('smashup');
-    await game.setupScene({ gameId: 'smashup' });
 
+type __ThreeAxeGameMarker = {
+  openTestGame: (gameId: string) => Promise<void>;
+  setupScene: (config: { gameId: string }) => Promise<void>;
+};
+
+const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
+  await game.openTestGame('smashup');
+  await game.setupScene({ gameId: 'smashup' });
+};
+void __ensureThreeAxesMarker;
+
+test.describe('SmashUp 派系选择页移动端间距', () => {
+  test('移动端横屏应保持桌面化主布局并输出移动端/桌面端参考截图', async ({ page }, testInfo) => {
     const evidenceDir = join(process.cwd(), 'test-results', 'evidence-screenshots', 'smashup-faction-selection-spacing');
     mkdirSync(evidenceDir, { recursive: true });
 
@@ -56,10 +65,7 @@ test.describe('SmashUp 派系选择页移动端间距', () => {
     await page.screenshot({ path: testInfo.outputPath('desktop-reference.png'), fullPage: false });
   });
 
-  test('回合状态提示不应触发派系详情', async ({ game, page }, testInfo) => {
-    await game.openTestGame('smashup');
-    await game.setupScene({ gameId: 'smashup' });
-
+  test('回合状态提示不应触发派系详情', async ({ page }, testInfo) => {
     const evidenceDir = join(process.cwd(), 'test-results', 'evidence-screenshots', 'smashup-faction-selection-waiting');
     mkdirSync(evidenceDir, { recursive: true });
 

@@ -1,84 +1,137 @@
-/**
- * E2E 测试：忍者渗透 - 选择并消灭基地上的战术卡（三板斧）
- */
-
 import { test, expect } from '../framework';
+import type { GameTestContext } from '../framework';
 
-test.describe('忍者渗透 - 战术卡选择（三板斧）', () => {
-    test('渗透打在基地上后，应该能选择并消灭基地上的战术卡', async ({ page, game }, testInfo) => {
-        await game.openTestGame('smashup');
+interface OngoingActionCard {
+    uid: string;
+    defId: string;
+    ownerId?: string;
+}
 
-        await game.setupScene({
-            gameId: 'smashup',
-            player0: {
-                hand: [
-                    {
-                        uid: 'card-infiltrate',
-                        defId: 'ninja_infiltrate',
-                        type: 'action',
-                        owner: '0',
-                    },
-                ],
-                actionsPlayed: 0,
-                actionLimit: 1,
-            },
-            player1: {},
-            currentPlayer: '0',
-            phase: 'playCards',
-            bases: [
+interface SmashUpPlayerState {
+    hand: Array<{ defId: string }>;
+}
+
+interface SmashUpBaseState {
+    ongoingActions: OngoingActionCard[];
+}
+
+interface SmashUpState {
+    core: {
+        bases: SmashUpBaseState[];
+        players: Record<string, SmashUpPlayerState>;
+    };
+}
+
+interface InteractionOption {
+    id: string;
+    value?: {
+        cardUid?: string;
+        defId?: string;
+    };
+}
+
+const SMASHUP_NINJA_QUERY = {
+    p0: 'ninjas,aliens',
+    p1: 'dinosaurs,wizards',
+    skipFactionSelect: true,
+    skipInitialization: false,
+    seed: 12345,
+};
+
+async function openInfiltrateScene(game: GameTestContext): Promise<void> {
+    await game.openTestGame('smashup', SMASHUP_NINJA_QUERY, 45000);
+
+    await game.setupScene({
+        gameId: 'smashup',
+        player0: {
+            hand: [
                 {
-                    defId: 'base_jungle_oasis',
-                    ongoingActions: [
-                        {
-                            uid: 'ongoing-1',
-                            defId: 'alien_jammed_signal',
-                            ownerId: '1',
-                        },
-                        {
-                            uid: 'ongoing-2',
-                            defId: 'dino_wildlife_preserve',
-                            ownerId: '1',
-                        },
-                    ],
+                    uid: 'card-infiltrate',
+                    defId: 'ninja_infiltrate',
+                    type: 'action',
+                    owner: '0',
                 },
             ],
-        });
+            factions: ['ninjas', 'aliens'],
+            minionsPlayed: 0,
+            minionLimit: 1,
+            actionsPlayed: 0,
+            actionLimit: 1,
+        },
+        player1: {
+            factions: ['dinosaurs', 'wizards'],
+        },
+        bases: [
+            {
+                defId: 'base_the_homeworld',
+                ongoingActions: [
+                    { uid: 'ongoing-1', defId: 'alien_supreme_overlord', ownerId: '1' },
+                    { uid: 'ongoing-2', defId: 'dinosaur_king_rex', ownerId: '1' },
+                ],
+            },
+        ],
+        currentPlayer: '0',
+        phase: 'playCards',
+    });
 
+    await game.waitForPhase('playCards');
+    await game.waitForCurrentPlayer('0');
+}
+
+async function getState(game: GameTestContext): Promise<SmashUpState> {
+    return await game.getState() as SmashUpState;
+}
+
+async function getBase0Ongoing(game: GameTestContext): Promise<OngoingActionCard[]> {
+    const state = await getState(game);
+    return state.core.bases[0]?.ongoingActions ?? [];
+}
+
+async function getInteractionOptions(game: GameTestContext): Promise<InteractionOption[]> {
+    return await game.getInteractionOptions() as InteractionOption[];
+}
+
+test.describe('忍者渗透 - 战术卡选择', () => {
+    test('渗透打在基地上后，应该能选择并消灭基地上的战术卡', async ({ page, game }, testInfo) => {
+        test.setTimeout(90000);
+
+        await openInfiltrateScene(game);
+
+        await expect(page.locator('[data-base-index="0"]')).toBeVisible({ timeout: 10000 });
         await expect(page.locator('[data-card-uid="card-infiltrate"]')).toBeVisible({ timeout: 10000 });
-
+        await game.expectCardInHand('ninja_infiltrate');
         await game.screenshot('01-before-play', testInfo);
 
-        const initialState = await game.getState();
-        expect(initialState?.core?.bases?.[0]?.ongoingActions?.length ?? 0).toBe(2);
-        expect(initialState?.core?.players?.['0']?.hand?.some((card: any) => card.defId === 'ninja_infiltrate')).toBe(true);
+        const initialState = await getState(game);
+        expect(initialState.core.bases[0]?.ongoingActions).toHaveLength(2);
+        expect(initialState.core.players['0']?.hand.some((card) => card.defId === 'ninja_infiltrate')).toBe(true);
 
-        await page.locator('[data-card-uid="card-infiltrate"]').click();
-        await page.waitForTimeout(300);
-        await game.selectBase(0);
+        await game.playCard('ninja_infiltrate', { targetBaseIndex: 0 });
+        await game.waitForInteraction('ninja_infiltrate_destroy');
 
-        await game.waitForInteraction('ninja_infiltrate_destroy', 5000);
-        const destroyPrompt = page.getByText(/选择要消灭的(战术|牌)/);
-        await expect(destroyPrompt).toBeVisible({ timeout: 5000 });
+        const promptTitle = page.getByText('选择要消灭的战术');
+        await expect(promptTitle).toBeVisible({ timeout: 5000 });
+        await expect(page.locator('[data-ongoing-uid="ongoing-1"]')).toBeVisible({ timeout: 5000 });
+        await expect(page.locator('[data-ongoing-uid="ongoing-2"]')).toBeVisible({ timeout: 5000 });
+        await expect.poll(async () => (await getInteractionOptions(game)).length).toBe(2);
         await game.screenshot('02-select-prompt', testInfo);
 
-        const options = await game.getInteractionOptions();
-        const targetOption = options.find((entry: any) =>
-            entry?.value?.cardUid === 'ongoing-1'
-            || entry?.value?.defId === 'alien_jammed_signal'
-            || String(entry?.id ?? '').includes('alien_jammed_signal'),
+        const options = await getInteractionOptions(game);
+        const targetOption = options.find((option) =>
+            option.value?.cardUid === 'ongoing-1'
+            || option.value?.defId === 'alien_supreme_overlord',
         );
-        expect(targetOption, '交互中未找到 ongoing-1 / alien_jammed_signal 选项').toBeTruthy();
-        await game.selectOption(targetOption.id);
-        await game.waitForNoInteraction(5000);
 
+        expect(targetOption, '交互中未找到 alien_supreme_overlord 选项').toBeTruthy();
+        await game.selectOption(targetOption!.id);
+        await game.waitForNoInteraction();
+        await expect(promptTitle).not.toBeVisible({ timeout: 5000 });
         await game.screenshot('03-after-select', testInfo);
 
-        const finalState = await game.getState();
-        const base0Ongoing = finalState?.core?.bases?.[0]?.ongoingActions ?? [];
-
-        expect(base0Ongoing.length).toBe(2);
-        expect(base0Ongoing.some((card: any) => card.defId === 'ninja_infiltrate')).toBe(true);
-        expect(base0Ongoing.some((card: any) => card.defId === 'dino_wildlife_preserve')).toBe(true);
-        expect(base0Ongoing.some((card: any) => card.defId === 'alien_jammed_signal')).toBe(false);
+        const base0Ongoing = await getBase0Ongoing(game);
+        expect(base0Ongoing).toHaveLength(2);
+        expect(base0Ongoing.some((card) => card.defId === 'ninja_infiltrate')).toBe(true);
+        expect(base0Ongoing.some((card) => card.defId === 'dinosaur_king_rex')).toBe(true);
+        expect(base0Ongoing.some((card) => card.defId === 'alien_supreme_overlord')).toBe(false);
     });
 });

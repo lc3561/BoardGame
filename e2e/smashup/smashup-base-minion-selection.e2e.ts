@@ -10,7 +10,7 @@
  */
 
 import type { Page } from '@playwright/test';
-import { test, expect } from '../fixtures';
+import { test, expect } from '../framework';
 import { waitForTestHarness } from '../helpers/common';
 import { getMatchState, injectMatchState } from '../helpers/state-injection';
 import { clearEvidenceScreenshotsForTest, getEvidenceScreenshotPath } from '../framework/evidenceScreenshots';
@@ -372,10 +372,45 @@ async function clickMinion(page: Page, minionUid: string): Promise<void> {
     await page.waitForTimeout(300);
 }
 
+const ONLINE_SELECTION_MATCHES: any[] = [];
+
+async function createOnlineSelectionMatch(browser: any, testInfo: any) {
+    const setup = await setupOnlineMatch(browser, testInfo.project.use.baseURL as string | undefined);
+    if (!setup) return null;
+
+    await completeFactionSelectionCustom(
+        setup.hostPage,
+        setup.guestPage,
+        [FACTION.ALIENS, FACTION.PIRATES],
+        [FACTION.NINJAS, FACTION.ROBOTS],
+    );
+    await waitForHandArea(setup.hostPage);
+    ONLINE_SELECTION_MATCHES.push(setup);
+    return setup;
+}
+
+async function drainOnlineSelectionMatches(): Promise<void> {
+    while (ONLINE_SELECTION_MATCHES.length > 0) {
+        const setup = ONLINE_SELECTION_MATCHES.pop();
+        if (setup) {
+            await cleanupTwoPlayerMatch(setup);
+        }
+    }
+}
+
 test.describe('SmashUp Base/Minion Selection', () => {
     test.describe.configure({ timeout: 90000 });
 
-    test('基地选择：外星人地形改造 - 不弹窗，直接点击基地', async ({ smashupMatch }, testInfo) => {
+    test.afterEach(async () => {
+        await drainOnlineSelectionMatches();
+    });
+
+    test('基地选择：外星人地形改造 - 不弹窗，直接点击基地', async ({ browser }, testInfo) => {
+        const smashupMatch = await createOnlineSelectionMatch(browser, testInfo);
+        if (!smashupMatch) {
+            test.skip(true, '游戏服务器不可用或创建房间失败');
+            return;
+        }
         const { hostPage: page, matchId } = smashupMatch;
         await clearEvidenceScreenshotsForTest(testInfo);
 
@@ -425,7 +460,12 @@ test.describe('SmashUp Base/Minion Selection', () => {
         await page.screenshot({ path: terraformReplacementShot, fullPage: false });
     });
 
-    test('随从选择：外星人至高霸主 - 不弹窗，直接点击随从', async ({ smashupMatch }, testInfo) => {
+    test('随从选择：外星人至高霸主 - 不弹窗，直接点击随从', async ({ browser }, testInfo) => {
+        const smashupMatch = await createOnlineSelectionMatch(browser, testInfo);
+        if (!smashupMatch) {
+            test.skip(true, '游戏服务器不可用或创建房间失败');
+            return;
+        }
         const { hostPage: page, matchId } = smashupMatch;
         await clearEvidenceScreenshotsForTest(testInfo);
 
@@ -476,7 +516,12 @@ test.describe('SmashUp Base/Minion Selection', () => {
         await page.screenshot({ path: overlordResolvedShot, fullPage: false });
     });
 
-    test('随从选择：外星人收集者 - 不弹窗，直接点击随从', async ({ smashupMatch }, testInfo) => {
+    test('随从选择：外星人收集者 - 不弹窗，直接点击随从', async ({ browser }, testInfo) => {
+        const smashupMatch = await createOnlineSelectionMatch(browser, testInfo);
+        if (!smashupMatch) {
+            test.skip(true, '游戏服务器不可用或创建房间失败');
+            return;
+        }
         const { hostPage: page, matchId } = smashupMatch;
         await clearEvidenceScreenshotsForTest(testInfo);
 
@@ -532,7 +577,12 @@ test.describe('SmashUp Base/Minion Selection', () => {
         await page.screenshot({ path: collectorResolvedShot, fullPage: false });
     });
 
-    test('基地选择：外星人入侵（第二步）- 不弹窗，直接点击基地', async ({ smashupMatch }, testInfo) => {
+    test('基地选择：外星人入侵（第二步）- 不弹窗，直接点击基地', async ({ browser }, testInfo) => {
+        const smashupMatch = await createOnlineSelectionMatch(browser, testInfo);
+        if (!smashupMatch) {
+            test.skip(true, '游戏服务器不可用或创建房间失败');
+            return;
+        }
         const { hostPage: page, matchId } = smashupMatch;
         await clearEvidenceScreenshotsForTest(testInfo);
 
@@ -581,7 +631,12 @@ test.describe('SmashUp Base/Minion Selection', () => {
         await page.screenshot({ path: invasionResolvedShot, fullPage: false });
     });
 
-    test('反馈复现：蒸汽朋克 + 魔法妖精在空基地局面下，随从/持续行动/泰坦都应能进入并完成打出链路', async ({ smashupMatch }) => {
+    test('反馈复现：蒸汽朋克 + 魔法妖精在空基地局面下，随从/持续行动/泰坦都应能进入并完成打出链路', async ({ browser }, testInfo) => {
+        const smashupMatch = await createOnlineSelectionMatch(browser, testInfo);
+        if (!smashupMatch) {
+            test.skip(true, '游戏服务器不可用或创建房间失败');
+            return;
+        }
         const { hostPage: page, matchId } = smashupMatch;
 
         await waitForTestHarness(page);
@@ -686,7 +741,12 @@ test.describe('SmashUp Base/Minion Selection', () => {
         }
     });
 
-    test('POD 版米斯卡塔尼克大学：基地悬浮文案和放大预览都应跟随 POD 版本文本', async ({ smashupMatch }, testInfo) => {
+    test('POD 版米斯卡塔尼克大学：基地悬浮文案和放大预览都应跟随 POD 版本文本', async ({ browser }, testInfo) => {
+        const smashupMatch = await createOnlineSelectionMatch(browser, testInfo);
+        if (!smashupMatch) {
+            test.skip(true, '游戏服务器不可用或创建房间失败');
+            return;
+        }
         const { hostPage: page, matchId } = smashupMatch;
         await clearEvidenceScreenshotsForTest(testInfo);
 

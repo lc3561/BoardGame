@@ -19,7 +19,9 @@ import {
     advanceTo,
     expectedHandSize,
 } from './test-utils';
-import { INITIAL_CP, HAND_LIMIT } from '../domain/types';
+import { reduce } from '../domain/reducer';
+import type { AttackResolvedEvent, DamageDealtEvent } from '../domain/types';
+import { INITIAL_CP, HAND_LIMIT, INITIAL_HEALTH } from '../domain/types';
 
 describe('卡牌系统', () => {
     describe('卖牌', () => {
@@ -250,6 +252,77 @@ describe('卡牌系统', () => {
                     value: 6,
                 }),
             ]);
+        });
+
+        it('下次不算在待结算伤害大于 6 时最多只吸收 6 点，剩余伤害正常结算', () => {
+            const runner = createRunner(fixedRandom);
+            const result = runner.run({
+                name: '下次不算只吸收 6 点，8 点攻击剩余 2 点正常结算',
+                setup: createSetupWithHand(['card-next-time'], {
+                    playerId: '1',
+                    cp: 1,
+                    mutate: (core) => {
+                        core.players['0'].hand = [];
+                        core.players['1'].hand = [core.players['1'].hand[0]];
+                    },
+                }),
+                commands: [
+                    ...advanceTo('offensiveRoll'),
+                    cmd('ROLL_DICE', '0'),
+                    cmd('CONFIRM_ROLL', '0'),
+                    cmd('SELECT_ABILITY', '0', { abilityId: 'fist-technique-5' }),
+                    cmd('ADVANCE_PHASE', '0'), // -> defensiveRoll
+                    cmd('PLAY_CARD', '1', { cardId: 'card-next-time' }),
+                ],
+                expect: {
+                    turnPhase: 'defensiveRoll',
+                    players: {
+                        '1': {
+                            handSize: 0,
+                            discardSize: 1,
+                        },
+                    },
+                },
+            });
+
+            expect(result.assertionErrors).toEqual([]);
+            expect(result.finalState.core.players['1'].damageShields).toEqual([
+                expect.objectContaining({
+                    sourceId: 'card-next-time',
+                    value: 6,
+                }),
+            ]);
+
+            const afterDamage = reduce(result.finalState.core, {
+                type: 'DAMAGE_DEALT',
+                payload: {
+                    targetId: '1',
+                    amount: 8,
+                    actualDamage: 8,
+                    sourceAbilityId: 'fist-technique-5',
+                },
+                sourceCommandType: 'ABILITY_EFFECT',
+                timestamp: 1,
+            } as DamageDealtEvent);
+
+            expect(afterDamage.players['1'].resources.hp).toBe(INITIAL_HEALTH - 2);
+            expect(afterDamage.players['1'].damageShields).toEqual([]);
+            expect(afterDamage.pendingAttack?.resolvedDamage).toBe(2);
+
+            const afterResolved = reduce(afterDamage, {
+                type: 'ATTACK_RESOLVED',
+                payload: {
+                    attackerId: '0',
+                    defenderId: '1',
+                    sourceAbilityId: 'fist-technique-5',
+                    totalDamage: 8,
+                },
+                sourceCommandType: 'ABILITY_EFFECT',
+                timestamp: 2,
+            } as AttackResolvedEvent);
+
+            expect(afterResolved.lastResolvedAttackDamage).toBe(2);
+            expect(afterResolved.pendingAttack).toBeNull();
         });
     });
 });

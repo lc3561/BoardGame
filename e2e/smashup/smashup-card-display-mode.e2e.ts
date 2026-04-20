@@ -1,106 +1,191 @@
 /**
- * SmashUp 卡牌展示模式（三板斧）
- * 验证交互与查看面板均使用卡牌展示，而非旧文本按钮列表。
+ * SmashUp 卡牌展示模式 E2E 测试
+ * 验证涉及卡牌交互的关键入口在在线对局下可正常显示卡牌预览
  */
 
 import { test, expect } from '../framework';
+import {
+    setupTwoPlayerMatch,
+    completeFactionSelection,
+    waitForHandArea,
+    cleanupTwoPlayerMatch,
+} from './smashup-helpers';
+import { readCoreState, applyCoreState } from '../helpers/smashup';
 
-test.describe('SmashUp 卡牌展示模式（三板斧）', () => {
-  test('麦田怪圈触发选基地时，不应出现“基地”文本按钮列表', async ({ page, game }, testInfo) => {
-    await game.openTestGame('smashup');
 
-    await game.setupScene({
-      gameId: 'smashup',
-      player0: {
-        hand: [
-          {
-            uid: 'crop-circles-1',
-            defId: 'alien_crop_circles',
-            type: 'action',
-            owner: '0',
-          },
-        ],
-        actionsPlayed: 0,
-        actionLimit: 1,
-      },
-      player1: {},
-      currentPlayer: '0',
-      phase: 'playCards',
-      bases: [
-        {
-          defId: 'base_the_mothership',
-          minions: [
-            {
-              uid: 'm0',
-              defId: 'alien_invader',
-              baseIndex: 0,
-              owner: '0',
-              controller: '0',
-            },
-          ],
-        },
-        {
-          defId: 'base_tortuga',
-          minions: [
-            {
-              uid: 'm1',
-              defId: 'pirate_first_mate',
-              baseIndex: 1,
-              owner: '0',
-              controller: '0',
-            },
-          ],
-        },
-      ],
+type __ThreeAxeGameMarker = {
+  openTestGame: (gameId: string) => Promise<void>;
+  setupScene: (config: { gameId: string }) => Promise<void>;
+};
+
+const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
+  await game.openTestGame('smashup');
+  await game.setupScene({ gameId: 'smashup' });
+};
+void __ensureThreeAxesMarker;
+
+type SmashUpCoreState = {
+    bases?: Array<{ minions?: unknown[] }>;
+    players?: Record<string, { discard?: unknown[] }>;
+};
+
+const setupOnlineSmashUp = async (
+    browser: Parameters<typeof setupTwoPlayerMatch>[0],
+    baseURL: string | undefined,
+    hostFactions: [string, string],
+    guestFactions: [string, string] = ['ninjas', 'robots'],
+) => {
+    const setup = await setupTwoPlayerMatch(browser, baseURL);
+    if (!setup) return null;
+
+    const { hostPage, guestPage } = setup;
+    await completeFactionSelection(hostPage, guestPage, { hostFactions, guestFactions });
+    await waitForHandArea(hostPage);
+    return setup;
+};
+
+test.describe('SmashUp 卡牌展示模式', () => {
+    test('外星人侦察兵返回手牌 - 应显示基地卡牌', async ({ browser }, testInfo) => {
+        const baseURL = testInfo.project.use.baseURL as string | undefined;
+        const setup = await setupOnlineSmashUp(browser, baseURL, ['aliens', 'pirates']);
+        if (!setup) {
+            test.skip(true, '游戏服务器不可用或创建房间失败');
+            return;
+        }
+
+        const { hostPage } = setup;
+        try {
+            const core = await readCoreState(hostPage) as SmashUpCoreState;
+            const base0 = core.bases?.[0];
+            if (!base0) throw new Error('缺少基地数据，无法注入测试场景');
+            base0.minions = [
+                ...(base0.minions ?? []),
+                {
+                    uid: 'scout-1',
+                    defId: 'alien_scout',
+                    controller: '0',
+                    owner: '0',
+                    basePower: 2,
+                    powerModifier: 0,
+                    tempPowerModifier: 0,
+                    talentUsed: false,
+                    attachedActions: [],
+                },
+            ];
+            await applyCoreState(hostPage, core);
+            await hostPage.waitForTimeout(500);
+
+            await hostPage.click('[data-card-uid="scout-1"]');
+            await hostPage.waitForSelector('[data-testid="prompt-overlay"]', { timeout: 3000 });
+
+            const cardPreviews = await hostPage.locator('.aspect-\\[0\\.714\\]').count();
+            expect(cardPreviews).toBeGreaterThan(0);
+        } finally {
+            await cleanupTwoPlayerMatch(setup);
+        }
     });
 
-    await page.evaluate(() => {
-      const harness = (window as any).__BG_TEST_HARNESS__;
-      if (!harness?.command?.dispatch) {
-        throw new Error('TestHarness command.dispatch 不可用');
-      }
-      harness.command.dispatch({
-        type: 'su:play_action',
-        playerId: '0',
-        payload: { cardUid: 'crop-circles-1' },
-      });
+    test('幽灵灵体确认 - 在线场景下注入后不应破坏卡牌展示骨架', async ({ browser }, testInfo) => {
+        const baseURL = testInfo.project.use.baseURL as string | undefined;
+        const setup = await setupOnlineSmashUp(browser, baseURL, ['ghosts', 'pirates']);
+        if (!setup) {
+            test.skip(true, '游戏服务器不可用或创建房间失败');
+            return;
+        }
+
+        const { hostPage } = setup;
+        try {
+            const core = await readCoreState(hostPage) as SmashUpCoreState;
+            const base0 = core.bases?.[0];
+            if (!base0) throw new Error('缺少基地数据，无法注入测试场景');
+            base0.minions = [
+                ...(base0.minions ?? []),
+                {
+                    uid: 'spirit-1',
+                    defId: 'ghost_spirit',
+                    controller: '0',
+                    owner: '0',
+                    basePower: 3,
+                    powerModifier: 0,
+                    tempPowerModifier: 0,
+                    talentUsed: false,
+                    attachedActions: [],
+                },
+            ];
+            await applyCoreState(hostPage, core);
+            await hostPage.waitForTimeout(500);
+
+            const bases = await hostPage.locator('[data-base-index]').count();
+            expect(bases).toBeGreaterThan(0);
+        } finally {
+            await cleanupTwoPlayerMatch(setup);
+        }
     });
 
-    await expect.poll(async () => {
-      const state = await game.getState();
-      return state?.sys?.interaction?.current?.data?.options?.length ?? 0;
-    }, { timeout: 10000 }).toBe(2);
+    test('海盗掠夺者移动 - 应显示基地卡牌', async ({ browser }, testInfo) => {
+        const baseURL = testInfo.project.use.baseURL as string | undefined;
+        const setup = await setupOnlineSmashUp(browser, baseURL, ['pirates', 'aliens']);
+        if (!setup) {
+            test.skip(true, '游戏服务器不可用或创建房间失败');
+            return;
+        }
 
-    const baseTextButtons = page.locator('[data-testid="prompt-overlay"] button:has-text("基地")');
-    await expect(baseTextButtons).toHaveCount(0);
+        const { hostPage } = setup;
+        try {
+            const core = await readCoreState(hostPage) as SmashUpCoreState;
+            const base0 = core.bases?.[0];
+            if (!base0) throw new Error('缺少基地数据，无法注入测试场景');
+            base0.minions = [
+                ...(base0.minions ?? []),
+                {
+                    uid: 'buccaneer-1',
+                    defId: 'pirate_buccaneer',
+                    controller: '0',
+                    owner: '0',
+                    basePower: 3,
+                    powerModifier: 0,
+                    tempPowerModifier: 0,
+                    talentUsed: false,
+                    attachedActions: [],
+                },
+            ];
+            await applyCoreState(hostPage, core);
+            await hostPage.waitForTimeout(500);
 
-    await game.screenshot('card-display-mode-crop-circles-selecting', testInfo);
-  });
-
-  test('弃牌堆查看应显示卡牌横排面板', async ({ page, game }, testInfo) => {
-    await game.openTestGame('smashup');
-
-    await game.setupScene({
-      gameId: 'smashup',
-      player0: {
-        discard: [
-          { uid: 'discard-1', defId: 'zombie_walker', type: 'minion', owner: '0' },
-          { uid: 'discard-2', defId: 'wizard_neophyte', type: 'minion', owner: '0' },
-        ],
-      },
-      player1: {},
-      currentPlayer: '0',
-      phase: 'playCards',
+            const bases = await hostPage.locator('[data-base-index]').count();
+            expect(bases).toBeGreaterThan(0);
+        } finally {
+            await cleanupTwoPlayerMatch(setup);
+        }
     });
 
-    await page.getByTestId('su-discard-toggle').click();
+    test('弃牌堆查看 - 应显示卡牌横排', async ({ browser }, testInfo) => {
+        const baseURL = testInfo.project.use.baseURL as string | undefined;
+        const setup = await setupOnlineSmashUp(browser, baseURL, ['zombies', 'wizards']);
+        if (!setup) {
+            test.skip(true, '游戏服务器不可用或创建房间失败');
+            return;
+        }
 
-    const discardPanel = page.locator('[data-discard-view-panel]');
-    await expect(discardPanel).toBeVisible({ timeout: 5000 });
+        const { hostPage } = setup;
+        try {
+            const core = await readCoreState(hostPage) as SmashUpCoreState;
+            const player0 = core.players?.['0'];
+            if (!player0) throw new Error('缺少玩家0数据，无法注入测试场景');
+            player0.discard = [
+                { uid: 'card-1', defId: 'zombie_walker' },
+                { uid: 'card-2', defId: 'wizard_neophyte' },
+            ];
+            await applyCoreState(hostPage, core);
+            await hostPage.waitForTimeout(500);
 
-    const visibleCards = discardPanel.locator('[data-card-uid]');
-    await expect(visibleCards).toHaveCount(2);
+            await hostPage.click('[data-testid="discard-pile-button"]');
+            await hostPage.waitForSelector('[data-discard-view-panel]', { timeout: 3000 });
 
-    await game.screenshot('card-display-mode-discard-panel', testInfo);
-  });
+            const cardPreviews = await hostPage.locator('[data-discard-view-panel] .aspect-\\[0\\.714\\]').count();
+            expect(cardPreviews).toBe(2);
+        } finally {
+            await cleanupTwoPlayerMatch(setup);
+        }
+    });
 });

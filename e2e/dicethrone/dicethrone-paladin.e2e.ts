@@ -11,7 +11,7 @@ async function waitForCheatDispatch(page: Page): Promise<void> {
             return state?.core?.players?.['0']
                 && state?.core?.players?.['1']
                 && typeof harness?.state?.patch === 'function'
-                && typeof (window as any).__BG_DISPATCH__ === 'function';
+                && typeof harness?.command?.dispatch === 'function';
         },
         { timeout: 10000, polling: 200 },
     );
@@ -50,14 +50,21 @@ async function readPaladinBlessingState(game: GameTestContext) {
 }
 
 async function dealDamage(page: Page, targetId: string, amount: number): Promise<void> {
-    await page.evaluate(({ id, value }) => {
-        const dispatch = (window as any).__BG_DISPATCH__;
-        if (typeof dispatch !== 'function') {
-            throw new Error('__BG_DISPATCH__ 不可用');
+    await page.evaluate(async ({ id, value }) => {
+        const harness = (window as Window & {
+            __BG_TEST_HARNESS__?: {
+                command?: {
+                    dispatch?: (command: unknown) => Promise<void> | void;
+                };
+            };
+        }).__BG_TEST_HARNESS__;
+        if (typeof harness?.command?.dispatch !== 'function') {
+            throw new Error('TestHarness command.dispatch 不可用');
         }
 
-        dispatch({
+        await harness.command.dispatch({
             type: 'CHEAT_DEAL_DAMAGE',
+            playerId: '0',
             payload: {
                 targetId: id,
                 amount: value,

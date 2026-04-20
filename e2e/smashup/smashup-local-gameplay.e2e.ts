@@ -1,13 +1,14 @@
 /**
- * 大杀四方 (Smash Up) - 本地模式 E2E 测试
+ * 大杀四方 (Smash Up) - 三板斧测试页 E2E 测试
  *
- * 直接进入 /play/smashup/local，跳过房间创建流程。
+ * 直接进入 /play/smashup，跳过房间创建流程。
  * 通过调试面板注入状态来跳过派系选择，直接验证游戏核心流程。
  */
 
 import { mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { test, expect, type Locator, type Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
+import { test, expect } from '../framework';
 import {
     initContext,
     blockAudioRequests,
@@ -34,7 +35,7 @@ void __ensureThreeAxesMarker;
 // ============================================================================
 
 const gotoLocalSmashUp = async (page: Page) => {
-    await page.goto('/play/smashup/local', { waitUntil: 'domcontentloaded' });
+    await page.goto('/play/smashup', { waitUntil: 'domcontentloaded' });
     await dismissViteOverlay(page);
     // 等待游戏加载（派系选择或游戏界面）
     await page.waitForFunction(

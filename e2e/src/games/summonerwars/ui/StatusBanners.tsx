@@ -7,6 +7,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import type { GamePhase, CellCoord } from '../domain/types';
+import { normalizeUnitBoosts } from '../domain/helpers';
 import { GameButton } from './GameButton';
 import { ActionBanner } from './ActionBanner';
 import type { AbilityModeState, SoulTransferModeState, MindCaptureModeState, AfterAttackAbilityModeState } from './useGameEvents';
@@ -214,7 +215,7 @@ export const StatusBanners: React.FC<StatusBannersProps> = ({
       for (let col = 0; col < (core.board[0]?.length ?? 0); col++) {
         const unit = core.board[row]?.[col]?.unit;
         if (unit && unit.instanceId === abilityMode.sourceUnitId) {
-          sourceUnitBoosts = unit.boosts ?? 0;
+          sourceUnitBoosts = normalizeUnitBoosts(unit.boosts);
           break outerLoop;
         }
       }
@@ -507,7 +508,7 @@ export const StatusBanners: React.FC<StatusBannersProps> = ({
       for (let col = 0; col < (core.board[0]?.length ?? 0); col++) {
         const unit = core.board[row]?.[col]?.unit;
         if (unit && unit.instanceId === withdrawMode.sourceUnitId) {
-          withdrawUnitBoosts = unit.boosts ?? 0;
+          withdrawUnitBoosts = normalizeUnitBoosts(unit.boosts);
           break withdrawSearch;
         }
       }

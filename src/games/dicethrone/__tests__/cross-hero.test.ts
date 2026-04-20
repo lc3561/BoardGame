@@ -245,6 +245,65 @@ describe('cross hero battles', () => {
                 grantCp: 1,
             });
         });
+
+        it('righteous-combat II 升级后不应混入 III 级 tenacity 变体', () => {
+            const righteousCombatUpgrade = PALADIN_CARDS.find((card) => card.id === 'card-righteous-combat-2');
+            expect(righteousCombatUpgrade).toBeDefined();
+
+            const runner = new GameTestRunner({
+                domain: DiceThroneDomain,
+                systems: testSystems,
+                playerIds: ['0', '1'],
+                random: fixedRandom,
+                setup: (playerIds: PlayerId[], r: RandomFn) => {
+                    const state = createInitializedStateWithCharacters(playerIds, r, { '0': 'paladin', '1': 'monk' });
+                    const player = state.core.players['0'];
+                    player.resources[RESOURCE_IDS.CP] = 2;
+                    player.hand = [JSON.parse(JSON.stringify(righteousCombatUpgrade!))];
+                    player.deck = player.deck.filter((card) => card.id !== 'card-righteous-combat-2');
+                    return state;
+                },
+                assertFn: assertState,
+                silent: true,
+            });
+
+            const result = runner.run({
+                name: 'paladin righteous-combat II runtime replacement',
+                commands: [
+                    cmd('PLAY_UPGRADE_CARD', '0', { cardId: 'card-righteous-combat-2', targetAbilityId: 'righteous-combat' }),
+                ],
+                expect: {
+                    turnPhase: 'main1',
+                    players: {
+                        '0': {
+                            cp: 0,
+                            abilityLevels: { 'righteous-combat': 2 },
+                        },
+                    },
+                },
+            });
+
+            expect(result.assertionErrors).toEqual([]);
+            const righteousCombat = result.finalState.core.players['0'].abilities.find((ability) => ability.id === 'righteous-combat');
+            expect(righteousCombat?.type).toBe('offensive');
+            expect(righteousCombat?.description).toBe('abilities.righteous-combat-2.description');
+            expect(righteousCombat?.variants).toBeUndefined();
+            expect(righteousCombat?.trigger).toEqual({
+                type: 'diceSet',
+                faces: { sword: 3, helm: 2 },
+            });
+            expect(righteousCombat?.effects).toHaveLength(2);
+            expect(righteousCombat?.effects?.[0].action).toMatchObject({
+                type: 'damage',
+                target: 'opponent',
+                value: 5,
+            });
+            expect(righteousCombat?.effects?.[1].action).toMatchObject({
+                type: 'rollDie',
+                target: 'self',
+                diceCount: 3,
+            });
+        });
     });
 
     describe('shadow thief vs moon elf', () => {

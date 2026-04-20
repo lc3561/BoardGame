@@ -6,10 +6,11 @@ import { TOKEN_IDS } from '../src/games/dicethrone/domain/ids';
 async function waitForCheatDispatch(page: Page): Promise<void> {
     await page.waitForFunction(
         () => {
-            const state = (window as any).__BG_TEST_HARNESS__?.state?.get?.();
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const state = harness?.state?.get?.();
             return state?.core?.players?.['0']
                 && state?.core?.players?.['1']
-                && (window as any).__BG_DISPATCH__;
+                && typeof harness?.command?.dispatch === 'function';
         },
         { timeout: 10000, polling: 200 },
     );
@@ -47,14 +48,21 @@ async function readSneakState(game: GameTestContext) {
 }
 
 async function dealDamage(page: Page, targetId: string, amount: number): Promise<void> {
-    await page.evaluate(({ targetId: id, amount: value }) => {
-        const dispatch = (window as any).__BG_DISPATCH__;
-        if (!dispatch) {
-            throw new Error('BG dispatch is not available');
+    await page.evaluate(async ({ targetId: id, amount: value }) => {
+        const harness = (window as Window & {
+            __BG_TEST_HARNESS__?: {
+                command?: {
+                    dispatch?: (command: unknown) => Promise<void> | void;
+                };
+            };
+        }).__BG_TEST_HARNESS__;
+        if (typeof harness?.command?.dispatch !== 'function') {
+            throw new Error('TestHarness command.dispatch is not available');
         }
 
-        dispatch({
+        await harness.command.dispatch({
             type: 'CHEAT_DEAL_DAMAGE',
+            playerId: '0',
             payload: {
                 targetId: id,
                 amount: value,

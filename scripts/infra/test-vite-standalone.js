@@ -19,7 +19,7 @@ console.log('工作目录:', process.cwd());
 const vite = spawn(process.execPath, [
   '--max-old-space-size=4096',
   'node_modules/vite/bin/vite.js',
-  '--port', '4173',
+  '--port', '4273',
   '--host', '0.0.0.0'
 ], {
   stdio: 'inherit',

@@ -5,8 +5,15 @@
  * 使用 TestHarness 直接注入状态，跳过派系选择
  */
 
-import { test, expect } from '@playwright/test';
-import type { GameTestContext as __ThreeAxeFrameworkMarker } from '../framework';
+import { test, expect } from '../framework';
+import { 
+    initContext, 
+    waitForTestHarness, 
+    createGuestId,
+    getGameServerBaseURL,
+    seedMatchCredentials
+} from '../helpers/common';
+
 
 type __ThreeAxeGameMarker = {
   openTestGame: (gameId: string) => Promise<void>;
@@ -18,14 +25,6 @@ const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
   await game.setupScene({ gameId: 'smashup' });
 };
 void __ensureThreeAxesMarker;
-
-import { 
-    initContext, 
-    waitForTestHarness, 
-    createGuestId,
-    getGameServerBaseURL,
-    seedMatchCredentials
-} from '../helpers/common';
 
 test.describe('远古之物 - 消灭两个己方随从（多选）', () => {
     test('选择消灭时应显示多选界面，选择2个随从后确认', async ({ browser }) => {
@@ -103,7 +102,7 @@ test.describe('远古之物 - 消灭两个己方随从（多选）', () => {
         // 等待第一个选择：消灭 vs 放牌库底
         await page.waitForFunction(
             () => {
-                const state = (window as any).__BG_STATE__;
+                const state = (window as any).__BG_TEST_HARNESS__?.state?.get?.();
                 return state?.sys?.interaction?.current?.data?.sourceId === 'elder_thing_elder_thing_choice';
             },
             { timeout: 5000 }
@@ -115,7 +114,7 @@ test.describe('远古之物 - 消灭两个己方随从（多选）', () => {
         // 等待多选界面
         await page.waitForFunction(
             () => {
-                const state = (window as any).__BG_STATE__;
+                const state = (window as any).__BG_TEST_HARNESS__?.state?.get?.();
                 return state?.sys?.interaction?.current?.data?.sourceId === 'elder_thing_elder_thing_destroy_select';
             },
             { timeout: 5000 }
@@ -123,7 +122,7 @@ test.describe('远古之物 - 消灭两个己方随从（多选）', () => {
 
         // 验证显示了3个选项（排除远古之物自己）
         const optionCount = await page.evaluate(() => {
-            const state = (window as any).__BG_STATE__;
+            const state = (window as any).__BG_TEST_HARNESS__?.state?.get?.();
             return state?.sys?.interaction?.current?.data?.options?.length || 0;
         });
         expect(optionCount).toBe(3);
@@ -148,13 +147,13 @@ test.describe('远古之物 - 消灭两个己方随从（多选）', () => {
 
         // 验证随从被消灭（只剩2个）
         await page.waitForFunction(() => {
-            const state = (window as any).__BG_STATE__;
+            const state = (window as any).__BG_TEST_HARNESS__?.state?.get?.();
             const base = state?.bases?.[0];
             return base?.minions?.length === 2;
         }, { timeout: 5000 });
 
         const finalMinions = await page.evaluate(() => {
-            const state = (window as any).__BG_STATE__;
+            const state = (window as any).__BG_TEST_HARNESS__?.state?.get?.();
             return state.bases[0].minions.map((m: any) => m.uid);
         });
 
@@ -238,7 +237,7 @@ test.describe('远古之物 - 消灭两个己方随从（多选）', () => {
         // 等待选择
         await page.waitForFunction(
             () => {
-                const state = (window as any).__BG_STATE__;
+                const state = (window as any).__BG_TEST_HARNESS__?.state?.get?.();
                 return state?.sys?.interaction?.current?.data?.sourceId === 'elder_thing_elder_thing_choice';
             },
             { timeout: 5000 }
@@ -249,13 +248,13 @@ test.describe('远古之物 - 消灭两个己方随从（多选）', () => {
 
         // 应该直接消灭，不显示多选界面
         await page.waitForFunction(() => {
-            const state = (window as any).__BG_STATE__;
+            const state = (window as any).__BG_TEST_HARNESS__?.state?.get?.();
             const base = state?.bases?.[0];
             return base?.minions?.length === 1; // 只剩远古之物
         }, { timeout: 5000 });
 
         const finalMinions = await page.evaluate(() => {
-            const state = (window as any).__BG_STATE__;
+            const state = (window as any).__BG_TEST_HARNESS__?.state?.get?.();
             return state.bases[0].minions.map((m: any) => m.uid);
         });
 

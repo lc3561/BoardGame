@@ -52,6 +52,7 @@ type StagecoachCardChoice = {
     uid: string;
     defId: string;
     baseIndex: number;
+    baseDefId: string;
     ownerId?: PlayerId;
     trueOwnerId?: PlayerId;
 };
@@ -659,6 +660,7 @@ const handleStagecoachSource = (state: MatchState<SmashUpCore>, playerId: string
                 uid: card.uid,
                 defId: card.defId,
                 baseIndex: card.baseIndex,
+                baseDefId: card.baseDefId,
                 ownerId: card.ownerId,
                 trueOwnerId: card.trueOwnerId,
             },
@@ -896,6 +898,7 @@ function collectStagecoachCardsOnBase(
             uid: minion.uid,
             defId: minion.defId,
             baseIndex,
+            baseDefId: base.defId,
             label: getCardDef(minion.defId)?.name ?? minion.defId,
         }));
 
@@ -906,6 +909,7 @@ function collectStagecoachCardsOnBase(
             uid: titan.uid,
             defId: titan.defId,
             baseIndex,
+            baseDefId: base.defId,
             label: getCardDef(titan.defId)?.name ?? titan.defId,
         }));
 
@@ -916,6 +920,7 @@ function collectStagecoachCardsOnBase(
             uid: action.uid,
             defId: action.defId,
             baseIndex,
+            baseDefId: base.defId,
             ownerId: action.ownerId,
             label: `${getCardDef(action.defId)?.name ?? action.defId}（持续行动）`,
         }));
@@ -927,6 +932,7 @@ function collectStagecoachCardsOnBase(
             uid: card.uid,
             defId: card.defId,
             baseIndex,
+            baseDefId: base.defId,
             trueOwnerId: card.trueOwnerId,
             label: `${getCardDef(card.defId)?.name ?? card.defId}（埋葬）`,
         }));

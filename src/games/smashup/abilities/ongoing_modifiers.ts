@@ -8,7 +8,7 @@
 import { registerPowerModifier, registerOngoingPowerModifier, registerBasePowerModifier, registerBreakpointModifier } from '../domain/ongoingModifiers';
 import type { PowerModifierContext } from '../domain/ongoingModifiers';
 import type { MinionOnBase, SmashUpCore } from '../domain/types';
-import { getBaseDef } from '../data/cards';
+import { getBaseDef, getCardDef } from '../data/cards';
 import { isMicrobot } from '../domain/utils';
 import type { PlayerId } from '../../../engine/types';
 import { registerKillerPlantModifiers as registerKillerPlantAbilitiesModifiers } from './killer_plants';
@@ -258,6 +258,48 @@ function registerAncientEgyptiansModifiers(): void {
 
     registerOngoingPowerModifier('ancient_egyptians_ancient_curse', 'minion', 'self', -2);
 }
+
+function registerSkeletonsModifiers(): void {
+    // 守墓人：你在此基地每有一张埋葬牌，本随从 +1 力量
+    registerPowerModifier('skeletons_gravetender', (ctx: PowerModifierContext) => {
+        if (!matchesDefId(ctx.minion, 'skeletons_gravetender')) return 0;
+        return (ctx.base.buriedCards ?? []).filter(card => card.controllerId === ctx.minion.controller).length;
+    });
+
+    // 白骨领主：你在此基地每有一个力量 3 或以下随从，本随从 +1 力量
+    registerPowerModifier('skeletons_lord_of_bones', (ctx: PowerModifierContext) => {
+        if (!matchesDefId(ctx.minion, 'skeletons_lord_of_bones')) return 0;
+        return ctx.base.minions.filter((minion) => {
+            if (minion.controller !== ctx.minion.controller) return false;
+            const def = getCardDef(minion.defId);
+            return !!def && def.type === 'minion' && def.power <= 3;
+        }).length;
+    });
+}
+
+function registerMermaidsModifiers(): void {
+    // 海妖：在你的回合中，此基地其他玩家的随从力量 -1
+    registerPowerModifier('mermaids_siren', (ctx: PowerModifierContext) => {
+        const currentPlayerId = ctx.state.turnOrder[ctx.state.currentPlayerIndex];
+        if (!currentPlayerId) return 0;
+        if (ctx.minion.controller === currentPlayerId) return 0;
+        const sirenCount = ctx.base.minions.filter(minion =>
+            minion.controller === currentPlayerId && matchesDefId(minion, 'mermaids_siren'),
+        ).length;
+        return sirenCount > 0 ? -sirenCount : 0;
+    });
+
+    // 诱惑者：你在此基地每有一个其他随从，本随从力量 +1
+    registerPowerModifier('mermaids_temptress', (ctx: PowerModifierContext) => {
+        if (!matchesDefId(ctx.minion, 'mermaids_temptress')) return 0;
+        return ctx.base.minions.filter(minion => minion.controller === ctx.minion.controller && minion.uid !== ctx.minion.uid).length;
+    });
+}
+
+function registerWorldChampsModifiers(): void {
+    // 蛊惑附体：附着随从 +2 力量
+    registerOngoingPowerModifier('world_champs_bewitched', 'minion', 'self', 2);
+}
 // ============================================================================
 // 基地持续力量修正
 // ============================================================================
@@ -295,5 +337,8 @@ export function registerAllOngoingModifiers(): void {
     registerElderThingModifiers();
     registerVampireModifiers();
     registerAncientEgyptiansModifiers();
+    registerSkeletonsModifiers();
+    registerMermaidsModifiers();
+    registerWorldChampsModifiers();
     registerWerewolfModifiers();
 }

@@ -7,8 +7,13 @@
  * 3. 选中后基地高亮 → 点击基地部署
  */
 
-import { test, expect, type Page } from '@playwright/test';
-import type { GameTestContext as __ThreeAxeFrameworkMarker } from '../framework';
+import type { Page } from '@playwright/test';
+import { test, expect } from '../framework';
+import {
+    initContext,
+    dismissViteOverlay,
+} from '../helpers/common';
+
 
 type __ThreeAxeGameMarker = {
   openTestGame: (gameId: string) => Promise<void>;
@@ -20,11 +25,6 @@ const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
   await game.setupScene({ gameId: 'smashup' });
 };
 void __ensureThreeAxesMarker;
-
-import {
-    initContext,
-    dismissViteOverlay,
-} from '../helpers/common';
 
 // ============================================================================
 // 工具函数
@@ -78,7 +78,7 @@ const applyCoreStateDirect = async (page: Page, coreState: unknown) => {
 };
 
 const gotoLocalSmashUp = async (page: Page) => {
-    await page.goto('/play/smashup/local', { waitUntil: 'domcontentloaded' });
+    await page.goto('/play/smashup', { waitUntil: 'domcontentloaded' });
     await dismissViteOverlay(page);
     await page.waitForFunction(
         () => {

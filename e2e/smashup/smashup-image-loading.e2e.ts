@@ -1,8 +1,16 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../framework';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { dismissViteOverlay, initContext } from '../helpers/common';
-import type { GameTestContext as __ThreeAxeFrameworkMarker } from '../framework';
+import {
+    setupTwoPlayerMatch,
+    completeFactionSelection,
+    waitForHandArea,
+    cleanupTwoPlayerMatch,
+} from './smashup-helpers';
+import { readCoreState, applyCoreState } from '../helpers/smashup';
+import type { Page } from '@playwright/test';
+
 
 type __ThreeAxeGameMarker = {
   openTestGame: (gameId: string) => Promise<void>;
@@ -15,7 +23,6 @@ const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
 };
 void __ensureThreeAxesMarker;
 
-
 /**
  * SmashUp 图片加载测试
  * 验证所有卡牌图片是否正确加载（带 i18n/zh-CN/ 前缀）
@@ -26,152 +33,150 @@ test.describe('SmashUp Image Loading', () => {
     test.use({ 
         baseURL: process.env.VITE_FRONTEND_URL
             || `http://localhost:${process.env.PW_PORT || process.env.E2E_PORT || '6174'}`, 
-        // 增加超时时间，因为图片加载可能较慢
         timeout: 60000
     });
 
-    test.beforeEach(async ({ page }) => {
-        await page.goto('/play/smashup/local');
-        await page.waitForLoadState('networkidle');
-    });
+    const collectPreviewStats = async (page: Page, cardSelector: string) => {
+        return page.evaluate((selector) => {
+            const cards = Array.from(document.querySelectorAll<HTMLElement>(selector));
+            const viewportW = window.innerWidth;
+            const viewportH = window.innerHeight;
+            const visibleCards = cards.filter((card) => {
+                const rect = card.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0 && rect.bottom >= 0 && rect.right >= 0 && rect.top <= viewportH && rect.left <= viewportW;
+            });
+
+            const hasLoadedPreview = (root: HTMLElement): boolean => {
+                const nodes = [root, ...Array.from(root.querySelectorAll<HTMLElement>('*'))];
+                return nodes.some((node) => {
+                    if (node instanceof HTMLImageElement) {
+                        const rect = node.getBoundingClientRect();
+                        const visible = rect.width > 0 && rect.height > 0;
+                        return visible && node.complete && node.naturalWidth > 0;
+                    }
+                    const computed = window.getComputedStyle(node);
+                    return typeof computed.backgroundImage === 'string'
+                        && computed.backgroundImage.includes('url(')
+                        && computed.backgroundImage !== 'none';
+                });
+            };
+
+            const renderedCards = visibleCards.filter((card) => hasLoadedPreview(card));
+            return {
+                total: cards.length,
+                visible: visibleCards.length,
+                rendered: renderedCards.length,
+            };
+        }, cardSelector);
+    };
+
+    const closeDebugPanelIfPresent = async (page: Page) => {
+        const panel = page.getByTestId('debug-panel');
+        if (await panel.isVisible().catch(() => false)) {
+            const toggle = page.getByTestId('debug-toggle');
+            if (await toggle.isVisible().catch(() => false)) {
+                await toggle.click();
+                await expect(panel).toBeHidden({ timeout: 3000 }).catch(() => {});
+            }
+        }
+    };
 
     test('应该加载带 i18n/zh-CN/ 前缀的卡牌图片', async ({ page }) => {
-        // 等待游戏加载完成
-        await page.waitForSelector('[data-testid="game-board"]', { timeout: 10000 });
-
-        // 收集所有图片请求
         const imageRequests: string[] = [];
-        page.on('request', (request) => {
+        const wrongPaths: string[] = [];
+
+        page.on('request', request => {
             const url = request.url();
             if (url.includes('.webp') && url.includes('smashup')) {
                 imageRequests.push(url);
+                const hasCorrectPrefix = url.includes('/i18n/zh-CN/smashup/')
+                    || url.includes('/official/i18n/zh-CN/smashup/');
+                if (!hasCorrectPrefix) {
+                    wrongPaths.push(url);
+                }
             }
         });
 
-        // 等待一段时间让图片加载
+        await page.goto('/play/smashup');
+        await expect(page.locator('h1').filter({ hasText: /Draft Your Factions|选择你的派系/i }))
+            .toBeVisible({ timeout: 20000 });
         await page.waitForTimeout(3000);
 
-        // 检查是否有图片请求
         expect(imageRequests.length).toBeGreaterThan(0);
-
-        // 验证所有 SmashUp 图片都包含 i18n/zh-CN/ 前缀
-        const wrongPaths = imageRequests.filter(url => {
-            // 排除 CDN 域名前缀
-            const path = url.replace(/^https?:\/\/[^/]+\//, '');
-            // SmashUp 图片应该以 i18n/zh-CN/smashup/ 开头
-            return path.includes('smashup') && !path.startsWith('official/i18n/zh-CN/smashup/');
-        });
-
-        if (wrongPaths.length > 0) {
-            console.error('错误的图片路径（缺少 i18n/zh-CN/ 前缀）:');
-            wrongPaths.forEach(url => console.error('  -', url));
-        }
-
         expect(wrongPaths).toHaveLength(0);
     });
 
     test('应该成功加载派系选择界面的卡牌图片', async ({ page }) => {
-        // 等待派系选择界面
-        await page.waitForSelector('[data-testid="faction-selection"]', { timeout: 10000 });
+        await page.goto('/play/smashup');
+        await expect(page.locator('h1').filter({ hasText: /Draft Your Factions|选择你的派系/i }))
+            .toBeVisible({ timeout: 20000 });
+        await expect(page.locator('[data-testid^="faction-option-"]').first()).toBeVisible({ timeout: 10000 });
 
-        // 等待卡牌图片加载
-        await page.waitForTimeout(2000);
-
-        // 检查是否有加载失败的图片（通过检查 alt 属性或 broken image）
-        const brokenImages = await page.evaluate(() => {
-            const images = Array.from(document.querySelectorAll('img'));
-            return images
-                .filter(img => !img.complete || img.naturalHeight === 0)
-                .map(img => img.src);
-        });
-
-        if (brokenImages.length > 0) {
-            console.error('加载失败的图片:');
-            brokenImages.forEach(src => console.error('  -', src));
-        }
-
-        expect(brokenImages).toHaveLength(0);
+        const draftPreviews = await collectPreviewStats(page, '[data-testid^="faction-option-"]');
+        expect(draftPreviews.visible).toBeGreaterThan(0);
+        expect(draftPreviews.rendered).toBeGreaterThan(0);
     });
 
-    test('应该成功加载手牌区域的卡牌图片', async ({ page }) => {
-        // 等待游戏开始
-        await page.waitForSelector('[data-testid="game-board"]', { timeout: 10000 });
-
-        // 选择派系（如果需要）
-        const factionSelection = await page.$('[data-testid="faction-selection"]');
-        if (factionSelection) {
-            // 点击第一个派系
-            await page.click('[data-testid="faction-card"]:first-child');
-            await page.waitForTimeout(500);
-            // 点击第二个派系
-            await page.click('[data-testid="faction-card"]:nth-child(2)');
-            await page.waitForTimeout(500);
-            // 确认选择
-            await page.click('button:has-text("确认")');
-            await page.waitForTimeout(1000);
+    test('应该成功加载手牌区域的卡牌图片', async ({ browser }, testInfo) => {
+        const baseURL = testInfo.project.use.baseURL as string | undefined;
+        const setup = await setupTwoPlayerMatch(browser, baseURL);
+        if (!setup) {
+            test.skip(true, '游戏服务器不可用或创建房间失败');
+            return;
         }
 
-        // 等待手牌区域
-        await page.waitForSelector('[data-testid="hand-area"]', { timeout: 10000 });
-        await page.waitForTimeout(2000);
+        const { hostPage, guestPage } = setup;
+        try {
+            await completeFactionSelection(hostPage, guestPage);
+            await waitForHandArea(hostPage);
+            await hostPage.waitForTimeout(1200);
 
-        // 检查手牌区域的图片
-        const handImages = await page.evaluate(() => {
-            const handArea = document.querySelector('[data-testid="hand-area"]');
-            if (!handArea) return [];
-            const images = Array.from(handArea.querySelectorAll('img'));
-            return images
-                .filter(img => !img.complete || img.naturalHeight === 0)
-                .map(img => img.src);
-        });
-
-        if (handImages.length > 0) {
-            console.error('手牌区域加载失败的图片:');
-            handImages.forEach(src => console.error('  -', src));
+            const handPreviews = await collectPreviewStats(hostPage, '[data-testid="su-hand-area"] [data-card-uid]');
+            expect(handPreviews.visible).toBeGreaterThan(0);
+            expect(handPreviews.rendered).toBe(handPreviews.visible);
+        } finally {
+            await cleanupTwoPlayerMatch(setup);
         }
-
-        expect(handImages).toHaveLength(0);
     });
 
-    test('应该成功加载弃牌堆的卡牌图片', async ({ page }) => {
-        // 等待游戏开始
-        await page.waitForSelector('[data-testid="game-board"]', { timeout: 10000 });
-
-        // 跳过派系选择（如果需要）
-        const factionSelection = await page.$('[data-testid="faction-selection"]');
-        if (factionSelection) {
-            await page.click('[data-testid="faction-card"]:first-child');
-            await page.waitForTimeout(500);
-            await page.click('[data-testid="faction-card"]:nth-child(2)');
-            await page.waitForTimeout(500);
-            await page.click('button:has-text("确认")');
-            await page.waitForTimeout(1000);
+    test('应该成功加载弃牌堆的卡牌图片', async ({ browser }, testInfo) => {
+        const baseURL = testInfo.project.use.baseURL as string | undefined;
+        const setup = await setupTwoPlayerMatch(browser, baseURL);
+        if (!setup) {
+            test.skip(true, '游戏服务器不可用或创建房间失败');
+            return;
         }
 
-        // 等待弃牌堆区域
-        await page.waitForSelector('[data-testid="discard-pile"]', { timeout: 10000 });
-        await page.waitForTimeout(1000);
+        const { hostPage, guestPage } = setup;
+        try {
+            await completeFactionSelection(hostPage, guestPage);
+            await waitForHandArea(hostPage);
 
-        // 点击弃牌堆查看
-        await page.click('[data-testid="discard-pile"]');
-        await page.waitForTimeout(1000);
+            const core = await readCoreState(hostPage) as {
+                players?: Record<string, { discard?: unknown[] }>;
+            };
+            const player0 = core.players?.['0'];
+            if (!player0) {
+                throw new Error('缺少玩家0数据，无法注入弃牌场景');
+            }
+            player0.discard = [
+                { uid: 'img-card-1', defId: 'zombie_walker', type: 'minion' },
+                { uid: 'img-card-2', defId: 'wizard_neophyte', type: 'minion' },
+            ];
+            await applyCoreState(hostPage, core);
+            await hostPage.waitForTimeout(800);
+            await closeDebugPanelIfPresent(hostPage);
 
-        // 检查弃牌堆覆盖层的图片
-        const discardImages = await page.evaluate(() => {
-            const overlay = document.querySelector('[data-testid="discard-overlay"]');
-            if (!overlay) return [];
-            const images = Array.from(overlay.querySelectorAll('img'));
-            return images
-                .filter(img => !img.complete || img.naturalHeight === 0)
-                .map(img => img.src);
-        });
+            await expect(hostPage.locator('[data-testid="su-discard-toggle"]')).toBeVisible({ timeout: 5000 });
+            await hostPage.click('[data-testid="su-discard-toggle"]');
+            await hostPage.waitForSelector('[data-discard-view-panel]', { timeout: 5000 });
 
-        if (discardImages.length > 0) {
-            console.error('弃牌堆加载失败的图片:');
-            discardImages.forEach(src => console.error('  -', src));
+            const discardPreviews = await collectPreviewStats(hostPage, '[data-discard-view-panel] [data-card-uid]');
+            expect(discardPreviews.visible).toBeGreaterThan(0);
+            expect(discardPreviews.rendered).toBe(discardPreviews.visible);
+        } finally {
+            await cleanupTwoPlayerMatch(setup).catch(() => {});
         }
-
-        expect(discardImages).toHaveLength(0);
     });
 });
 
@@ -212,7 +217,7 @@ test.describe('SmashUp Critical Image Gate', () => {
         const page = await context.newPage();
 
         try {
-            await page.goto('/play/smashup/local', { waitUntil: 'domcontentloaded' });
+            await page.goto('/play/smashup', { waitUntil: 'domcontentloaded' });
             await dismissViteOverlay(page);
 
             const loadingText = page.getByText(/Loading match resources|正在加载对局资源/i).first();

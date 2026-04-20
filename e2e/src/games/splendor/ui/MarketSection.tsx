@@ -1,6 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { getLocalAssetPath } from '../../../core';
+import { OptimizedImage } from '../../../components/common/media/OptimizedImage';
 import { SPLENDOR_DECK_IMAGE_BY_TIER } from '../assets';
 import type { CardTier, SplendorCore } from '../domain';
 import { CardTile } from './CardTile';
@@ -110,8 +110,8 @@ export function MarketSection({
                         deckSlot={(
                             <div className="group w-[8rem] rounded-xl border border-white/10 bg-white/5 p-1.5 shadow-lg transition-transform duration-200 hover:z-20 hover:scale-[1.08]" data-tutorial-id={`sp-market-tier-${tier}`}>
                                 <div className="relative aspect-[0.7] w-full overflow-hidden rounded-lg border border-white/10 bg-black/20">
-                                    <img
-                                        src={getLocalAssetPath(SPLENDOR_DECK_IMAGE_BY_TIER[tier])}
+                                    <OptimizedImage
+                                        src={SPLENDOR_DECK_IMAGE_BY_TIER[tier]}
                                         alt={`Level ${tier}`}
                                         className="absolute inset-0 h-full w-full object-cover"
                                     />

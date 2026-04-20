@@ -1,11 +1,20 @@
 /**
- * 大杀四方 - 弃牌堆闪烁修复验证
+ * 大杀四方 - 弃牌堆闪烁修复验证（在线对局版）
  *
- * 验证场景：当随从额度已满且无额外出牌能力时，弃牌堆不应闪烁
+ * 验证场景：
+ * 1. 随从额度已满且无额外出牌能力时，弃牌堆不应闪烁
+ * 2. 随从额度已满但存在基地限定额度且弃牌有可打出卡牌时，弃牌堆应闪烁
  */
 
-import { test, expect } from '@playwright/test';
-import type { GameTestContext as __ThreeAxeFrameworkMarker } from '../framework';
+import { test, expect } from '../framework';
+import {
+    setupTwoPlayerMatch,
+    completeFactionSelection,
+    waitForHandArea,
+    cleanupTwoPlayerMatch,
+} from './smashup-helpers';
+import { readCoreState, applyCoreState } from '../helpers/smashup';
+
 
 type __ThreeAxeGameMarker = {
   openTestGame: (gameId: string) => Promise<void>;
@@ -18,125 +27,115 @@ const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
 };
 void __ensureThreeAxesMarker;
 
+type SmashUpCoreState = {
+    turnOrder?: string[];
+    currentPlayerIndex?: number;
+    players?: Record<string, {
+        minionsPlayed?: number;
+        minionLimit?: number;
+        baseLimitedMinionQuota?: Record<string, number>;
+        discard?: unknown[];
+    }>;
+};
+
+const setupOnlineSmashUp = async (
+    browser: Parameters<typeof setupTwoPlayerMatch>[0],
+    baseURL: string | undefined,
+    hostFactions: [string, string],
+    guestFactions: [string, string] = ['ninjas', 'pirates'],
+) => {
+    const setup = await setupTwoPlayerMatch(browser, baseURL);
+    if (!setup) return null;
+
+    const { hostPage, guestPage } = setup;
+    await completeFactionSelection(hostPage, guestPage, { hostFactions, guestFactions });
+    await waitForHandArea(hostPage);
+    return setup;
+};
+
+const applyDiscardScene = async (
+    page: Parameters<typeof readCoreState>[0],
+    updater: (state: SmashUpCoreState, currentPid: string) => void,
+) => {
+    const state = await readCoreState(page) as SmashUpCoreState;
+    const turnOrder = state.turnOrder ?? [];
+    const currentPid = turnOrder[state.currentPlayerIndex ?? 0] ?? '0';
+    const player = state.players?.[currentPid];
+    if (!player) {
+        throw new Error(`未找到当前玩家 ${currentPid}，无法注入弃牌场景`);
+    }
+    updater(state, currentPid);
+    await applyCoreState(page, state);
+    await page.waitForTimeout(500);
+};
 
 test.describe('SmashUp - 弃牌堆闪烁修复', () => {
-    test('随从额度已满且无额外出牌能力时，弃牌堆不闪烁', async ({ page }) => {
-        // 进入本地模式
-        await page.goto('/play/smashup/local');
-        await page.waitForLoadState('networkidle');
+    test('随从额度已满且无额外出牌能力时，弃牌堆不闪烁', async ({ browser }, testInfo) => {
+        const baseURL = testInfo.project.use.baseURL as string | undefined;
+        const setup = await setupOnlineSmashUp(browser, baseURL, ['pirates', 'aliens']);
+        if (!setup) {
+            test.skip(true, '游戏服务器不可用或创建房间失败');
+            return;
+        }
 
-        // 等待派系选择界面
-        await page.waitForSelector('[data-tutorial-id="su-faction-select"]', { timeout: 10000 });
+        const { hostPage } = setup;
+        try {
+            await applyDiscardScene(hostPage, (state, currentPid) => {
+                const player = state.players![currentPid]!;
+                player.minionsPlayed = 1;
+                player.minionLimit = 1;
+                player.discard = [
+                    { uid: 'test-minion-1', defId: 'pirate_first_mate', type: 'minion', owner: currentPid },
+                ];
+            });
 
-        // 选择派系（非僵尸/幽灵派系，避免弃牌堆出牌能力）
-        const factionCards = page.locator('[data-faction-card]');
-        await factionCards.nth(0).click(); // 选择第一个派系
-        await factionCards.nth(1).click(); // 选择第二个派系
+            const discardZone = hostPage.locator('[data-discard-toggle]');
+            await expect(discardZone).toBeVisible();
 
-        // 点击确认按钮
-        await page.locator('button:has-text("确认")').click();
+            const discardLabel = discardZone.locator('div').filter({ hasText: /弃牌/ }).last();
+            const labelClasses = await discardLabel.getAttribute('class');
+            expect(labelClasses).not.toContain('bg-amber-500');
+            expect(labelClasses).not.toContain('animate-pulse');
 
-        // 等待游戏开始
-        await page.waitForSelector('[data-tutorial-id="su-base-area"]', { timeout: 10000 });
-
-        // 使用调试面板注入状态：随从额度已满，弃牌堆有随从，但无额外出牌能力
-        await page.evaluate(() => {
-            const state = (window as any).__BG_STATE__();
-            const dispatch = (window as any).__BG_DISPATCH__;
-            if (!state || !dispatch) return;
-
-            const currentPid = state.core.turnOrder[state.core.currentPlayerIndex];
-            const player = state.core.players[currentPid];
-
-            // 修改状态：随从额度已满，弃牌堆有随从
-            player.minionsPlayed = 1;
-            player.minionLimit = 1;
-            player.discard = [
-                { uid: 'test-minion-1', defId: 'pirate_first_mate', type: 'minion', owner: currentPid },
-            ];
-
-            // 应用状态
-            dispatch('SYS_APPLY_STATE', { state: state.core });
-        });
-
-        // 等待状态应用
-        await page.waitForTimeout(500);
-
-        // 检查弃牌堆是否闪烁（通过检查是否有 animate-pulse 或 animate-ping 类）
-        const discardZone = page.locator('[data-discard-toggle]');
-        await expect(discardZone).toBeVisible();
-
-        // 检查弃牌堆标签是否有闪烁动画（amber背景 + animate-pulse）
-        const discardLabel = discardZone.locator('div').filter({ hasText: /弃牌/ }).last();
-        const labelClasses = await discardLabel.getAttribute('class');
-        
-        // 不应该有 amber 背景和 animate-pulse（表示没有可打出的卡）
-        expect(labelClasses).not.toContain('bg-amber-500');
-        expect(labelClasses).not.toContain('animate-pulse');
-
-        // 检查弃牌堆外围是否有闪烁光环（通过检查父容器内是否有 animate-ping 元素）
-        const glowElements = await discardZone.locator('div.animate-ping').count();
-        expect(glowElements).toBe(0);
+            const glowElements = await discardZone.locator('div.animate-ping').count();
+            expect(glowElements).toBe(0);
+        } finally {
+            await cleanupTwoPlayerMatch(setup);
+        }
     });
 
-    test('随从额度已满但有基地限定额度时，弃牌堆应该闪烁（如果有可打出的卡）', async ({ page }) => {
-        // 进入本地模式
-        await page.goto('/play/smashup/local');
-        await page.waitForLoadState('networkidle');
+    test('随从额度已满但有基地限定额度时，弃牌堆应该闪烁（有可打出卡）', async ({ browser }, testInfo) => {
+        const baseURL = testInfo.project.use.baseURL as string | undefined;
+        const setup = await setupOnlineSmashUp(browser, baseURL, ['zombies', 'pirates']);
+        if (!setup) {
+            test.skip(true, '游戏服务器不可用或创建房间失败');
+            return;
+        }
 
-        // 等待派系选择界面
-        await page.waitForSelector('[data-tutorial-id="su-faction-select"]', { timeout: 10000 });
+        const { hostPage } = setup;
+        try {
+            await applyDiscardScene(hostPage, (state, currentPid) => {
+                const player = state.players![currentPid]!;
+                player.minionsPlayed = 1;
+                player.minionLimit = 1;
+                player.baseLimitedMinionQuota = { 0: 1 };
+                player.discard = [
+                    { uid: 'test-tz-1', defId: 'zombie_tenacious_z', type: 'minion', owner: currentPid },
+                ];
+            });
 
-        // 选择包含僵尸派系（有弃牌堆出牌能力）
-        const factionCards = page.locator('[data-faction-card]');
-        const zombieFaction = factionCards.filter({ has: page.locator('text=/僵尸|Zombie/i') }).first();
-        await zombieFaction.click();
-        await factionCards.nth(1).click(); // 选择第二个派系
+            const discardZone = hostPage.locator('[data-discard-toggle]');
+            await expect(discardZone).toBeVisible();
 
-        // 点击确认按钮
-        await page.locator('button:has-text("确认")').click();
+            const discardLabel = discardZone.locator('div').filter({ hasText: /弃牌/ }).last();
+            const labelClasses = await discardLabel.getAttribute('class');
+            expect(labelClasses).toContain('bg-amber-500');
+            expect(labelClasses).toContain('animate-pulse');
 
-        // 等待游戏开始
-        await page.waitForSelector('[data-tutorial-id="su-base-area"]', { timeout: 10000 });
-
-        // 使用调试面板注入状态：随从额度已满，有基地限定额度，弃牌堆有顽强丧尸
-        await page.evaluate(() => {
-            const state = (window as any).__BG_STATE__();
-            const dispatch = (window as any).__BG_DISPATCH__;
-            if (!state || !dispatch) return;
-
-            const currentPid = state.core.turnOrder[state.core.currentPlayerIndex];
-            const player = state.core.players[currentPid];
-
-            // 修改状态：随从额度已满，有基地限定额度，弃牌堆有顽强丧尸
-            player.minionsPlayed = 1;
-            player.minionLimit = 1;
-            player.baseLimitedMinionQuota = { 0: 1 }; // 基地0有1个额外额度
-            player.discard = [
-                { uid: 'test-tz-1', defId: 'zombie_tenacious_z', type: 'minion', owner: currentPid },
-            ];
-
-            // 应用状态
-            dispatch('SYS_APPLY_STATE', { state: state.core });
-        });
-
-        // 等待状态应用
-        await page.waitForTimeout(500);
-
-        // 检查弃牌堆是否闪烁
-        const discardZone = page.locator('[data-discard-toggle]');
-        await expect(discardZone).toBeVisible();
-
-        // 检查弃牌堆标签是否有闪烁动画（amber背景 + animate-pulse）
-        const discardLabel = discardZone.locator('div').filter({ hasText: /弃牌/ }).last();
-        const labelClasses = await discardLabel.getAttribute('class');
-        
-        // 应该有 amber 背景和 animate-pulse（表示有可打出的卡）
-        expect(labelClasses).toContain('bg-amber-500');
-        expect(labelClasses).toContain('animate-pulse');
-
-        // 检查弃牌堆外围是否有闪烁光环
-        const glowElements = await discardZone.locator('div.animate-ping').count();
-        expect(glowElements).toBeGreaterThan(0);
+            const glowElements = await discardZone.locator('div.animate-ping').count();
+            expect(glowElements).toBeGreaterThan(0);
+        } finally {
+            await cleanupTwoPlayerMatch(setup);
+        }
     });
 });

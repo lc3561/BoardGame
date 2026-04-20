@@ -54,6 +54,34 @@ interface HandAreaProps {
   className?: string;
 }
 
+type MagicPhaseClickRoute =
+  | 'delegate-to-onCardClick'
+  | 'blocked-by-interaction'
+  | null;
+
+interface ResolveMagicPhaseClickRouteParams {
+  phase: GamePhase;
+  isMyTurn: boolean;
+  cardType: Card['cardType'];
+  interactionBusy: boolean;
+  bloodSummonSelectingCard: boolean;
+  abilitySelectingCards: boolean;
+}
+
+export function resolveMagicPhaseClickRoute({
+  phase,
+  isMyTurn,
+  cardType,
+  interactionBusy,
+  bloodSummonSelectingCard,
+  abilitySelectingCards,
+}: ResolveMagicPhaseClickRouteParams): MagicPhaseClickRoute {
+  if (phase !== 'magic' || !isMyTurn) return null;
+  if (bloodSummonSelectingCard || abilitySelectingCards) return null;
+  if (cardType === 'event' && interactionBusy) return 'blocked-by-interaction';
+  return 'delegate-to-onCardClick';
+}
+
 function getCardCost(card: Card): number {
   if (card.cardType === 'unit') return (card as UnitCard).cost;
   if (card.cardType === 'event') return (card as EventCard).cost;
@@ -342,15 +370,32 @@ export const HandArea: React.FC<HandAreaProps> = ({
       return;
     }
 
-    if (phase === 'magic' && isMyTurn && card.cardType !== 'event') {
-      onCardClick?.(cardId);
-      return;
-    }
-
     if (abilitySelectingCards) {
       if (abilitySelectableCardIds.length > 0 && !abilitySelectableCardIds.includes(cardId)) {
         return;
       }
+      onCardClick?.(cardId);
+      return;
+    }
+
+    const magicPhaseClickRoute = resolveMagicPhaseClickRoute({
+      phase,
+      isMyTurn,
+      cardType: card.cardType,
+      interactionBusy,
+      bloodSummonSelectingCard,
+      abilitySelectingCards,
+    });
+    if (magicPhaseClickRoute === 'blocked-by-interaction') {
+      playDeniedSound();
+      showToast.warning(
+        t('handArea.interactionBusy', '请先完成当前操作'),
+        undefined,
+        { dedupeKey: 'summonerwars.interactionBusy' },
+      );
+      return;
+    }
+    if (magicPhaseClickRoute === 'delegate-to-onCardClick') {
       onCardClick?.(cardId);
       return;
     }
@@ -366,16 +411,6 @@ export const HandArea: React.FC<HandAreaProps> = ({
     }
 
     if (card.cardType === 'event' && isMyTurn) {
-      if (interactionBusy) {
-        playDeniedSound();
-        showToast.warning(
-          t('handArea.interactionBusy', '请先完成当前操作'),
-          undefined,
-          { dedupeKey: 'summonerwars.interactionBusy' },
-        );
-        return;
-      }
-
       const event = card as EventCard;
       if (event.playPhase === phase || event.playPhase === 'any') {
         if (requiresEventInteraction(cardId)) {

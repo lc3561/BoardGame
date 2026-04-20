@@ -1200,8 +1200,39 @@ describe('AI legal actions', () => {
         ]);
     });
 
-    it('本地 AI runner 应在 setup 阶段选择角色', async () => {
+    it('本地 AI runner 在真人未选角前不应抢先选角', async () => {
         const core = DiceThroneDomain.setup(['0', '1'], fixedRandom);
+        core.seatControllers = {
+            '0': { type: 'human' },
+            '1': { type: 'local-ai' },
+        };
+        const state: MatchState<DiceThroneCore> = {
+            core,
+            sys: {
+                phase: 'setup',
+                interaction: { queue: [] },
+            } as MatchState<DiceThroneCore>['sys'],
+        };
+
+        const resolution = await resolveNextLocalAiAction({
+            engineConfig,
+            state,
+            matchId: 'local:test',
+            seatControllers: {
+                '1': { type: 'local-ai' },
+            },
+        });
+
+        expect(resolution).toBeNull();
+    });
+
+    it('本地 AI runner 应在真人完成选角后再选择角色', async () => {
+        const core = DiceThroneDomain.setup(['0', '1'], fixedRandom);
+        core.selectedCharacters['0'] = 'monk';
+        core.seatControllers = {
+            '0': { type: 'human' },
+            '1': { type: 'local-ai' },
+        };
         const state: MatchState<DiceThroneCore> = {
             core,
             sys: {
@@ -1226,6 +1257,7 @@ describe('AI legal actions', () => {
         });
         const selectedCharacterId = (resolution?.action.commands[0]?.payload as { characterId?: string } | undefined)?.characterId;
         expect(DICETHRONE_CHARACTER_CATALOG.map((item) => item.id)).toContain(selectedCharacterId);
+        expect(selectedCharacterId).not.toBe('monk');
     });
 
     it('setup 阶段应避开已被其他玩家选走的角色', () => {
@@ -1491,7 +1523,7 @@ describe('AI legal actions', () => {
 
     it('本地 AI 在太极响应窗口应执行一次 token 后跳过响应，并正确关闭窗口', async () => {
         const random = createQueuedRandom([1, 1]);
-        let state = createHeroMatchup('monk', 'monk')(['0', '1'], random);
+        let state = createHeroMatchup('monk', 'paladin')(['0', '1'], random);
         state.core.players['0'].tokens.taiji = 2;
         state.core.pendingDamage = {
             id: 'dmg-ai-token',
@@ -1844,7 +1876,7 @@ describe('AI legal actions', () => {
     });
 
     it('本地 AI 在响应窗口但不是当前响应者时不应生成响应动作', async () => {
-        const state = createHeroMatchup('monk', 'monk')(['0', '1'], fixedRandom);
+        const state = createHeroMatchup('monk', 'paladin')(['0', '1'], fixedRandom);
         state.sys.phase = 'offensiveRoll';
         state.core.rollCount = 1;
         state.core.rollLimit = 3;
@@ -2282,6 +2314,54 @@ describe('AI legal actions', () => {
 
         expect(expertEvaluations.some((item) => (item.searchPriority ?? 0) > 0)).toBe(true);
         expect(expertEvaluations.some((item) => item.shortlisted)).toBe(true);
+    });
+
+    it('高动作密度下应启用 candidate loop 批次搜索，并产出 lookahead 前瞻贡献', async () => {
+        const state = createHeroMatchup('paladin', 'monk', (core) => {
+            const player = core.players['0'];
+            const uniqueDeckCards: typeof player.deck = [];
+            const seenIds = new Set<string>();
+            for (const card of player.deck) {
+                if (seenIds.has(card.id)) continue;
+                seenIds.add(card.id);
+                uniqueDeckCards.push(card);
+                if (uniqueDeckCards.length >= 9) break;
+            }
+            player.hand = uniqueDeckCards.map((card) => ({ ...card }));
+            player.deck = player.deck.filter((card) => !seenIds.has(card.id));
+            player.resources[RESOURCE_IDS.CP] = 99;
+        })(['0', '1'], fixedRandom);
+        state.sys.phase = 'main1';
+        state.core.activePlayerId = '0';
+
+        const expertContext = buildAiDecisionContext({
+            gameId: 'dicethrone',
+            matchId: 'probe-candidate-loop-density',
+            playerId: '0',
+            visibleState: state,
+            rulesVersion: null,
+            decisionBudgetMs: 250,
+            source: 'local',
+            seatController: { type: 'local-ai', difficulty: 'expert' },
+        });
+
+        expect(expertContext.legalActions.length).toBeGreaterThan(12);
+
+        const expertDecision = await diceThroneAiRuntime.localPolicies.baseline.decide(expertContext);
+        const expertEvaluations = (expertDecision?.providerMetadata?.evaluations ?? []) as Array<{
+            searched?: boolean;
+            contributions: Array<{ scorerId: string }>;
+        }>;
+
+        expect(expertEvaluations.length).toBe(expertContext.legalActions.length);
+        expect(expertEvaluations.some((item) => item.searched === true)).toBe(true);
+        expect(expertEvaluations.some((item) => item.searched === false)).toBe(true);
+        expect(
+            expertEvaluations.some((item) => item.contributions.some((contribution) => contribution.scorerId === 'lookahead')),
+        ).toBe(true);
+        expect(
+            expertEvaluations.some((item) => item.contributions.some((contribution) => contribution.scorerId === 'relative-utility')),
+        ).toBe(true);
     });
 
     it('专家难度不会把无 projection 模型的骰面微操作抬进 strategy shortlist', async () => {

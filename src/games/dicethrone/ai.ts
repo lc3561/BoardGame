@@ -1336,8 +1336,35 @@ const buildSetupActions = (state: DiceThroneState, playerId: PlayerId): AiLegalA
     const hasSelectedCharacter = typeof selectedCharacter === 'string' && selectedCharacter !== 'unselected';
     const isHost = playerId === state.core.hostPlayerId;
     const isReady = state.core.readyPlayers[playerId] === true;
+    const aiSeatIdSet = new Set<PlayerId>(
+        Array.isArray((state.sys.undo as { aiSeatIds?: unknown } | undefined)?.aiSeatIds)
+            ? ((state.sys.undo as { aiSeatIds?: unknown }).aiSeatIds as unknown[])
+                .filter((seatId): seatId is PlayerId => typeof seatId === 'string')
+            : [],
+    );
+    const configuredSeatControllers = state.core.seatControllers;
+    const currentControllerType = configuredSeatControllers?.[playerId]?.type;
+    const isCurrentSeatAi = currentControllerType === 'local-ai'
+        || currentControllerType === 'remote-ai'
+        || (currentControllerType !== 'human' && aiSeatIdSet.has(playerId));
 
     if (!hasSelectedCharacter) {
+        if (isCurrentSeatAi) {
+            const hasPendingHumanSelection = Object.entries(state.core.selectedCharacters).some(([pid, characterId]) => {
+                const currentPid = pid as PlayerId;
+                const controllerType = configuredSeatControllers?.[currentPid]?.type;
+                const isAiSeat = controllerType === 'local-ai'
+                    || controllerType === 'remote-ai'
+                    || (controllerType !== 'human' && aiSeatIdSet.has(currentPid));
+                if (isAiSeat) return false;
+                return !characterId || characterId === 'unselected';
+            });
+
+            if (hasPendingHumanSelection) {
+                return actions;
+            }
+        }
+
         const takenCharacters = new Set<SelectableCharacterId>();
         for (const value of Object.values(state.core.selectedCharacters)) {
             if (value && value !== 'unselected') {
@@ -3065,6 +3092,11 @@ const diceThroneLocalPolicyScorers: LocalAiActionScorer[] = [
 const defaultLocalPolicy = createLookaheadLocalAiPolicy({
     id: 'baseline',
     scorers: diceThroneLocalPolicyScorers,
+    relativeUtility: {
+        enabled: true,
+        weight: 10,
+        minimumUtility: 0.08,
+    },
     rankProjectionCandidate({ context, action }) {
         if (!isDiceThroneProjectableActionKind(action.kind)) {
             return 0;
@@ -3080,6 +3112,12 @@ const defaultLocalPolicy = createLookaheadLocalAiPolicy({
     },
     projectAction({ context, action }) {
         return projectDiceThroneAction({ context, action });
+    },
+    candidateLoop: {
+        enabled: true,
+        maxIterations: 3,
+        batchSize: 4,
+        stopOnUtility: 0.9,
     },
 });
 

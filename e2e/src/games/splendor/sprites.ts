@@ -8,14 +8,13 @@ import {
     buildIndexMap,
 } from './spriteMapping';
 
-const buildSpriteStyle = (imagePath: string, cols: number, rows: number, index: number): CSSProperties => {
+const buildSpriteStyle = (cols: number, rows: number, index: number): CSSProperties => {
     const col = index % cols;
     const row = Math.floor(index / cols);
     const x = cols <= 1 ? 0 : (col / (cols - 1)) * 100;
     const y = rows <= 1 ? 0 : (row / (rows - 1)) * 100;
 
     return {
-        backgroundImage: `url(/assets/${imagePath})`,
         backgroundRepeat: 'no-repeat',
         backgroundSize: `${cols * 100}% ${rows * 100}%`,
         backgroundPosition: `${x}% ${y}%`,
@@ -30,16 +29,21 @@ const CARD_INDEX_BY_ID: Record<1 | 2 | 3, Record<string, number>> = {
     3: buildIndexMap(LEVEL_3_CARD_ORDER),
 };
 
+export const getNobleAtlasImagePath = (): string => SPLENDOR_SPRITE_ATLAS_BY_ID.nobles.imagePath;
+
+export const getDevelopmentCardAtlasImagePath = (tier: 1 | 2 | 3): string =>
+    SPLENDOR_SPRITE_ATLAS_BY_ID[`tier${tier}`].imagePath;
+
 export const getNobleSpriteStyle = (nobleId: string): CSSProperties | null => {
     const index = NOBLE_INDEX_BY_ID[nobleId];
     if (index === undefined) return null;
     const atlas = SPLENDOR_SPRITE_ATLAS_BY_ID.nobles;
-    return buildSpriteStyle(atlas.imagePath, atlas.cols, atlas.rows, index);
+    return buildSpriteStyle(atlas.cols, atlas.rows, index);
 };
 
 export const getDevelopmentCardSpriteStyle = (cardId: string, tier: 1 | 2 | 3): CSSProperties | null => {
     const layout = SPLENDOR_SPRITE_ATLAS_BY_ID[`tier${tier}` as const];
     const index = CARD_INDEX_BY_ID[tier]?.[cardId];
     if (!layout || index === undefined) return null;
-    return buildSpriteStyle(layout.imagePath, layout.cols, layout.rows, index);
+    return buildSpriteStyle(layout.cols, layout.rows, index);
 };

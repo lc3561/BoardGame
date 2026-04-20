@@ -122,7 +122,9 @@ function pirateBroadside(ctx: AbilityContext): AbilityResult {
     );
     const interaction = createSimpleChoice(
         `pirate_broadside_${ctx.now}`, ctx.playerId,
-        '选择基地和玩家，消灭该玩家所有力量≤2的随从', options, 'pirate_broadside',
+        '选择基地和玩家，消灭该玩家所有力量≤2的随从',
+        options,
+        { sourceId: 'pirate_broadside', targetType: 'generic' },
     );
     return { events: [], matchState: queueInteraction(ctx.matchState, interaction) };
 }
@@ -273,7 +275,7 @@ function buccaneerOnDestroyed(ctx: TriggerContext): SmashUpEvent[] | TriggerResu
             label: c.label,
             value: { minionUid: triggerMinionUid, minionDefId: triggerMinionDefId, fromBaseIndex: baseIndex, toBaseIndex: c.baseIndex, baseDefId: c.baseDefId },
         })),
-        { sourceId: 'pirate_buccaneer_move', targetType: 'generic' },
+        { sourceId: 'pirate_buccaneer_move', targetType: 'base' },
     );
     const updatedMS = queueInteraction(ctx.matchState, interaction);
     return { events: [], matchState: updatedMS };
@@ -366,7 +368,7 @@ function pirateKingBeforeScoring(ctx: TriggerContext): SmashUpEvent[] | TriggerR
             { id: 'yes', label: '移动到该基地', value: { move: true, uid: first.uid, defId: first.defId, fromBaseIndex: first.fromBaseIndex } },
             { id: 'no', label: '留在原地', value: { move: false } },
         ],
-        'pirate_king_move',
+        { sourceId: 'pirate_king_move', targetType: 'minion' },
     );
     const ms = queueInteraction(ctx.matchState, {
         ...interaction,
@@ -532,7 +534,9 @@ function pirateSeaDogs(ctx: AbilityContext): AbilityResult {
     }));
     const interaction = createSimpleChoice(
         `pirate_sea_dogs_faction_${ctx.now}`, ctx.playerId,
-        '水手：指定一个派系', options as any[], 'pirate_sea_dogs_choose_faction',
+        '水手：指定一个派系',
+        options as any[],
+        { sourceId: 'pirate_sea_dogs_choose_faction', targetType: 'generic' },
     );
     return { events: [], matchState: queueInteraction(ctx.matchState, interaction) };
 }
@@ -948,7 +952,7 @@ export function registerPirateInteractionHandlers(): void {
                     { id: 'yes', label: '移动到该基地', value: { move: true, uid: next.uid, defId: next.defId, fromBaseIndex: next.fromBaseIndex } },
                     { id: 'no', label: '留在原地', value: { move: false } },
                 ],
-                'pirate_king_move',
+                { sourceId: 'pirate_king_move', targetType: 'minion' },
             );
             return { state: queueInteraction(state, { ...interaction, data: { ...interaction.data, continuationContext: { scoringBaseIndex: ctx.scoringBaseIndex, remaining: rest } } }), events };
         }

@@ -11,7 +11,8 @@
  * - 教程完成
  */
 
-import { test, expect, type BrowserContext, type Page } from '@playwright/test';
+import { type BrowserContext, type Page } from '@playwright/test';
+import { test, expect } from '../framework';
 import { waitForState } from '../helpers/waitForState';
 import type { GameTestContext as __ThreeAxeFrameworkMarker } from '../framework';
 

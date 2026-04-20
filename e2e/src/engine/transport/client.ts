@@ -58,9 +58,11 @@ export class GameTransportClient {
     private _syncTimer: ReturnType<typeof setTimeout> | null = null;
     private _syncRetries = 0;
     private _healthCheckTimer: ReturnType<typeof setInterval> | null = null;
+    private _terminalError: string | null = null;
     private static readonly SYNC_TIMEOUT_MS = 5000;
     private static readonly SYNC_MAX_RETRIES = 5;
     private static readonly HEALTH_CHECK_INTERVAL_MS = 30000; // 30秒检查一次
+    private static readonly TERMINAL_ERRORS = new Set(['match_not_found', 'unauthorized']);
 
     constructor(config: GameTransportClientConfig) {
         this.config = config;
@@ -131,6 +133,7 @@ export class GameTransportClient {
 
         socket.on('connect', () => {
             if (this._destroyed) return;
+            this._terminalError = null;
             // 连接后立即发送 sync 请求
             this.sendSync();
         });
@@ -196,6 +199,9 @@ export class GameTransportClient {
 
         socket.on('error', (matchID, error) => {
             if (this._destroyed || matchID !== this.config.matchID) return;
+            if (GameTransportClient.TERMINAL_ERRORS.has(error)) {
+                this.handleTerminalError(error);
+            }
             this.config.onError?.(error);
         });
 
@@ -217,7 +223,7 @@ export class GameTransportClient {
 
         // socket.io 自动重连成功后重新 sync
         socket.io.on('reconnect', () => {
-            if (this._destroyed) return;
+            if (this._destroyed || this._terminalError) return;
             this._connectionState = 'connecting';
             this._syncRetries = 0;
             this.sendSync();
@@ -343,7 +349,7 @@ export class GameTransportClient {
      * 或心跳超时导致静默断线。重新 sync 确保状态最新。
      */
     resync(): void {
-        if (this._destroyed || !this.socket) return;
+        if (this._destroyed || this._terminalError || !this.socket) return;
         if (this.socket.connected) {
             // 连接正常：直接发送 sync 获取最新状态
             this.sendSync();
@@ -355,7 +361,7 @@ export class GameTransportClient {
 
     /** 发送 sync 请求并启动超时重试 */
     private sendSync(): void {
-        if (this._destroyed || !this.socket?.connected) return;
+        if (this._destroyed || this._terminalError || !this.socket?.connected) return;
         this.clearSyncTimer();
         this.socket.emit(
             'sync',
@@ -405,7 +411,7 @@ export class GameTransportClient {
         if (this._healthCheckTimer) return;
         
         this._healthCheckTimer = setInterval(() => {
-            if (this._destroyed || !this.socket) return;
+            if (this._destroyed || this._terminalError || !this.socket) return;
             
             // 检查连接状态
             if (!this.socket.connected) {
@@ -419,6 +425,21 @@ export class GameTransportClient {
         }, GameTransportClient.HEALTH_CHECK_INTERVAL_MS);
         
         console.log(`[GameTransport] 健康检查已启动 (间隔: ${GameTransportClient.HEALTH_CHECK_INTERVAL_MS}ms)`);
+    }
+
+    private handleTerminalError(error: string): void {
+        if (this._terminalError) return;
+        this._terminalError = error;
+        this.clearSyncTimer();
+        this.clearHealthCheck();
+        this._syncRetries = 0;
+        this._connectionState = 'disconnected';
+        this.config.onConnectionChange?.(false);
+        if (this.socket) {
+            this.socket.removeAllListeners();
+            this.socket.disconnect();
+            this.socket = null;
+        }
     }
 
     /**

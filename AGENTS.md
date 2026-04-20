@@ -162,6 +162,7 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 
 #### 测试用例设计（强制）
 1. **必须使用真实场景**：测试用例要模拟真实游戏流程，不能构造不可能状态。
+1. **E2E 禁止自造卡（强制）**：凡是通过状态注入/预置棋盘准备 E2E 场景，单位卡、事件卡、建筑卡必须直接引用 `src/games/<gameId>/config/factions/**` 中的真实卡配置；禁止手写“临时卡面/临时 abilities/临时数值”来替代真实卡定义。若确需最小化场景，允许仅改实例态字段（如 `position/damage/boosts/hasMoved`），不允许改卡本体语义字段（`id/name/abilities/strength/life/attackType/attackRange/cost`）。
 2. **断言必须打在核心行为上**：断言要直接证明功能是否成立，不要只验证边缘表象。
 
 ### 游戏专属补充（仅对应游戏触发）

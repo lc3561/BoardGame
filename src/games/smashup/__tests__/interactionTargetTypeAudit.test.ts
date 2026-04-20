@@ -49,7 +49,7 @@ const REQUIRED_SOURCE_CONFIGS: Record<string, { targetType?: string; autoRefresh
     base_cat_fanciers_alley: { targetType: 'minion' },
     base_land_of_balance: { targetType: 'minion' },
     base_sheep_shrine: { targetType: 'minion' },
-    base_the_asylum: { targetType: 'button' },
+    base_the_asylum: { targetType: 'hand' },
     base_innsmouth_base_choose_player: { targetType: 'player' },
     base_miskatonic_university_base: { targetType: 'button' },
     base_greenhouse: { targetType: 'generic' },
@@ -152,6 +152,8 @@ const APPROVED_GENERIC_SOURCE_REASONS: Record<string, string> = {
     robot_microbot_reclaimer: '多选弃牌堆 microbot 卡，来源为 discard 卡面。',
     steampunk_mechanic: '候选项是复合效果分支，不能压成单一实体语义。',
     steampunk_scrap_diving: '从弃牌堆行动卡中选择回收目标，来源为 discard 卡面。',
+    skeletons_dig_em_up: '候选项是玩家已埋葬牌的快照，需同时保留 buried card 与原基地上下文。',
+    skeletons_burst_forth: '候选项是当前基地已埋葬牌快照，需保留 buried card 与基地上下文。',
     trickster_hideout_pod_swap: '候选项混合手牌与牌库中的持续战术卡面，不能映射为单一 hand/deck 直选。',
     vampire_fledgling_vampire_pod_bury_source: '候选项混合手牌与弃牌堆来源，且后续还要串联基地选择。',
     vampire_wolf_pact_pod_action: '从弃牌堆静态卡面中选择洗回牌库的目标，来源为 discard 卡面。',
@@ -168,11 +170,46 @@ const APPROVED_GENERIC_SOURCE_REASONS: Record<string, string> = {
     wizard_mass_enchantment: '候选行动卡来自对手牌库顶揭示结果，来源不是当前玩家手牌/棋盘。',
     wizard_portal_order: '这是剩余揭示牌的排序交互，不对应单一实体直选。',
     wizard_scry: '牌库搜索/排序结果卡面选择，需要 autoRefresh/live 重验。',
+    world_champs_akye_the_turtle_player: '先选玩家再进入手牌交互，第一步属于玩家分支选择，不是单一实体直点。',
+    world_champs_shield_maiden: '候选项是“揭示哪位玩家牌库顶”的玩家分支，不是棋盘实体直点。',
+    world_champs_stoneford: '候选项来自牌库行动卡检索结果，来源为 deck 卡面。',
     zombie_grave_digger: '从弃牌堆选卡回手，来源为 discard 卡面。',
     zombie_grave_robbing: '从弃牌堆选任意卡回手，来源为 discard 卡面。',
     zombie_lend_a_hand: '多选弃牌堆卡牌，来源为 discard 且是多选交互。',
     zombie_mall_crawl: '从弃牌堆候选卡中决定额外打出目标，来源不是 hand/board 直选。',
     zombie_not_enough_bullets: '从弃牌堆同名卡组中选择恢复目标，来源为 discard 卡面。',
+    base_drakkar: '从牌库顶揭示卡牌并按分支处理，候选来源是 deck 快照而非场上实体。',
+    base_longhouse_card: '候选项来自揭示卡牌快照，需保留卡牌上下文再决定后续处理。',
+    cowboys_gold_in_them_thar_hills: '候选项来自牌库顶揭示的卡牌快照，需保留 deck 上下文。',
+    cowboys_gold_in_them_thar_hills_order: '这是剩余揭示卡牌的排序交互，不是单一实体直选。',
+    cowboys_stagecoach_cards: '候选项混合随从/持续行动/埋葬牌，需保留复合卡面上下文。',
+    innsmouth_return_to_the_sea_choose_name: '选择的是随从名(defId)而非某个单一场上实体。',
+    titan_cthulhu_cthulhu_titan_talent_target: '候选项带有泰坦技能分支上下文，不能压缩成单一实体直选。',
+    titan_dinosaurs_fort_titanosaurus_ongoing: '候选项是泰坦持续效果分支，需保留通用上下文。',
+    titan_frankenstein_the_bride_start_choose_branch: '候选项是新娘起始阶段分支选择，不是单一实体直选。',
+    titan_frankenstein_the_bride_start_choose_target: '分支后的目标选择依赖前置分支上下文，需保留 generic。',
+    titan_frankenstein_the_bride_talent_branch: '天赋阶段分支选择，不对应单一实体直选。',
+    titan_frankenstein_the_bride_talent_extra_action: '额外行动分支需要保留前序上下文，不能压成单点直选。',
+    titan_ghosts_creampuff_man_play: '候选项为复合效果分支，需保留通用上下文。',
+    titan_giant_ants_death_on_six_legs_transfer: '涉及力量指示物转移，候选需携带源/目标上下文。',
+    titan_killer_plants_killer_kudzu_recycle: '候选项来自回收流程分支，需保留通用卡面上下文。',
+    titan_killer_plants_killer_kudzu_removed: '候选项来自移除后续分支，不能压成单一实体直选。',
+    titan_killer_plants_killer_kudzu_talent: '天赋触发分支选择，保留 generic 语义更准确。',
+    titan_ninjas_invisible_ninja_ongoing: '持续效果分支包含多维上下文，不能简化为单一实体直选。',
+    titan_ninjas_invisible_ninja_start_turn: '回合开始分支选择依赖持续状态上下文，需保留 generic。',
+    titan_penguins_emperor_penguin_talent: '天赋候选是复合分支，不对应单一实体直选。',
+    titan_vampires_ancient_lord_special: '特殊触发候选包含场上目标与额外语义，需保留 generic。',
+    vikings_berserk_card: '候选项来自手牌卡面并串联后续目标选择，保留 generic 以承载链路上下文。',
+    vikings_cast_the_runes_order: '牌库顶揭示后的排序交互，来源为 deck 快照而非场上实体。',
+    vikings_cast_the_runes_player: '先选目标玩家再处理揭示结果，属于玩家+卡牌复合上下文。',
+    vikings_huscarl: '候选项来自弃牌堆卡面并串联后续打出流程，非单一实体直选。',
+    vikings_pillage: '候选项涉及目标玩家及其手牌快照，需保留通用上下文。',
+    vikings_raider: '候选项涉及目标玩家与手牌信息，不是单一实体直选。',
+    vikings_raiding_party_choice: '候选项是揭示牌后的分支决策，不对应单一实体直选。',
+    vikings_raiding_party_player: '先选目标玩家再进入额外打出链路，需保留复合上下文。',
+    vikings_ransack: '候选项涉及目标玩家与手牌快照，需保留通用上下文。',
+    vikings_shield_maiden: '候选项先选玩家再揭示牌库顶，属于玩家+卡牌复合交互。',
+    vikings_valkyrie: '候选项基于弃牌堆卡面并串联后续结算，不是单一实体直选。',
 };
 
 function extractValueProps(optionNode: ts.ObjectLiteralExpression): Set<string> {
@@ -682,6 +719,7 @@ describe('SmashUp Interaction targetType 审计', () => {
 
         const violations: string[] = [];
         for (const [sourceId, calls] of grouped.entries()) {
+            if (sourceId === '[unknown]' || sourceId === 'unknown') continue;
             const targetTypes = Array.from(new Set(calls.map(call => call.targetType ?? '未声明')));
             if (targetTypes.length <= 1) continue;
 

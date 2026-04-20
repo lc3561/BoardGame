@@ -1038,6 +1038,50 @@ describe('祖灵法师 - 祖灵交流 (spirit_bond)', () => {
     expect(result.error).toContain('充能');
   });
 
+  it('boosts=NaN 时 transfer 视为无充能并拒绝', () => {
+    const state = createBarbaricState();
+    clearArea(state, [2, 3, 4, 5, 6], [0, 1, 2, 3, 4, 5]);
+
+    const mage = placeUnit(state, { row: 4, col: 2 }, {
+      cardId: 'test-mage', card: makeSpiritMage('test-mage'), owner: '0',
+      boosts: Number.NaN,
+    });
+
+    placeUnit(state, { row: 4, col: 3 }, {
+      cardId: 'test-ally', card: makeLioness('test-ally'), owner: '0',
+    });
+
+    state.phase = 'move';
+    state.currentPlayer = '0';
+
+    const fullState = { core: state, sys: {} as any };
+    const validateResult = SummonerWarsDomain.validate(fullState, {
+      type: SW_COMMANDS.ACTIVATE_ABILITY,
+      payload: {
+        abilityId: 'spirit_bond',
+        sourceUnitId: mage.instanceId,
+        choice: 'transfer',
+        targetPosition: { row: 4, col: 3 },
+      },
+      playerId: '0',
+      timestamp: fixedTimestamp,
+    });
+    expect(validateResult.valid).toBe(false);
+
+    const { newState, events } = executeAndReduce(state, SW_COMMANDS.ACTIVATE_ABILITY, {
+      abilityId: 'spirit_bond',
+      sourceUnitId: mage.instanceId,
+      choice: 'transfer',
+      targetPosition: { row: 4, col: 3 },
+    });
+    const spiritBondChargeEvents = events.filter(e =>
+      e.type === SW_EVENTS.UNIT_CHARGED
+      && (e.payload as Record<string, unknown>).sourceAbilityId === 'spirit_bond'
+    );
+    expect(spiritBondChargeEvents.length).toBe(0);
+    expect(newState.board[4][3].unit?.boosts).toBe(0);
+  });
+
   it('超过3格转移验证拒绝', () => {
     const state = createBarbaricState();
     clearArea(state, [1, 2, 3, 4, 5, 6], [0, 1, 2, 3, 4, 5]);
@@ -1810,6 +1854,31 @@ describe('雌狮 - 生命强化 (life_up) 集成', () => {
 // ============================================================================
 
 describe('充能验证', () => {
+  it('UNIT_CHARGED 在非法 boosts/delta/newValue 下会归一化', () => {
+    const state = createBarbaricState();
+    clearArea(state, [2, 3, 4, 5, 6], [0, 1, 2, 3, 4, 5]);
+    placeUnit(state, { row: 4, col: 2 }, {
+      cardId: 'test-mage', card: makeSpiritMage('test-mage'), owner: '0',
+      boosts: Number.NaN,
+    });
+
+    const eventWithDelta: GameEvent = {
+      type: SW_EVENTS.UNIT_CHARGED,
+      payload: { position: { row: 4, col: 2 }, delta: Number.NaN },
+      timestamp: fixedTimestamp,
+    };
+    const stateAfterDelta = SummonerWarsDomain.reduce(state, eventWithDelta);
+    expect(stateAfterDelta.board[4][2].unit?.boosts).toBe(0);
+
+    const eventWithNewValue: GameEvent = {
+      type: SW_EVENTS.UNIT_CHARGED,
+      payload: { position: { row: 4, col: 2 }, delta: 1, newValue: Number.NaN },
+      timestamp: fixedTimestamp,
+    };
+    const stateAfterNewValue = SummonerWarsDomain.reduce(stateAfterDelta, eventWithNewValue);
+    expect(stateAfterNewValue.board[4][2].unit?.boosts).toBe(0);
+  });
+
   it('withdraw - 充能不足且魔力不足时应拒绝', () => {
     const core = createBarbaricState();
     core.phase = 'attack';

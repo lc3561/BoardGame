@@ -229,6 +229,7 @@ export interface SummonerWarsCore {
 export const SW_COMMANDS = {
   // 阵营选择阶段
   SELECT_FACTION: 'sw:select_faction',
+  SWAP_SEAT: 'sw:swap_seat',
   SELECT_CUSTOM_DECK: 'sw:select_custom_deck',
   PLAYER_READY: 'sw:player_ready',
   PLAYER_UNREADY: 'sw:player_unready',
@@ -371,6 +372,12 @@ export interface SelectCustomDeckCommand {
   deckData: SerializedCustomDeck;
 }
 
+/** 阵营选择阶段换位命令 */
+export interface SwapSeatCommand {
+  type: typeof SW_COMMANDS.SWAP_SEAT;
+  targetPlayerId: PlayerId;
+}
+
 /** 所有命令联合类型 */
 export type SWCommand =
   | SummonUnitCommand
@@ -387,6 +394,7 @@ export type SWCommand =
   | BloodSummonStepCommand
   | ActivateAbilityCommand
   | FuneralPyreHealCommand
+  | SwapSeatCommand
   | SelectCustomDeckCommand;
 
 // ============================================================================
@@ -397,6 +405,7 @@ export type SWCommand =
 export const SW_EVENTS = {
   // 阵营选择事件
   FACTION_SELECTED: 'sw:faction_selected',
+  SEAT_SWAPPED: 'sw:seat_swapped',
   PLAYER_READY: 'sw:player_ready',
   PLAYER_UNREADY: 'sw:player_unready',
   HOST_STARTED: 'sw:host_started',
@@ -535,6 +544,7 @@ export interface SerializedCustomDeck {
 /** 阵营选择事件 */
 export const SW_SELECTION_EVENTS = {
   FACTION_SELECTED: 'sw:faction_selected',
+  SEAT_SWAPPED: 'sw:seat_swapped',
   PLAYER_READY: 'sw:player_ready',
   PLAYER_UNREADY: 'sw:player_unready',
   HOST_STARTED: 'sw:host_started',

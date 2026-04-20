@@ -39,6 +39,7 @@ export const SU_EVENTS = defineEvents({
   // ========== UI 交互（本地播放）==========
   'su:faction_selected': { audio: 'ui', sound: SELECTION_KEY },
   'su:faction_deselected': 'silent',
+  'su:seat_swapped': { audio: 'ui', sound: UPDATE_CHIME_KEY },
 
   // ========== 即时反馈（EventStream）==========
   'su:minion_played': { audio: 'immediate', sound: MINION_PLAY_KEY },
@@ -171,6 +172,7 @@ export const SU_EVENT_TYPES = {
   LIMIT_MODIFIED: SU_EVENTS['su:limit_modified'].type,
   FACTION_SELECTED: SU_EVENTS['su:faction_selected'].type,
   FACTION_DESELECTED: SU_EVENTS['su:faction_deselected'].type,
+  SEAT_SWAPPED: SU_EVENTS['su:seat_swapped'].type,
   ALL_FACTIONS_SELECTED: SU_EVENTS['su:all_factions_selected'].type,
   STARTING_HAND_MULLIGAN_USED: SU_EVENTS['su:starting_hand_mulligan_used'].type,
   MINION_DESTROYED: SU_EVENTS['su:minion_destroyed'].type,

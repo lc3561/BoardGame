@@ -13,7 +13,7 @@
  * - 其他选项 → PromptOverlay（z-index:300）
  */
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../framework';
 import { initContext } from '../helpers/common';
 import type { GameTestContext as __ThreeAxeFrameworkMarker } from '../framework';
 
@@ -82,7 +82,7 @@ test.describe('SmashUp 海盗多步交互', () => {
         
         // 诊断：在浏览器控制台输出状态
         await page.evaluate(() => {
-            const G = (window as any).__BG_STATE__;
+            const G = (window as any).__BG_TEST_HARNESS__?.state?.get?.();
             if (!G) {
                 console.error('NO STATE FOUND');
                 return;
@@ -105,7 +105,7 @@ test.describe('SmashUp 海盗多步交互', () => {
 
         // 诊断：检查状态是否正确应用
         const diagnostic = await page.evaluate(() => {
-            const G = (window as any).__BG_STATE__;
+            const G = (window as any).__BG_TEST_HARNESS__?.state?.get?.();
             if (!G) return { error: 'no state' };
             const c = G.core || G;
             return {

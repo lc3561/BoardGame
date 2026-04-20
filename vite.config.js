@@ -148,7 +148,7 @@ exports.default = (0, vite_1.defineConfig)(function (_a) {
     var cliHost = readCliFlag('host');
     var devPort = Number.isFinite(cliPort) && cliPort > 0
         ? cliPort
-        : Number(env.VITE_DEV_PORT) || 4173;
+        : Number(env.VITE_DEV_PORT) || 4273;
     var serverHost = cliHost || '0.0.0.0';
     var hmrHost = cliHost && cliHost !== '0.0.0.0' ? cliHost : 'localhost';
     var gameServerPort = Number(env.GAME_SERVER_PORT) || 18000;

@@ -23,7 +23,7 @@ import type {
   AbilityTrigger,
 } from './abilities';
 import { abilityRegistry } from './abilities';
-import { BOARD_ROWS, BOARD_COLS, manhattanDistance, getPlayerUnits } from './helpers';
+import { BOARD_ROWS, BOARD_COLS, manhattanDistance, getPlayerUnits, normalizeUnitBoosts } from './helpers';
 import { swCustomActionRegistry } from './customActionHandlers';
 import { resolveTargetUnits, resolveTargetPosition } from './abilityTargets';
 import {
@@ -116,7 +116,7 @@ function resolveAttributeExpressionValue(
     case 'strength':
       return unit.card.strength;
     case 'charge':
-      return unit.boosts ?? 0;
+      return normalizeUnitBoosts(unit.boosts);
     default:
       return 0;
   }
@@ -172,7 +172,7 @@ registerConditionHandler(swConditionRegistry, 'hasCharge', (params, ctx) => {
   const { target, minStacks } = (params ?? {}) as any;
   const units = resolveTargetUnits(target, abilityCtx);
   const min = typeof minStacks === 'number' ? minStacks : 1;
-  return units.some(u => (u.boosts ?? 0) >= min);
+  return units.some(u => normalizeUnitBoosts(u.boosts) >= min);
 });
 
 registerConditionHandler(swConditionRegistry, 'isUnitType', (params, ctx) => {
@@ -346,7 +346,7 @@ export function resolveEffect(
     case 'setCharge': {
       const targets = resolveTargetUnits(effect.target, ctx);
       for (const target of targets) {
-        const currentCharge = target.boosts ?? 0;
+        const currentCharge = normalizeUnitBoosts(target.boosts);
         const delta = effect.value - currentCharge;
         events.push({
           type: SW_EVENTS.UNIT_CHARGED,
@@ -1127,7 +1127,7 @@ export function getEffectiveLife(unit: UnitInstance, state: SummonerWarsCore): n
         if (effect.type === 'modifyLife') {
           const value = typeof effect.value === 'number'
             ? effect.value
-            : (unit.boosts ?? 0); // 充能值
+            : normalizeUnitBoosts(unit.boosts); // 充能值
           // 数据驱动上限：由 AbilityDef 的 maxBonus 字段控制
           const capped = effect.maxBonus != null ? Math.min(value, effect.maxBonus) : value;
           life += capped;
@@ -1173,7 +1173,7 @@ export function getEffectiveLifeBase(unit: UnitInstance): number {
         if (effect.type === 'modifyLife') {
           const value = typeof effect.value === 'number'
             ? effect.value
-            : (unit.boosts ?? 0);
+            : normalizeUnitBoosts(unit.boosts);
           // 数据驱动上限：由 AbilityDef 的 maxBonus 字段控制
           const capped = effect.maxBonus != null ? Math.min(value, effect.maxBonus) : value;
           life += capped;

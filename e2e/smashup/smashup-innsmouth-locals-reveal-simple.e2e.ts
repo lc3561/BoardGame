@@ -1,57 +1,44 @@
 /**
- * 大杀四方 - 印斯茅斯“本地人”展示测试（三板斧）
+ * 大杀四方 - 印斯茅斯“本地人”展示测试（简化版）
  */
 
 import { test, expect } from '../framework';
 
-test.describe('印斯茅斯“本地人”展示功能（简化版）', () => {
-  test('打出“本地人”后应该显示展示 UI', async ({ game, page }, testInfo) => {
+async function openScene(game: any): Promise<void> {
     await game.openTestGame('smashup');
-    await game.setupScene({
-      gameId: 'smashup',
-      player0: {
-        factions: ['innsmouth', 'aliens'],
-        hand: [{ uid: 'h1', defId: 'innsmouth_the_locals', type: 'minion', owner: '0' }],
-        deck: [
-          { uid: 'd1', defId: 'innsmouth_the_locals', type: 'minion', owner: '0' },
-          { uid: 'd2', defId: 'alien_invader', type: 'minion', owner: '0' },
-          { uid: 'd3', defId: 'innsmouth_the_locals', type: 'minion', owner: '0' },
-        ],
-        discard: [],
-        minionsPlayed: 0,
-        minionLimit: 1,
-      },
-      player1: {
-        factions: ['ninjas', 'robots'],
-        hand: [],
-        deck: [],
-        discard: [],
-      },
-      currentPlayer: '0',
-      phase: 'playCards',
+}
+
+test.describe('印斯茅斯“本地人”展示功能（简化版）', () => {
+    test('打出“本地人”后应该显示展示 UI', async ({ page, game }, testInfo) => {
+        await openScene(game);
+        await game.setupScene({
+            gameId: 'smashup',
+            player0: {
+                hand: ['innsmouth_the_locals'],
+                deck: ['innsmouth_the_locals', 'aliens_scout', 'innsmouth_the_locals'],
+                factions: ['innsmouth', 'aliens'],
+            },
+            player1: {
+                hand: [],
+                deck: [],
+                factions: ['pirates', 'dinosaurs'],
+            },
+            currentPlayer: '0',
+            phase: 'playCards',
+            bases: [{ defId: 'base_the_homeworld', minions: [], ongoingActions: [] }],
+        });
+
+        await game.playCard('innsmouth_the_locals', { targetBaseIndex: 0 });
+        await expect(page.getByTestId('reveal-overlay')).toBeVisible({ timeout: 5000 });
+        await expect(page.locator('[data-testid="reveal-overlay"] [data-card-preview]')).toHaveCount(3);
+        await game.screenshot('innsmouth-locals-reveal', testInfo);
+
+        await page.getByTestId('reveal-overlay').click({ force: true });
+        await expect(page.getByTestId('reveal-overlay')).toBeHidden({ timeout: 3000 });
+
+        const state = await game.getState();
+        const handLocals = state.core.players['0'].hand.filter((card: any) => card.defId === 'innsmouth_the_locals').length;
+        const baseLocals = state.core.bases[0].minions.filter((minion: any) => minion.defId === 'innsmouth_the_locals' && minion.controller === '0').length;
+        expect(handLocals + baseLocals).toBe(3);
     });
-
-    await game.screenshot('innsmouth-locals-01-initial', testInfo);
-
-    await page.click('[data-card-uid="h1"]');
-    await page.click('[data-base-index="0"]');
-
-    const closeHint = page.getByText(/点击任意位置关闭|Click anywhere to close/i).first();
-    await expect(closeHint).toBeVisible({ timeout: 8000 });
-
-    const localsCount = await page.locator('text=本地人').count();
-    expect(localsCount).toBeGreaterThanOrEqual(2);
-    await expect(page.getByText(/入侵者|Invader/i).first()).toBeVisible({ timeout: 5000 });
-    await game.screenshot('innsmouth-locals-02-reveal-ui', testInfo);
-
-    await page.mouse.click(16, 16);
-    await expect(closeHint).toBeHidden({ timeout: 5000 });
-    await game.screenshot('innsmouth-locals-03-after-close', testInfo);
-
-    await expect.poll(async () => {
-      const finalState = await game.getState();
-      const hand = finalState?.core?.players?.['0']?.hand ?? [];
-      return hand.filter((card: { defId?: string }) => card.defId === 'innsmouth_the_locals').length;
-    }, { timeout: 5000 }).toBe(2);
-  });
 });

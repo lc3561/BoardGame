@@ -69,6 +69,22 @@ import { setUndoAiSeatIds } from '../systems/UndoSystem';
 export { filterPlayedEvents };
 export { buildAiProgressMarker };
 
+const FAST_AI_COMMAND_TYPES = new Set([
+    'ADVANCE_PHASE',
+    'sw:end_phase',
+    'RESPONSE_PASS',
+]);
+
+function shouldUseFastAiDelay(action: { kind?: string; commands?: Array<{ type?: string }> }): boolean {
+    if (action.kind === 'advance-phase' || action.kind === 'response-pass') {
+        return true;
+    }
+    if (!Array.isArray(action.commands) || action.commands.length === 0) {
+        return false;
+    }
+    return action.commands.every((command) => typeof command.type === 'string' && FAST_AI_COMMAND_TYPES.has(command.type));
+}
+
 // ============================================================================
 // Context 类型
 // ============================================================================
@@ -381,6 +397,11 @@ export function GameProvider({
                     if (randomMeta) {
                         engine.syncRandom(randomMeta.seed, randomMeta.cursor);
                     }
+                    // 仅当 reconcile 前存在本地 pending 乐观命令时，才需要通过 reconcileSeq
+                    // 通知 useEventStreamCursor 执行“静默对齐游标”。
+                    // 否则（例如纯对手/AI 事件更新）不应触发 reconcileSeq，
+                    // 避免把合法的新事件吞掉导致动画不播放。
+                    const hadPendingBeforeReconcile = engine.hasPendingCommands();
                     const result = engine.reconcile(newState as MatchState<unknown>, meta);
                     
                     // 更新回滚信号
@@ -393,7 +414,7 @@ export function GameProvider({
                         }));
                         // 过滤已通过乐观动画播放的事件，防止重复播放
                         finalState = filterPlayedEvents(result.stateToRender, result.optimisticEventWatermark);
-                    } else if (!result.didRollback) {
+                    } else if (!result.didRollback && hadPendingBeforeReconcile) {
                         // reconcile 确认：静默调整游标到新的 maxId
                         setRollbackSignal(prev => ({
                             watermark: null,
@@ -977,9 +998,13 @@ export function LocalGameProvider({
                 return;
             }
 
+            const fastTrackActionDelay = shouldUseFastAiDelay(resolution.action);
+            const actionDelayTargetMs = fastTrackActionDelay
+                ? 0
+                : resolveAiMinimumActionDelayMs(controller);
             const remainingDelayMs = Math.max(
                 0,
-                resolveAiMinimumActionDelayMs(controller) - (Date.now() - startedAt),
+                actionDelayTargetMs - (Date.now() - startedAt),
             );
 
             if (remainingDelayMs > 0) {

@@ -19,7 +19,7 @@
  */
 
 import type { AbilityDef } from './abilities';
-import { getUnitAt, manhattanDistance, isForceMovePathClear, isInStraightLine } from './helpers';
+import { getUnitAt, manhattanDistance, isForceMovePathClear, isInStraightLine, normalizeUnitBoosts } from './helpers';
 import type { CellCoord } from './types';
 import { abilityText } from './abilityTextHelper';
 
@@ -150,7 +150,7 @@ export const BARBARIC_ABILITIES: AbilityDef[] = [
     validation: {
       customValidator: (ctx) => {
         // 检查充能是否足够
-        if ((ctx.sourceUnit.boosts ?? 0) < 1) {
+        if (normalizeUnitBoosts(ctx.sourceUnit.boosts) < 1) {
           return { valid: false, error: '没有充能可消耗' };
         }
         return { valid: true };
@@ -210,7 +210,7 @@ export const BARBARIC_ABILITIES: AbilityDef[] = [
           return { valid: false, error: '必须选择消耗充能或魔力' };
         }
         
-        if (wdCostType === 'charge' && (ctx.sourceUnit.boosts ?? 0) < 1) {
+        if (wdCostType === 'charge' && normalizeUnitBoosts(ctx.sourceUnit.boosts) < 1) {
           return { valid: false, error: '没有充能可消耗' };
         }
         
@@ -248,7 +248,7 @@ export const BARBARIC_ABILITIES: AbilityDef[] = [
       buttonVariant: 'secondary',
       activationType: 'withdrawMode',
       quickCheck: ({ core, unit, playerId }) => {
-        const hasCharge = (unit.boosts ?? 0) >= 1;
+        const hasCharge = normalizeUnitBoosts(unit.boosts) >= 1;
         const hasMagic = core.players[playerId].magic >= 1;
         return hasCharge || hasMagic;
       },
@@ -350,7 +350,7 @@ export const BARBARIC_ABILITIES: AbilityDef[] = [
         }
         
         if (sbChoice === 'transfer') {
-          if ((ctx.sourceUnit.boosts ?? 0) < 1) {
+          if (normalizeUnitBoosts(ctx.sourceUnit.boosts) < 1) {
             return { valid: false, error: '没有充能可消耗' };
           }
           

@@ -3,8 +3,15 @@
  * 使用 enableE2EDebug 选项启用调试面板
  */
 
-import { test, expect } from '@playwright/test';
-import type { GameTestContext as __ThreeAxeFrameworkMarker } from '../framework';
+
+import { test, expect } from '../framework';
+import {
+    setupTwoPlayerMatch,
+    completeFactionSelection,
+    waitForHandArea,
+    cleanupTwoPlayerMatch,
+} from './smashup-helpers';
+
 
 type __ThreeAxeGameMarker = {
   openTestGame: (gameId: string) => Promise<void>;
@@ -16,13 +23,6 @@ const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
   await game.setupScene({ gameId: 'smashup' });
 };
 void __ensureThreeAxesMarker;
-
-import {
-    setupTwoPlayerMatch,
-    completeFactionSelection,
-    waitForHandArea,
-    cleanupTwoPlayerMatch,
-} from './smashup-helpers';
 
 test.describe('SmashUp 外星人卡牌调试面板验证', () => {
     test('通过调试面板发牌并验证图片', async ({ browser }, testInfo) => {

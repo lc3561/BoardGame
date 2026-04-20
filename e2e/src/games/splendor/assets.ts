@@ -1,5 +1,6 @@
 export const SPLENDOR_ASSETS = {
     BOARD_DESK: 'splendor/board-desk.jpg',
+    THUMBNAIL: 'splendor/picture',
     TOKEN_WHITE: 'splendor/white.png',
     TOKEN_BLUE: 'splendor/blue.png',
     TOKEN_GREEN: 'splendor/green.png',
@@ -12,6 +13,7 @@ export const SPLENDOR_ASSETS = {
     CARD_LEVEL_1: 'splendor/level-1-cards.jpg',
     CARD_LEVEL_2: 'splendor/level-2-cards.jpg',
     CARD_LEVEL_3: 'splendor/level-3-cards.jpg',
+    NOBLES: 'splendor/nobles.jpg',
 } as const;
 
 export const SPLENDOR_TOKEN_IMAGE_BY_COLOR = {

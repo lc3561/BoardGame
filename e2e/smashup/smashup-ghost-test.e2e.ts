@@ -10,21 +10,9 @@
  * 架构验证：optionsGenerator 动态生成选项，确保后续交互看到最新状态
  */
 
-import { test, expect } from '@playwright/test';
-import type { GameTestContext as __ThreeAxeFrameworkMarker } from '../framework';
 
-type __ThreeAxeGameMarker = {
-  openTestGame: (gameId: string) => Promise<void>;
-  setupScene: (config: { gameId: string }) => Promise<void>;
-};
-
-const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
-  await game.openTestGame('smashup');
-  await game.setupScene({ gameId: 'smashup' });
-};
-void __ensureThreeAxesMarker;
-
-import { 
+import { test, expect } from '../framework';
+import {
     readCoreState, 
     applyCoreState,
     completeFactionSelection,
@@ -38,6 +26,18 @@ import {
     seedMatchCredentials,
     joinMatchViaAPI,
 } from '../helpers/common';
+
+
+type __ThreeAxeGameMarker = {
+  openTestGame: (gameId: string) => Promise<void>;
+  setupScene: (config: { gameId: string }) => Promise<void>;
+};
+
+const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
+  await game.openTestGame('smashup');
+  await game.setupScene({ gameId: 'smashup' });
+};
+void __ensureThreeAxesMarker;
 
 const GAME_NAME = 'smashup';
 

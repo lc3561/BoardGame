@@ -18,7 +18,14 @@ import type {
   FactionId,
 } from './types';
 import { SW_EVENTS, SW_SELECTION_EVENTS } from './types';
-import { BOARD_ROWS, BOARD_COLS, HAND_SIZE, clampMagic } from './helpers';
+import {
+  BOARD_ROWS,
+  BOARD_COLS,
+  HAND_SIZE,
+  clampMagic,
+  normalizeFiniteNumber,
+  normalizeUnitBoosts,
+} from './helpers';
 import {
   drawFromTop,
   removeFromHand,
@@ -503,8 +510,11 @@ export function reduceEvent(core: SummonerWarsCore, event: GameEvent): SummonerW
       const newBoard = core.board.map(row => row.map(cell => ({ ...cell })));
       const cell = newBoard[position.row][position.col];
       if (cell.unit) {
-        const currentBoosts = cell.unit.boosts ?? 0;
-        const finalValue = newValue !== undefined ? newValue : Math.max(0, currentBoosts + delta);
+        const currentBoosts = normalizeUnitBoosts(cell.unit.boosts);
+        const safeDelta = normalizeFiniteNumber(delta, 0);
+        const finalValue = newValue !== undefined
+          ? normalizeUnitBoosts(newValue)
+          : Math.max(0, currentBoosts + safeDelta);
         cell.unit = { ...cell.unit, boosts: finalValue };
       }
       return { ...core, board: newBoard };
@@ -817,6 +827,22 @@ export function reduceEvent(core: SummonerWarsCore, event: GameEvent): SummonerW
         }
       }
       return newCore;
+    }
+
+    case SW_SELECTION_EVENTS.SEAT_SWAPPED: {
+      const { requesterId, targetPlayerId } = payload as { requesterId: PlayerId; targetPlayerId: PlayerId };
+      if (requesterId === targetPlayerId) return core;
+      if (!core.players[requesterId] || !core.players[targetPlayerId]) return core;
+      const swapPlayerId = (playerId: PlayerId): PlayerId => {
+        if (playerId === requesterId) return targetPlayerId;
+        if (playerId === targetPlayerId) return requesterId;
+        return playerId;
+      };
+      return {
+        ...core,
+        startingPlayerId: swapPlayerId(core.startingPlayerId),
+        currentPlayer: swapPlayerId(core.currentPlayer),
+      };
     }
 
     case SW_SELECTION_EVENTS.PLAYER_READY: {

@@ -5,15 +5,14 @@
 
 import { DiceThroneDomain } from '../domain';
 import { diceThroneSystemsForTest } from '../game';
-import type { DiceThroneCore, TurnPhase, CardInteractionType, DiceThroneCommand, InteractionDescriptor } from '../domain/types';
-import { CP_MAX, HAND_LIMIT, INITIAL_CP, INITIAL_HEALTH } from '../domain/types';
+import { DICETHRONE_CHARACTER_CATALOG, type DiceThroneCore, type TurnPhase, type CardInteractionType, type DiceThroneCommand, type InteractionDescriptor } from '../domain/types';
+import { CP_MAX, INITIAL_CP } from '../domain/types';
 import {
     diceModifyReducer, diceModifyToCommands, diceSelectReducer, diceSelectToCommands,
     type DiceModifyStep, type DiceSelectStep, type DiceModifyResult, type DiceSelectResult,
 } from '../domain/systems';
 import type { MultistepChoiceData } from '../../../engine/systems/InteractionSystem';
 import { RESOURCE_IDS } from '../domain/resources';
-import { STATUS_IDS, TOKEN_IDS } from '../domain/ids';
 import type { AbilityCard } from '../types';
 import { GameTestRunner, type StateExpectation } from '../../../engine/testing';
 import type { MatchState, PlayerId, RandomFn } from '../../../engine/types';
@@ -83,10 +82,28 @@ export const cmd = (type: string, playerId: PlayerId, payload: Record<string, un
 
 export const buildSetupCommands = (playerIds: PlayerId[]): CommandInput[] => {
     const hostPlayerId = playerIds[0];
-    const commands: CommandInput[] = playerIds.map((playerId) => ({
+    const allCharacterIds = DICETHRONE_CHARACTER_CATALOG.map((item) => item.id);
+    const usedCharacterIds = new Set<string>();
+
+    const pickCharacterIdForSeat = (seatIndex: number): string => {
+        if (seatIndex === 0 && allCharacterIds.includes('monk')) {
+            usedCharacterIds.add('monk');
+            return 'monk';
+        }
+
+        const nextAvailable = allCharacterIds.find((characterId) => !usedCharacterIds.has(characterId));
+        if (nextAvailable) {
+            usedCharacterIds.add(nextAvailable);
+            return nextAvailable;
+        }
+
+        return allCharacterIds[seatIndex % allCharacterIds.length] ?? 'monk';
+    };
+
+    const commands: CommandInput[] = playerIds.map((playerId, seatIndex) => ({
         type: 'SELECT_CHARACTER',
         playerId,
-        payload: { characterId: 'monk' },
+        payload: { characterId: pickCharacterIdForSeat(seatIndex) },
     }));
 
     playerIds.forEach((playerId) => {

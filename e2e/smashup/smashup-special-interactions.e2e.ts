@@ -11,20 +11,8 @@
  * 7. Protection 保护：robot_warbot（战争机器人）
  */
 
-import { test, expect } from '@playwright/test';
-import type { GameTestContext as __ThreeAxeFrameworkMarker } from '../framework';
 
-type __ThreeAxeGameMarker = {
-  openTestGame: (gameId: string) => Promise<void>;
-  setupScene: (config: { gameId: string }) => Promise<void>;
-};
-
-const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
-  await game.openTestGame('smashup');
-  await game.setupScene({ gameId: 'smashup' });
-};
-void __ensureThreeAxesMarker;
-
+import { test, expect } from '../framework';
 import {
     setupTwoPlayerMatch,
     cleanupTwoPlayerMatch,
@@ -37,6 +25,18 @@ import {
     isPromptVisible,
     FACTION,
 } from './smashup-helpers';
+
+
+type __ThreeAxeGameMarker = {
+  openTestGame: (gameId: string) => Promise<void>;
+  setupScene: (config: { gameId: string }) => Promise<void>;
+};
+
+const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
+  await game.openTestGame('smashup');
+  await game.setupScene({ gameId: 'smashup' });
+};
+void __ensureThreeAxesMarker;
 
 test.describe('SmashUp 特殊交互类型 E2E', () => {
     test.setTimeout(180000);

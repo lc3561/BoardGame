@@ -6,7 +6,7 @@
  * - 念力代替攻击（telekinesis_instead）：按钮激活，推拉目标
  */
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../framework';
 import {
   setupSWOnlineMatch,
   readCoreState,
@@ -191,15 +191,25 @@ test.describe('欺心巫族阵营特色交互', () => {
 
       // 直接通过 dispatch 发送 mind_capture_resolve 命令（跳过骰子随机性）
       const summonerUnit = mcCore.board[summonerPos.row][summonerPos.col]?.unit;
-      const dispatchResult = await hostPage.evaluate(({ sourceUnitId, targetPosition, hits }) => {
-        const w = window as Window & { __BG_DISPATCH__?: (type: string, payload: unknown) => void };
-        if (w.__BG_DISPATCH__) {
-          w.__BG_DISPATCH__('sw:activate_ability', {
+      const dispatchResult = await hostPage.evaluate(async ({ sourceUnitId, targetPosition, hits }) => {
+        const harness = (window as Window & {
+          __BG_TEST_HARNESS__?: {
+            command?: {
+              dispatch?: (input: unknown) => Promise<void> | void;
+            };
+          };
+        }).__BG_TEST_HARNESS__;
+        if (typeof harness?.command?.dispatch === 'function') {
+          await harness.command.dispatch({
+            type: 'sw:activate_ability',
+            playerId: '0',
+            payload: {
             abilityId: 'mind_capture_resolve',
             sourceUnitId,
             choice: 'control',
             targetPosition,
             hits,
+            },
           });
           return 'dispatched';
         }
@@ -251,15 +261,25 @@ test.describe('欺心巫族阵营特色交互', () => {
 
       // 直接通过 dispatch 发送命令，选择"伤害"
       const summonerUnit = mcCore.board[summonerPos.row][summonerPos.col]?.unit;
-      const dispatchResult = await hostPage.evaluate(({ sourceUnitId, targetPosition, hits }) => {
-        const w = window as Window & { __BG_DISPATCH__?: (type: string, payload: unknown) => void };
-        if (w.__BG_DISPATCH__) {
-          w.__BG_DISPATCH__('sw:activate_ability', {
+      const dispatchResult = await hostPage.evaluate(async ({ sourceUnitId, targetPosition, hits }) => {
+        const harness = (window as Window & {
+          __BG_TEST_HARNESS__?: {
+            command?: {
+              dispatch?: (input: unknown) => Promise<void> | void;
+            };
+          };
+        }).__BG_TEST_HARNESS__;
+        if (typeof harness?.command?.dispatch === 'function') {
+          await harness.command.dispatch({
+            type: 'sw:activate_ability',
+            playerId: '0',
+            payload: {
             abilityId: 'mind_capture_resolve',
             sourceUnitId,
             choice: 'damage',
             targetPosition,
             hits,
+            },
           });
           return 'dispatched';
         }

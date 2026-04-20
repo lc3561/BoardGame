@@ -443,6 +443,10 @@ describe('Feature: incremental-state-sync', () => {
       mockSocket = new MockClientSocket();
     });
 
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
     /**
      * 需求 5.3：patch 应用失败触发 resync
      */
@@ -470,6 +474,34 @@ describe('Feature: incremental-state-sync', () => {
       expect(syncEmits.length).toBeGreaterThan(0);
 
       client.disconnect();
+    });
+
+    it('terminal match_not_found error stops sync timeout retries and tears down socket', () => {
+      vi.useFakeTimers();
+      const onError = vi.fn();
+      const onConnectionChange = vi.fn();
+      const client = new GameTransportClient({
+        server: '',
+        matchID: 'test-match',
+        playerID: '0',
+        credentials: 'test-cred',
+        onError,
+        onConnectionChange,
+      });
+
+      client.connect();
+      mockSocket.simulateEvent('connect');
+      const syncCountBeforeError = mockSocket.findEmitted('sync').length;
+      expect(syncCountBeforeError).toBeGreaterThan(0);
+
+      mockSocket.simulateEvent('error', 'test-match', 'match_not_found');
+      expect(onError).toHaveBeenCalledWith('match_not_found');
+      expect(client.connectionState).toBe('disconnected');
+      expect(client.getSocket()).toBeNull();
+
+      vi.advanceTimersByTime(30000);
+      const syncCountAfterAdvance = mockSocket.findEmitted('sync').length;
+      expect(syncCountAfterAdvance).toBe(syncCountBeforeError);
     });
 
     /**

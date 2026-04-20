@@ -24,7 +24,6 @@ import { getInteractionHandler } from '../domain/abilityInteractionHandlers';
 import { addPowerCounter, buildPlayerTargetOptions } from '../domain/abilityHelpers';
 import { uncoverBuriedCard } from '../domain/bury';
 import { collectTriggers, fireTriggers, interceptEvent } from '../domain/ongoingEffects';
-import { getTriggerExecutor } from '../domain/triggerExecutors';
 import { filterProtectedDestroyEvents, filterProtectedMoveEvents, filterProtectedReturnEvents, processAffectTriggers, processMoveTriggers, processReturnToHandTriggers } from '../domain/reducer';
 import { maybeResolveReactionQueue } from '../domain/reactionQueue';
 import { initAllAbilities } from '../abilities';
@@ -1609,6 +1608,74 @@ describe('smashup', () => {
         expect(chosenAction?.kind).toBe('play-minion');
     });
 
+    it('高动作密度下应启用 candidate loop 批次搜索，并产出 lookahead 前瞻贡献', async () => {
+        const stateForAi = makeMatchState(makeState({
+            currentPlayerIndex: 0,
+            players: {
+                '0': makePlayer('0', {
+                    hand: [
+                        makeCard('wizard-summon-1', 'wizard_summon', 'action', '0'),
+                        makeCard('wizard-summon-2', 'wizard_summon', 'action', '0'),
+                        makeCard('robot-warbot-1', 'robot_warbot', 'minion', '0'),
+                        makeCard('robot-warbot-2', 'robot_warbot', 'minion', '0'),
+                        makeCard('pirate-first-mate-1', 'pirate_first_mate', 'minion', '0'),
+                        makeCard('dino-armor-stego-1', 'dino_armor_stego', 'minion', '0'),
+                        makeCard('robot-tech-center-1', 'robot_tech_center', 'action', '0'),
+                        makeCard('wizard-enchantress-1', 'wizard_enchantress', 'minion', '0'),
+                    ],
+                    factions: [SMASHUP_FACTION_IDS.WIZARDS, SMASHUP_FACTION_IDS.ROBOTS],
+                    minionsPlayed: 0,
+                    minionLimit: 1,
+                    actionsPlayed: 0,
+                    actionLimit: 1,
+                }),
+                '1': makePlayer('1'),
+            },
+            bases: [
+                makeBase('base_the_jungle'),
+                makeBase('base_the_mothership'),
+                makeBase('base_tar_pits'),
+            ],
+        }));
+
+        const legalActions = buildSmashUpAiLegalActions({
+            playerId: '0',
+            state: stateForAi,
+        });
+        expect(legalActions.length).toBeGreaterThan(15);
+
+        const decision = await smashUpAiRuntime.localPolicies!.baseline.decide({
+            gameId: 'smashup',
+            matchId: 'test-smashup-ai-candidate-loop-density',
+            playerId: '0',
+            visibleState: stateForAi,
+            interaction: null,
+            responseWindow: null,
+            legalActions,
+            rulesVersion: null,
+            decisionBudgetMs: 250,
+            difficulty: resolveAiDifficultyProfile('expert'),
+            source: 'local',
+        });
+        const evaluations = (decision?.providerMetadata?.evaluations ?? []) as Array<{
+            searched?: boolean;
+            contributions: Array<{ scorerId: string }>;
+        }>;
+
+        expect(evaluations.length).toBe(legalActions.length);
+        expect(evaluations.some((item) => item.searched === true)).toBe(true);
+        expect(evaluations.some((item) => item.searched === false)).toBe(true);
+        expect(
+            evaluations.some((item) => item.contributions.some((contribution) => contribution.scorerId === 'lookahead')),
+        ).toBe(true);
+        expect(
+            evaluations.some((item) => item.contributions.some((contribution) => contribution.scorerId === 'assignment-first')),
+        ).toBe(true);
+        expect(
+            evaluations.some((item) => item.contributions.some((contribution) => contribution.scorerId === 'relative-utility-smashup-limited')),
+        ).toBe(true);
+    });
+
     it('Smash Up baseline AI 会优先把随从投向能直接改写高价值评分的关键基地', async () => {
         const stateForAi = makeMatchState(makeState({
             currentPlayerIndex: 0,
@@ -1916,9 +1983,18 @@ describe('smashup', () => {
             source: 'local',
         });
         const chosenAction = legalActions.find((action) => action.actionId === decision?.actionId);
+        const evaluations = (decision?.providerMetadata?.evaluations ?? []) as Array<{
+            actionId?: string;
+            contributions: Array<{ scorerId: string }>;
+        }>;
 
         expect(legalActions.some((action) => action.kind === 'response-pass')).toBe(true);
         expect(chosenAction?.kind).toBe('response-pass');
+        expect(
+            evaluations
+                .flatMap((item) => item.contributions ?? [])
+                .some((contribution) => contribution.scorerId === 'relative-utility-smashup-limited'),
+        ).toBe(false);
     });
 
     it('Smash Up baseline AI 在同一局面下重复决策应保持稳定，不应表现为完全随机', async () => {

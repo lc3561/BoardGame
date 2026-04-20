@@ -803,10 +803,18 @@ const _dismissTutorialOverlayViaDebugState = async (page: Page) => {
       }, { timeout: 60000 });
     };
     const dispatchCommand = async (page: Page, type: string, payload: unknown) => page.evaluate(
-      ({ commandType, commandPayload }) => {
-        const w = window as Window & { __BG_DISPATCH__?: (innerType: string, innerPayload: unknown) => void };
-        if (typeof w.__BG_DISPATCH__ !== 'function') return false;
-        w.__BG_DISPATCH__(commandType, commandPayload);
+      async ({ commandType, commandPayload }) => {
+        const harness = (window as Window & {
+          __BG_TEST_HARNESS__?: {
+            command?: {
+              dispatch?: (input: { type: string; payload?: unknown }) => Promise<void> | void;
+            };
+          };
+        }).__BG_TEST_HARNESS__;
+        if (typeof harness?.command?.dispatch !== 'function') return false;
+        const params = new URLSearchParams(window.location.search);
+        const playerId = params.get('playerID') ?? '0';
+        await harness.command.dispatch({ type: commandType, playerId, payload: commandPayload });
         return true;
       },
       { commandType: type, commandPayload: payload },
@@ -1057,8 +1065,15 @@ const waitForSummonerWarsUI = async (page: Page, timeout = 20000) => {
 const completeFactionSelection = async (hostPage: Page, guestPage: Page) => {
   const waitForFactionSelectionReady = async (page: Page) => {
     await page.waitForFunction(() => {
-      const w = window as Window & { __BG_DISPATCH__?: unknown };
-      if (typeof w.__BG_DISPATCH__ === 'function') return true;
+      const harness = (window as Window & {
+        __BG_TEST_HARNESS__?: {
+          command?: {
+            isRegistered?: () => boolean;
+            dispatch?: unknown;
+          };
+        };
+      }).__BG_TEST_HARNESS__;
+      if (harness?.command?.isRegistered?.() === true || typeof harness?.command?.dispatch === 'function') return true;
       const heading = document.querySelector('h1, [role="heading"]');
       const text = heading?.textContent ?? document.body?.innerText ?? '';
       return /选择你的阵营|Choose Your Faction/i.test(text);
@@ -1069,12 +1084,20 @@ const completeFactionSelection = async (hostPage: Page, guestPage: Page) => {
   await waitForFactionSelectionReady(guestPage);
 
   const dispatchCommand = async (page: Page, type: string, payload: unknown) => {
-    return page.evaluate(({ commandType, commandPayload }) => {
-      const w = window as Window & { __BG_DISPATCH__?: (innerType: string, innerPayload: unknown) => void };
-      if (typeof w.__BG_DISPATCH__ !== 'function') {
+    return page.evaluate(async ({ commandType, commandPayload }) => {
+      const harness = (window as Window & {
+        __BG_TEST_HARNESS__?: {
+          command?: {
+            dispatch?: (input: { type: string; payload?: unknown }) => Promise<void> | void;
+          };
+        };
+      }).__BG_TEST_HARNESS__;
+      if (typeof harness?.command?.dispatch !== 'function') {
         return false;
       }
-      w.__BG_DISPATCH__(commandType, commandPayload);
+      const params = new URLSearchParams(window.location.search);
+      const playerId = params.get('playerID') ?? '0';
+      await harness.command.dispatch({ type: commandType, playerId, payload: commandPayload });
       return true;
     }, { commandType: type, commandPayload: payload });
   };
@@ -2469,6 +2492,264 @@ test.describe('SummonerWars', () => {
     await guestContext.close();
   });
 
+  test('在线 AI 阵营选择 HUD 换位：应显示入口并可与 AI 交换先手', async ({ browser }, testInfo) => {
+    test.setTimeout(120000);
+    await clearEvidenceScreenshotsForTest(testInfo);
+
+    const baseURL = testInfo.project.use.baseURL as string | undefined;
+    const hostContext = await browser.newContext({ baseURL });
+    await blockAudioRequests(hostContext);
+    await setChineseLocale(hostContext);
+    await resetMatchStorage(hostContext);
+    await disableAudio(hostContext);
+    await disableTutorial(hostContext);
+    const hostPage = await hostContext.newPage();
+
+    try {
+      if (!await ensureGameServerAvailable(hostPage)) {
+        test.skip(true, 'Game server unavailable for online AI seat swap tests.');
+      }
+
+      await hostPage.goto('/', { waitUntil: 'domcontentloaded' });
+      await hostPage.waitForSelector('[data-game-id]', { timeout: 15000 }).catch(() => {});
+
+      const matchId = await createSWRoomViaAPI(hostPage, {
+        setupData: {
+          enableAi: true,
+          seatControllers: {
+            '1': {
+              type: 'local-ai',
+              minimumActionDelayMs: 0,
+            },
+          },
+        },
+      });
+      if (!matchId) {
+        test.skip(true, 'AI room creation failed or backend unavailable.');
+      }
+
+      await ensurePlayerIdInUrl(hostPage, '0');
+      await hostPage.goto(`/play/summonerwars/match/${matchId!}?playerID=0`, { waitUntil: 'domcontentloaded' });
+
+      await waitForState(hostPage, async () => {
+        return await hostPage.getByTestId('debug-toggle').isVisible().catch(() => false);
+      }, { timeout: 30000, message: '等待 Summoner Wars 在线房间调试面板就绪' });
+
+      await expect.poll(async () => {
+        const core = await readCoreState(hostPage);
+        return {
+          hostStarted: core?.hostStarted ?? null,
+          startingPlayerId: core?.startingPlayerId ?? null,
+        };
+      }, {
+        timeout: 15000,
+        message: '等待在线 AI 阵营选择阶段状态稳定',
+      }).toEqual({
+        hostStarted: false,
+        startingPlayerId: '0',
+      });
+
+      await closeDebugPanelIfOpen(hostPage);
+      const seatSwapPanel = await openFabPanel(hostPage, 'seat-swap', 'exit');
+      await expect(seatSwapPanel).toBeVisible({ timeout: 5000 });
+      await hostPage.screenshot({
+        path: getEvidenceScreenshotPath(testInfo, 'online-ai-seat-swap-entry-visible', {
+          filename: 'online-ai-seat-swap-entry-visible.png',
+        }),
+        fullPage: false,
+      });
+      await expect(hostPage.getByTestId('hud-seat-swap-seat-1')).toBeVisible({ timeout: 10000 });
+      await expect(hostPage.getByTestId('hud-seat-swap-seat-1').getByText(/^AI$/)).toBeVisible({ timeout: 5000 });
+      await hostPage.screenshot({
+        path: getEvidenceScreenshotPath(testInfo, 'online-ai-seat-swap-panel-before-click', {
+          filename: 'online-ai-seat-swap-panel-before-click.png',
+        }),
+        fullPage: false,
+      });
+
+      await hostPage.getByTestId('hud-seat-swap-seat-1').click();
+      await expect.poll(async () => {
+        const core = await readCoreState(hostPage);
+        return {
+          startingPlayerId: core?.startingPlayerId ?? null,
+          currentPlayer: core?.currentPlayer ?? null,
+        };
+      }, {
+        timeout: 10000,
+        message: '等待换位后先手与当前玩家更新',
+      }).toEqual({
+        startingPlayerId: '1',
+        currentPlayer: '1',
+      });
+      await closeDebugPanelIfOpen(hostPage);
+      await hostPage.screenshot({
+        path: getEvidenceScreenshotPath(testInfo, 'online-ai-seat-swap-after-click', {
+          filename: 'online-ai-seat-swap-after-click.png',
+        }),
+        fullPage: false,
+      });
+    } finally {
+      await hostContext.close();
+    }
+  });
+
+  test('在线 AI 阵营选择 HUD 换位：移动横屏展开面板应留在视口并与按钮列对齐', async ({ browser }, testInfo) => {
+    test.setTimeout(120000);
+    await clearEvidenceScreenshotsForTest(testInfo);
+
+    const baseURL = testInfo.project.use.baseURL as string | undefined;
+    const hostContext = await browser.newContext({
+      baseURL,
+      viewport: SW_PHONE_LANDSCAPE_VIEWPORT,
+      isMobile: true,
+      hasTouch: true,
+    });
+    await hostContext.addInitScript(() => {
+      (window as Window & { __E2E_SKIP_IMAGE_GATE__?: boolean }).__E2E_SKIP_IMAGE_GATE__ = true;
+      (window as Window & { __BG_FORCE_COARSE_POINTER__?: boolean }).__BG_FORCE_COARSE_POINTER__ = true;
+      localStorage.removeItem('hud_fab_position');
+      localStorage.removeItem('hud_fab_offset');
+    });
+    await blockAudioRequests(hostContext);
+    await setChineseLocale(hostContext);
+    await resetMatchStorage(hostContext);
+    await disableAudio(hostContext);
+    await disableTutorial(hostContext);
+    const hostPage = await hostContext.newPage();
+
+    try {
+      if (!await ensureGameServerAvailable(hostPage)) {
+        test.skip(true, 'Game server unavailable for mobile online AI seat swap tests.');
+      }
+
+      await hostPage.goto('/', { waitUntil: 'domcontentloaded' });
+      await hostPage.waitForSelector('[data-game-id]', { timeout: 15000 }).catch(() => {});
+
+      const matchId = await createSWRoomViaAPI(hostPage, {
+        setupData: {
+          enableAi: true,
+          seatControllers: {
+            '1': {
+              type: 'local-ai',
+              minimumActionDelayMs: 0,
+            },
+          },
+        },
+      });
+      if (!matchId) {
+        test.skip(true, 'AI room creation failed or backend unavailable.');
+      }
+
+      await ensurePlayerIdInUrl(hostPage, '0');
+      await hostPage.goto(`/play/summonerwars/match/${matchId!}?playerID=0`, { waitUntil: 'domcontentloaded' });
+
+      await waitForState(hostPage, async () => {
+        return await hostPage.getByTestId('debug-toggle').isVisible().catch(() => false);
+      }, { timeout: 30000, message: '等待 Summoner Wars 移动横屏在线房间调试面板就绪' });
+
+      await expect.poll(async () => {
+        const core = await readCoreState(hostPage);
+        return {
+          hostStarted: core?.hostStarted ?? null,
+          startingPlayerId: core?.startingPlayerId ?? null,
+        };
+      }, {
+        timeout: 15000,
+        message: '等待移动横屏在线 AI 阵营选择阶段状态稳定',
+      }).toEqual({
+        hostStarted: false,
+        startingPlayerId: '0',
+      });
+
+      await closeDebugPanelIfOpen(hostPage);
+      const seatSwapPanel = await openFabPanel(hostPage, 'seat-swap', 'exit');
+      await expect(seatSwapPanel).toBeVisible({ timeout: 5000 });
+      await expect(hostPage.getByTestId('hud-seat-swap-seat-1')).toBeVisible({ timeout: 10000 });
+      await hostPage.waitForTimeout(180);
+      const mobileFabLayout = await hostPage.evaluate(() => {
+        const panel = document.querySelector('[data-testid="fab-panel-seat-swap"]') as HTMLElement | null;
+        const panelRect = panel?.getBoundingClientRect() ?? null;
+        const seatSwapButton = document.querySelector('[data-fab-id="seat-swap"]') as HTMLElement | null;
+        const seatSwapButtonRect = seatSwapButton?.getBoundingClientRect() ?? null;
+        const visibleButtons = Array.from(document.querySelectorAll('[data-testid="fab-menu"] [data-fab-id]'))
+          .map((node) => {
+            if (!(node instanceof HTMLElement)) return null;
+            const rect = node.getBoundingClientRect();
+            const style = window.getComputedStyle(node);
+            const visible = style.display !== 'none'
+              && style.visibility !== 'hidden'
+              && style.opacity !== '0'
+              && rect.width > 0
+              && rect.height > 0;
+            if (!visible) return null;
+            return rect;
+          })
+          .filter((rect): rect is DOMRect => Boolean(rect));
+        const columnTop = visibleButtons.length > 0 ? Math.min(...visibleButtons.map((rect) => rect.top)) : null;
+        const columnBottom = visibleButtons.length > 0 ? Math.max(...visibleButtons.map((rect) => rect.bottom)) : null;
+        return {
+          viewportWidth: window.innerWidth,
+          viewportHeight: window.innerHeight,
+          panelRect: panelRect
+            ? { left: panelRect.left, top: panelRect.top, right: panelRect.right, bottom: panelRect.bottom }
+            : null,
+          seatSwapButtonRect: seatSwapButtonRect
+            ? {
+                left: seatSwapButtonRect.left,
+                top: seatSwapButtonRect.top,
+                right: seatSwapButtonRect.right,
+                bottom: seatSwapButtonRect.bottom,
+              }
+            : null,
+          columnTop,
+          columnBottom,
+        };
+      });
+
+      expect(mobileFabLayout.panelRect).not.toBeNull();
+      expect(mobileFabLayout.seatSwapButtonRect).not.toBeNull();
+      expect(mobileFabLayout.panelRect?.left ?? -1).toBeGreaterThanOrEqual(0);
+      expect(mobileFabLayout.panelRect?.top ?? -1).toBeGreaterThanOrEqual(0);
+      expect(mobileFabLayout.panelRect?.right ?? 9999).toBeLessThanOrEqual(mobileFabLayout.viewportWidth + 1);
+      expect(mobileFabLayout.panelRect?.bottom ?? 9999).toBeLessThanOrEqual(mobileFabLayout.viewportHeight + 1);
+      expect(mobileFabLayout.panelRect?.bottom ?? -1).toBeGreaterThanOrEqual((mobileFabLayout.columnTop ?? -1) - 12);
+      expect(mobileFabLayout.panelRect?.top ?? 9999).toBeLessThanOrEqual((mobileFabLayout.columnBottom ?? 9999) + 12);
+      expect(mobileFabLayout.panelRect?.right ?? 9999).toBeLessThanOrEqual((mobileFabLayout.seatSwapButtonRect?.left ?? 9999) + 2);
+
+      await hostPage.screenshot({
+        path: getEvidenceScreenshotPath(testInfo, 'online-ai-seat-swap-mobile-panel-open', {
+          filename: 'online-ai-seat-swap-mobile-panel-open.png',
+        }),
+        fullPage: false,
+      });
+
+      await hostPage.getByTestId('hud-seat-swap-seat-1').click();
+      await expect.poll(async () => {
+        const core = await readCoreState(hostPage);
+        return {
+          startingPlayerId: core?.startingPlayerId ?? null,
+          currentPlayer: core?.currentPlayer ?? null,
+        };
+      }, {
+        timeout: 10000,
+        message: '等待移动横屏换位后先手与当前玩家更新',
+      }).toEqual({
+        startingPlayerId: '1',
+        currentPlayer: '1',
+      });
+
+      await closeDebugPanelIfOpen(hostPage);
+      await hostPage.screenshot({
+        path: getEvidenceScreenshotPath(testInfo, 'online-ai-seat-swap-mobile-after-click', {
+          filename: 'online-ai-seat-swap-mobile-after-click.png',
+        }),
+        fullPage: false,
+      });
+    } finally {
+      await hostContext.close();
+    }
+  });
+
   test('在线 AI watchdog/卡死兜底：阻止 AI seat 建连后，服务端仍应自动收口到真人回合且不误推进真人', async ({ browser }, testInfo) => {
     test.setTimeout(150000);
     await clearEvidenceScreenshotsForTest(testInfo);
@@ -2833,6 +3114,24 @@ test.describe('SummonerWars', () => {
     }
     await clickBoardElement(hostPage, '[data-valid-summon="true"]');
     await expect(hostPage.getByTestId(`sw-unit-${summonRow}-${summonCol}`)).toBeVisible({ timeout: 8000 });
+    await expect.poll(async () => {
+      return hostPage.evaluate(({ row, col }) => {
+        const sprite = document.querySelector(
+          `[data-testid="sw-unit-${row}-${col}"] [data-card-sprite="true"]`,
+        ) as HTMLElement | null;
+        if (!sprite) return -1;
+        return Number.parseFloat(window.getComputedStyle(sprite).opacity);
+      }, { row: summonRow, col: summonCol });
+    }, {
+      timeout: 3000,
+      message: '召唤后单位卡面应快速恢复到不透明',
+    }).toBeGreaterThan(0.95);
+    await hostPage.screenshot({
+      path: getEvidenceScreenshotPath(testInfo, 'online-flow-after-summon', {
+        filename: 'online-flow-after-summon.png',
+      }),
+      fullPage: false,
+    });
 
     // 移动
     coreState = await readOnlineCoreState();
@@ -2920,6 +3219,32 @@ test.describe('SummonerWars', () => {
     }).toBeGreaterThan(attackCountBefore);
 
     const diceOverlay = hostPage.getByTestId('sw-dice-result-overlay');
+    const guestDiceOverlay = guestPage.getByTestId('sw-dice-result-overlay');
+    // 回归门禁：远端攻击（含 AI/对手命令）必须在被动侧触发攻击骰子展示动画。
+    // 若事件流游标被错误静默同步，这里会长期不可见，直接暴露“对手行为无动画”回归。
+    await expect(guestDiceOverlay).toBeVisible({ timeout: 8000 });
+    await expect.poll(async () => {
+      return guestDiceOverlay.evaluate((overlay) => {
+        const panel = overlay.firstElementChild as HTMLElement | null;
+        if (!panel) return 'missing';
+        const inline = panel.style.transform?.trim();
+        if (inline) return inline;
+        return window.getComputedStyle(panel).transform;
+      });
+    }, {
+      timeout: 2000,
+      message: '敌方攻击时骰子特写不应倒置',
+    }).not.toContain('180deg');
+    await guestPage.screenshot({
+      path: getEvidenceScreenshotPath(testInfo, 'online-flow-guest-dice-overlay', {
+        filename: 'online-flow-guest-dice-overlay.png',
+      }),
+      fullPage: false,
+    });
+    if (await guestDiceOverlay.isVisible({ timeout: 1500 }).catch(() => false)) {
+      await guestDiceOverlay.click({ force: true });
+      await expect(guestDiceOverlay).toBeHidden({ timeout: 5000 });
+    }
     if (await diceOverlay.isVisible({ timeout: 1500 }).catch(() => false)) {
       await hostPage.screenshot({
         path: getEvidenceScreenshotPath(testInfo, 'online-flow-after-attack', {
@@ -5223,7 +5548,14 @@ test.describe('SummonerWars', () => {
     await applyCoreState(hostPage, gameOverCore);
     // 等待状态应用和游戏结束检测
     await waitForState(hostPage, async () => {
-      const sys = await hostPage.evaluate(() => (window as any).__BG_STATE__?.sys);
+      const sys = await hostPage.evaluate(() => {
+        const state = (window as Window & {
+          __BG_TEST_HARNESS__?: {
+            state?: { get?: () => unknown };
+          };
+        }).__BG_TEST_HARNESS__?.state?.get?.() as { sys?: unknown } | undefined;
+        return state?.sys;
+      });
       return sys?.gameover !== null && sys?.gameover !== undefined;
     }, { timeout: 3000, message: '等待游戏结束检测' });
     await closeDebugPanelIfOpen(hostPage);

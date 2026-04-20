@@ -4,9 +4,9 @@
  */
 
 import { mkdirSync } from 'node:fs';
+import { test, expect } from '../framework';
 import { join } from 'node:path';
-import { test, expect, type Page, type BrowserContext } from '@playwright/test';
-import type { GameTestContext as __ThreeAxeFrameworkMarker } from '../framework';
+import { type Page, type BrowserContext } from '@playwright/test';
 
 type __ThreeAxeGameMarker = {
   openTestGame: (gameId: string) => Promise<void>;
@@ -18,7 +18,6 @@ const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
   await game.setupScene({ gameId: 'dicethrone' });
 };
 void __ensureThreeAxesMarker;
-
 import {
     createGuestId,
     ensureGameServerAvailable,

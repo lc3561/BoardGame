@@ -908,6 +908,19 @@ export function executeCommand(
       break;
     }
 
+    case SW_COMMANDS.SWAP_SEAT: {
+      const requesterId = ((command.playerId as PlayerId | undefined) ?? playerId);
+      const targetPlayerId = payload.targetPlayerId;
+      if ((targetPlayerId === '0' || targetPlayerId === '1') && targetPlayerId !== requesterId) {
+        events.push({
+          type: SW_SELECTION_EVENTS.SEAT_SWAPPED,
+          payload: { requesterId, targetPlayerId },
+          timestamp,
+        });
+      }
+      break;
+    }
+
     case SW_COMMANDS.PLAYER_READY: {
       events.push({
         type: SW_SELECTION_EVENTS.PLAYER_READY,

@@ -461,11 +461,13 @@ function getHighNoonTargetPlayerIds(state: CustomActionContext['state'], attacke
 
 function hasFourOfAKind(state: CustomActionContext['state']): boolean {
     const activeDice = getActiveDice(state);
-    const counts = new Map<number, number>();
+    const counts = new Map<string, number>();
     for (const die of activeDice) {
-        const value = typeof die.value === 'number' ? die.value : Number(die.value);
-        if (!Number.isFinite(value)) continue;
-        counts.set(value, (counts.get(value) ?? 0) + 1);
+        const symbol = typeof die.symbol === 'string' && die.symbol.length > 0
+            ? die.symbol
+            : (Array.isArray(die.symbols) && typeof die.symbols[0] === 'string' ? die.symbols[0] : null);
+        if (!symbol) continue;
+        counts.set(symbol, (counts.get(symbol) ?? 0) + 1);
     }
     for (const count of counts.values()) {
         if (count >= 4) return true;
