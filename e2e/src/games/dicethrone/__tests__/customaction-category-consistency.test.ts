@@ -524,7 +524,7 @@ describe('CustomAction categories 与 handler 输出一致性审计', () => {
             'pyro-details-dmg-per-fm',
             // 火法师火之高兴：投掷1骰，只有火焰面才加伤（通过 pendingAttack.bonusDamage 间接传递）
             'pyro-get-fired-up-roll',
-            // 月精灵迷影步：防御技能，伤害依赖骰面结果（脚面数量）
+            // 月精灵迷影步：防御技能，伤害依赖骰面结果（每2个弓面造成1点反伤）
             'moon_elf-elusive-step-resolve-1',
             'moon_elf-elusive-step-resolve-2',
             // 火法师熔岩护甲：防御技能，伤害依赖防御投掷骰面结果（火面数量），mock 骰子无 symbol 字段

@@ -214,3 +214,62 @@ npm run test:e2e:ci:file -- e2e/summonerwars/summonerwars-selection.e2e.ts "mobi
 - 我实际看到：卡片网格、左下预览、右下状态+动作链路仍是 PC 同构比例，没有被误改成窄布局。
 - 我实际看到：HUD/FAB 与主舞台在同一视觉坐标，未出现整体偏移到角落。
 - 是否达标：达标（PC-移动端对齐关系维持）。
+
+## 补充修复：等比缩放 + 边缘锚定（2026-04-20）
+
+### 用户要求
+
+- 目标不是“只等比”，而是“靠边元素在等比下仍保持靠边”，即 UI 大致与 PC 的边缘关系一致。
+
+### 本轮实现
+
+- `src/games/summonerwars/ui/FactionSelectionAdapter.tsx`
+  - 下半区改为“舞台全宽 + 双端锚定”：
+    - 左预览区锚定左侧；
+    - 右状态/操作区作为右锚定簇，整体贴近舞台右侧；
+    - 保持中间弹性空隙，不再使用“整体中间簇”视觉关系。
+  - 增加 `data-testid="sw-faction-lower-stage-inner"` 与 `data-testid="sw-faction-right-anchor-cluster"` 供 E2E 做几何验收。
+- `e2e/summonerwars/summonerwars-selection.e2e.ts`
+  - 新增/调整锚定断言：
+    - 左预览区相对舞台左边缘的距离上限；
+    - 右锚定簇相对舞台右边缘的距离上限（不再只看玩家状态卡，避免“预留操作轨宽度”导致误判）。
+
+### 执行命令（并行窗口期间改用开发服入口）
+
+```bash
+PW_USE_DEV_SERVERS=true PW_HAS_EXPLICIT_TARGET=true node node_modules/playwright/cli.js test e2e/summonerwars/summonerwars-selection.e2e.ts --grep "mobile landscape keeps faction selection aligned with pc composition"
+PW_USE_DEV_SERVERS=true PW_HAS_EXPLICIT_TARGET=true node node_modules/playwright/cli.js test e2e/summonerwars/summonerwars-selection.e2e.ts --grep "mobile landscape capped viewport keeps faction selection in strict 16:9 proportional scale"
+PW_USE_DEV_SERVERS=true PW_HAS_EXPLICIT_TARGET=true node node_modules/playwright/cli.js test e2e/summonerwars/summonerwars-selection.e2e.ts --grep "tight mobile landscape keeps host start button visible under proportional scaling"
+PW_USE_DEV_SERVERS=true PW_HAS_EXPLICIT_TARGET=true node node_modules/playwright/cli.js test e2e/summonerwars/summonerwars-selection.e2e.ts --grep "main flow enters match from faction selection"
+```
+
+结果：以上 4 条用例均通过。
+
+### 关键截图与肉眼结论
+
+1. 移动横屏入口（未选将）
+   `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\summonerwars\summonerwars-selection.e2e\mobile-landscape-keeps-faction-selection-aligned-with-pc-composition\selection-phone-landscape-entry.png`
+
+- 我实际看到：左下预览占位保持贴左，不再漂到中间。
+- 我实际看到：右下状态簇保持靠右，和舞台右缘关系稳定。
+- 是否达标：达标（边缘锚定成立）。
+
+2. 移动横屏双人已选（等待态）
+   `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\summonerwars\summonerwars-selection.e2e\mobile-landscape-keeps-faction-selection-aligned-with-pc-composition\selection-phone-landscape-both-picked.png`
+
+- 我实际看到：左预览与右状态/等待动作区保持左右分置，仍是 PC 同构的空间关系。
+- 我实际看到：没有退化成“中间挤一团”的布局。
+- 是否达标：达标（等比 + 锚边同时满足）。
+
+3. 紧凑横屏开始按钮可见
+   `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\summonerwars\summonerwars-selection.e2e\tight-mobile-landscape-keeps-host-start-button-visible-under-proportional-scaling\selection-phone-landscape-tight-start-visible.png`
+
+- 我实际看到：`开始游戏` 按钮仍完整显示在右侧动作区，可点击。
+- 我实际看到：按钮与右侧状态簇在同一右锚定链路中，没有被挤走或消失。
+- 是否达标：达标（你强调的关键位点保持稳定）。
+
+4. PC 主流程回归保护
+   `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\summonerwars\summonerwars-selection.e2e\main-flow-enters-match-from-faction-selection\selection-host-entry.png`
+
+- 我实际看到：桌面端主构图仍保持原基线，未因移动端锚定修复产生明显回归。
+- 是否达标：达标（本轮修复未破坏 PC 入口布局）。

@@ -20,6 +20,19 @@ import {
 } from '../helpers/summonerwars';
 import { getEvidenceScreenshotPath } from '../framework/evidenceScreenshots';
 import { isCellEmpty, isValidCoord } from '../../src/games/summonerwars/domain/helpers';
+import { COMMON_UNITS_BARBARIC, SUMMONER_BARBARIC } from '../../src/games/summonerwars/config/factions/barbaric';
+import { SUMMONER_NECROMANCER } from '../../src/games/summonerwars/config/factions/necromancer';
+
+const cloneInjectedUnitCard = <T extends { abilities?: string[]; deckSymbols?: string[] }>(card: T): T => ({
+  ...card,
+  abilities: Array.isArray(card.abilities) ? [...card.abilities] : [],
+  deckSymbols: Array.isArray(card.deckSymbols) ? [...card.deckSymbols] : [],
+});
+
+const spiritMageCard = COMMON_UNITS_BARBARIC.find((card) => card.id === 'barbaric-spirit-mage');
+if (!spiritMageCard) {
+  throw new Error('未找到炽原精灵祖灵法师配置（barbaric-spirit-mage）');
+}
 
 // ============================================================================
 // 测试状态准备函数
@@ -511,20 +524,7 @@ const prepareSpiritBondNoChargeMoveState = (coreState: any) => {
   board[mySummonerPos.row][mySummonerPos.col].unit = {
     instanceId: 'spirit-bond-my-summoner',
     cardId: 'spirit-bond-my-summoner-card',
-    card: {
-      id: 'barbaric-summoner',
-      cardType: 'unit',
-      name: '阿布亚·石',
-      faction: 'barbaric',
-      cost: 0,
-      life: 10,
-      strength: 5,
-      attackType: 'ranged',
-      attackRange: 3,
-      unitClass: 'summoner',
-      deckSymbols: [],
-      abilities: ['ancestral_bond'],
-    },
+    card: cloneInjectedUnitCard(SUMMONER_BARBARIC),
     owner: '0',
     position: mySummonerPos,
     damage: 0,
@@ -536,20 +536,7 @@ const prepareSpiritBondNoChargeMoveState = (coreState: any) => {
   board[shamanStart.row][shamanStart.col].unit = {
     instanceId: 'spirit-bond-shaman',
     cardId: 'spirit-bond-shaman-card',
-    card: {
-      id: 'barbaric-spirit-mage',
-      cardType: 'unit',
-      name: '祖灵法师',
-      faction: 'barbaric',
-      cost: 1,
-      life: 2,
-      strength: 1,
-      attackType: 'ranged',
-      attackRange: 3,
-      unitClass: 'common',
-      deckSymbols: [],
-      abilities: ['gather_power', 'spirit_bond'],
-    },
+    card: cloneInjectedUnitCard(spiritMageCard),
     owner: '0',
     position: shamanStart,
     damage: 0,
@@ -561,20 +548,7 @@ const prepareSpiritBondNoChargeMoveState = (coreState: any) => {
   board[allyTargetPos.row][allyTargetPos.col].unit = {
     instanceId: 'spirit-bond-ally',
     cardId: 'spirit-bond-ally-card',
-    card: {
-      id: 'barbaric-spirit-mage',
-      cardType: 'unit',
-      name: '祖灵法师',
-      faction: 'barbaric',
-      cost: 1,
-      life: 2,
-      strength: 1,
-      attackType: 'ranged',
-      attackRange: 3,
-      unitClass: 'common',
-      deckSymbols: [],
-      abilities: ['gather_power', 'spirit_bond'],
-    },
+    card: cloneInjectedUnitCard(spiritMageCard),
     owner: '0',
     position: allyTargetPos,
     damage: 0,
@@ -586,20 +560,7 @@ const prepareSpiritBondNoChargeMoveState = (coreState: any) => {
   board[1][3].unit = {
     instanceId: 'spirit-bond-enemy-summoner',
     cardId: 'spirit-bond-enemy-summoner-card',
-    card: {
-      id: 'necro-summoner',
-      cardType: 'unit',
-      name: '亡灵召唤师',
-      faction: 'necromancer',
-      cost: 0,
-      life: 10,
-      strength: 4,
-      attackType: 'ranged',
-      attackRange: 3,
-      unitClass: 'summoner',
-      deckSymbols: [],
-      abilities: [],
-    },
+    card: cloneInjectedUnitCard(SUMMONER_NECROMANCER),
     owner: '1',
     position: { row: 1, col: 3 },
     damage: 0,

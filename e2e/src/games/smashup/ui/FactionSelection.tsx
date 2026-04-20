@@ -20,6 +20,7 @@ import { X, Check, Search, Layers, ZoomIn, Pencil, Lock, BookOpen } from 'lucide
 import { UI_Z_INDEX } from '../../../core';
 import { GameButton } from './GameButton';
 import { CardMagnifyOverlay } from './CardMagnifyOverlay';
+import { CharacterSelectionBadge } from '../../../components/game/framework/CharacterSelectionBadge';
 
 interface Props {
     core: SmashUpCore;
@@ -121,6 +122,13 @@ export const FactionSelection: React.FC<Props> = ({ core, dispatch, playerID }) 
     };
 
     const useDesktopLikeLandscapeLayout = isMobileLandscape;
+    const badgeInlineUnit = (value: number) => `${value}rem`;
+    const implementationBadge = {
+        id: 'under_construction',
+        labelKey: 'common:status_tags.under_construction',
+        tone: 'warning' as const,
+        variant: 'disabled-overlay' as const,
+    };
     const selectionGridClassName = useDesktopLikeLandscapeLayout
         ? 'mx-auto grid w-fit max-w-none grid-cols-[repeat(5,160px)] justify-center gap-x-6 gap-y-3.5 pb-28'
         : 'mx-auto grid w-full max-w-[920px] grid-cols-4 justify-items-center gap-3 lg:max-w-none xl:grid-cols-4 2xl:grid-cols-5 lg:gap-6 pb-24 lg:pb-28';
@@ -281,12 +289,16 @@ export const FactionSelection: React.FC<Props> = ({ core, dispatch, playerID }) 
 
                             {showImplementationBanner && (
                                 <div
-                                    className="absolute left-1.5 top-1.5 z-40 rounded-sm border border-amber-100/80 bg-amber-500/95 px-2 py-1 shadow-[0_4px_10px_rgba(0,0,0,0.35)]"
+                                    className="absolute inset-0 z-40 overflow-hidden pointer-events-none"
                                     data-testid={`faction-implementation-banner-${group.groupId}`}
                                 >
-                                    <span className="text-[9px] font-black uppercase tracking-wide text-slate-900">
-                                        {t('ui.faction_implementation_in_progress', { defaultValue: '实施中' })}
-                                    </span>
+                                    <CharacterSelectionBadge
+                                        badge={implementationBadge}
+                                        label={t('ui.faction_implementation_in_progress', { defaultValue: '实施中' })}
+                                        inlineUnit={badgeInlineUnit}
+                                        testId={`faction-implementation-banner-label-${group.groupId}`}
+                                        mode="overlay"
+                                    />
                                 </div>
                             )}
                         </div>
@@ -525,12 +537,15 @@ export const FactionSelection: React.FC<Props> = ({ core, dispatch, playerID }) 
                                                                     className="mb-4 rounded-sm border border-amber-300 bg-amber-50 px-3 py-2 shadow-[0_4px_12px_rgba(245,158,11,0.2)]"
                                                                     data-testid="faction-detail-implementation-banner"
                                                                 >
-                                                                    <p className="text-xs font-black uppercase tracking-wide text-amber-900">
-                                                                        {t('ui.faction_implementation_in_progress', { defaultValue: '实施中' })}
-                                                                    </p>
-                                                                    <p className="mt-1 text-[11px] font-semibold leading-relaxed text-amber-900/90">
-                                                                        {t('ui.faction_implementation_in_progress_hint', { defaultValue: '该派系正在分批实施，规则与交互会持续完善。' })}
-                                                                    </p>
+                                                                    <div className="relative h-10 overflow-hidden rounded-sm border border-amber-200/90 bg-amber-100/60">
+                                                                        <CharacterSelectionBadge
+                                                                            badge={implementationBadge}
+                                                                            label={t('ui.faction_implementation_in_progress', { defaultValue: '实施中' })}
+                                                                            inlineUnit={badgeInlineUnit}
+                                                                            testId="faction-detail-implementation-banner-label"
+                                                                            mode="overlay"
+                                                                        />
+                                                                    </div>
                                                                 </div>
                                                             )}
 

@@ -133,6 +133,9 @@ export const FACTION_METADATA: FactionMeta[] = [
  * 先把入口能力接好，后续新增派系时只需补 metadata 或加入此名单即可展示。
  */
 const IN_PROGRESS_FACTION_IDS = new Set<string>([
+    'mermaids',
+    'skeletons',
+    'world_champs',
 ]);
 
 export const FACTION_VARIANT_GROUPS: FactionVariantGroup[] = (() => {

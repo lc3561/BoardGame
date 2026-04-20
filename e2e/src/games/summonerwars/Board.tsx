@@ -1717,7 +1717,7 @@ export const SummonerWarsBoard: React.FC<Props> = ({
                 hits={diceResult?.hits ?? 0}
                 damageReduced={diceResult?.damageReduced}
                 isOpponentAttack={diceResult?.isOpponentAttack ?? false}
-                duration={1500}
+                duration={3000}
                 onClose={handleCloseDiceResult}
               />
 

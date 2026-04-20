@@ -669,7 +669,7 @@ export const FactionSelection: React.FC<FactionSelectionProps> = ({
 
             {/* 下方：预览区（左） + 玩家状态区（右），用固定间距隔开 */}
             <div className="flex min-h-0 flex-1 items-center justify-center" style={{ ...lowerStageStyle, ...lowerStageAlignStyle }}>
-              <div className="flex h-full items-stretch" style={lowerStageInnerStyle}>
+              <div data-testid="sw-faction-lower-stage-inner" className="flex h-full items-stretch" style={lowerStageInnerStyle}>
                 {/* Tip 图预览（固定宽度，不挤压右侧） */}
                 <div
                   data-testid="sw-faction-preview-panel"

@@ -1990,14 +1990,14 @@
     },
     "elusive-step": {
       "name": "打不到我",
-      "description": "防御阶段（5骰）：若足面≥2，抵挡一半伤害（向上取整）；每有足面，造成1伤害",
+      "description": "防御阶段（5骰）：若足面≥2，抵挡一半伤害（向上取整）；每有2个弓面，造成1伤害",
       "effects": {
         "resolveDefense": "防御结算"
       }
     },
     "elusive-step-2": {
       "name": "打不到我 II",
-      "description": "防御阶段（5骰）：若足面≥2，防止一半伤害（向上取整）；每有足面，造成1伤害",
+      "description": "防御阶段（5骰）：若足面≥2，防止一半伤害（向上取整）；每有2个弓面，造成1伤害",
       "effects": {
         "resolveDefense": "防御结算"
       }

@@ -1462,14 +1462,14 @@
     },
     "elusive-step": {
       "name": "Elusive Step",
-      "description": "Defensive phase (5 dice): if ≥2 Foot, block half damage (round up); for each Foot, deal 1 damage",
+      "description": "Defensive phase (5 dice): if ≥2 Foot, block half damage (round up); for every 2 Bow, deal 1 damage",
       "effects": {
         "resolveDefense": "Resolve defense"
       }
     },
     "elusive-step-2": {
       "name": "Elusive Step II",
-      "description": "Defensive phase (5 dice): if ≥2 Foot, block half damage (round up); for each Foot, deal 1 damage",
+      "description": "Defensive phase (5 dice): if ≥2 Foot, block half damage (round up); for every 2 Bow, deal 1 damage",
       "effects": {
         "resolveDefense": "Resolve defense"
       }
@@ -2689,3 +2689,4 @@
     "ariaPanel": "Game Over Panel"
   }
 }
+

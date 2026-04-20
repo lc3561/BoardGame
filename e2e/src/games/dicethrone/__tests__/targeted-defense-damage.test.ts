@@ -19,8 +19,8 @@ describe('锁定 buff 在防御投掷造成伤害时生效', () => {
 
     // 骰子值序列：
     // [1,2,3,4,5] 玩家0攻击骰 → 肾击（5点伤害）
-    // [4,4,4,4,4] 玩家1防御骰（5足）→ 迷影步造成5点伤害
-    const random = createQueuedRandom([1, 2, 3, 4, 5, 4, 4, 4, 4, 4]);
+    // [1,2,3,4,5] 玩家1防御骰（3弓2足）→ 迷影步造成1点反伤（每2弓=1）
+    const random = createQueuedRandom([1, 2, 3, 4, 5, 1, 2, 3, 4, 5]);
 
     const runner = new GameTestRunner({
       domain: DiceThroneDomain,
@@ -55,15 +55,15 @@ describe('锁定 buff 在防御投掷造成伤害时生效', () => {
         turnPhase: 'main2',
         players: {
           '0': {
-            // 迷影步：5个足面 = 5点伤害
+            // 迷影步：3弓2足 = 1点反伤（每2弓=1）
             // 锁定 buff：+2 伤害
-            // 期望：50 - (5 + 2) = 43
-            hp: INITIAL_HEALTH - 7,
+            // 期望：50 - (1 + 2) = 47
+            hp: INITIAL_HEALTH - 3,
             statusEffects: { [STATUS_IDS.TARGETED]: 1 }, // 锁定是持续效果，不会自动移除
           },
           '1': {
             // 玩家1受到 kidney-shot 的 5 点伤害
-            // 迷影步（5个足面≥2）授予 50% 护盾，实际伤害 = 5 - ceil(5*0.5) = 2
+            // 迷影步（2足≥2）授予 50% 护盾，实际伤害 = 5 - ceil(5*0.5) = 2
             hp: INITIAL_HEALTH - 2,
           },
         },

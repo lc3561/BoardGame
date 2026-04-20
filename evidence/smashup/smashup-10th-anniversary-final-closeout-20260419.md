@@ -1,4 +1,4 @@
-# Smash Up 10 周年三派系实施最终收口（2026-04-19）
+# Smash Up 10 周年三派系实施最终收口（2026-04-19，2026-04-20 更新）
 
 ## 范围
 - 派系：`Mermaids`、`Skeletons`、`World Champs`
@@ -34,7 +34,7 @@
 
 ### E2E
 - 命令：
-  - `node scripts/infra/run-e2e-command.mjs isolated e2e/smashup/smashup.e2e.ts --grep "派系选择页应显示 10 周年三派系及实施中横幅"`
+  - `node scripts/infra/run-e2e-command.mjs isolated e2e/smashup/smashup.e2e.ts --grep "派系选择页应显示 10 周年三派系与统一斜向实施中横幅"`
 - 结果：`1 passed`
 - 关键截图（绝对路径）：
   - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-selection.png`
@@ -49,5 +49,5 @@
   - `https://assets.easyboardgame.top/official/i18n/zh-CN/smashup/base/compressed/wangling_base.webp` -> 200
 
 ## 结论
-- 三派系实施、横幅展示、审计门禁、E2E 证据、资源链路均已完成收口。
+- 三派系实施、审计门禁、E2E 证据、资源链路均已完成收口；选择页“实施中”横幅已统一为斜向样式，文案收敛为“实施中”。
 - 历史审计债已从“阻断态”转为“显式基线治理态”，后续新增漂移会被自动拦截。

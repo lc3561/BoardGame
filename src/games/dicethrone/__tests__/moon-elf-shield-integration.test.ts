@@ -72,16 +72,16 @@ describe('月精灵百分比护盾集成测试', () => {
         // 暗影盗贼进攻掷骰 5 次 → [1,2,3,4,5] = 大顺子 → 触发 kidney-shot
         // kidney-shot: gainCp(4) + damage-full-cp(bonusCp=4)
         // 初始 CP=1 → 1+4=5 → 伤害=5
-        // 月精灵防御掷骰 5 次 → [4,4,4,4,4] = 5 foot
-        //   → 迷影步 II: 5 foot → 5 伤害反击, 足面≥2 → 50% 护盾
-        // 预期：暗影盗贼受到 5 点反击伤害，月精灵受到 ceil(5*0.5)=3 点减免后 5-3=2 点伤害
+        // 月精灵防御掷骰 5 次 → [1,2,3,4,5] = 3 bow + 2 foot
+        //   → 迷影步 II: 反伤 floor(3/2)=1，足面≥2 → 50% 护盾
+        // 预期：暗影盗贼受到 1 点反击伤害，月精灵受到 ceil(5*0.5)=3 点减免后 5-3=2 点伤害
         //
         // 注意：双方都没有 Token（手牌已清空），不会触发 Token 响应窗口
         const queuedRandom = createQueuedRandom([
             // 暗影盗贼进攻掷骰（5 次）
             1, 2, 3, 4, 5,
             // 月精灵防御掷骰（5 次）
-            4, 4, 4, 4, 4,
+            1, 2, 3, 4, 5,
         ]);
 
         const runner = new GameTestRunner({
@@ -132,7 +132,7 @@ describe('月精灵百分比护盾集成测试', () => {
                 cmd('SELECT_ABILITY', '0', { abilityId: 'kidney-shot' }),
                 cmd('ADVANCE_PHASE', '0'),                              // offensiveRoll → defensiveRoll
                 // 月精灵防御阶段（迷影步自动选择）
-                cmd('ROLL_DICE', '1'),                                  // 5 × d(6) → [4,4,4,4,4]
+                cmd('ROLL_DICE', '1'),                                  // 5 × d(6) → [1,2,3,4,5]
                 cmd('CONFIRM_ROLL', '1'),
                 cmd('SELECT_ABILITY', '1', { abilityId: 'elusive-step' }),
                 cmd('ADVANCE_PHASE', '1'),                              // defensiveRoll exit → resolveAttack → main2
@@ -150,24 +150,24 @@ describe('月精灵百分比护盾集成测试', () => {
         const expectedHp = INITIAL_HEALTH - 2;
         expect(moonElfHp).toBe(expectedHp);
 
-        // 暗影盗贼应受到 5 点反击伤害（迷影步 II: 1×足面数=5）
+        // 暗影盗贼应受到 1 点反击伤害（迷影步 II: 每2弓=1）
         const shadowThiefHp = core.players['0'].resources[RESOURCE_IDS.HP];
-        expect(shadowThiefHp).toBe(INITIAL_HEALTH - 5);
+        expect(shadowThiefHp).toBe(INITIAL_HEALTH - 1);
     });
 
     it('迷影步 II 的 50% 护盾应减免暗影盗贼破隐一击的伤害（有 Token 响应路径）', () => {
         // 与上一个测试相同，但暗影盗贼有太极 Token → 触发 Token 响应窗口
         // 暗影盗贼进攻掷骰 5 次 → [1,2,3,4,5] = 大顺子 → kidney-shot
         // 初始 CP=1 → 1+4=5 → 伤害=5
-        // 月精灵防御掷骰 5 次 → [4,4,4,4,4] = 5 foot
-        //   → 迷影步 II: 5 foot → 5 伤害反击, 足面≥2 → 50% 护盾
+        // 月精灵防御掷骰 5 次 → [1,2,3,4,5] = 3 bow + 2 foot
+        //   → 迷影步 II: 反伤 floor(3/2)=1，足面≥2 → 50% 护盾
         // Token 响应：暗影盗贼跳过太极加伤
         // 预期：月精灵受到 5-3=2 点伤害
         const queuedRandom = createQueuedRandom([
             // 暗影盗贼进攻掷骰（5 次）
             1, 2, 3, 4, 5,
             // 月精灵防御掷骰（5 次）
-            4, 4, 4, 4, 4,
+            1, 2, 3, 4, 5,
         ]);
 
         const runner = new GameTestRunner({
@@ -228,8 +228,8 @@ describe('月精灵百分比护盾集成测试', () => {
         const moonElfHp = result.finalState.core.players['1'].resources[RESOURCE_IDS.HP];
         expect(moonElfHp).toBe(INITIAL_HEALTH - 2);
 
-        // 暗影盗贼应受到 5 点反击伤害
+        // 暗影盗贼应受到 1 点反击伤害
         const shadowThiefHp = result.finalState.core.players['0'].resources[RESOURCE_IDS.HP];
-        expect(shadowThiefHp).toBe(INITIAL_HEALTH - 5);
+        expect(shadowThiefHp).toBe(INITIAL_HEALTH - 1);
     });
 });

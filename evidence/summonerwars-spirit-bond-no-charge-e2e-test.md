@@ -53,3 +53,9 @@ npm run test:e2e:ci:file -- e2e/summonerwars/summonerwars-barbaric-abilities.e2e
 - 本次 E2E 在真实移动后交互链路下通过，且断言明确证明：
   - **无充能时，点击友方不会发生转移充能。**
   - **只能通过“充能自身”完成本次交互。**
+
+## 本轮补充（2026-04-20）
+- 已将该用例状态注入中的祖灵法师/召唤师卡定义改为直接引用 `src/games/summonerwars/config/factions/**` 真实配置，不再手写卡面语义字段。
+- 已人工复核以下两张单位本体截图，卡名均为“祖灵法师”，不是其它单位：
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\summonerwars\summonerwars-barbaric-abilities.e2e\祖灵交流：无充能时不能给队友转移，只能充能自身\spirit-bond-no-charge-before-click-ally-unit.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\summonerwars\summonerwars-barbaric-abilities.e2e\祖灵交流：无充能时不能给队友转移，只能充能自身\spirit-bond-no-charge-after-charge-self-shaman-unit.png`
