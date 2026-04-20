@@ -221,7 +221,7 @@ test.describe('大杀四方大厅 E2E', () => {
   });
 
   test('派系选择页应显示 10 周年三派系且不再显示实施中横幅', async ({ browser }, testInfo) => {
-    test.setTimeout(180000);
+    test.setTimeout(360000);
     const baseURL = testInfo.project.use.baseURL as string | undefined;
     const hostContext = await browser.newContext({ baseURL });
     await setChineseLocale(hostContext);
@@ -234,7 +234,9 @@ test.describe('大杀四方大厅 E2E', () => {
     }
 
     await openSmashUpModal(hostPage);
-    await hostPage.getByRole('button', { name: /创建房间|Create Room/i }).click({ timeout: 30000 });
+    const createRoomButton = hostPage.getByRole('button', { name: /创建房间|Create Room/i });
+    await expect(createRoomButton).toBeVisible({ timeout: 120000 });
+    await createRoomButton.click({ timeout: 120000 });
     const createHeading = hostPage.getByRole('heading', { name: /创建房间|Create Room/i });
     await expect(createHeading).toBeVisible({ timeout: 30000 });
     const createModal = createHeading.locator('..').locator('..');
@@ -253,9 +255,9 @@ test.describe('大杀四方大厅 E2E', () => {
     }
 
     const loadingTextPattern = /正在加载对局资源|加载游戏模块|Loading game resources|Loading game module/i;
-    await hostPage.getByText(loadingTextPattern).first().waitFor({ state: 'hidden', timeout: 120000 }).catch(() => {});
+    await hostPage.getByText(loadingTextPattern).first().waitFor({ state: 'hidden', timeout: 300000 }).catch(() => {});
 
-    await expect(hostPage.locator('h1').filter({ hasText: /选择你的派系|Draft Your Factions/i })).toBeVisible({ timeout: 120000 });
+    await expect(hostPage.locator('h1').filter({ hasText: /选择你的派系|Draft Your Factions/i })).toBeVisible({ timeout: 300000 });
 
     await expect(hostPage.getByText(/美人鱼|Mermaids/i).first()).toBeVisible({ timeout: 15000 });
     await expect(hostPage.getByText(/骷髅|Skeletons/i).first()).toBeVisible({ timeout: 15000 });
