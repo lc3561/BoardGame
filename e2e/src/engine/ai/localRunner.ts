@@ -12,6 +12,7 @@ import {
 import type { AiLegalAction, AiResponseWindowSnapshot, AiSeatController } from './types';
 
 const DEFAULT_REMOTE_AI_TIMEOUT_MS = 3000;
+const FAST_PASS_ACTION_KINDS = new Set(['advance-phase', 'response-pass']);
 
 export interface AiResolution {
     playerId: string;
@@ -366,6 +367,31 @@ export async function resolveNextAiDispatch(
                 };
             }
             continue;
+        }
+
+        // 快速通道：如果只剩一个“阶段推进/响应跳过”动作，直接返回，
+        // 不再调用本地/远端策略，避免空决策阶段产生额外等待。
+        if (context.legalActions.length === 1) {
+            const singleAction = context.legalActions[0];
+            if (FAST_PASS_ACTION_KINDS.has(singleAction.kind)) {
+                const attemptKey = buildAttemptKey({
+                    state: args.state,
+                    playerId,
+                    controller: seatController,
+                    legalActions: [singleAction],
+                    interactionId: context.interaction?.id ?? null,
+                    responderIndex: context.responseWindow?.currentResponderIndex ?? null,
+                });
+                return {
+                    kind: 'action',
+                    resolution: {
+                        playerId,
+                        action: singleAction,
+                        attemptKey,
+                        source: seatController.type === 'remote-ai' ? 'remote-ai-fallback' : 'local-ai',
+                    },
+                };
+            }
         }
 
         const attemptKey = buildAttemptKey({

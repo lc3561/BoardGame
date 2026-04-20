@@ -704,7 +704,7 @@ export const SummonerWarsBoard: React.FC<Props> = ({
       damageCount: pending.damages.length,
     });
 
-    // 未命中：跳过所有攻击动画和音效，直接清理
+    // 未命中：直接清理并推进。
     if (pending.hits === 0) {
       swAttackDebugLog('board_attack_miss_skip_fx', {
         attackEventId: pending.attackEventId,
@@ -744,7 +744,7 @@ export const SummonerWarsBoard: React.FC<Props> = ({
         // 伤害特效和 flushPendingDestroys 由 handleFxComplete 在气浪完成时触发
       }, 180);
     } else {
-      // 近战攻击：启动卡牌本体碰撞动画
+      // 近战攻击：立即启动卡牌本体碰撞动画。
       swAttackDebugLog('board_start_melee_attack_anim', {
         attackEventId: pending.attackEventId,
         attacker: pending.attacker,
@@ -1717,7 +1717,7 @@ export const SummonerWarsBoard: React.FC<Props> = ({
                 hits={diceResult?.hits ?? 0}
                 damageReduced={diceResult?.damageReduced}
                 isOpponentAttack={diceResult?.isOpponentAttack ?? false}
-                duration={3000}
+                duration={1500}
                 onClose={handleCloseDiceResult}
               />
 

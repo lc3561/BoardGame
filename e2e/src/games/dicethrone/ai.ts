@@ -1336,14 +1336,26 @@ const buildSetupActions = (state: DiceThroneState, playerId: PlayerId): AiLegalA
     const hasSelectedCharacter = typeof selectedCharacter === 'string' && selectedCharacter !== 'unselected';
     const isHost = playerId === state.core.hostPlayerId;
     const isReady = state.core.readyPlayers[playerId] === true;
-    const currentControllerType = state.core.seatControllers?.[playerId]?.type;
-    const isCurrentSeatAi = currentControllerType === 'local-ai' || currentControllerType === 'remote-ai';
+    const aiSeatIdSet = new Set<PlayerId>(
+        Array.isArray((state.sys.undo as { aiSeatIds?: unknown } | undefined)?.aiSeatIds)
+            ? ((state.sys.undo as { aiSeatIds?: unknown }).aiSeatIds as unknown[])
+                .filter((seatId): seatId is PlayerId => typeof seatId === 'string')
+            : [],
+    );
+    const configuredSeatControllers = state.core.seatControllers;
+    const currentControllerType = configuredSeatControllers?.[playerId]?.type;
+    const isCurrentSeatAi = currentControllerType === 'local-ai'
+        || currentControllerType === 'remote-ai'
+        || (currentControllerType !== 'human' && aiSeatIdSet.has(playerId));
 
     if (!hasSelectedCharacter) {
         if (isCurrentSeatAi) {
             const hasPendingHumanSelection = Object.entries(state.core.selectedCharacters).some(([pid, characterId]) => {
-                const controllerType = state.core.seatControllers?.[pid as PlayerId]?.type;
-                const isAiSeat = controllerType === 'local-ai' || controllerType === 'remote-ai';
+                const currentPid = pid as PlayerId;
+                const controllerType = configuredSeatControllers?.[currentPid]?.type;
+                const isAiSeat = controllerType === 'local-ai'
+                    || controllerType === 'remote-ai'
+                    || (controllerType !== 'human' && aiSeatIdSet.has(currentPid));
                 if (isAiSeat) return false;
                 return !characterId || characterId === 'unselected';
             });

@@ -220,7 +220,7 @@ test.describe('大杀四方大厅 E2E', () => {
     await hostContext.close();
   });
 
-  test('派系选择页应显示 10 周年三派系及实施中横幅', async ({ browser }, testInfo) => {
+  test('派系选择页应显示 10 周年三派系且不再显示实施中横幅', async ({ browser }, testInfo) => {
     test.setTimeout(180000);
     const baseURL = testInfo.project.use.baseURL as string | undefined;
     const hostContext = await browser.newContext({ baseURL });
@@ -265,27 +265,20 @@ test.describe('大杀四方大厅 E2E', () => {
     const skeletonsName = hostPage.getByText(/骷髅|Skeletons/i).first();
     const worldChampsName = hostPage.getByText(/世界冠军|World Champs/i).first();
 
-    const mermaidsBanner = hostPage.getByTestId('faction-implementation-banner-mermaids');
-    const skeletonsBanner = hostPage.getByTestId('faction-implementation-banner-skeletons');
-    const worldChampsBanner = hostPage.getByTestId('faction-implementation-banner-world_champs');
-
-    await expect(mermaidsBanner).toBeVisible({ timeout: 15000 });
-    await expect(skeletonsBanner).toBeVisible({ timeout: 15000 });
-    await expect(worldChampsBanner).toBeVisible({ timeout: 15000 });
+    await expect(hostPage.getByTestId('faction-implementation-banner-mermaids')).toHaveCount(0);
+    await expect(hostPage.getByTestId('faction-implementation-banner-skeletons')).toHaveCount(0);
+    await expect(hostPage.getByTestId('faction-implementation-banner-world_champs')).toHaveCount(0);
 
     const sharedDir = join(process.cwd(), 'test-results', 'evidence-screenshots', '_shared');
     mkdirSync(sharedDir, { recursive: true });
     await mermaidsName.scrollIntoViewIfNeeded();
     await mermaidsName.screenshot({ path: join(sharedDir, 'smashup-10th-factions-mermaids-name.png') });
-    await mermaidsBanner.screenshot({ path: join(sharedDir, 'smashup-10th-factions-mermaids-banner.png') });
 
     await skeletonsName.scrollIntoViewIfNeeded();
     await skeletonsName.screenshot({ path: join(sharedDir, 'smashup-10th-factions-skeletons-name.png') });
-    await skeletonsBanner.screenshot({ path: join(sharedDir, 'smashup-10th-factions-skeletons-banner.png') });
 
     await worldChampsName.scrollIntoViewIfNeeded();
     await worldChampsName.screenshot({ path: join(sharedDir, 'smashup-10th-factions-world-champs-name.png') });
-    await worldChampsBanner.screenshot({ path: join(sharedDir, 'smashup-10th-factions-world-champs-banner.png') });
 
     const sharedShot = join(sharedDir, 'smashup-10th-factions-selection.png');
     await hostPage.screenshot({ path: sharedShot, fullPage: false });

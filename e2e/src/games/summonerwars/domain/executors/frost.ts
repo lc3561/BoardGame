@@ -14,6 +14,7 @@ import {
   isCellEmpty,
   BOARD_ROWS,
   BOARD_COLS,
+  normalizeUnitBoosts,
 } from '../helpers';
 import { abilityExecutorRegistry } from './registry';
 import type { SWAbilityContext } from './types';
@@ -51,7 +52,7 @@ abilityExecutorRegistry.register('structure_shift', (ctx: SWAbilityContext) => {
 abilityExecutorRegistry.register('ice_shards', (ctx: SWAbilityContext) => {
   const events: GameEvent[] = [];
   const { core, sourceUnit, sourcePosition, ownerId: playerId, timestamp } = ctx;
-  if ((sourceUnit.boosts ?? 0) < 1) return { events };
+  if (normalizeUnitBoosts(sourceUnit.boosts) < 1) return { events };
 
   // 消耗1点充能
   events.push({
@@ -112,7 +113,7 @@ abilityExecutorRegistry.register('frost_axe', (ctx: SWAbilityContext) => {
     if (!fxTarget || fxTarget.owner !== playerId || fxTarget.card.unitClass !== 'common') return { events };
     const fxDist = manhattanDistance(sourcePosition, fxTargetPos);
     if (fxDist > 3) return { events };
-    const charges = sourceUnit.boosts ?? 0;
+    const charges = normalizeUnitBoosts(sourceUnit.boosts);
     if (charges < 1) return { events };
 
     events.push({

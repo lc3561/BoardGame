@@ -267,6 +267,16 @@ test.describe('SummonerWars selection and turn-lock flows', () => {
     expect(Math.abs((entryLayout.stageRect?.centerX ?? 0) - entryLayout.viewportWidth / 2)).toBeLessThanOrEqual(24);
     expect(Math.abs((entryLayout.inlineUnitPx * 100) - entryLayout.computedStageWidthPx)).toBeLessThanOrEqual(1);
     expect(Math.abs((entryLayout.blockUnitPx * 100) - entryLayout.computedStageHeightPx)).toBeLessThanOrEqual(1);
+    expect(entryLayout.previewRect?.left ?? -1).toBeGreaterThanOrEqual((entryLayout.stageRect?.left ?? 0) - 1);
+    expect(
+      (entryLayout.previewRect?.left ?? 99999) - (entryLayout.stageRect?.left ?? 0),
+      '移动横屏预览区应保持靠左锚定，不应回到中间簇布局',
+    ).toBeLessThanOrEqual(Math.max(entryLayout.inlineUnitPx, 1) * 5.6);
+    expect(entryLayout.railRect?.right ?? 99999).toBeLessThanOrEqual((entryLayout.stageRect?.right ?? 0) + 1);
+    expect(
+      (entryLayout.stageRect?.right ?? 99999) - (entryLayout.railRect?.right ?? 0),
+      '移动横屏状态区应保持靠右锚定，不应明显远离舞台右边',
+    ).toBeLessThanOrEqual(Math.max(entryLayout.inlineUnitPx, 1) * 5.6);
     expect(entryLayout.gridRect?.bottom ?? 0).toBeLessThan(entryLayout.previewRect?.top ?? 99999);
     expect(entryLayout.gridRect?.bottom ?? 0).toBeLessThan(entryLayout.railRect?.top ?? 99999);
     expect(entryLayout.waitingBannerRect).not.toBeNull();
@@ -357,11 +367,21 @@ test.describe('SummonerWars selection and turn-lock flows', () => {
     expect(Math.abs((selectedLayout.blockUnitPx * 100) - selectedLayout.computedStageHeightPx)).toBeLessThanOrEqual(1);
     expect(selectedLayout.previewHasImage).toBe(true);
     expect(selectedLayout.previewRect?.right ?? 0).toBeLessThanOrEqual(selectedLayout.railRect?.left ?? 99999);
+    expect(selectedLayout.previewRect?.left ?? -1).toBeGreaterThanOrEqual((selectedLayout.stageRect?.left ?? 0) - 1);
+    expect(
+      (selectedLayout.previewRect?.left ?? 99999) - (selectedLayout.stageRect?.left ?? 0),
+      '选将后预览区应继续贴近舞台左边缘',
+    ).toBeLessThanOrEqual(Math.max(selectedLayout.inlineUnitPx, 1) * 5.6);
     expect(selectedLayout.railRect?.right ?? 99999).toBeLessThanOrEqual(selectedLayout.effectiveViewportRight + 1);
     expect(selectedLayout.actionRailRect).not.toBeNull();
     expect(selectedLayout.actionButtonRect).not.toBeNull();
     expect(selectedLayout.actionRailRect?.left ?? 0).toBeGreaterThanOrEqual(selectedLayout.railRect?.right ?? 99999);
     expect(selectedLayout.actionRailRect?.right ?? 99999).toBeLessThanOrEqual(selectedLayout.effectiveViewportRight + 1);
+    expect(selectedLayout.actionRailRect?.right ?? 0).toBeLessThanOrEqual((selectedLayout.stageRect?.right ?? 0) + 1);
+    expect(
+      (selectedLayout.stageRect?.right ?? 99999) - (selectedLayout.actionRailRect?.right ?? 0),
+      '选将后操作区应继续贴近舞台右边缘',
+    ).toBeLessThanOrEqual(Math.max(selectedLayout.inlineUnitPx, 1) * 5.6);
     expect(selectedLayout.actionButtonRect?.left ?? 0).toBeGreaterThanOrEqual(selectedLayout.actionRailRect?.left ?? 99999);
     expect(selectedLayout.actionButtonRect?.right ?? 99999).toBeLessThanOrEqual(selectedLayout.effectiveViewportRight + 1);
     expect(

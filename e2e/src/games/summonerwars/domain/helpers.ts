@@ -827,7 +827,7 @@ export function getUnitMoveEnhancements(
         }
         // 速度强化：每点充能+1移动，上限由 params.maxBonus 控制
         if (effect.type === 'custom' && effect.actionId === 'speed_up_extra_move') {
-          const boosts = unit.boosts ?? 0;
+          const boosts = normalizeUnitBoosts(unit.boosts);
           const maxBonus = (effect.params?.maxBonus as number) ?? Infinity;
           extraDistance += Math.min(boosts, maxBonus);
         }

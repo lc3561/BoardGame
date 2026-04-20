@@ -18,7 +18,15 @@
  */
 
 import type { AbilityDef } from './abilities';
-import { getStructureAt, getUnitAt, getUnitAbilities, BOARD_ROWS, BOARD_COLS, isValidCoord } from './helpers';
+import {
+  getStructureAt,
+  getUnitAt,
+  getUnitAbilities,
+  BOARD_ROWS,
+  BOARD_COLS,
+  isValidCoord,
+  normalizeUnitBoosts,
+} from './helpers';
 import { abilityText } from './abilityTextHelper';
 import type { SummonerWarsCore, PlayerId, CellCoord } from './types';
 
@@ -156,7 +164,7 @@ export const FROST_ABILITIES: AbilityDef[] = [
     validation: {
       requiredPhase: 'build',
       customValidator: (ctx) => {
-        if ((ctx.sourceUnit.boosts ?? 0) < 1) {
+        if (normalizeUnitBoosts(ctx.sourceUnit.boosts) < 1) {
           return { valid: false, error: '没有充能可消耗' };
         }
         // 检查是否存在友方建筑旁有敌方单位
@@ -173,7 +181,7 @@ export const FROST_ABILITIES: AbilityDef[] = [
       buttonVariant: 'secondary',
       activationType: 'directExecute',
       quickCheck: ({ unit, core, playerId }) =>
-        (unit.boosts ?? 0) >= 1 && hasEnemyAdjacentToAllyStructure(core, playerId),
+        normalizeUnitBoosts(unit.boosts) >= 1 && hasEnemyAdjacentToAllyStructure(core, playerId),
     },
   },
 
@@ -259,7 +267,7 @@ export const FROST_ABILITIES: AbilityDef[] = [
         }
         
         if (fxChoice === 'attach') {
-          if ((ctx.sourceUnit.boosts ?? 0) < 1) {
+          if (normalizeUnitBoosts(ctx.sourceUnit.boosts) < 1) {
             return { valid: false, error: '充能不足' };
           }
           

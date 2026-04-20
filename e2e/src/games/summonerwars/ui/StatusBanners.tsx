@@ -508,7 +508,7 @@ export const StatusBanners: React.FC<StatusBannersProps> = ({
       for (let col = 0; col < (core.board[0]?.length ?? 0); col++) {
         const unit = core.board[row]?.[col]?.unit;
         if (unit && unit.instanceId === withdrawMode.sourceUnitId) {
-          withdrawUnitBoosts = unit.boosts ?? 0;
+          withdrawUnitBoosts = normalizeUnitBoosts(unit.boosts);
           break withdrawSearch;
         }
       }

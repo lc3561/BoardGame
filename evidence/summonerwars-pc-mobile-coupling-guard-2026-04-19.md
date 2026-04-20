@@ -159,3 +159,58 @@ npm run test:e2e:ci:file -- e2e/summonerwars/summonerwars-selection.e2e.ts "mobi
 - 我实际看到：主构图仍是 PC 同构缩放路线，未被误修成窄布局；战区与 HUD 在同一坐标系。
 - 我实际看到：右侧仍保留操作轨（等待态文案可见），没有出现整体左上角缩放偏移。
 - 是否达标：达标（补充修复未破坏既有横屏基线）。
+
+## 补充修复：布局单位统一（2026-04-20）
+
+### 用户反馈与定位
+
+- 反馈：移动端“看起来完全没等比”，怀疑根因在布局单位口径。
+- 定位结论：
+  - `FactionSelectionAdapter` 仍残留 `vw/vh` 口径（包括 `--sw-selection-inline-unit` / `--sw-selection-block-unit` 的非横屏 fallback 与放大预览弹层尺寸上限）。
+  - 阵营列表里的“新建牌组 + 号卡片”存在一组固定像素尺寸（`w-16/h-16/text-3xl/mb-4` 等），在舞台缩小时不会同步缩放，破坏“PC 同构等比”观感。
+
+### 本轮改动
+
+- `src/games/summonerwars/ui/FactionSelectionAdapter.tsx`
+  - 将 `--sw-selection-inline-unit` / `--sw-selection-block-unit` 改为运行时像素值，不再使用 `1vw/1vh` fallback。
+  - 放大预览弹层（tip 图、召唤师精灵图）移除 `90vw/90vh/40vw`，改为基于运行时视口计算出的像素上限。
+  - “新建牌组 + 号卡片”与预览角标从固定像素类改为基于 `--sw-selection-inline-unit/block-unit` 的尺寸。
+- `e2e/src/games/summonerwars/ui/FactionSelectionAdapter.tsx`
+  - 同步上述改动（当前工作区该文件与 `src` 为同源映射，修改已同步生效）。
+
+### 执行命令
+
+```bash
+npm run test -- src/games/summonerwars/ui/__tests__/FactionSelectionAdapter.test.tsx
+npm run test:e2e:ci:file -- e2e/summonerwars/summonerwars-selection.e2e.ts "mobile landscape capped viewport keeps faction selection in strict 16:9 proportional scale"
+npm run test:e2e:ci:file -- e2e/summonerwars/summonerwars-selection.e2e.ts "tight mobile landscape keeps host start button visible under proportional scaling"
+npm run test:e2e:ci:file -- e2e/summonerwars/summonerwars-selection.e2e.ts "mobile landscape keeps faction selection aligned with pc composition"
+```
+
+结果：
+
+- 单测通过（13/13）。
+- 三条关键 E2E 全部通过。
+
+### 关键截图与肉眼结论
+
+1. 严格等比缩放（capped 横屏）
+   `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\summonerwars\summonerwars-selection.e2e\mobile-landscape-capped-viewport-keeps-faction-selection-in-strict-16-9-proportional-scale\selection-phone-landscape-capped-entry.png`
+
+- 我实际看到：标题、阵营卡网格、预览占位和玩家状态区保持同一套 16:9 构图关系，没有出现某个局部被单独放大/挤扁。
+- 我实际看到：主内容仍居中显示，不是“缩在左上角”。
+- 是否达标：达标（等比缩放口径成立）。
+
+2. 紧凑横屏开始按钮可见
+   `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\summonerwars\summonerwars-selection.e2e\tight-mobile-landscape-keeps-host-start-button-visible-under-proportional-scaling\selection-phone-landscape-tight-start-visible.png`
+
+- 我实际看到：`开始游戏` 按钮本体完整显示在右侧动作区内，没有消失或被裁切。
+- 我实际看到：动作区与主内容仍处于同一舞台坐标系，未回到“放不下就改位”的补丁路线。
+- 是否达标：达标（你指出的“开始按钮不见了”问题位点本轮可复核为已恢复可见）。
+
+3. 与 PC 构图对齐（双人已选）
+   `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\summonerwars\summonerwars-selection.e2e\mobile-landscape-keeps-faction-selection-aligned-with-pc-composition\selection-phone-landscape-both-picked.png`
+
+- 我实际看到：卡片网格、左下预览、右下状态+动作链路仍是 PC 同构比例，没有被误改成窄布局。
+- 我实际看到：HUD/FAB 与主舞台在同一视觉坐标，未出现整体偏移到角落。
+- 是否达标：达标（PC-移动端对齐关系维持）。

@@ -562,9 +562,9 @@ const prepareSpiritBondNoChargeMoveState = (coreState: any) => {
     instanceId: 'spirit-bond-ally',
     cardId: 'spirit-bond-ally-card',
     card: {
-      id: 'barbaric-spirit-mage-ally',
+      id: 'barbaric-spirit-mage',
       cardType: 'unit',
-      name: '祖灵法师（友方目标）',
+      name: '祖灵法师',
       faction: 'barbaric',
       cost: 1,
       life: 2,

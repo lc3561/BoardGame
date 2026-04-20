@@ -245,17 +245,23 @@ export const FactionSelection: React.FC<FactionSelectionProps> = ({
   const selectionStageInlineReferenceWidthPx = isLandscapeMobileViewport
     ? selectionStageLogicalWidth ?? Math.round(FACTION_SELECTION_REFERENCE_WIDTH_PX * selectionStageScale)
     : null;
+  const selectionStageInlineUnitPx = isLandscapeMobileViewport
+    ? (selectionStageInlineReferenceWidthPx ?? FACTION_SELECTION_REFERENCE_WIDTH_PX) / 100
+    : Math.max(layoutViewportWidth, 1) / 100;
+  const selectionStageBlockUnitPx = isLandscapeMobileViewport
+    ? (selectionStageLogicalHeight ?? selectionReferenceHeightPx) / 100
+    : Math.max(layoutViewportHeight, 1) / 100;
+  const magnifyImageMaxWidthPx = Math.max(Math.round(layoutViewportWidth * 0.9), 1);
+  const magnifyImageMaxHeightPx = Math.max(Math.round(layoutViewportHeight * 0.9), 1);
+  const magnifySpriteMaxHeightPx = Math.max(Math.round(layoutViewportHeight * 0.85), 1);
+  const magnifySpriteMinWidthPx = Math.max(Math.round(layoutViewportWidth * 0.4), 1);
   const inlineUnit = (value: number) => `calc(var(--sw-selection-inline-unit) * ${value})`;
   const blockUnit = (value: number) => `calc(var(--sw-selection-block-unit) * ${value})`;
   const selectionStageStyle = {
     width: selectionStageWidth,
     height: selectionStageHeight,
-    '--sw-selection-inline-unit': isLandscapeMobileViewport
-      ? `${((selectionStageInlineReferenceWidthPx ?? FACTION_SELECTION_REFERENCE_WIDTH_PX) / 100)}px`
-      : '1vw',
-    '--sw-selection-block-unit': isLandscapeMobileViewport
-      ? `${((selectionStageLogicalHeight ?? selectionReferenceHeightPx) / 100)}px`
-      : '1vh',
+    '--sw-selection-inline-unit': `${selectionStageInlineUnitPx}px`,
+    '--sw-selection-block-unit': `${selectionStageBlockUnitPx}px`,
   } as React.CSSProperties;
   const stageFrameStyle = isLandscapeMobileViewport
     ? { paddingInline: `${stageFrameInlinePaddingPx}px`, paddingBlock: `${stageFrameBlockPaddingPx}px` } as React.CSSProperties
@@ -295,6 +301,34 @@ export const FactionSelection: React.FC<FactionSelectionProps> = ({
   const previewPlaceholderTextStyle = {
     fontSize: 'clamp(10px, calc(var(--sw-selection-inline-unit) * 0.7), 14px)',
   } as React.CSSProperties;
+  const createDeckIconRingStyle = {
+    width: inlineUnit(5),
+    height: inlineUnit(5),
+    marginBottom: blockUnit(1.8),
+  } as React.CSSProperties;
+  const createDeckIconPlusStyle = {
+    fontSize: 'clamp(24px, calc(var(--sw-selection-inline-unit) * 2.2), 40px)',
+    lineHeight: 1,
+  } as React.CSSProperties;
+  const createDeckTitleStyle = {
+    fontSize: 'clamp(11px, calc(var(--sw-selection-inline-unit) * 0.8), 15px)',
+  } as React.CSSProperties;
+  const createDeckMetaStyle = {
+    fontSize: 'clamp(9px, calc(var(--sw-selection-inline-unit) * 0.52), 12px)',
+    marginTop: blockUnit(0.2),
+  } as React.CSSProperties;
+  const previewCornerStyle = {
+    width: inlineUnit(0.8),
+    height: inlineUnit(0.8),
+  } as React.CSSProperties;
+  const magnifyImageViewportStyle = {
+    maxWidth: `${magnifyImageMaxWidthPx}px`,
+    maxHeight: `${magnifyImageMaxHeightPx}px`,
+  } as React.CSSProperties;
+  const magnifySpriteViewportStyle = {
+    maxWidth: `${magnifyImageMaxWidthPx}px`,
+    maxHeight: `${magnifySpriteMaxHeightPx}px`,
+  } as React.CSSProperties;
   const gridStyle = {
     gap: inlineUnit(0.8),
     maxWidth: inlineUnit(72),
@@ -303,13 +337,25 @@ export const FactionSelection: React.FC<FactionSelectionProps> = ({
     paddingTop: isLandscapeMobileViewport ? blockUnit(0.6) : blockUnit(1.5),
     paddingBottom: isLandscapeMobileViewport ? 0 : blockUnit(1),
   } as React.CSSProperties;
-  const lowerStageInnerStyle = {
-    gap: isLandscapeMobileViewport ? inlineUnit(2) : inlineUnit(3),
-    maxHeight: isLandscapeMobileViewport ? blockUnit(28) : blockUnit(32),
-  } as React.CSSProperties;
+  const lowerStageInnerStyle = isLandscapeMobileViewport
+    ? {
+      width: '100%',
+      maxHeight: blockUnit(28),
+      justifyContent: 'space-between',
+    } as React.CSSProperties
+    : {
+      gap: inlineUnit(3),
+      maxHeight: blockUnit(32),
+    } as React.CSSProperties;
   const previewPanelStyle = {
     width: isLandscapeMobileViewport ? inlineUnit(24) : inlineUnit(28),
   } as React.CSSProperties;
+  const rightAnchorClusterStyle = isLandscapeMobileViewport
+    ? {
+      marginLeft: inlineUnit(1.2),
+      gap: inlineUnit(1.2),
+    } as React.CSSProperties
+    : undefined;
   const playerRailStyle = {
     gap: isLandscapeMobileViewport ? blockUnit(0.8) : blockUnit(1.2),
     minWidth: isLandscapeMobileViewport ? inlineUnit(13) : inlineUnit(14),
@@ -603,13 +649,16 @@ export const FactionSelection: React.FC<FactionSelectionProps> = ({
               )}
               onClick={handleOpenDeckSelector}
             >
-              <div className="w-16 h-16 rounded-full border-2 border-white/20 flex items-center justify-center mb-4 group-hover:border-amber-400/80 transition-colors">
-                <span className="text-3xl text-white/50 group-hover:text-amber-400 font-light">+</span>
+              <div
+                className="rounded-full border-2 border-white/20 flex items-center justify-center group-hover:border-amber-400/80 transition-colors"
+                style={createDeckIconRingStyle}
+              >
+                <span className="text-white/50 group-hover:text-amber-400 font-light" style={createDeckIconPlusStyle}>+</span>
               </div>
-              <div className="text-white/70 font-bold uppercase tracking-widest text-sm group-hover:text-amber-100">
+              <div className="text-white/70 font-bold uppercase tracking-widest group-hover:text-amber-100" style={createDeckTitleStyle}>
                 {savedDecks.length > 0 ? t('factionSelection.moreDeck') : t('factionSelection.newDeck')}
               </div>
-              <div className="text-white/30 text-[10px] mt-1">
+              <div className="text-white/30" style={createDeckMetaStyle}>
                 {savedDecks.length > 1 
                   ? t('factionSelection.totalDecks', { count: savedDecks.length })
                   : t('factionSelection.clickToBuild')}
@@ -648,10 +697,10 @@ export const FactionSelection: React.FC<FactionSelectionProps> = ({
                     />
 
                     {/* 内角边框装饰 */}
-                    <div className="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-amber-500/40 rounded-tl-sm pointer-events-none" />
-                    <div className="absolute top-0 right-0 w-4 h-4 border-t-2 border-r-2 border-amber-500/40 rounded-tr-sm pointer-events-none" />
-                    <div className="absolute bottom-0 left-0 w-4 h-4 border-b-2 border-l-2 border-amber-500/40 rounded-bl-sm pointer-events-none" />
-                    <div className="absolute bottom-0 right-0 w-4 h-4 border-b-2 border-r-2 border-amber-500/40 rounded-br-sm pointer-events-none" />
+                    <div className="absolute top-0 left-0 border-t-2 border-l-2 border-amber-500/40 rounded-tl-sm pointer-events-none" style={previewCornerStyle} />
+                    <div className="absolute top-0 right-0 border-t-2 border-r-2 border-amber-500/40 rounded-tr-sm pointer-events-none" style={previewCornerStyle} />
+                    <div className="absolute bottom-0 left-0 border-b-2 border-l-2 border-amber-500/40 rounded-bl-sm pointer-events-none" style={previewCornerStyle} />
+                    <div className="absolute bottom-0 right-0 border-b-2 border-r-2 border-amber-500/40 rounded-br-sm pointer-events-none" style={previewCornerStyle} />
                   </motion.div>
                 ) : (
                   <motion.div
@@ -669,12 +718,17 @@ export const FactionSelection: React.FC<FactionSelectionProps> = ({
               </AnimatePresence>
                 </div>
 
-                {/* 玩家状态面板（固定宽度） */}
                 <div
-                  data-testid="sw-faction-player-rail"
-                  className="flex flex-col justify-center"
-                  style={playerRailStyle}
+                  data-testid="sw-faction-right-anchor-cluster"
+                  className="flex h-full shrink-0 items-center"
+                  style={rightAnchorClusterStyle}
                 >
+                  {/* 玩家状态面板（固定宽度） */}
+                  <div
+                    data-testid="sw-faction-player-rail"
+                    className="flex flex-col justify-center"
+                    style={playerRailStyle}
+                  >
               {playerIds.map(pid => {
                 // 从游戏状态获取自定义牌组信息
                 const customDeck = customDeckData?.[pid as PlayerId];
@@ -715,29 +769,30 @@ export const FactionSelection: React.FC<FactionSelectionProps> = ({
                   />
                 </div>
               )}
-                </div>
-
-                {isLandscapeMobileViewport && (
-                  <div
-                    data-testid="sw-faction-action-rail"
-                    className="flex shrink-0 flex-col"
-                    style={actionRailStyle}
-                  >
-                    <div className="flex min-h-0 flex-1 items-center justify-center" style={actionSlotStyle}>
-                      <ActionButton
-                        isHost={isHost}
-                        hasSelected={!!hasSelected}
-                        isReady={!!readyPlayers[currentPlayerId]}
-                        everyoneReady={everyoneReady}
-                        onReady={onReady}
-                        onUnready={onUnready}
-                        onStart={onStart}
-                        t={t}
-                        isLandscapeMobileViewport
-                      />
-                    </div>
                   </div>
-                )}
+
+                  {isLandscapeMobileViewport && (
+                    <div
+                      data-testid="sw-faction-action-rail"
+                      className="flex shrink-0 flex-col"
+                      style={actionRailStyle}
+                    >
+                      <div className="flex min-h-0 flex-1 items-center justify-center" style={actionSlotStyle}>
+                        <ActionButton
+                          isHost={isHost}
+                          hasSelected={!!hasSelected}
+                          isReady={!!readyPlayers[currentPlayerId]}
+                          everyoneReady={everyoneReady}
+                          onReady={onReady}
+                          onUnready={onUnready}
+                          onStart={onStart}
+                          t={t}
+                          isLandscapeMobileViewport
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -748,15 +803,17 @@ export const FactionSelection: React.FC<FactionSelectionProps> = ({
       <MagnifyOverlay
         isOpen={!!magnifyImage}
         onClose={() => setMagnifyImage(null)}
-        containerClassName="max-h-[90vh] max-w-[90vw]"
+        containerClassName="max-h-full max-w-full"
         closeLabel={t('actions.closePreview')}
       >
         {magnifyImage && (
-          <OptimizedImage
-            src={magnifyImage}
-            className="max-h-[90vh] max-w-[90vw] w-auto h-auto object-contain"
-            alt={t('factionSelection.previewAlt')}
-          />
+          <div style={magnifyImageViewportStyle}>
+            <OptimizedImage
+              src={magnifyImage}
+              className="max-h-full max-w-full w-auto h-auto object-contain"
+              alt={t('factionSelection.previewAlt')}
+            />
+          </div>
         )}
       </MagnifyOverlay>
 
@@ -764,16 +821,18 @@ export const FactionSelection: React.FC<FactionSelectionProps> = ({
       <MagnifyOverlay
         isOpen={!!magnifySprite}
         onClose={() => setMagnifySprite(null)}
-        containerClassName="max-h-[90vh] max-w-[90vw]"
+        containerClassName="max-h-full max-w-full"
         closeLabel={t('actions.closePreview')}
       >
         {magnifySprite && (
-          <CardSprite
-            atlasId={magnifySprite.atlasId}
-            frameIndex={magnifySprite.frameIndex}
-            className="max-h-[85vh] w-auto rounded-lg shadow-2xl"
-            style={{ minWidth: '40vw' }}
-          />
+          <div style={magnifySpriteViewportStyle}>
+            <CardSprite
+              atlasId={magnifySprite.atlasId}
+              frameIndex={magnifySprite.frameIndex}
+              className="max-h-full w-auto rounded-lg shadow-2xl"
+              style={{ minWidth: `${magnifySpriteMinWidthPx}px` }}
+            />
+          </div>
         )}
       </MagnifyOverlay>
 

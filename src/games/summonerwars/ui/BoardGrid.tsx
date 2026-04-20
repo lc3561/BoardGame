@@ -20,6 +20,7 @@ import { BuffIcons, getBuffGlowStyle, BuffDetailsPanel } from './BuffIcons';
 import type { BuffInstance } from '../../../components/game/framework/widgets/BuffSystem';
 import { abilityRegistry } from '../domain/abilities';
 import { getEffectiveStructureLife, getEffectiveLife } from '../domain/abilityResolver';
+import { normalizeUnitBoosts } from '../domain/helpers';
 import { StrengthBoostIndicator } from './StrengthBoostIndicator';
 import type { UseVisualStateBufferReturn } from '../../../components/game/framework/hooks/useVisualStateBuffer';
 import { useTouchInspectGesture } from '../../../hooks/ui/useTouchInspectGesture';
@@ -544,7 +545,7 @@ const UnitCell: React.FC<{
         props.onCellClick(viewCoord.row, viewCoord.col);
       }}
       initial={isNew ? { opacity: 0, scale: 1.1 } : false}
-      animate={isNew ? { opacity: 1, scale: 1 } : undefined}
+      animate={{ opacity: 1, scale: 1 }}
       transition={isNew ? {
         type: 'spring', stiffness: 80, damping: 15, mass: 1.2,
       } : {
@@ -598,8 +599,8 @@ const UnitCell: React.FC<{
           </span>
         </div>
         {/* 充能指示器 - 统一右上角（对手卡旋转后自动变为左下角） */}
-        {(unit.boosts ?? 0) > 0 && (() => {
-          const boosts = unit.boosts ?? 0;
+        {normalizeUnitBoosts(unit.boosts) > 0 && (() => {
+          const boosts = normalizeUnitBoosts(unit.boosts);
           const rows: number[][] = [];
           for (let i = 0; i < boosts; i += 5) {
             rows.push(Array.from({ length: Math.min(5, boosts - i) }, (_, j) => i + j));
@@ -724,7 +725,7 @@ const StructureCell: React.FC<{
         height: `${pos.height}%`,
       }}
       initial={isNew ? { opacity: 0 } : false}
-      animate={isNew ? { opacity: 1 } : undefined}
+      animate={{ opacity: 1 }}
       transition={{
         layout: { type: 'spring', stiffness: 300, damping: 30 },
         opacity: { duration: 0 },

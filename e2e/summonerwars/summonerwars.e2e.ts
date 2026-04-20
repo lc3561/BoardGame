@@ -3102,6 +3102,24 @@ test.describe('SummonerWars', () => {
     }
     await clickBoardElement(hostPage, '[data-valid-summon="true"]');
     await expect(hostPage.getByTestId(`sw-unit-${summonRow}-${summonCol}`)).toBeVisible({ timeout: 8000 });
+    await expect.poll(async () => {
+      return hostPage.evaluate(({ row, col }) => {
+        const sprite = document.querySelector(
+          `[data-testid="sw-unit-${row}-${col}"] [data-card-sprite="true"]`,
+        ) as HTMLElement | null;
+        if (!sprite) return -1;
+        return Number.parseFloat(window.getComputedStyle(sprite).opacity);
+      }, { row: summonRow, col: summonCol });
+    }, {
+      timeout: 3000,
+      message: '召唤后单位卡面应快速恢复到不透明',
+    }).toBeGreaterThan(0.95);
+    await hostPage.screenshot({
+      path: getEvidenceScreenshotPath(testInfo, 'online-flow-after-summon', {
+        filename: 'online-flow-after-summon.png',
+      }),
+      fullPage: false,
+    });
 
     // 移动
     coreState = await readOnlineCoreState();
@@ -3193,6 +3211,18 @@ test.describe('SummonerWars', () => {
     // 回归门禁：远端攻击（含 AI/对手命令）必须在被动侧触发攻击骰子展示动画。
     // 若事件流游标被错误静默同步，这里会长期不可见，直接暴露“对手行为无动画”回归。
     await expect(guestDiceOverlay).toBeVisible({ timeout: 8000 });
+    await expect.poll(async () => {
+      return guestDiceOverlay.evaluate((overlay) => {
+        const panel = overlay.firstElementChild as HTMLElement | null;
+        if (!panel) return 'missing';
+        const inline = panel.style.transform?.trim();
+        if (inline) return inline;
+        return window.getComputedStyle(panel).transform;
+      });
+    }, {
+      timeout: 2000,
+      message: '敌方攻击时骰子特写不应倒置',
+    }).not.toContain('180deg');
     await guestPage.screenshot({
       path: getEvidenceScreenshotPath(testInfo, 'online-flow-guest-dice-overlay', {
         filename: 'online-flow-guest-dice-overlay.png',

@@ -121,9 +121,9 @@ export const FACTION_METADATA: FactionMeta[] = [
     { id: SMASHUP_FACTION_IDS.VAMPIRES_POD, nameKey: 'factions.vampires_pod.name', icon: Droplet, color: '#991b1b', descriptionKey: 'factions.vampires_pod.description' },
     { id: SMASHUP_FACTION_IDS.GIANT_ANTS, nameKey: 'factions.giant_ants.name', icon: AntIcon, color: '#ca8a04', descriptionKey: 'factions.giant_ants.description' },
     { id: SMASHUP_FACTION_IDS.GIANT_ANTS_POD, nameKey: 'factions.giant_ants_pod.name', icon: AntIcon, color: '#ca8a04', descriptionKey: 'factions.giant_ants_pod.description' },
-    { id: SMASHUP_FACTION_IDS.MERMAIDS, nameKey: 'factions.mermaids.name', icon: Fish, color: '#0ea5e9', descriptionKey: 'factions.mermaids.description', implementationStatus: 'in_progress' },
-    { id: SMASHUP_FACTION_IDS.SKELETONS, nameKey: 'factions.skeletons.name', icon: Skull, color: '#6b7280', descriptionKey: 'factions.skeletons.description', implementationStatus: 'in_progress' },
-    { id: SMASHUP_FACTION_IDS.WORLD_CHAMPS, nameKey: 'factions.world_champs.name', icon: Medal, color: '#eab308', descriptionKey: 'factions.world_champs.description', implementationStatus: 'in_progress' },
+    { id: SMASHUP_FACTION_IDS.MERMAIDS, nameKey: 'factions.mermaids.name', icon: Fish, color: '#0ea5e9', descriptionKey: 'factions.mermaids.description' },
+    { id: SMASHUP_FACTION_IDS.SKELETONS, nameKey: 'factions.skeletons.name', icon: Skull, color: '#6b7280', descriptionKey: 'factions.skeletons.description' },
+    { id: SMASHUP_FACTION_IDS.WORLD_CHAMPS, nameKey: 'factions.world_champs.name', icon: Medal, color: '#eab308', descriptionKey: 'factions.world_champs.description' },
     // POD 版本阵营：英文和中文都显示（英文用户的主版本）
     { id: SMASHUP_FACTION_IDS.NINJAS_POD, nameKey: 'factions.ninjas_pod.name', icon: ShurikenIcon, color: '#991b1b', descriptionKey: 'factions.ninjas_pod.description' },
 ];
@@ -133,9 +133,6 @@ export const FACTION_METADATA: FactionMeta[] = [
  * 先把入口能力接好，后续新增派系时只需补 metadata 或加入此名单即可展示。
  */
 const IN_PROGRESS_FACTION_IDS = new Set<string>([
-    'mermaids',
-    'skeletons',
-    'world_champs',
 ]);
 
 export const FACTION_VARIANT_GROUPS: FactionVariantGroup[] = (() => {

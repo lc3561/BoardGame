@@ -69,6 +69,22 @@ import { setUndoAiSeatIds } from '../systems/UndoSystem';
 export { filterPlayedEvents };
 export { buildAiProgressMarker };
 
+const FAST_AI_COMMAND_TYPES = new Set([
+    'ADVANCE_PHASE',
+    'sw:end_phase',
+    'RESPONSE_PASS',
+]);
+
+function shouldUseFastAiDelay(action: { kind?: string; commands?: Array<{ type?: string }> }): boolean {
+    if (action.kind === 'advance-phase' || action.kind === 'response-pass') {
+        return true;
+    }
+    if (!Array.isArray(action.commands) || action.commands.length === 0) {
+        return false;
+    }
+    return action.commands.every((command) => typeof command.type === 'string' && FAST_AI_COMMAND_TYPES.has(command.type));
+}
+
 // ============================================================================
 // Context 类型
 // ============================================================================
@@ -982,9 +998,13 @@ export function LocalGameProvider({
                 return;
             }
 
+            const fastTrackActionDelay = shouldUseFastAiDelay(resolution.action);
+            const actionDelayTargetMs = fastTrackActionDelay
+                ? 0
+                : resolveAiMinimumActionDelayMs(controller);
             const remainingDelayMs = Math.max(
                 0,
-                resolveAiMinimumActionDelayMs(controller) - (Date.now() - startedAt),
+                actionDelayTargetMs - (Date.now() - startedAt),
             );
 
             if (remainingDelayMs > 0) {
