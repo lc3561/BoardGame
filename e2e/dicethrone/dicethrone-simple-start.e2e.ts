@@ -11,10 +11,11 @@ import { clearEvidenceScreenshotsForTest, getEvidenceScreenshotPath } from '../f
 import { ensureGameServerAvailable, getGameServerBaseURL, initContext, setChineseLocale, waitForTestHarness } from '../helpers/common';
 import { getMatchState, injectMatchState } from '../helpers/state-injection';
 import { createCharacterDice } from '../../src/games/dicethrone/domain/characters';
+import { CHARACTER_DATA_MAP } from '../../src/games/dicethrone/domain/characters';
 import { COMMON_CARDS } from '../../src/games/dicethrone/domain/commonCards';
 import { GUNSLINGER_DICE_FACE_IDS, PALADIN_DICE_FACE_IDS, TOKEN_IDS } from '../../src/games/dicethrone/domain/ids';
 import { RESOURCE_IDS } from '../../src/games/dicethrone/domain/resources';
-import { getAvailableAbilityIds } from '../../src/games/dicethrone/domain/rules';
+import { getAvailableAbilityIds, getDefensiveAbilityIds } from '../../src/games/dicethrone/domain/rules';
 import { HAND_LIMIT } from '../../src/games/dicethrone/domain/types';
 import { registerDiceThroneConditions } from '../../src/games/dicethrone/conditions';
 // 确保 Node 侧构造场景时，骰子定义已注册（否则 createCharacterDice/initHeroState 会报“未注册骰子定义”）
@@ -1179,9 +1180,9 @@ const buildOnlineAiOffTurnDefensiveRollState = (state: any) => {
     const attacker = next.core?.players?.['0'];
     const defender = next.core?.players?.['1'];
     const defenderCharacterId = typeof defender?.characterId === 'string' ? defender.characterId : null;
-    const selectedDefenseAbility = Array.isArray(defender?.abilities)
-        ? defender.abilities.find((ability: any) => ability?.type === 'defensive')
-        : null;
+    const selectedDefenseAbilityId = getDefensiveAbilityIds(next.core, '1')[0]
+        ?? CHARACTER_DATA_MAP[defenderCharacterId as keyof typeof CHARACTER_DATA_MAP]?.abilities?.find((ability: any) => ability?.type === 'defensive')?.id
+        ?? null;
     const attackerAbility = Array.isArray(attacker?.abilities)
         ? attacker.abilities.find((ability: any) => ability?.type === 'offensive')
         : null;
@@ -1189,7 +1190,7 @@ const buildOnlineAiOffTurnDefensiveRollState = (state: any) => {
     if (!defender || !defenderCharacterId || defenderCharacterId === 'unselected') {
         throw new Error('AI 防守方角色未就绪，无法构造 off-turn defensiveRoll 场景');
     }
-    if (!selectedDefenseAbility?.id) {
+    if (!selectedDefenseAbilityId) {
         throw new Error('AI 防守方缺少防御技能，无法构造 off-turn defensiveRoll 场景');
     }
 
@@ -1203,13 +1204,13 @@ const buildOnlineAiOffTurnDefensiveRollState = (state: any) => {
     next.core.selectedAbilityId = undefined;
     next.core.pendingBonusDiceSettlement = undefined;
     next.core.pendingDamage = null;
-    next.core.activatingAbilityId = selectedDefenseAbility.id;
+    next.core.activatingAbilityId = selectedDefenseAbilityId;
     next.core.pendingAttack = {
         attackerId: '0',
         defenderId: '1',
         isDefendable: true,
         sourceAbilityId: attackerAbility?.id ?? 'online-ai-offturn-defensive-feedback-attack',
-        defenseAbilityId: selectedDefenseAbility.id,
+        defenseAbilityId: selectedDefenseAbilityId,
         isUltimate: false,
         damageResolved: false,
         resolvedDamage: 0,
