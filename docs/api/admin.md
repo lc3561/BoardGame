@@ -1,6 +1,6 @@
 # 后台管理 API
 
-> 默认需要 `admin` 权限；其中更新日志管理接口允许 `admin` 与 `developer` 访问。`developer` 仅可操作自己被分配到的游戏。
+> 默认需要 `admin` 权限；其中统计概览（`/admin/stats`、`/admin/stats/trend`）、更新日志管理接口允许 `admin` 与 `developer` 访问。`developer` 仅可访问被放行的只读统计能力，并仅可操作自己被分配到的游戏更新日志。
 
 ## 概述
 
@@ -23,7 +23,7 @@
 **请求示例**:
 ```http
 GET /admin/stats
-Authorization: Bearer <admin_token>
+Authorization: Bearer <token>
 ```
 
 **响应示例**:
@@ -71,7 +71,7 @@ Authorization: Bearer <admin_token>
 **请求示例**:
 ```http
 GET /admin/stats/trend?days=30
-Authorization: Bearer <admin_token>
+Authorization: Bearer <token>
 ```
 
 **响应示例**:

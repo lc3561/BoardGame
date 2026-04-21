@@ -1209,7 +1209,7 @@ export const SummonerWarsBoard: React.FC<Props> = ({
             {t('action.discardSelected', { count: interaction.selectedCardsForDiscard.length })}
           </GameButton>
         )}
-        <GameButton onClick={interaction.handleEndPhase} disabled={!isMyTurn || interaction.isMandatoryAbilityActive} variant={interaction.endPhaseConfirmPending ? 'danger' : 'primary'} size="md" data-testid="sw-end-phase" data-tutorial-id="sw-end-phase-btn">
+        <GameButton onClick={interaction.handleEndPhase} disabled={!isMyTurn || interaction.isMandatoryAbilityActive || interaction.isPhaseAdvanceLocked} variant={interaction.endPhaseConfirmPending ? 'danger' : 'primary'} size="md" data-testid="sw-end-phase" data-tutorial-id="sw-end-phase-btn">
           {interaction.endPhaseConfirmPending
             ? t(currentPhase === 'move' ? 'action.confirmEndMove' : 'action.confirmEndAttack', {
               count: currentPhase === 'move'

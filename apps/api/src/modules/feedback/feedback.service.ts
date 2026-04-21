@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { normalizeDeveloperGameIds } from '../auth/schemas/developer-game-access';
@@ -15,12 +15,20 @@ type FeedbackManagerScope = {
 const DEFAULT_USER_SOURCE = 'feedback-modal';
 const LEGACY_WATCHDOG_SOURCE = 'online-ai-watchdog';
 const WATCHDOG_AGGREGATION_SOURCE = 'online-ai-watchdog';
+export const WATCHDOG_AGGREGATION_WINDOW_MS = 6 * 60 * 60 * 1000;
 
 const FEEDBACK_SEVERITY_RANK: Record<string, number> = {
     low: 1,
     medium: 2,
     high: 3,
     critical: 4,
+};
+
+type WatchdogAggregationPlan = {
+    dedupeKey: string;
+    windowStartedAt: Date;
+    windowMs: number;
+    retentionPolicy: 'windowed-counter-aggregate';
 };
 
 @Injectable()
@@ -33,7 +41,7 @@ export class FeedbackService {
     async create(userId: string | null, dto: CreateFeedbackDto): Promise<Feedback> {
         return this.feedbackModel.create({
             ...dto,
-            gameId: this.normalizeFeedbackGameId(dto.clientContext?.gameId ?? dto.gameName),
+            gameId: this.normalizeFeedbackGameIdCandidates(dto.clientContext?.gameId, dto.gameName),
             reporterType: FeedbackReporterType.USER,
             source: DEFAULT_USER_SOURCE,
             ...(userId && { userId }),
@@ -42,7 +50,7 @@ export class FeedbackService {
 
     async createSystem(dto: CreateSystemFeedbackDto): Promise<Feedback> {
         const source = this.normalizeSource(dto.source, 'unknown');
-        const gameId = this.normalizeFeedbackGameId(dto.clientContext?.gameId ?? dto.gameName);
+        const gameId = this.normalizeFeedbackGameIdCandidates(dto.clientContext?.gameId, dto.gameName);
         if (this.shouldAggregateSystemFeedback(dto, source, gameId)) {
             return this.createOrUpdateAggregatedSystemFeedback(dto, source, gameId);
         }
@@ -89,7 +97,62 @@ export class FeedbackService {
     async updateStatus(actorUserId: string, id: string, status: FeedbackStatus): Promise<Feedback | null> {
         const manager = await this.assertActorCanManage(actorUserId);
         const scopeFilter = this.buildScopedFilter(manager);
-        return this.feedbackModel.findOneAndUpdate({ _id: id, ...scopeFilter }, { status }, { new: true });
+        if (status === FeedbackStatus.CLOSED) {
+            return this.feedbackModel.findOneAndUpdate(
+                { _id: id, ...scopeFilter },
+                { $set: { status }, $unset: { aggregationActiveKey: '' } },
+                { new: true },
+            );
+        }
+        const current = await this.feedbackModel.findOne({ _id: id, ...scopeFilter }).select({
+            _id: 1,
+            source: 1,
+            reporterType: 1,
+            aggregationKey: 1,
+        }).lean<{
+            _id: unknown;
+            source?: string;
+            reporterType?: FeedbackReporterType;
+            aggregationKey?: string;
+        } | null>();
+        if (!current) {
+            return null;
+        }
+        const shouldRestoreAggregationActiveKey = Boolean(
+            current.aggregationKey
+            && (current.source === WATCHDOG_AGGREGATION_SOURCE || current.reporterType === FeedbackReporterType.SYSTEM),
+        );
+        if (shouldRestoreAggregationActiveKey) {
+            const conflictingActive = await this.feedbackModel.findOne({
+                ...scopeFilter,
+                _id: { $ne: id },
+                aggregationActiveKey: current.aggregationKey,
+                status: { $in: [FeedbackStatus.OPEN, FeedbackStatus.IN_PROGRESS, FeedbackStatus.RESOLVED] },
+            }).select({ _id: 1 }).lean();
+            if (conflictingActive) {
+                throw new ConflictException('同一聚合键已存在活跃反馈，不能直接重新打开归档记录');
+            }
+        }
+        const updatePayload: Record<string, unknown> = shouldRestoreAggregationActiveKey
+            ? {
+                $set: {
+                    status,
+                    aggregationActiveKey: current.aggregationKey,
+                },
+            }
+            : { $set: { status } };
+        try {
+            return await this.feedbackModel.findOneAndUpdate(
+                { _id: id, ...scopeFilter },
+                updatePayload,
+                { new: true },
+            );
+        } catch (error) {
+            if (shouldRestoreAggregationActiveKey && this.isDuplicateKeyError(error)) {
+                throw new ConflictException('同一聚合键已存在活跃反馈，不能直接重新打开归档记录');
+            }
+            throw error;
+        }
     }
 
     async deleteOne(actorUserId: string, id: string): Promise<boolean> {
@@ -136,6 +199,16 @@ export class FeedbackService {
         return normalized || undefined;
     }
 
+    private normalizeFeedbackGameIdCandidates(...values: Array<string | null | undefined>): string | undefined {
+        for (const value of values) {
+            const normalized = this.normalizeFeedbackGameId(value);
+            if (normalized) {
+                return normalized;
+            }
+        }
+        return undefined;
+    }
+
     private normalizeSource(value?: string | null, fallback = DEFAULT_USER_SOURCE): string {
         if (typeof value !== 'string') {
             return fallback;
@@ -155,11 +228,12 @@ export class FeedbackService {
         return Boolean(gameId && (dto.autoReportKind || dto.errorContext?.name));
     }
 
-    private buildSystemAggregationKey(
+    private buildWatchdogAggregationPlan(
         dto: CreateSystemFeedbackDto,
         source: string,
         gameId?: string,
-    ): string | null {
+        now = new Date(),
+    ): WatchdogAggregationPlan | null {
         if (!gameId) {
             return null;
         }
@@ -170,13 +244,35 @@ export class FeedbackService {
             dto.errorContext?.message
             ?? dto.content.replace(/^\[system\]\[online-ai-watchdog\]\s+/i, ''),
         );
-        return [
+        const normalizedRoute = this.normalizeAggregationSegment(dto.clientContext?.route, 'unknown-route');
+        const normalizedMode = this.normalizeAggregationSegment(dto.clientContext?.mode, 'unknown-mode');
+        const dedupeKey = [
             'system-feedback',
             source,
             gameId,
+            normalizedRoute,
+            normalizedMode,
             autoReportFamily,
             normalizedReason || 'unknown',
         ].join(':');
+        return {
+            dedupeKey,
+            windowStartedAt: new Date(now.getTime() - WATCHDOG_AGGREGATION_WINDOW_MS),
+            windowMs: WATCHDOG_AGGREGATION_WINDOW_MS,
+            retentionPolicy: 'windowed-counter-aggregate',
+        };
+    }
+
+    private normalizeAggregationSegment(value: string | null | undefined, fallback: string): string {
+        if (typeof value !== 'string') {
+            return fallback;
+        }
+        const normalized = value
+            .trim()
+            .toLowerCase()
+            .replace(/\s+/g, '-')
+            .replace(/[^a-z0-9:_-]/g, '');
+        return normalized || fallback;
     }
 
     private normalizeWatchdogAutoReportFamily(value?: string | null): string {
@@ -205,6 +301,9 @@ export class FeedbackService {
         const segments = normalized.split(':').filter(Boolean);
         if (segments.length >= 2 && ['recover-interaction', 'follow-up-advance'].includes(segments[1])) {
             return `${segments[0]}:${segments[1]}`;
+        }
+        if (segments.length >= 3 && segments[1] === 'legal-action') {
+            return `${segments[0]}:${segments[1]}:${segments[2]}`;
         }
         return normalized;
     }
@@ -243,56 +342,174 @@ export class FeedbackService {
         dto: CreateSystemFeedbackDto,
         source: string,
         gameId?: string,
+        retryDepth = 0,
     ): Promise<Feedback> {
-        const aggregationKey = this.buildSystemAggregationKey(dto, source, gameId);
-        if (!aggregationKey) {
-            return this.feedbackModel.create({
-                ...dto,
-                source,
-                reporterType: FeedbackReporterType.SYSTEM,
-                gameId,
-            });
-        }
-
         const now = new Date();
-        const existing = await this.feedbackModel.findOne({ aggregationKey }).exec();
-        if (!existing) {
+        const aggregationPlan = this.buildWatchdogAggregationPlan(dto, source, gameId, now);
+        if (!aggregationPlan) {
             return this.feedbackModel.create({
                 ...dto,
                 source,
                 reporterType: FeedbackReporterType.SYSTEM,
                 gameId,
-                incidentKey: aggregationKey,
-                aggregationKey,
-                occurrenceCount: 1,
-                firstOccurredAt: now,
-                lastOccurredAt: now,
-                latestIncidentKey: dto.incidentKey,
             });
         }
+        const aggregationKey = aggregationPlan.dedupeKey;
+        const aggregationActiveKey = aggregationKey;
 
-        existing.content = dto.content;
-        existing.type = dto.type ?? existing.type;
-        existing.severity = this.pickMoreSevereSeverity(existing.severity, dto.severity) as typeof existing.severity;
-        existing.status = this.resolveAggregatedSystemStatus(existing.status, dto.status);
-        existing.source = source;
-        existing.reporterType = FeedbackReporterType.SYSTEM;
-        existing.gameId = gameId;
-        existing.gameName = dto.gameName ?? existing.gameName;
-        existing.autoReportKind = dto.autoReportKind ?? existing.autoReportKind;
-        existing.contactInfo = dto.contactInfo ?? existing.contactInfo;
-        existing.actionLog = dto.actionLog ?? existing.actionLog;
-        existing.stateSnapshot = dto.stateSnapshot ?? existing.stateSnapshot;
-        existing.clientContext = dto.clientContext ?? existing.clientContext;
-        existing.errorContext = dto.errorContext ?? existing.errorContext;
-        existing.incidentKey = aggregationKey;
-        existing.aggregationKey = aggregationKey;
-        existing.occurrenceCount = Math.max(1, Number(existing.occurrenceCount) || 1) + 1;
-        existing.firstOccurredAt = existing.firstOccurredAt ?? now;
-        existing.lastOccurredAt = now;
-        existing.latestIncidentKey = dto.incidentKey ?? existing.latestIncidentKey;
-        await existing.save();
-        return existing.toObject() as Feedback;
+        // 先查找活跃 canonical；若已超过去重窗口，先归档旧 canonical 再新开。
+        let existing = await this.feedbackModel.findOne({
+            aggregationActiveKey,
+            status: { $ne: FeedbackStatus.CLOSED },
+        }).exec();
+
+        if (!existing) {
+            existing = await this.feedbackModel.findOne({
+                aggregationKey,
+                status: { $ne: FeedbackStatus.CLOSED },
+            }).sort({ lastOccurredAt: -1, updatedAt: -1, createdAt: -1 }).exec();
+            if (existing && existing.aggregationActiveKey !== aggregationActiveKey) {
+                try {
+                    await this.feedbackModel.updateOne(
+                        { _id: existing._id, status: { $ne: FeedbackStatus.CLOSED } },
+                        { $set: { aggregationActiveKey } },
+                    ).exec();
+                    existing.aggregationActiveKey = aggregationActiveKey;
+                } catch (error) {
+                    if (!this.isDuplicateKeyError(error)) {
+                        throw error;
+                    }
+                    existing = await this.feedbackModel.findOne({
+                        aggregationActiveKey,
+                        status: { $ne: FeedbackStatus.CLOSED },
+                    }).exec();
+                }
+            }
+        }
+
+        if (existing) {
+            const baseline = existing.lastOccurredAt ?? existing.createdAt ?? now;
+            const baselineMs = baseline instanceof Date ? baseline.getTime() : new Date(baseline).getTime();
+            const isWithinWindow = Number.isFinite(baselineMs)
+                && baselineMs >= aggregationPlan.windowStartedAt.getTime();
+            if (!isWithinWindow) {
+                await this.feedbackModel.updateOne(
+                    { _id: existing._id, status: { $ne: FeedbackStatus.CLOSED } },
+                    { $set: { status: FeedbackStatus.CLOSED }, $unset: { aggregationActiveKey: '' } },
+                );
+                existing = null;
+            }
+        }
+
+        if (!existing) {
+            try {
+                return await this.feedbackModel.create({
+                    ...dto,
+                    source,
+                    reporterType: FeedbackReporterType.SYSTEM,
+                    gameId,
+                    incidentKey: aggregationKey,
+                    aggregationKey,
+                    aggregationActiveKey,
+                    occurrenceCount: 1,
+                    firstOccurredAt: now,
+                    lastOccurredAt: now,
+                    latestIncidentKey: dto.incidentKey,
+                });
+            } catch (error) {
+                if (!this.isDuplicateKeyError(error)) {
+                    throw error;
+                }
+                // 兼容历史/旁路状态更新：closed 记录若仍保留 activeKey，会阻塞新 canonical 建立。
+                const releasedClosedDoc = await this.feedbackModel.findOneAndUpdate(
+                    { aggregationActiveKey, status: FeedbackStatus.CLOSED },
+                    { $unset: { aggregationActiveKey: '' } },
+                    { sort: { updatedAt: -1 } },
+                ).exec();
+                if (releasedClosedDoc) {
+                    try {
+                        return await this.feedbackModel.create({
+                            ...dto,
+                            source,
+                            reporterType: FeedbackReporterType.SYSTEM,
+                            gameId,
+                            incidentKey: aggregationKey,
+                            aggregationKey,
+                            aggregationActiveKey,
+                            occurrenceCount: 1,
+                            firstOccurredAt: now,
+                            lastOccurredAt: now,
+                            latestIncidentKey: dto.incidentKey,
+                        });
+                    } catch (retryError) {
+                        if (!this.isDuplicateKeyError(retryError)) {
+                            throw retryError;
+                        }
+                    }
+                }
+                existing = await this.feedbackModel.findOne({
+                    aggregationActiveKey,
+                    status: { $ne: FeedbackStatus.CLOSED },
+                }).exec();
+                if (!existing) {
+                    throw error;
+                }
+            }
+        }
+
+        const mergedSeverity = this.pickMoreSevereSeverity(existing.severity, dto.severity) as typeof existing.severity;
+        const mergedStatus = this.resolveAggregatedSystemStatus(existing.status, dto.status);
+        const updated = await this.feedbackModel.findOneAndUpdate(
+            { _id: existing._id, status: { $ne: FeedbackStatus.CLOSED } },
+            {
+                $set: {
+                    content: dto.content,
+                    type: dto.type ?? existing.type,
+                    severity: mergedSeverity,
+                    status: mergedStatus,
+                    source,
+                    reporterType: FeedbackReporterType.SYSTEM,
+                    gameId,
+                    gameName: dto.gameName ?? existing.gameName,
+                    autoReportKind: dto.autoReportKind ?? existing.autoReportKind,
+                    contactInfo: dto.contactInfo ?? existing.contactInfo,
+                    actionLog: dto.actionLog ?? existing.actionLog,
+                    stateSnapshot: dto.stateSnapshot ?? existing.stateSnapshot,
+                    clientContext: dto.clientContext ?? existing.clientContext,
+                    errorContext: dto.errorContext ?? existing.errorContext,
+                    incidentKey: aggregationKey,
+                    aggregationKey,
+                    aggregationActiveKey,
+                    firstOccurredAt: existing.firstOccurredAt ?? now,
+                    lastOccurredAt: now,
+                    latestIncidentKey: dto.incidentKey ?? existing.latestIncidentKey,
+                },
+                $inc: {
+                    occurrenceCount: 1,
+                },
+            },
+            { new: true },
+        ).exec();
+
+        if (!updated) {
+            if (retryDepth >= 1) {
+                throw new Error('failed_to_update_aggregated_system_feedback_after_retry');
+            }
+            return this.createOrUpdateAggregatedSystemFeedback(dto, source, gameId, retryDepth + 1);
+        }
+        return updated.toObject() as Feedback;
+    }
+
+    private isDuplicateKeyError(error: unknown): boolean {
+        if (!error || typeof error !== 'object') {
+            return false;
+        }
+        const maybeCode = (error as { code?: unknown }).code;
+        if (typeof maybeCode === 'number') {
+            return maybeCode === 11000;
+        }
+        const maybeMessage = (error as { message?: unknown }).message;
+        return typeof maybeMessage === 'string' && maybeMessage.includes('E11000');
     }
 
     private buildOriginFilter(

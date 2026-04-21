@@ -17,6 +17,8 @@ const formatDuration = (ms: number) => {
 };
 
 const COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f43f5e', '#f97316', '#eab308'];
+const BASE_CHART_HEIGHT = 280;
+const ROW_HEIGHT = 42;
 
 export default function GamePopularityChart({ stats }: Props) {
     // Process data for the chart
@@ -26,6 +28,7 @@ export default function GamePopularityChart({ stats }: Props) {
         count: game.count,
         color: COLORS[index % COLORS.length]
     }));
+    const chartHeight = Math.max(BASE_CHART_HEIGHT, data.length * ROW_HEIGHT);
 
     return (
         <div className="bg-white p-6 rounded-2xl border border-zinc-100 shadow-xl shadow-zinc-200/50 flex flex-col h-[400px]">
@@ -39,13 +42,13 @@ export default function GamePopularityChart({ stats }: Props) {
             {data.length === 0 ? (
                 <div className="flex-1 flex items-center justify-center text-zinc-400">暂无数据</div>
             ) : (
-                <div className="flex-1 w-full min-h-0">
-                    <ResponsiveContainer width="100%" height={280}>
+                <div className="flex-1 min-h-0 w-full overflow-y-auto pr-1">
+                    <ResponsiveContainer width="100%" height={chartHeight}>
                         <BarChart
                             layout="vertical"
                             data={data}
                             margin={{ top: 0, right: 30, left: 40, bottom: 0 }}
-                            barSize={32}
+                            barSize={28}
                         >
                             <XAxis type="number" hide />
                             <YAxis

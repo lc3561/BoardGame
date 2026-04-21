@@ -681,8 +681,8 @@ export function validate(
                     cardUid: ongoingCardUid,
                     defId: ongoing.defId,
                     baseIndex,
-                    random: Math.random,
-                    now,
+                    random: { random: () => Math.random(), d: () => 1, range: (min: number) => min, shuffle: <T>(arr: T[]) => [...arr] },
+                    now: core.turnNumber ?? 0,
                 });
                 if (!talentValidation.valid) {
                     return talentValidation;
@@ -707,7 +707,7 @@ export function validate(
                     && titan.controllerId === command.playerId
                     && !(core.titanOngoingSuppressedUntilTurnEnd ?? []).includes(titan.uid),
                 );
-                const greatWolfSpiritBaseIndex = greatWolfSpirit?.location.baseIndex;
+                const greatWolfSpiritBaseIndex = greatWolfSpirit?.location.zone === 'base' ? greatWolfSpirit.location.baseIndex : undefined;
                 const canUseGreatWolfSpiritDouble =
                     greatWolfSpiritBaseIndex === baseIndex
                     && !((core.greatWolfSpiritDoubleTalentCardUids ?? []).includes(minionUid));
@@ -729,8 +729,8 @@ export function validate(
                 cardUid: minionUid,
                 defId: targetMinion.defId,
                 baseIndex,
-                random: Math.random,
-                now,
+                random: { random: () => Math.random(), d: () => 1, range: (min: number) => min, shuffle: <T>(arr: T[]) => [...arr] },
+                now: core.turnNumber ?? 0,
             });
             if (!talentValidation.valid) {
                 return talentValidation;

@@ -10,6 +10,7 @@ import type { SummonerWarsCore, GamePhase, PlayerId, UnitCard, EventCard } from 
 import { buildAiDecisionContext, resolveNextLocalAiAction } from '../../../engine/ai';
 import { buildSummonerWarsAiLegalActions, summonerWarsAiRuntime } from '../ai';
 import { abilityRegistry } from '../domain/abilities';
+import { CARD_IDS } from '../domain/ids';
 
 import { GameTestRunner, type TestCase, type StateExpectation } from '../../../engine/testing';
 import { createInitialSystemState } from '../../../engine/pipeline';
@@ -1199,6 +1200,81 @@ describe('召唤师战争本地 AI', () => {
         const validPositions = getValidSummonPositions(core, '0');
         expect(summonPosition).toBeTruthy();
         expect(validPositions).toContainEqual(summonPosition);
+    });
+
+    it('重燃希望激活时，AI 应将召唤师相邻空格加入召唤候选', () => {
+        const core = createInitializedCore(['0', '1'], aiTestRandom, {
+            faction0: 'paladin',
+            faction1: 'necromancer',
+        });
+        core.phase = 'move';
+        core.currentPlayer = '0';
+
+        for (let row = 0; row < BOARD_ROWS; row += 1) {
+            for (let col = 0; col < BOARD_COLS; col += 1) {
+                const unit = core.board[row][col].unit;
+                if (unit?.card.unitClass !== 'summoner') {
+                    core.board[row][col].unit = undefined;
+                }
+            }
+        }
+
+        const ownSummoner = getSummoner(core, '0');
+        expect(ownSummoner).toBeTruthy();
+        if (!ownSummoner) return;
+
+        core.board[ownSummoner.position.row][ownSummoner.position.col].unit = undefined;
+        const forwardPosition = { row: 3, col: 3 };
+        core.board[forwardPosition.row][forwardPosition.col].unit = {
+            ...ownSummoner,
+            position: forwardPosition,
+            hasMoved: false,
+            hasAttacked: false,
+        };
+
+        core.players['0'].activeEvents = [{
+            id: CARD_IDS.PALADIN_REKINDLE_HOPE,
+            cardType: 'event',
+            name: '重燃希望',
+            faction: 'paladin',
+            cost: 0,
+            playPhase: 'any',
+            effect: '测试：允许在任意阶段召唤并可在召唤师相邻召唤',
+            isActive: true,
+            deckSymbols: [],
+        }];
+
+        const targetPos = { row: 3, col: 2 };
+        core.board[targetPos.row][targetPos.col].unit = undefined;
+        core.board[targetPos.row][targetPos.col].structure = undefined;
+        core.players['0'].magic = 5;
+        core.players['0'].hand = [{
+            id: 'ai-test-paladin-common',
+            cardType: 'unit',
+            name: '测试步兵',
+            unitClass: 'common',
+            faction: 'paladin',
+            strength: 1,
+            life: 2,
+            cost: 1,
+            attackType: 'melee',
+            attackRange: 1,
+            deckSymbols: [],
+        }];
+
+        const baseSummonPositions = getValidSummonPositions(core, '0');
+        expect(baseSummonPositions).not.toContainEqual(targetPos);
+
+        const actions = buildSummonerWarsAiLegalActions({
+            playerId: '0',
+            state: { core, sys: createInitialSystemState(['0', '1'], []) },
+        });
+        const summonTargetPositions = actions
+            .filter((action) => action.kind === 'summon-unit')
+            .map((action) => (action.commands[0]?.payload as { position?: { row: number; col: number } } | undefined)?.position)
+            .filter((position): position is { row: number; col: number } => !!position);
+
+        expect(summonTargetPositions).toContainEqual(targetPos);
     });
 
 

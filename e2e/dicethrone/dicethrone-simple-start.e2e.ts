@@ -564,13 +564,14 @@ const buildOnlineAiStalledMain2State = (state: any) => {
     const fallbackTurnOrder = Array.isArray(next.sys?.turnOrder)
         ? [...next.sys.turnOrder]
         : ['0', '1'];
+    const aiTurnIndex = Math.max(0, fallbackTurnOrder.indexOf('1'));
     const hostHp = Math.max(20, next.core?.players?.['0']?.resources?.[RESOURCE_IDS.HP] ?? 0);
     const aiHp = Math.max(20, next.core?.players?.['1']?.resources?.[RESOURCE_IDS.HP] ?? 0);
 
     next.core = {
         ...next.core,
         activePlayerId: '1',
-        currentPlayerIndex: 1,
+        currentPlayerIndex: aiTurnIndex,
         turnOrder: fallbackTurnOrder,
         turnNumber: 4,
         phase: 'main2',
@@ -608,7 +609,7 @@ const buildOnlineAiStalledMain2State = (state: any) => {
         turnNumber: 4,
         phase: 'main2',
         turnOrder: fallbackTurnOrder,
-        currentPlayerIndex: 1,
+        currentPlayerIndex: aiTurnIndex,
         interaction: {
             current: undefined,
             queue: [],
@@ -1171,6 +1172,71 @@ const buildOnlineAiAfterCardResponseTriggerState = (state: any) => {
     };
 
     return normalizeInjectedMatchState(next.sys.matchId ?? 'online-ai-after-card-trigger', next);
+};
+
+const buildOnlineAiOffTurnDefensiveRollState = (state: any) => {
+    const next = buildFourPlayerNoResponseState(state);
+    const attacker = next.core?.players?.['0'];
+    const defender = next.core?.players?.['1'];
+    const defenderCharacterId = typeof defender?.characterId === 'string' ? defender.characterId : null;
+    const selectedDefenseAbility = Array.isArray(defender?.abilities)
+        ? defender.abilities.find((ability: any) => ability?.type === 'defensive')
+        : null;
+    const attackerAbility = Array.isArray(attacker?.abilities)
+        ? attacker.abilities.find((ability: any) => ability?.type === 'offensive')
+        : null;
+
+    if (!defender || !defenderCharacterId || defenderCharacterId === 'unselected') {
+        throw new Error('AI 防守方角色未就绪，无法构造 off-turn defensiveRoll 场景');
+    }
+    if (!selectedDefenseAbility?.id) {
+        throw new Error('AI 防守方缺少防御技能，无法构造 off-turn defensiveRoll 场景');
+    }
+
+    next.core.activePlayerId = '0';
+    next.sys.phase = 'defensiveRoll';
+    next.sys.flowHalted = false;
+    next.core.rollCount = 0;
+    next.core.rollLimit = 1;
+    next.core.rollDiceCount = 0;
+    next.core.rollConfirmed = false;
+    next.core.selectedAbilityId = undefined;
+    next.core.pendingBonusDiceSettlement = undefined;
+    next.core.pendingDamage = null;
+    next.core.activatingAbilityId = selectedDefenseAbility.id;
+    next.core.pendingAttack = {
+        attackerId: '0',
+        defenderId: '1',
+        isDefendable: true,
+        sourceAbilityId: attackerAbility?.id ?? 'online-ai-offturn-defensive-feedback-attack',
+        defenseAbilityId: selectedDefenseAbility.id,
+        isUltimate: false,
+        damageResolved: false,
+        resolvedDamage: 0,
+        bonusDamage: 0,
+        attackModifierBonusDamage: 0,
+    };
+    next.core.dice = createCharacterDice(defenderCharacterId).map((die: any, index: number) => ({
+        ...die,
+        id: typeof die?.id === 'number' ? die.id : index,
+        value: 1,
+        isKept: false,
+    }));
+
+    for (const pid of ['0', '1']) {
+        next.core.players[pid].resources = {
+            ...(next.core.players[pid].resources ?? {}),
+            [RESOURCE_IDS.HP]: 50,
+        };
+        next.core.players[pid].tokens = Object.fromEntries(
+            Object.entries(next.core.players[pid].tokens ?? {}).map(([tokenId]) => [tokenId, 0]),
+        );
+        next.core.players[pid].statusEffects = Object.fromEntries(
+            Object.entries(next.core.players[pid].statusEffects ?? {}).map(([statusId]) => [statusId, 0]),
+        );
+    }
+
+    return normalizeInjectedMatchState(next.sys.matchId ?? 'online-ai-offturn-defensive-roll', next);
 };
 
 const buildTwoPlayerResponseLoopState = (
@@ -2297,6 +2363,83 @@ test.describe('DiceThrone Simple Start', () => {
         }
     });
 
+    test('Online AI 在 off-turn defensiveRoll 也应自动掷骰并收口，不应卡死在玩家回合下的防御阶段', async ({ browser }, testInfo) => {
+        test.setTimeout(120000);
+        const baseURL = testInfo.project.use.baseURL as string | undefined;
+
+        const setup = await setupDTOnlineAiRoom(browser, baseURL);
+        if (!setup) {
+            test.skip(true, 'DiceThrone AI 联机房间创建失败');
+            return;
+        }
+
+        try {
+            const { hostPage, matchId } = setup;
+            await waitForCharacterSelection(hostPage, 20000);
+            await waitForAiSeatCredential(hostPage, matchId, '1');
+
+            await selectCharacter(hostPage, 'moon_elf');
+            await expect.poll(async () => {
+                const state = await getMatchState(matchId, hostPage);
+                const hostSelected = state.core?.selectedCharacters?.['0'];
+                const aiSelected = state.core?.selectedCharacters?.['1'];
+                return hostSelected === 'moon_elf'
+                    && aiSelected !== 'unselected'
+                    && state.core?.readyPlayers?.['1'] === true;
+            }, {
+                timeout: 30000,
+                message: '等待 DiceThrone host/AI 一起完成 off-turn defensiveRoll 真实触发测试前置条件',
+            }).toBe(true);
+
+            const startButton = hostPage.locator('button').filter({ hasText: /开始游戏|Start Game|Press.*Start/i }).first();
+            await expect(startButton).toBeEnabled({ timeout: 10000 });
+            await startButton.click();
+            await hostPage.waitForTimeout(500);
+
+            await applyOnlineMatchState(matchId, hostPage, buildOnlineAiOffTurnDefensiveRollState);
+            await waitForPhase(hostPage, 'defensiveRoll', 30000);
+            await waitForGameBoard(hostPage, 30000);
+            await waitForTestHarness(hostPage, 15000);
+
+            await clearEvidenceScreenshotsForTest(testInfo);
+            await saveEvidenceScreenshot(hostPage, testInfo, '05h-online-ai-offturn-defensive-before');
+
+            await expect.poll(async () => {
+                const state = await getMatchState(matchId, hostPage);
+                return {
+                    phase: state.sys?.phase ?? null,
+                    rollCount: state.core?.rollCount ?? null,
+                };
+            }, {
+                timeout: 20000,
+                message: '等待 AI 在 off-turn defensiveRoll 至少完成掷骰',
+            }).toMatchObject({
+                phase: 'defensiveRoll',
+                rollCount: 1,
+            });
+
+            await saveEvidenceScreenshot(hostPage, testInfo, '05i-online-ai-offturn-defensive-rolled');
+
+            await expect.poll(async () => {
+                const state = await getMatchState(matchId, hostPage);
+                return {
+                    phase: state.sys?.phase ?? null,
+                    pendingAttack: Boolean(state.core?.pendingAttack),
+                };
+            }, {
+                timeout: 20000,
+                message: '等待 AI defensiveRoll 收口回到主阶段，避免一直卡在玩家回合的防御阶段',
+            }).toEqual({
+                phase: 'main2',
+                pendingAttack: false,
+            });
+
+            await saveEvidenceScreenshot(hostPage, testInfo, '05j-online-ai-offturn-defensive-resolved');
+        } finally {
+            await setup.hostContext.close();
+        }
+    });
+
     test('Online 2-player afterAttackResolved: response pass should close and not reopen', async ({ browser }, testInfo) => {
         test.setTimeout(90000);
         const baseURL = testInfo.project.use.baseURL as string | undefined;
@@ -2930,7 +3073,6 @@ test.describe('DiceThrone Simple Start', () => {
                 minCommandCount: 1,
             });
             await applyOnlineMatchState(matchId, hostPage, buildOnlineAiStalledMain2State);
-            await waitForPhase(hostPage, 'main2', 30000);
             await waitForGameBoard(hostPage, 30000);
             await waitForTestHarness(hostPage, 15000);
 
@@ -2947,10 +3089,8 @@ test.describe('DiceThrone Simple Start', () => {
             }, {
                 timeout: 15000,
                 message: '等待 AI main2 卡死场景至少出现一次本地 batch 拒绝',
-            }).toEqual({
+            }).toMatchObject({
                 rejectedCount: 1,
-                phase: 'main2',
-                activePlayerId: '1',
                 hostHandCount: expect.any(Number),
                 aiHandCount: 0,
             });

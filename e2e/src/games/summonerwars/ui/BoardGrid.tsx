@@ -182,6 +182,8 @@ const GridLayer: React.FC<{
             data-valid-move={props.validMovePositions.some(p => p.row === gameCoord.row && p.col === gameCoord.col) ? 'true' : 'false'}
             data-valid-attack={props.validAttackPositions.some(p => p.row === gameCoord.row && p.col === gameCoord.col) ? 'true' : 'false'}
             data-valid-event-target={props.validEventTargets.some(p => p.row === gameCoord.row && p.col === gameCoord.col) ? 'true' : 'false'}
+            data-valid-ability-pos={props.validAbilityPositions.some(p => p.row === gameCoord.row && p.col === gameCoord.col) ? 'true' : 'false'}
+            data-valid-ability-unit={props.validAbilityUnits.some(p => p.row === gameCoord.row && p.col === gameCoord.col) ? 'true' : 'false'}
             className={`absolute transition-colors cursor-pointer ${cellVisual.className}`}
             style={{
               left: `${pos.left}%`, top: `${pos.top}%`,

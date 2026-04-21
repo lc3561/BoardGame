@@ -215,6 +215,23 @@ export const waitForSummonerWarsUI = async (page: Page, timeout = 30000) => {
 export const waitForFactionSelection = async (page: Page, timeout = 30000) => {
   await page.waitForFunction(
     () => {
+      const isVisible = (el: Element | null) => {
+        if (!el) return false;
+        if (!(el instanceof HTMLElement)) return false;
+        const style = window.getComputedStyle(el);
+        if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false;
+        const rect = el.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      };
+
+      const selectionRoot = document.querySelector('[data-testid="sw-faction-selection"]');
+      const selectionStage = document.querySelector('[data-testid="sw-faction-stage"]');
+      const selectionGrid = document.querySelector('[data-testid="sw-faction-grid"]');
+      if (isVisible(selectionRoot) || isVisible(selectionStage) || isVisible(selectionGrid)) return true;
+
+      const title = document.querySelector('[data-testid="sw-faction-title"]');
+      if (title && /选择你的阵营|Choose your faction/i.test(title.textContent ?? '')) return true;
+
       const h1 = document.querySelector('h1');
       if (h1 && /选择你的阵营|Choose your faction/i.test(h1.textContent ?? '')) return true;
       // 也检查是否已经进入游戏（跳过了选择）

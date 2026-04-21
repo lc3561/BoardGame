@@ -1026,6 +1026,10 @@ function setup(playerIds: PlayerId[], random: RandomFn, setupData?: Record<strin
 export const smashUpFlowHooks: FlowHooks<SmashUpCore> = {
     initialPhase: 'factionSelect',
 
+    getCurrentPlayerId({ state }): PlayerId {
+        return getCurrentPlayerId(state.core);
+    },
+
     getNextPhase({ from }): string {
         const idx = PHASE_ORDER.indexOf(from as GamePhase);
         if (idx === -1 || idx >= PHASE_ORDER.length - 1) {

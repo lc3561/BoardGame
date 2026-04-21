@@ -35,3 +35,15 @@ node scripts/infra/run-e2e-command.mjs isolated e2e/smashup/smashup.e2e.ts --gre
 ## 结论
 
 三派系“实施中”展示已统一为斜向横幅样式，且文案已收敛为单一“实施中”。
+
+## 复测记录（2026-04-20）
+
+- 触发原因：你反馈“看不到横幅”，我改了 `openSmashUpModal` 的入口打开逻辑后重新跑端到端。
+- 复测命令：
+  - `node scripts/infra/run-e2e-command.mjs isolated e2e/smashup/smashup.e2e.ts --grep "派系选择页应显示 10 周年三派系与统一斜向实施中横幅"`
+- 复测结果：`1 passed`
+- 复测截图（绝对路径）：
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-selection.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-mermaids-banner.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-skeletons-banner.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-world-champs-banner.png`

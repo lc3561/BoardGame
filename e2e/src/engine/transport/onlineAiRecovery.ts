@@ -48,7 +48,7 @@ export type ForceSkippableHiddenAiInteraction = {
 
 export type ForceEndTurnStalledAiResolution = {
     playerId: string;
-    reason: 'hidden-interaction' | 'visible-interaction' | 'response-window' | 'active-turn' | 'active-turn-legal-only';
+    reason: 'hidden-interaction' | 'visible-interaction' | 'response-window' | 'active-turn' | 'active-turn-legal-only' | 'seat-legal-only';
     requiresConfirmedAdvancePhase?: boolean;
     legalActionOnly?: boolean;
     fingerprintHint?: string;

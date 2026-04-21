@@ -3,7 +3,7 @@
 - 用例 1：移动横屏：基础流程可完成召唤、移动、建造、攻击与弃牌
 - 用例 2：移动横屏：长按放大与阶段说明在手机可达
 - 用例 3：在线对局流程：召唤、移动、建造、攻击与弃牌（PC 视口 + 布局断言）
-- 最近复跑时间：2026-04-17（移动横屏基础流程 + 可打出手牌高亮验证；PC 在线对局布局 + 可打出手牌高亮验证）
+- 最近复跑时间：2026-04-21（移动横屏基础流程；移动横屏选将对齐；移动横屏选将→开局→进局链路）
 
 ## 执行命令
 
@@ -11,9 +11,11 @@
 npm run test:e2e:ci:file -- e2e/summonerwars/summonerwars.e2e.ts "移动横屏：基础流程可完成召唤、移动、建造、攻击与弃牌"
 npm run test:e2e:ci:file -- e2e/summonerwars/summonerwars.e2e.ts "移动横屏：长按放大与阶段说明在手机可达"
 npm run test:e2e:ci:file -- e2e/summonerwars/summonerwars.e2e.ts "在线对局流程：召唤、移动、建造、攻击与弃牌"
+npm run test:e2e:ci:file -- e2e/summonerwars/summonerwars-selection.e2e.ts "mobile landscape keeps faction selection aligned with pc composition"
+npm run test:e2e:ci:file -- e2e/summonerwars/summonerwars-selection.e2e.ts "mobile landscape flow captures full selection-to-start chain"
 ```
 
-结果：三条用例均通过。
+结果：2026-04-21 本轮复核执行的三条移动横屏链路用例均通过；上方历史两条 `summonerwars.e2e.ts` 用例继续保留为既有证据。
 
 其中移动横屏用例会额外验证：
 - 页面无横向滚动（`root/body scrollWidth <= innerWidth`）
@@ -73,6 +75,21 @@ npm run test:e2e:ci:file -- e2e/summonerwars/summonerwars.e2e.ts "在线对局�
 - 我实际看到：阶段列表完整落在右上区域，结束阶段按钮在其下方；底部手牌对齐到整屏中心锚，视觉上与棋盘中线一致，不再出现“为了给右侧 HUD 让位而整体左偏”的现象。
 - 判定：主态有效，可作为本轮“移动端中心已拉回”的直接证据。
 
+### 4.1）移动横屏选将入口（补充真实进局前链路）
+- 路径：`D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\summonerwars\summonerwars-selection.e2e\mobile-landscape-keeps-faction-selection-aligned-with-pc-composition\selection-phone-landscape-entry.png`
+- 我实际看到：未选阵营时没有提前出现“开始游戏”按钮列，底部预览占位和右侧玩家状态卡彼此分离，没有横向挤压到右侧按钮区的迹象。
+- 判定：达到“从移动横屏选将入口进入时，右侧按钮区不会先被 UI 轨道占掉”的补充验收标准。
+
+### 4.2）移动横屏选将完成，可开始游戏
+- 路径：`D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\summonerwars\summonerwars-selection.e2e\mobile-landscape-flow-captures-full-selection-to-start-chain\selection-mobile-host-start-enabled.png`
+- 我实际看到：双方选完阵营后，“开始游戏”按钮完整出现在右下区域；玩家状态卡、预览区和按钮三者没有互相压住，按钮本体可直接看见。
+- 判定：达到“真实手机横屏链路下，关键阶段按钮不会被手牌/阶段条前置布局遮挡”的补充验收标准。
+
+### 4.3）移动横屏进局后主态（真实选将→开局→战场）
+- 路径：`D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\summonerwars\summonerwars-selection.e2e\mobile-landscape-flow-captures-full-selection-to-start-chain\selection-mobile-host-game-started.png`
+- 我实际看到：进入战场后，右侧阶段条位于上方，“结束阶段”按钮位于其下方；底部手牌虽然贴底展开，但没有侵入按钮本体，按钮边界完整可见。
+- 判定：达到本反馈“手牌和回合流程标识不再遮挡结束阶段按钮”的真实进局链路验收标准。
+
 ### 5）长按手牌放大
 - 路径：`D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\summonerwars\summonerwars.e2e\移动横屏：长按放大与阶段说明在手机可达\11-phone-hand-magnify-open.png`
 - 我实际看到：长按后大卡覆盖棋盘中央，关闭按钮仍在视口内；右侧阶段列表和结束阶段按钮没有被挤出屏幕。
@@ -90,6 +107,7 @@ npm run test:e2e:ci:file -- e2e/summonerwars/summonerwars.e2e.ts "在线对局�
   - 移动端手牌中心已拉回到旧版的整屏中心锚，不再出现“整体往左偏一点”。
   - 手牌右边界不再压进右侧 controls。
   - 阶段列表与结束阶段按钮重新分层，不再彼此打架。
+  - 2026-04-21 补充复核“选将 → 开始游戏 → 进入战场”真实移动横屏链路，进局后结束阶段按钮仍完整可见。
   - 阶段说明面板可见，且位置回到右侧 HUD 内。
   - 召唤/移动的空格高亮重新恢复为肉眼可见，不再只剩极细边线或只能靠 DOM 属性判断。
   - 攻击后不再触发 `ReferenceError: unitAbilities is not defined`（此前会导致页面渲染失败）。

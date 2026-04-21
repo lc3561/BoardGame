@@ -83,6 +83,9 @@ export class Feedback {
     @Prop({ type: String })
     aggregationKey?: string;
 
+    @Prop({ type: String })
+    aggregationActiveKey?: string;
+
     @Prop({ type: Number, default: 1 })
     occurrenceCount!: number;
 
@@ -124,4 +127,14 @@ FeedbackSchema.index({ gameId: 1, createdAt: -1 });
 FeedbackSchema.index({ status: 1, createdAt: -1 });
 FeedbackSchema.index({ incidentKey: 1 }, { sparse: true });
 FeedbackSchema.index({ aggregationKey: 1 }, { sparse: true });
+FeedbackSchema.index(
+    { aggregationActiveKey: 1 },
+    {
+        unique: true,
+        partialFilterExpression: {
+            aggregationActiveKey: { $exists: true },
+            status: { $in: ['open', 'in_progress', 'resolved'] },
+        },
+    },
+);
 

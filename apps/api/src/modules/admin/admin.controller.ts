@@ -41,12 +41,14 @@ export class AdminController {
     }
 
     @Get('stats')
+    @Roles('admin', 'developer')
     async getStats(@Req() req: Request, @Res() res: Response) {
         const stats = await this.adminService.getStats();
         return res.json(stats);
     }
 
     @Get('stats/trend')
+    @Roles('admin', 'developer')
     async getStatsTrend(@Query() query: QueryStatsDto, @Res() res: Response) {
         const trend = await this.adminService.getStatsTrend(query.days);
         return res.json(trend);

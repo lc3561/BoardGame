@@ -902,6 +902,179 @@ export class GameTransportServer {
         }
     }
 
+    private async resolveOnlineAiLegalActionOnlyCandidate(
+        match: ActiveMatch,
+        seatControllers: Record<string, { type: 'human' | 'local-ai' | 'remote-ai' }>,
+    ): Promise<ForceEndTurnStalledAiResolution | null> {
+        const currentPlayerId = resolveCurrentPlayerId(match.state);
+        if (!currentPlayerId || seatControllers[currentPlayerId]?.type !== 'human') {
+            return null;
+        }
+
+        const currentInteraction = match.state.sys?.interaction as { current?: unknown; isBlocked?: unknown } | undefined;
+        if (currentInteraction?.current || currentInteraction?.isBlocked === true) {
+            return null;
+        }
+
+        const currentResponseWindow = (match.state.sys?.responseWindow as { current?: unknown } | undefined)?.current;
+        if (currentResponseWindow) {
+            return null;
+        }
+
+        const aiDispatchResult = await aiModule.resolveNextAiDispatch({
+            engineConfig: match.engineConfig,
+            state: match.state,
+            matchId: match.matchID,
+            seatControllers,
+            visibleStateResolver: (playerId) => resolveOnlineAiDecisionView({
+                runtime: getGameAiRuntime(match.gameId) ?? null,
+                sharedState: match.state,
+                privateOverlay: this.applyPlayerView(match, playerId) as MatchState<unknown>,
+                playerId,
+            }),
+        });
+
+        if (aiDispatchResult.kind !== 'action') {
+            return null;
+        }
+
+        const resolution = aiDispatchResult.resolution;
+        if (resolution.playerId === currentPlayerId) {
+            return null;
+        }
+
+        const phase = typeof match.state.sys?.phase === 'string' ? match.state.sys.phase : '';
+        const fingerprintHint = [
+            'seat-legal-only',
+            resolution.playerId,
+            phase,
+            resolution.action.kind,
+            resolution.action.actionId,
+        ].join(':');
+
+        return {
+            playerId: resolution.playerId,
+            reason: 'seat-legal-only',
+            legalActionOnly: true,
+            fingerprintHint,
+            resolution: {
+                playerId: resolution.playerId,
+                attemptKey: `force-end-turn:${resolution.playerId}:${fingerprintHint}`,
+                source: 'local-ai',
+                action: {
+                    actionId: `force-end-turn:${fingerprintHint}`,
+                    kind: 'force-end-turn',
+                    label: '服务端代 AI 执行合法动作',
+                    commands: [],
+                },
+            },
+        };
+    }
+
+    private async resolveOnlineAiRecoveryCandidate(
+        match: ActiveMatch,
+        seatControllers: Record<string, { type: 'human' | 'local-ai' | 'remote-ai' }>,
+    ): Promise<ForceEndTurnStalledAiResolution | null> {
+        const interactionState = match.state.sys?.interaction as { current?: unknown; isBlocked?: unknown } | undefined;
+        const needsSeatStates = interactionState?.current == null && interactionState?.isBlocked === true;
+        const seatStates: Record<string, MatchState<unknown> | null | undefined> = needsSeatStates
+            ? Object.fromEntries(
+                Object.entries(seatControllers)
+                    .filter(([, controller]) => controller.type !== 'human')
+                    .map(([playerId]) => [playerId, this.applyPlayerView(match, playerId) as MatchState<unknown>]),
+            )
+            : {};
+
+        const candidate = resolveForceEndTurnForStalledAi({
+            sharedState: match.state,
+            seatControllers,
+            seatStates,
+        }) ?? await this.resolveOnlineAiLegalActionOnlyCandidate(match, seatControllers);
+
+        if (!candidate) {
+            return null;
+        }
+
+        const currentWindow = (match.state.sys as { responseWindow?: { current?: unknown } } | undefined)
+            ?.responseWindow?.current as {
+                responderQueue?: unknown;
+                currentResponderIndex?: unknown;
+                windowType?: unknown;
+            } | undefined;
+        const responderQueue = Array.isArray(currentWindow?.responderQueue) ? currentWindow.responderQueue : [];
+        const responderIndex = typeof currentWindow?.currentResponderIndex === 'number'
+            ? currentWindow.currentResponderIndex
+            : 0;
+        const currentResponderId = typeof responderQueue[responderIndex] === 'string'
+            ? responderQueue[responderIndex]
+            : null;
+        const hasHumanResponder = responderQueue.some((responderId) => {
+            const id = typeof responderId === 'string' ? responderId : '';
+            return id && seatControllers[id]?.type === 'human';
+        });
+        const phase = typeof match.state.sys?.phase === 'string' ? match.state.sys.phase : '';
+        const windowType = typeof currentWindow?.windowType === 'string' ? currentWindow.windowType : '';
+        const queueSignature = responderQueue
+            .map((value) => (typeof value === 'string' ? value : ''))
+            .filter((value) => value.length > 0)
+            .join('|');
+        const isAiTurnBlockedByHumanResponseWindow = candidate.reason === 'active-turn'
+            && Boolean(currentWindow)
+            && resolveCurrentPlayerId(match.state) === candidate.playerId
+            && typeof currentResponderId === 'string'
+            && seatControllers[currentResponderId]?.type === 'human';
+
+        if (isAiTurnBlockedByHumanResponseWindow) {
+            const suffix = `response-window-human:${candidate.playerId}:${currentResponderId}:${phase}:${windowType}:${queueSignature}`;
+            return {
+                ...candidate,
+                reason: 'response-window',
+                requiresConfirmedAdvancePhase: true,
+                fingerprintHint: suffix,
+                resolution: {
+                    playerId: candidate.playerId,
+                    attemptKey: `force-end-turn:${candidate.playerId}:${suffix}`,
+                    source: 'local-ai',
+                    action: {
+                        actionId: `force-end-turn:${suffix}`,
+                        kind: 'force-end-turn',
+                        label: '强制结束 AI 回合',
+                        commands: [{ type: 'SYS_RESPONSE_WINDOW_FORCE_CLOSE', payload: {} }],
+                    },
+                },
+            };
+        }
+
+        if (candidate.reason === 'response-window') {
+            const currentTracker = this.onlineAiRecoveryTrackers.get(match.matchID);
+            const currentProgressMarker = buildAiProgressMarker(match.state);
+            const currentRecoveryFingerprint = this.buildOnlineAiRecoveryFingerprint(match, candidate, currentProgressMarker);
+            const currentTrackerKey = `${candidate.playerId}:${candidate.reason}:${currentRecoveryFingerprint}`;
+            if (currentTracker?.key === currentTrackerKey && (currentTracker.failureCount ?? 0) > 0 && !hasHumanResponder) {
+                const responderId = currentResponderId ?? candidate.playerId;
+                const suffix = `response-loop:${responderId}:${phase}:${windowType}:${queueSignature}`;
+                return {
+                    ...candidate,
+                    reason: 'response-loop',
+                    fingerprintHint: suffix,
+                    resolution: {
+                        playerId: candidate.playerId,
+                        attemptKey: `force-end-turn:${candidate.playerId}:${suffix}`,
+                        source: 'local-ai',
+                        action: {
+                            actionId: `force-end-turn:${suffix}`,
+                            kind: 'force-end-turn',
+                            label: '强制结束 AI 回合',
+                            commands: [{ type: 'SYS_RESPONSE_WINDOW_FORCE_CLOSE', payload: {} }],
+                        },
+                    },
+                };
+            }
+        }
+
+        return candidate;
+    }
+
     private async runOnlineAiRecoveryTick(): Promise<void> {
         const now = Date.now();
         for (const [key, expiresAt] of this.onlineAiRecoveryFeedbackCooldown.entries()) {
@@ -941,110 +1114,16 @@ export class GameTransportServer {
                 continue;
             }
 
-            // 注意：服务端 watchdog 默认只依赖 authoritative shared state。
-            // 但某些游戏/实现可能会把“隐藏交互”做成：sharedState.sys.interaction.current === null 且 isBlocked === true，
-            // 真实交互只在 playerView（AI seat）里可见。
-            // 为了做到“即使 AI seat 未建连也能兜底收口”，这里在检测到疑似隐藏交互阻塞时，
-            // 为每个 AI seat 构造一次 playerView 并透传给 resolveForceEndTurnForStalledAi。
-            const interactionState = match.state.sys?.interaction as { current?: unknown; isBlocked?: unknown } | undefined;
-            const needsSeatStates = interactionState?.current == null && interactionState?.isBlocked === true;
-            const seatStates: Record<string, MatchState<unknown> | null | undefined> = needsSeatStates
-                ? Object.fromEntries(
-                    Object.entries(seatControllers)
-                        .filter(([, controller]) => controller.type !== 'human')
-                        .map(([playerId]) => [playerId, this.applyPlayerView(match, playerId) as MatchState<unknown>]),
-                )
-                : {};
-
-            const candidate = resolveForceEndTurnForStalledAi({
-                sharedState: match.state,
-                seatControllers,
-                seatStates,
-            });
+            const candidate = await this.resolveOnlineAiRecoveryCandidate(match, seatControllers);
             if (!candidate) {
                 this.onlineAiRecoveryTrackers.delete(match.matchID);
                 continue;
             }
 
-            let effectiveCandidate = candidate;
-            const currentWindow = (match.state.sys as { responseWindow?: { current?: unknown } } | undefined)
-                ?.responseWindow?.current as {
-                    responderQueue?: unknown;
-                    currentResponderIndex?: unknown;
-                    windowType?: unknown;
-                    sourceId?: unknown;
-                } | undefined;
-            const responderQueue = Array.isArray(currentWindow?.responderQueue) ? currentWindow.responderQueue : [];
-            const responderIndex = typeof currentWindow?.currentResponderIndex === 'number'
-                ? currentWindow.currentResponderIndex
-                : 0;
-            const currentResponderId = typeof responderQueue[responderIndex] === 'string'
-                ? responderQueue[responderIndex]
-                : null;
-            const hasHumanResponder = responderQueue.some((responderId) => {
-                const id = typeof responderId === 'string' ? responderId : '';
-                return id && seatControllers[id]?.type === 'human';
-            });
-            const phase = typeof match.state.sys?.phase === 'string' ? match.state.sys.phase : '';
-            const windowType = typeof currentWindow?.windowType === 'string' ? currentWindow.windowType : '';
-            const queueSignature = responderQueue
-                .map((value) => (typeof value === 'string' ? value : ''))
-                .filter((value) => value.length > 0)
-                .join('|');
-            const isAiTurnBlockedByHumanResponseWindow = candidate.reason === 'active-turn'
-                && Boolean(currentWindow)
-                && resolveCurrentPlayerId(match.state) === candidate.playerId
-                && typeof currentResponderId === 'string'
-                && seatControllers[currentResponderId]?.type === 'human';
-
-            if (isAiTurnBlockedByHumanResponseWindow) {
-                const suffix = `response-window-human:${candidate.playerId}:${currentResponderId}:${phase}:${windowType}:${queueSignature}`;
-                effectiveCandidate = {
-                    ...candidate,
-                    reason: 'response-window',
-                    requiresConfirmedAdvancePhase: true,
-                    fingerprintHint: suffix,
-                    resolution: {
-                        playerId: candidate.playerId,
-                        attemptKey: `force-end-turn:${candidate.playerId}:${suffix}`,
-                        source: 'local-ai',
-                        action: {
-                            actionId: `force-end-turn:${suffix}`,
-                            kind: 'force-end-turn',
-                            label: '强制结束 AI 回合',
-                            commands: [{ type: 'SYS_RESPONSE_WINDOW_FORCE_CLOSE', payload: {} }],
-                        },
-                    },
-                };
-            }
-
             const progressMarker = buildAiProgressMarker(match.state);
-            const recoveryFingerprint = this.buildOnlineAiRecoveryFingerprint(match, effectiveCandidate, progressMarker);
-            const trackerKey = `${effectiveCandidate.playerId}:${effectiveCandidate.reason}:${recoveryFingerprint}`;
+            const recoveryFingerprint = this.buildOnlineAiRecoveryFingerprint(match, candidate, progressMarker);
+            const trackerKey = `${candidate.playerId}:${candidate.reason}:${recoveryFingerprint}`;
             const currentTracker = this.onlineAiRecoveryTrackers.get(match.matchID);
-
-            if (effectiveCandidate.reason === 'response-window' && currentTracker?.key === trackerKey && currentTracker.failureCount > 0) {
-                if (!hasHumanResponder) {
-                    const responderId = currentResponderId ?? candidate.playerId;
-                    const suffix = `response-loop:${responderId}:${phase}:${windowType}:${queueSignature}`;
-                    effectiveCandidate = {
-                        ...effectiveCandidate,
-                        reason: 'response-loop',
-                        fingerprintHint: suffix,
-                        resolution: {
-                            playerId: candidate.playerId,
-                            attemptKey: `force-end-turn:${candidate.playerId}:${suffix}`,
-                            source: 'local-ai',
-                            action: {
-                                actionId: `force-end-turn:${suffix}`,
-                                kind: 'force-end-turn',
-                                label: '强制结束 AI 回合',
-                                commands: [{ type: 'SYS_RESPONSE_WINDOW_FORCE_CLOSE', payload: {} }],
-                            },
-                        },
-                    };
-                }
-            }
 
             if (!currentTracker || currentTracker.key !== trackerKey) {
                 this.onlineAiRecoveryTrackers.set(match.matchID, {
@@ -1063,7 +1142,7 @@ export class GameTransportServer {
 
             currentTracker.autoSubmittedAt = now;
             this.onlineAiRecoveryInFlight.add(match.matchID);
-            void this.runOnlineAiRecoverySequence(match, currentTracker, effectiveCandidate, progressMarker, seatControllers)
+            void this.runOnlineAiRecoverySequence(match, currentTracker, candidate, progressMarker, seatControllers)
                 .finally(() => {
                     this.onlineAiRecoveryInFlight.delete(match.matchID);
                 });
@@ -1091,72 +1170,12 @@ export class GameTransportServer {
             }
             return command;
         };
-        const resolveChainedRecoveryCandidate = (expectedPlayerId: string): ForceEndTurnStalledAiResolution | null => {
-            const interactionState = match.state.sys?.interaction as { current?: unknown; isBlocked?: unknown } | undefined;
-            const needsSeatStates = interactionState?.current == null && interactionState?.isBlocked === true;
-            const seatStates: Record<string, MatchState<unknown> | null | undefined> = needsSeatStates
-                ? Object.fromEntries(
-                    Object.entries(seatControllers)
-                        .filter(([, controller]) => controller.type !== 'human')
-                        .map(([playerId]) => [playerId, this.applyPlayerView(match, playerId) as MatchState<unknown>]),
-                )
-                : {};
-            const nextCandidate = resolveForceEndTurnForStalledAi({
-                sharedState: match.state,
-                seatControllers,
-                seatStates,
-            });
+        const resolveChainedRecoveryCandidate = async (expectedPlayerId: string): Promise<ForceEndTurnStalledAiResolution | null> => {
+            const nextCandidate = await this.resolveOnlineAiRecoveryCandidate(match, seatControllers);
             if (!nextCandidate || nextCandidate.playerId !== expectedPlayerId) {
                 return nextCandidate;
             }
-
-            const currentWindow = (match.state.sys as { responseWindow?: { current?: unknown } } | undefined)
-                ?.responseWindow?.current as {
-                    responderQueue?: unknown;
-                    currentResponderIndex?: unknown;
-                    windowType?: unknown;
-                } | undefined;
-            const responderQueue = Array.isArray(currentWindow?.responderQueue) ? currentWindow.responderQueue : [];
-            const responderIndex = typeof currentWindow?.currentResponderIndex === 'number'
-                ? currentWindow.currentResponderIndex
-                : 0;
-            const currentResponderId = typeof responderQueue[responderIndex] === 'string'
-                ? responderQueue[responderIndex]
-                : null;
-            const isAiTurnBlockedByHumanResponseWindow = nextCandidate.reason === 'active-turn'
-                && Boolean(currentWindow)
-                && resolveCurrentPlayerId(match.state) === nextCandidate.playerId
-                && typeof currentResponderId === 'string'
-                && seatControllers[currentResponderId]?.type === 'human';
-
-            if (!isAiTurnBlockedByHumanResponseWindow) {
-                return nextCandidate;
-            }
-
-            const phase = typeof match.state.sys?.phase === 'string' ? match.state.sys.phase : '';
-            const windowType = typeof currentWindow?.windowType === 'string' ? currentWindow.windowType : '';
-            const queueSignature = responderQueue
-                .map((value) => (typeof value === 'string' ? value : ''))
-                .filter((value) => value.length > 0)
-                .join('|');
-            const suffix = `response-window-human:${nextCandidate.playerId}:${currentResponderId}:${phase}:${windowType}:${queueSignature}`;
-            return {
-                ...nextCandidate,
-                reason: 'response-window',
-                requiresConfirmedAdvancePhase: true,
-                fingerprintHint: suffix,
-                resolution: {
-                    playerId: nextCandidate.playerId,
-                    attemptKey: `force-end-turn:${nextCandidate.playerId}:${suffix}`,
-                    source: 'local-ai',
-                    action: {
-                        actionId: `force-end-turn:${suffix}`,
-                        kind: 'force-end-turn',
-                        label: '强制结束 AI 回合',
-                        commands: [{ type: 'SYS_RESPONSE_WINDOW_FORCE_CLOSE', payload: {} }],
-                    },
-                },
-            };
+            return nextCandidate;
         };
 
         let currentCandidate = candidate;
@@ -1253,7 +1272,7 @@ export class GameTransportServer {
                 }
                 seenMarkers.add(nextMarker);
 
-                const nextCandidate = resolveChainedRecoveryCandidate(candidate.playerId);
+                const nextCandidate = await resolveChainedRecoveryCandidate(candidate.playerId);
                 if (!nextCandidate || nextCandidate.playerId !== candidate.playerId) {
                     break;
                 }
@@ -1585,6 +1604,10 @@ export class GameTransportServer {
             return candidate.fingerprintHint ?? `action-loop:${candidate.playerId}:${phase}`;
         }
 
+        if (candidate.legalActionOnly === true) {
+            return candidate.fingerprintHint ?? `legal-action-only:${candidate.playerId}:${phase}`;
+        }
+
         if (candidate.reason === 'visible-interaction' || candidate.reason === 'hidden-interaction') {
             const current = (match.state.sys as { interaction?: { current?: unknown } } | undefined)?.interaction?.current as {
                 id?: unknown;
@@ -1660,14 +1683,14 @@ export class GameTransportServer {
         return progressMarker;
     }
 
-    private hasOnlineAiRecoveryResolved(
+    private async hasOnlineAiRecoveryResolved(
         match: ActiveMatch,
         candidate: ForceEndTurnStalledAiResolution,
         seatControllers: Record<string, { type: 'human' | 'local-ai' | 'remote-ai' }>,
-    ): boolean {
+    ): Promise<boolean> {
         if (candidate.legalActionOnly === true) {
-            return resolveCurrentPlayerId(match.state) !== candidate.playerId
-                || match.state.sys?.phase !== 'factionSelect';
+            const nextCandidate = await this.resolveOnlineAiLegalActionOnlyCandidate(match, seatControllers);
+            return !nextCandidate || nextCandidate.playerId !== candidate.playerId;
         }
 
         if (candidate.reason === 'visible-interaction') {
@@ -1959,7 +1982,7 @@ export class GameTransportServer {
         // 一旦最终确实推进了权威状态，这里必须补发一次统一广播，否则房间前端看不到 watchdog 代打后的召唤/推进结果。
         this.broadcastState(match);
 
-        const resolved = this.hasOnlineAiRecoveryResolved(match, candidate, seatControllers);
+        const resolved = await this.hasOnlineAiRecoveryResolved(match, candidate, seatControllers);
         if (resolved) {
             this.onlineAiRecoveryTrackers.delete(match.matchID);
         } else {

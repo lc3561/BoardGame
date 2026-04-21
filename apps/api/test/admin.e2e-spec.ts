@@ -220,7 +220,7 @@ describe('Admin Module (e2e)', () => {
         username: string;
         email: string;
         code: string;
-        role?: 'user' | 'admin';
+        role?: 'user' | 'developer' | 'admin';
     }) => {
         await authService.storeEmailCode(email, code);
         const registerRes = await request(app.getHttpServer())
@@ -314,6 +314,42 @@ describe('Admin Module (e2e)', () => {
             .get('/admin/stats')
             .set('Authorization', `Bearer ${userToken}`)
             .expect(403);
+    });
+
+    it('developer 可访问概览统计，但不能访问管理员专属接口', async () => {
+        const { adminToken } = await seedUsers();
+        const developer = await registerUser({
+            username: 'dev-overview',
+            email: 'dev-overview@example.com',
+            code: '223344',
+            role: 'developer',
+        });
+
+        const statsRes = await request(app.getHttpServer())
+            .get('/admin/stats')
+            .set('Authorization', `Bearer ${developer.token}`)
+            .expect(200);
+
+        expect(statsRes.body.totalUsers).toBe(3);
+        expect(statsRes.body.todayUsers).toBe(3);
+
+        const trendRes = await request(app.getHttpServer())
+            .get('/admin/stats/trend?days=7')
+            .set('Authorization', `Bearer ${developer.token}`)
+            .expect(200);
+
+        expect(trendRes.body.days).toBe(7);
+        expect(Array.isArray(trendRes.body.dailyUsers)).toBe(true);
+
+        await request(app.getHttpServer())
+            .get('/admin/users?limit=10')
+            .set('Authorization', `Bearer ${developer.token}`)
+            .expect(403);
+
+        await request(app.getHttpServer())
+            .get('/admin/stats')
+            .set('Authorization', `Bearer ${adminToken}`)
+            .expect(200);
     });
 
     it('管理员统计/用户/对局查询', async () => {

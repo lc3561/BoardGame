@@ -33,6 +33,7 @@ import { CARD_IDS, getBaseCardId } from './domain/ids';
 import {
     BOARD_COLS,
     BOARD_ROWS,
+    findUnitPositionByInstanceId,
     getAdjacentCells,
     getPlayerGates,
     getPlayerUnits,
@@ -967,7 +968,7 @@ const getSummonRangeExtension = (
     position: CellCoord,
 ): number => {
     const currentPositions = new Set(
-        getValidSummonPositions(state, playerId).map((p) => `${p.row},${p.col}`),
+        getAiValidSummonPositions(state, playerId).map((p) => `${p.row},${p.col}`),
     );
     let extension = 0;
     for (const adj of getAdjacentCells(position)) {
@@ -977,6 +978,48 @@ const getSummonRangeExtension = (
         }
     }
     return extension;
+};
+
+const getAiValidSummonPositions = (
+    state: SummonerWarsCore,
+    playerId: PlayerId,
+): CellCoord[] => {
+    const positions = getValidSummonPositions(state, playerId);
+    const positionSet = new Set(positions.map((p) => `${p.row},${p.col}`));
+    const addIfEmpty = (position: CellCoord) => {
+        const key = `${position.row},${position.col}`;
+        if (positionSet.has(key) || !isCellEmpty(state, position)) return;
+        positionSet.add(key);
+        positions.push(position);
+    };
+
+    const player = state.players[playerId];
+    const hasRekindleHope = player.activeEvents.some((eventCard) => (
+        getBaseCardId(eventCard.id) === CARD_IDS.PALADIN_REKINDLE_HOPE
+    ));
+    if (hasRekindleHope) {
+        const summoner = getSummoner(state, playerId);
+        if (summoner) {
+            for (const adjacent of getAdjacentCells(summoner.position)) {
+                addIfEmpty(adjacent);
+            }
+        }
+    }
+
+    const chantOfWeaving = player.activeEvents.find((eventCard) => (
+        getBaseCardId(eventCard.id) === CARD_IDS.BARBARIC_CHANT_OF_WEAVING
+        && !!eventCard.targetUnitId
+    ));
+    if (chantOfWeaving?.targetUnitId) {
+        const targetPosition = findUnitPositionByInstanceId(state, chantOfWeaving.targetUnitId);
+        if (targetPosition) {
+            for (const adjacent of getAdjacentCells(targetPosition)) {
+                addIfEmpty(adjacent);
+            }
+        }
+    }
+
+    return positions;
 };
 
 const cloneCoreWithMovedUnit = (
@@ -1709,7 +1752,7 @@ const buildSummonActions = (
 ): AiLegalAction[] => {
     const actions: AiLegalAction[] = [];
     const player = state.core.players[playerId];
-    const summonPositions = getValidSummonPositions(state.core, playerId);
+    const summonPositions = getAiValidSummonPositions(state.core, playerId);
     const enemySummoner = getSummoner(state.core, getEnemyPlayerId(playerId));
     const ownSummoner = getSummoner(state.core, playerId);
     const threat = estimateSummonerThreat(state.core, playerId);
@@ -1900,7 +1943,7 @@ const buildStructureActions = (
     const threat = estimateSummonerThreat(state.core, playerId);
     const enemyPlayerId = getEnemyPlayerId(playerId);
     const enemySummonPositions = new Set(
-        getValidSummonPositions(state.core, enemyPlayerId).map(p => `${p.row},${p.col}`),
+        getAiValidSummonPositions(state.core, enemyPlayerId).map(p => `${p.row},${p.col}`),
     );
 
     for (const card of player.hand) {
@@ -2220,6 +2263,13 @@ const buildEventCardActions = (
     return actions;
 };
 
+const hasRekindleHopeActive = (
+    state: SummonerWarsState,
+    playerId: PlayerId,
+): boolean => state.core.players[playerId].activeEvents.some((eventCard) => (
+    getBaseCardId(eventCard.id) === CARD_IDS.PALADIN_REKINDLE_HOPE
+));
+
 export function buildSummonerWarsAiLegalActions(args: {
     playerId: EnginePlayerId;
     state: MatchState<unknown>;
@@ -2252,6 +2302,7 @@ export function buildSummonerWarsAiLegalActions(args: {
     if (flowHaltedActions.length > 0) {
         return flowHaltedActions;
     }
+    const canSummonThisPhase = phase === 'summon' || hasRekindleHopeActive(state, playerId);
 
     switch (phase) {
         case 'summon':
@@ -2265,6 +2316,7 @@ export function buildSummonerWarsAiLegalActions(args: {
             return [
                 ...buildActivatedAbilityActions(state, playerId, phase),
                 ...buildEventCardActions(state, playerId),
+                ...(canSummonThisPhase ? buildSummonActions(state, playerId) : []),
                 ...buildMoveActions(state, playerId),
                 buildEndPhaseAction(state, playerId),
             ];
@@ -2272,6 +2324,7 @@ export function buildSummonerWarsAiLegalActions(args: {
             return [
                 ...buildActivatedAbilityActions(state, playerId, phase),
                 ...buildEventCardActions(state, playerId),
+                ...(canSummonThisPhase ? buildSummonActions(state, playerId) : []),
                 ...buildStructureActions(state, playerId),
                 buildEndPhaseAction(state, playerId),
             ];
@@ -2279,12 +2332,14 @@ export function buildSummonerWarsAiLegalActions(args: {
             return [
                 ...buildActivatedAbilityActions(state, playerId, phase),
                 ...buildEventCardActions(state, playerId),
+                ...(canSummonThisPhase ? buildSummonActions(state, playerId) : []),
                 ...buildAttackActions(state, playerId),
                 buildEndPhaseAction(state, playerId),
             ];
         case 'magic':
             return [
                 ...buildEventCardActions(state, playerId),
+                ...(canSummonThisPhase ? buildSummonActions(state, playerId) : []),
                 ...buildMagicActions(state, playerId),
                 buildEndPhaseAction(state, playerId),
             ];

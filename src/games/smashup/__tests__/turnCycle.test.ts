@@ -128,6 +128,34 @@ describe('完整回合循环', () => {
         expect(p0After.discard).toHaveLength(0);
     });
 
+    it('非当前玩家 ADVANCE_PHASE 应被拒绝，不能推进回合', () => {
+        const runner = createRunner();
+        const draftResult = runner.run({
+            name: 'draft',
+            commands: DRAFT_COMMANDS,
+        });
+
+        const beforeState = draftResult.finalState;
+        const currentPlayerId = getCurrentPlayerId(beforeState.core);
+        const otherPlayerId = currentPlayerId === '0' ? '1' : '0';
+
+        const runner2 = createRunner();
+        const result = runner2.run({
+            name: 'wrong-player-advance',
+            commands: [
+                ...DRAFT_COMMANDS,
+                { type: 'ADVANCE_PHASE', playerId: otherPlayerId, payload: undefined },
+            ] as any[],
+        });
+
+        const advanceStep = result.steps[result.steps.length - 1];
+        expect(advanceStep?.success).toBe(false);
+        expect(advanceStep?.error).toBe('not_active_player');
+        // 错玩家推进应被拦截：阶段和当前玩家都保持不变
+        expect(result.finalState.sys.phase).toBe(beforeState.sys.phase);
+        expect(getCurrentPlayerId(result.finalState.core)).toBe(currentPlayerId);
+    });
+
     it('两个完整回合后回到 P0', () => {
         const runner = createRunner();
         const result = runner.run({

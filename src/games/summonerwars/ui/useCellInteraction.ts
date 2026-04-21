@@ -5,7 +5,7 @@
  * 和技能模式交互。事件卡多步骤模式已委托给 useEventCardModes。
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAutoSkipPhase } from '../../../components/game/framework';
 import { useTranslation } from 'react-i18next';
 import type { SummonerWarsCore, CellCoord, UnitCard, GamePhase } from '../domain/types';
@@ -72,6 +72,9 @@ interface UseCellInteractionParams {
   setGrabFollowMode: (mode: import('./useGameEvents').GrabFollowModeState | null) => void;
 }
 
+const ADVANCE_PHASE_THROTTLE_MS = 700;
+const ADVANCE_PHASE_FALLBACK_RELEASE_MS = 2500;
+
 // ============================================================================
 // Hook 实现
 // ============================================================================
@@ -95,6 +98,9 @@ export function useCellInteraction({
   const [selectedCardsForDiscard, setSelectedCardsForDiscard] = useState<string[]>([]);
   const [pendingBeforeAttack, setPendingBeforeAttack] = useState<PendingBeforeAttack | null>(null);
   const [endPhaseConfirmPending, setEndPhaseConfirmPending] = useState(false);
+  const [isPhaseAdvanceLocked, setIsPhaseAdvanceLocked] = useState(false);
+  const phaseAdvanceCooldownUntilRef = useRef(0);
+  const phaseAdvanceReleaseTimerRef = useRef<number | null>(null);
   // 火祀召唤（本地 fallback）：优先使用系统交互，保留本地状态仅用于旧链路兼容
   const [localFireSacrificeSummonMode, setLocalFireSacrificeSummonMode] = useState<{ handCardId: string } | null>(null);
 
@@ -1173,14 +1179,52 @@ export function useCellInteraction({
 
   useEffect(() => { queueMicrotask(() => setEndPhaseConfirmPending(false)); }, [currentPhase]);
 
+  useEffect(() => {
+    if (!isPhaseAdvanceLocked) return;
+    queueMicrotask(() => {
+      setIsPhaseAdvanceLocked(false);
+      phaseAdvanceCooldownUntilRef.current = 0;
+      if (phaseAdvanceReleaseTimerRef.current !== null) {
+        window.clearTimeout(phaseAdvanceReleaseTimerRef.current);
+        phaseAdvanceReleaseTimerRef.current = null;
+      }
+    });
+  }, [currentPhase, isMyTurn, isPhaseAdvanceLocked]);
+
+  useEffect(() => () => {
+    if (phaseAdvanceReleaseTimerRef.current !== null) {
+      window.clearTimeout(phaseAdvanceReleaseTimerRef.current);
+      phaseAdvanceReleaseTimerRef.current = null;
+    }
+  }, []);
+
   // 强制技能模式：这些技能没有"跳过"选项，必须完成后才能推进阶段
   const isMandatoryAbilityActive = !!abilityMode && ['blood_rune'].includes(abilityMode.abilityId);
+
+  const advancePhaseSafely = useCallback(() => {
+    const now = Date.now();
+    if (isPhaseAdvanceLocked || now < phaseAdvanceCooldownUntilRef.current) return false;
+    phaseAdvanceCooldownUntilRef.current = now + ADVANCE_PHASE_THROTTLE_MS;
+    setIsPhaseAdvanceLocked(true);
+    if (phaseAdvanceReleaseTimerRef.current !== null) {
+      window.clearTimeout(phaseAdvanceReleaseTimerRef.current);
+    }
+    phaseAdvanceReleaseTimerRef.current = window.setTimeout(() => {
+      setIsPhaseAdvanceLocked(false);
+      phaseAdvanceCooldownUntilRef.current = 0;
+      phaseAdvanceReleaseTimerRef.current = null;
+    }, ADVANCE_PHASE_FALLBACK_RELEASE_MS);
+    dispatch(FLOW_COMMANDS.ADVANCE_PHASE, {});
+    return true;
+  }, [dispatch, isPhaseAdvanceLocked]);
 
   const handleEndPhase = () => {
     // 强制技能激活时禁止推进阶段（如鲜血符文必须二选一）
     if (isMandatoryAbilityActive) return;
     // 非自己回合时禁止操作（防止快速点击越过回合边界）
     if (!isMyTurn) return;
+    // 防连点/重复提交保护（包含按钮连点和异步阶段自动推进重叠）
+    if (isPhaseAdvanceLocked || Date.now() < phaseAdvanceCooldownUntilRef.current) return;
     // 系统交互未完成时禁止推进阶段（避免真相源被清空）
     if (swInteraction) return;
     if (eventCardModes.hasActiveEventMode) {
@@ -1188,14 +1232,14 @@ export function useCellInteraction({
     }
     if (endPhaseConfirmPending) {
       setEndPhaseConfirmPending(false);
-      dispatch(FLOW_COMMANDS.ADVANCE_PHASE, {});
+      advancePhaseSafely();
       return;
     }
     if ((currentPhase === 'move' || currentPhase === 'attack') && actionableUnitPositions.length > 0) {
       setEndPhaseConfirmPending(true);
       return;
     }
-    dispatch(FLOW_COMMANDS.ADVANCE_PHASE, {});
+    advancePhaseSafely();
   };
 
   // ---------- 外部技能确认 ----------
@@ -1384,8 +1428,9 @@ export function useCellInteraction({
     && (window as Window & { __SW_DISABLE_AUTO_SKIP__?: boolean }).__SW_DISABLE_AUTO_SKIP__;
 
   const advancePhase = useCallback(() => {
-    dispatch(FLOW_COMMANDS.ADVANCE_PHASE, {});
-  }, [dispatch]);
+    // 自动跳阶段走同一套防重逻辑，避免与手动点击同时重复提交
+    void advancePhaseSafely();
+  }, [advancePhaseSafely]);
 
   useAutoSkipPhase({
     isMyTurn,
@@ -1494,6 +1539,7 @@ export function useCellInteraction({
     clearAllEventModes: eventCardModes.clearAllEventModes,
     hasActiveEventMode: eventCardModes.hasActiveEventMode,
     isMandatoryAbilityActive,
+    isPhaseAdvanceLocked,
     hasSystemInteraction: !!swInteraction,
   };
 }

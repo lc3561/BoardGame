@@ -281,17 +281,17 @@ test.describe('SummonerWars selection and turn-lock flows', () => {
     expect(Math.abs((entryLayout.stageRect?.centerX ?? 0) - entryLayout.viewportWidth / 2)).toBeLessThanOrEqual(24);
     expect(Math.abs((entryLayout.inlineUnitPx * 100) - entryLayout.computedStageWidthPx)).toBeLessThanOrEqual(1);
     expect(Math.abs((entryLayout.blockUnitPx * 100) - entryLayout.computedStageHeightPx)).toBeLessThanOrEqual(1);
-    expect(entryLayout.previewRect?.left ?? -1).toBeGreaterThanOrEqual((entryLayout.stageRect?.left ?? 0) - 1);
+    expect(entryLayout.previewRect?.left ?? -1).toBeGreaterThanOrEqual((entryLayout.gridRect?.left ?? 0) - (Math.max(entryLayout.inlineUnitPx, 1) * 2));
     expect(
-      (entryLayout.previewRect?.left ?? 99999) - (entryLayout.stageRect?.left ?? 0),
-      '移动横屏预览区应保持靠左锚定，不应回到中间簇布局',
-    ).toBeLessThanOrEqual(Math.max(entryLayout.inlineUnitPx, 1) * 5.6);
+      Math.abs((entryLayout.previewRect?.left ?? 0) - (entryLayout.gridRect?.left ?? 0)),
+      '移动横屏预览区左边缘应与网格左边缘保持同构对齐',
+    ).toBeLessThanOrEqual(Math.max(entryLayout.inlineUnitPx, 1) * 2.8);
     expect(entryLayout.rightClusterRect).not.toBeNull();
-    expect(entryLayout.rightClusterRect?.right ?? 99999).toBeLessThanOrEqual((entryLayout.stageRect?.right ?? 0) + 1);
+    expect(entryLayout.rightClusterRect?.right ?? 99999).toBeLessThanOrEqual((entryLayout.gridRect?.right ?? 0) + (Math.max(entryLayout.inlineUnitPx, 1) * 2));
     expect(
-      (entryLayout.stageRect?.right ?? 99999) - (entryLayout.rightClusterRect?.right ?? 0),
-      '移动横屏状态区应保持靠右锚定，不应明显远离舞台右边',
-    ).toBeLessThanOrEqual(Math.max(entryLayout.inlineUnitPx, 1) * 5.6);
+      Math.abs((entryLayout.rightClusterRect?.right ?? 0) - (entryLayout.gridRect?.right ?? 0)),
+      '移动横屏右侧状态簇右边缘应与网格右边缘保持同构对齐',
+    ).toBeLessThanOrEqual(Math.max(entryLayout.inlineUnitPx, 1) * 2.8);
     expect(entryLayout.gridRect?.bottom ?? 0).toBeLessThan(entryLayout.previewRect?.top ?? 99999);
     expect(entryLayout.gridRect?.bottom ?? 0).toBeLessThan(entryLayout.railRect?.top ?? 99999);
     expect(entryLayout.waitingBannerRect).not.toBeNull();
@@ -352,6 +352,7 @@ test.describe('SummonerWars selection and turn-lock flows', () => {
         effectiveViewportBottom,
         stageRect: rectOf('[data-testid="sw-faction-stage"]'),
         lowerInnerRect: rectOf('[data-testid="sw-faction-lower-stage-inner"]'),
+        gridRect: rectOf('[data-testid="sw-faction-grid"]'),
         previewRect: rectOf('[data-testid="sw-faction-preview-panel"]'),
         rightClusterRect: rectOf('[data-testid="sw-faction-right-anchor-cluster"]'),
         railRect: rectOf('[data-testid="sw-faction-player-rail"]'),
@@ -384,22 +385,22 @@ test.describe('SummonerWars selection and turn-lock flows', () => {
     expect(Math.abs((selectedLayout.blockUnitPx * 100) - selectedLayout.computedStageHeightPx)).toBeLessThanOrEqual(1);
     expect(selectedLayout.previewHasImage).toBe(true);
     expect(selectedLayout.previewRect?.right ?? 0).toBeLessThanOrEqual(selectedLayout.railRect?.left ?? 99999);
-    expect(selectedLayout.previewRect?.left ?? -1).toBeGreaterThanOrEqual((selectedLayout.stageRect?.left ?? 0) - 1);
+    expect(selectedLayout.previewRect?.left ?? -1).toBeGreaterThanOrEqual((selectedLayout.gridRect?.left ?? 0) - (Math.max(selectedLayout.inlineUnitPx, 1) * 2));
     expect(
-      (selectedLayout.previewRect?.left ?? 99999) - (selectedLayout.stageRect?.left ?? 0),
-      '选将后预览区应继续贴近舞台左边缘',
-    ).toBeLessThanOrEqual(Math.max(selectedLayout.inlineUnitPx, 1) * 5.6);
+      Math.abs((selectedLayout.previewRect?.left ?? 0) - (selectedLayout.gridRect?.left ?? 0)),
+      '选将后预览区左边缘应继续与网格左边缘对齐',
+    ).toBeLessThanOrEqual(Math.max(selectedLayout.inlineUnitPx, 1) * 2.8);
     expect(selectedLayout.railRect?.right ?? 99999).toBeLessThanOrEqual(selectedLayout.effectiveViewportRight + 1);
     expect(selectedLayout.actionRailRect).not.toBeNull();
     expect(selectedLayout.actionButtonRect).not.toBeNull();
     expect(selectedLayout.actionRailRect?.left ?? 0).toBeGreaterThanOrEqual(selectedLayout.railRect?.right ?? 99999);
     expect(selectedLayout.actionRailRect?.right ?? 99999).toBeLessThanOrEqual(selectedLayout.effectiveViewportRight + 1);
     expect(selectedLayout.rightClusterRect).not.toBeNull();
-    expect(selectedLayout.rightClusterRect?.right ?? 0).toBeLessThanOrEqual((selectedLayout.stageRect?.right ?? 0) + 1);
+    expect(selectedLayout.rightClusterRect?.right ?? 0).toBeLessThanOrEqual((selectedLayout.gridRect?.right ?? 0) + (Math.max(selectedLayout.inlineUnitPx, 1) * 2));
     expect(
-      (selectedLayout.stageRect?.right ?? 99999) - (selectedLayout.rightClusterRect?.right ?? 0),
-      '选将后操作区应继续贴近舞台右边缘',
-    ).toBeLessThanOrEqual(Math.max(selectedLayout.inlineUnitPx, 1) * 5.6);
+      Math.abs((selectedLayout.rightClusterRect?.right ?? 0) - (selectedLayout.gridRect?.right ?? 0)),
+      '选将后右侧状态簇右边缘应继续与网格右边缘对齐',
+    ).toBeLessThanOrEqual(Math.max(selectedLayout.inlineUnitPx, 1) * 2.8);
     expect(selectedLayout.actionButtonRect?.left ?? 0).toBeGreaterThanOrEqual(selectedLayout.actionRailRect?.left ?? 99999);
     expect(selectedLayout.actionButtonRect?.right ?? 99999).toBeLessThanOrEqual(selectedLayout.effectiveViewportRight + 1);
     expect(
@@ -578,6 +579,76 @@ test.describe('SummonerWars selection and turn-lock flows', () => {
     await waitForSummonerWarsUI(guestPage, 30000);
     await hostGame.screenshot('selection-game-started', testInfo);
     await hostGame.screenshot('selection-guest-game-started', testInfo);
+
+    await expect(hostPage.getByTestId('sw-phase-tracker')).toBeVisible();
+    await expect(hostPage.getByTestId('sw-hand-area')).toBeVisible();
+    await expect(hostPage.getByTestId('sw-map-container')).toBeVisible();
+
+    await hostContext.close();
+    await guestContext.close();
+  });
+
+  test('mobile landscape flow captures full selection-to-start chain', async ({ browser }, testInfo) => {
+    test.setTimeout(120000);
+    const baseURL = testInfo.project.use.baseURL as string | undefined;
+
+    const hostContext = await browser.newContext({
+      baseURL,
+      viewport: MOBILE_LANDSCAPE_REFERENCE_VIEWPORT,
+      isMobile: true,
+      hasTouch: true,
+    });
+    await initSWContext(hostContext, '__sw_selection_mobile_flow_host');
+    const hostPage = await hostContext.newPage();
+    const hostGame = new GameTestContext(hostPage);
+
+    await hostPage.goto('/', { waitUntil: 'domcontentloaded' });
+    if (!(await ensureGameServerAvailable(hostPage))) {
+      test.skip(true, 'Game server unavailable');
+    }
+
+    const matchId = await createSWRoomViaAPI(hostPage);
+    if (!matchId) {
+      test.skip(true, 'Room creation failed');
+    }
+
+    await hostPage.goto(`/play/${GAME_NAME}/match/${matchId}?playerID=0`, { waitUntil: 'domcontentloaded' });
+    await waitForFactionSelectionReady(hostPage);
+    await waitForSelectionLayoutStable(hostPage);
+    await hostGame.screenshot('selection-mobile-entry', testInfo);
+
+    const guestContext = await browser.newContext({
+      baseURL,
+      viewport: MOBILE_LANDSCAPE_REFERENCE_VIEWPORT,
+      isMobile: true,
+      hasTouch: true,
+    });
+    await initSWContext(guestContext, '__sw_selection_mobile_flow_guest');
+    const guestPage = await guestContext.newPage();
+
+    await guestPage.goto('/', { waitUntil: 'domcontentloaded' });
+    await joinGuestToSelectionMatch(guestPage, matchId);
+    await waitForFactionSelectionReady(guestPage);
+    await waitForSelectionLayoutStable(guestPage);
+
+    await selectFactionById(hostPage, 'necromancer');
+    await expect(getFactionCard(hostPage, 'necromancer')).toHaveAttribute('data-selected', 'true');
+    await hostGame.screenshot('selection-mobile-host-picked-necromancer', testInfo);
+
+    await selectFactionById(guestPage, 'trickster');
+    await expect(getFactionCard(guestPage, 'trickster')).toHaveAttribute('data-selected', 'true');
+    await expect(getPlayerStatusCard(hostPage, '1')).toHaveAttribute('data-faction-id', 'trickster');
+    await hostGame.screenshot('selection-mobile-both-picked-before-ready', testInfo);
+
+    await clickFactionReady(guestPage);
+    await expect(getPlayerStatusCard(hostPage, '1')).toHaveAttribute('data-ready', 'true');
+    await expect(getFactionStartButton(hostPage)).toBeEnabled();
+    await hostGame.screenshot('selection-mobile-host-start-enabled', testInfo);
+
+    await clickFactionStart(hostPage);
+    await waitForSummonerWarsUI(hostPage, 30000);
+    await waitForSummonerWarsUI(guestPage, 30000);
+    await hostGame.screenshot('selection-mobile-host-game-started', testInfo);
 
     await expect(hostPage.getByTestId('sw-phase-tracker')).toBeVisible();
     await expect(hostPage.getByTestId('sw-hand-area')).toBeVisible();

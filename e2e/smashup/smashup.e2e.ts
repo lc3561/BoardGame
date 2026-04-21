@@ -95,10 +95,29 @@ const ensureGameServerAvailable = async (page: Page) => {
 };
 
 const openSmashUpModal = async (page: Page) => {
-  await page.goto('/?game=smashup', { waitUntil: 'domcontentloaded' });
-  const heading = page.getByRole('heading', { name: /Smash Up|大杀四方/i });
-  await expect(heading).toBeVisible({ timeout: 15000 });
-  return heading;
+  const createRoomButton = page.getByRole('button', { name: /创建房间|Create Room/i }).first();
+
+  const tryOpenByEntry = async () => {
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    const cardByDataId = page.locator('[data-game-id="smashup"]').first();
+    if (await cardByDataId.isVisible().catch(() => false)) {
+      await cardByDataId.scrollIntoViewIfNeeded();
+      await cardByDataId.click();
+      return;
+    }
+    const cardByHref = page.locator('a[href*="?game=smashup"]').first();
+    await cardByHref.scrollIntoViewIfNeeded();
+    await cardByHref.click();
+  };
+
+  await tryOpenByEntry();
+  if (!await createRoomButton.isVisible().catch(() => false)) {
+    await page.goto('/?game=smashup', { waitUntil: 'domcontentloaded' });
+    await tryOpenByEntry();
+  }
+
+  await expect(createRoomButton).toBeVisible({ timeout: 15000 });
+  return createRoomButton;
 };
 
 test.describe('大杀四方大厅 E2E', () => {

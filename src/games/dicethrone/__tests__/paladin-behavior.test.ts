@@ -166,6 +166,22 @@ describe('圣骑士 Custom Action 运行时行为断言', () => {
             const tokens = eventsOfType(events, 'TOKEN_GRANTED');
             expect(tokens.some((t: any) => t.payload.tokenId === TOKEN_IDS.PROTECT)).toBe(true);
         });
+
+        it('爱心在 III 级仍应按每个防止 2 点伤害计算', () => {
+            const state = createState({});
+            // 设置 4 颗骰子：heart, helm, pray, sword
+            state.dice = [5, 3, 6, 1].map(v => createPaladinDie(v));
+            state.rollDiceCount = 4;
+            const handler = getCustomActionHandler('paladin-holy-defense-3')!;
+            const events = handler(buildCtx(state, 'paladin-holy-defense-3', {
+                asDefender: true,
+            }));
+
+            // 盔(1) + 心(2) = 3 点护盾
+            const shield = eventsOfType(events, 'DAMAGE_SHIELD_GRANTED');
+            expect(shield).toHaveLength(1);
+            expect((shield[0] as any).payload.value).toBe(3);
+        });
     });
 
     // ========================================================================

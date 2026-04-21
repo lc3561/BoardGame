@@ -167,6 +167,21 @@ const MAX_FORCE_END_TURN_FOLLOW_UP_STEPS = 16;
 const RECOVERY_FAILURE_SYNC_GRACE_MS = 700;
 const STALE_SEAT_RECOVERY_RETRY_MS = 350;
 const STALE_SEAT_RECOVERY_MIN_INTERVAL_MS = 1200;
+const FAST_AI_COMMAND_TYPES = new Set([
+    'ADVANCE_PHASE',
+    'sw:end_phase',
+    'RESPONSE_PASS',
+]);
+
+function shouldUseFastAiDelay(action: { kind?: string; commands?: Array<{ type?: string }> }): boolean {
+    if (action.kind === 'advance-phase' || action.kind === 'response-pass') {
+        return true;
+    }
+    if (!Array.isArray(action.commands) || action.commands.length === 0) {
+        return false;
+    }
+    return action.commands.every((command) => typeof command.type === 'string' && FAST_AI_COMMAND_TYPES.has(command.type));
+}
 
 function resolveLatestStateEventTimestamp(state: MatchState<unknown>): number | null {
     const eventStreamEntries = Array.isArray(state.sys?.eventStream?.entries)
@@ -528,7 +543,8 @@ const OnlineAiSeatBridge = ({
             }
 
             const now = Date.now();
-            const minimumDelayMs = resolveAiMinimumActionDelayMs(controller);
+            const fastTrackActionDelay = shouldUseFastAiDelay(resolution.action);
+            const minimumDelayMs = fastTrackActionDelay ? 0 : resolveAiMinimumActionDelayMs(controller);
             const decisionElapsedMs = now - startedAt;
             const observedStateAgeMs = resolveObservedStateAgeMs(state as MatchState<unknown>, now);
             const remainingDelayMs = Math.max(

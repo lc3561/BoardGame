@@ -283,7 +283,6 @@ export const FactionSelection: React.FC<Props> = ({ core, dispatch, playerID }) 
                             {showImplementationBanner && (
                                 <ImplementationStatusRibbon
                                     label={t('ui.faction_implementation_in_progress', { defaultValue: '实施中' })}
-                                    data-testid={`faction-implementation-banner-${group.groupId}`}
                                     testId={`faction-implementation-banner-${group.groupId}`}
                                 />
                             )}

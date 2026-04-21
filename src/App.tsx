@@ -1,12 +1,12 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { DebugProvider } from './contexts/DebugContext';
 import { TestHarness } from './engine/testing';
 import { TutorialProvider } from './contexts/TutorialContext';
-import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { AuthProvider } from './contexts/AuthContext';
 import { SocialProvider } from './contexts/SocialContext';
 import { CursorPreferenceProvider } from './core/cursor/CursorPreferenceContext';
 import { useTokenRefresh } from './hooks/useTokenRefresh';
@@ -92,7 +92,6 @@ const DevMobileEvidenceCaptureAgent = import.meta.env.DEV
 
 const AppContent = () => {
   const { t } = useTranslation('lobby');
-  const { user } = useAuth();
   const isNativeAndroid = isNativeAndroidRuntime();
   
   // Token 自动刷新
@@ -223,11 +222,7 @@ const AppContent = () => {
                       <Route path="changelogs" element={<GameChangelogsPage />} />
                       <Route
                         index
-                        element={
-                          user?.role === 'developer'
-                            ? <Navigate to="changelogs" replace />
-                            : renderAdminOnly(<AdminDashboard />)
-                        }
+                        element={<AdminDashboard />}
                       />
                       <Route path="users" element={renderAdminOnly(<UsersPage />)} />
                       <Route path="users/:id" element={renderAdminOnly(<UserDetailPage />)} />

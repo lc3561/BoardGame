@@ -765,6 +765,10 @@ test.describe('SmashUp Base/Minion Selection', () => {
             filename: 'smashup-miskatonic-pod-base-hover.png',
         });
         await page.screenshot({ path: boardShot, fullPage: false });
+        const boardTextShot = getEvidenceScreenshotPath(testInfo, 'miskatonic-pod-base-hover-text', {
+            filename: 'smashup-miskatonic-pod-base-hover-text.png',
+        });
+        await podTextOnBoard.screenshot({ path: boardTextShot });
 
         const inspectButton = baseZone.locator('button.cursor-zoom-in').first();
         await expect(inspectButton).toBeVisible({ timeout: 5000 });
@@ -784,5 +788,9 @@ test.describe('SmashUp Base/Minion Selection', () => {
             filename: 'smashup-miskatonic-pod-base-magnify.png',
         });
         await page.screenshot({ path: magnifyShot, fullPage: false });
+        const magnifyTextShot = getEvidenceScreenshotPath(testInfo, 'miskatonic-pod-base-magnify-text', {
+            filename: 'smashup-miskatonic-pod-base-magnify-text.png',
+        });
+        await podTextInMagnify.screenshot({ path: magnifyTextShot });
     });
 });

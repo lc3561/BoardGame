@@ -339,7 +339,8 @@ export const FactionSelection: React.FC<FactionSelectionProps> = ({
   } as React.CSSProperties;
   const lowerStageInnerStyle = isLandscapeMobileViewport
     ? {
-      width: '100%',
+      width: inlineUnit(72),
+      maxWidth: '100%',
       maxHeight: blockUnit(28),
       justifyContent: 'space-between',
     } as React.CSSProperties
@@ -366,6 +367,11 @@ export const FactionSelection: React.FC<FactionSelectionProps> = ({
   const actionSlotStyle = {
     height: isLandscapeMobileViewport ? '100%' : blockUnit(5),
   } as React.CSSProperties;
+  const shouldShowLandscapeActionRail = isLandscapeMobileViewport
+    && (
+      (isHost && !!hasSelected)
+      || (!isHost && (!!hasSelected || !!readyPlayers[currentPlayerId]))
+    );
   const lowerStageAlignStyle = isLandscapeMobileViewport
     ? { alignItems: 'flex-start' } as React.CSSProperties
     : undefined;
@@ -771,7 +777,7 @@ export const FactionSelection: React.FC<FactionSelectionProps> = ({
               )}
                   </div>
 
-                  {isLandscapeMobileViewport && (
+                  {shouldShowLandscapeActionRail && (
                     <div
                       data-testid="sw-faction-action-rail"
                       className="flex shrink-0 flex-col"
