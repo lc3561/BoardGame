@@ -114,9 +114,24 @@ test.describe('DiceThrone E2E', () => {
             expect(metrics.textareaFontSize, '横屏反馈描述输入区至少应保持 16px').toBeGreaterThanOrEqual(16);
             expect(metrics.contactFontSize, '横屏反馈联系方式输入区至少应保持 16px').toBeGreaterThanOrEqual(16);
 
+            await page.evaluate(() => {
+                const root = document.documentElement;
+                root.style.setProperty('--runtime-viewport-height', '245px');
+                root.style.setProperty('--keyboard-inset-height', '148px');
+                root.dataset.keyboardVisible = 'true';
+            });
+
+            const mobileProxy = page.getByTestId('mobile-text-entry-proxy').last();
+            const mobileProxyTextarea = page.getByTestId('mobile-text-entry-proxy-textarea').last();
+            const mobileProxyInput = page.getByTestId('mobile-text-entry-proxy-input').last();
+
             await feedbackTextarea.click();
-            await feedbackTextarea.fill('游戏内横屏反馈输入可见性校验');
-            await contactInput.fill('tester@example.com');
+            await expect(mobileProxy).toBeVisible();
+            await mobileProxyTextarea.fill('游戏内横屏反馈输入可见性校验');
+
+            await contactInput.click();
+            await expect(mobileProxy).toBeVisible();
+            await mobileProxyInput.fill('tester@example.com');
             await expect(feedbackTextarea).toHaveValue('游戏内横屏反馈输入可见性校验');
             await expect(contactInput).toHaveValue('tester@example.com');
 

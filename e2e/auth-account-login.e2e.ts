@@ -127,22 +127,15 @@ test.describe('Auth (account login) E2E', () => {
         await expect(getEmailInput()).toBeVisible();
         await expect(getCodeInput()).toBeVisible();
 
-        await getEmailInput().evaluate((node, value) => {
-            if (!(node instanceof HTMLInputElement)) {
-                throw new Error('注册邮箱输入框节点不是 input');
-            }
-            node.focus();
-            node.value = value;
-            node.dispatchEvent(new Event('input', { bubbles: true }));
-        }, 'remembered@example.com');
-        await getCodeInput().evaluate((node, value) => {
-            if (!(node instanceof HTMLInputElement)) {
-                throw new Error('注册验证码输入框节点不是 input');
-            }
-            node.focus();
-            node.value = value;
-            node.dispatchEvent(new Event('input', { bubbles: true }));
-        }, '123456');
+        await getEmailInput().click();
+        const mobileProxy = page.getByTestId('mobile-text-entry-proxy').last();
+        const mobileProxyInput = page.getByTestId('mobile-text-entry-proxy-input').last();
+        await expect(mobileProxy).toBeVisible();
+        await mobileProxyInput.fill('remembered@example.com');
+
+        await getCodeInput().click();
+        await expect(mobileProxy).toBeVisible();
+        await mobileProxyInput.fill('123456');
 
         await expect(getEmailInput()).toHaveValue('remembered@example.com');
         await expect(getCodeInput()).toHaveValue('123456');

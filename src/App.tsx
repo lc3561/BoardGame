@@ -24,6 +24,7 @@ import { AndroidBackNavigationBridge } from './components/system/AndroidBackNavi
 import { GamePageRescueGate } from './components/system/GamePageRescueGate';
 import { LoadingScreen } from './components/system/LoadingScreen';
 import { TextEntryAutoScrollAgent } from './components/system/TextEntryAutoScrollAgent';
+import { MobileTextEntryProxyLayer } from './components/system/MobileTextEntryProxyLayer';
 import { InteractionGuardProvider } from './components/game/framework/InteractionGuard';
 import AdminGuard from './components/auth/AdminGuard';
 import { MobileOrientationGuard } from './components/common/MobileOrientationGuard';
@@ -257,6 +258,7 @@ const AppContent = () => {
                     ) : null}
                     {isNativeAndroid ? <AndroidBackNavigationBridge /> : null}
                     <TextEntryAutoScrollAgent />
+                    <MobileTextEntryProxyLayer />
                     <ViewportDebugProbe />
                     <React.Suspense fallback={null}>
                       <LazyGlobalHUD />

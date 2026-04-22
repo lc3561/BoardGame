@@ -96,6 +96,69 @@ export const isTextEntryElement = (candidate: Element | null): candidate is HTML
     return !blockedTypes.has(input.type.toLowerCase());
 };
 
+export const isTextEntryProxyEligible = (candidate: Element | null): candidate is HTMLElement => {
+    if (typeof window === 'undefined' || typeof document === 'undefined') {
+        return false;
+    }
+    if (!isTextEntryElement(candidate)) {
+        return false;
+    }
+
+    const modalRoot = document.getElementById('modal-root');
+    if (!modalRoot?.contains(candidate)) {
+        return false;
+    }
+
+    try {
+        return window.matchMedia?.('(pointer: coarse)')?.matches ?? false;
+    } catch {
+        return false;
+    }
+};
+
+export const readTextEntryValue = (candidate: Element | null): string => {
+    if (!isTextEntryElement(candidate)) {
+        return '';
+    }
+
+    if (candidate instanceof HTMLInputElement || candidate instanceof HTMLTextAreaElement) {
+        return candidate.value;
+    }
+
+    return candidate.textContent ?? '';
+};
+
+export const syncProxyValueToTextEntry = (candidate: Element | null, value: string) => {
+    if (!isTextEntryElement(candidate)) {
+        return false;
+    }
+
+    if (candidate instanceof HTMLInputElement) {
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+        setter?.call(candidate, value);
+        candidate.dispatchEvent(new Event('input', { bubbles: true }));
+        candidate.dispatchEvent(new Event('change', { bubbles: true }));
+        return true;
+    }
+
+    if (candidate instanceof HTMLTextAreaElement) {
+        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+        setter?.call(candidate, value);
+        candidate.dispatchEvent(new Event('input', { bubbles: true }));
+        candidate.dispatchEvent(new Event('change', { bubbles: true }));
+        return true;
+    }
+
+    if (candidate.isContentEditable) {
+        candidate.textContent = value;
+        candidate.dispatchEvent(new Event('input', { bubbles: true }));
+        candidate.dispatchEvent(new Event('change', { bubbles: true }));
+        return true;
+    }
+
+    return false;
+};
+
 const resolvePreferredVisibleBand = (
     effectiveTop: number,
     effectiveBottom: number,

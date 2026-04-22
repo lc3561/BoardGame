@@ -415,26 +415,19 @@ test.describe('Lobby E2E', () => {
             keyboardInsetHeight: 280,
         });
 
-        await getRoomNameInput().evaluate((node, value) => {
-            if (!(node instanceof HTMLInputElement)) {
-                throw new Error('房间名输入框节点不是 input');
-            }
-            node.focus();
-            node.value = value;
-            node.dispatchEvent(new Event('input', { bubbles: true }));
-        }, '移动端建房输入校验');
+        const mobileProxy = page.getByTestId('mobile-text-entry-proxy').last();
+        const mobileProxyInput = page.getByTestId('mobile-text-entry-proxy-input').last();
+
+        await getRoomNameInput().click();
+        await expect(mobileProxy).toBeVisible();
+        await mobileProxyInput.fill('移动端建房输入校验');
         await expect(getPasswordInput()).toBeVisible();
         await expect(getPasswordInput()).toHaveAttribute('type', 'password');
         await getPasswordToggle().click();
         await expect(getPasswordInput()).toHaveAttribute('type', 'text');
-        await getPasswordInput().evaluate((node, value) => {
-            if (!(node instanceof HTMLInputElement)) {
-                throw new Error('房间密码输入框节点不是 input');
-            }
-            node.focus();
-            node.value = value;
-            node.dispatchEvent(new Event('input', { bubbles: true }));
-        }, '123456');
+        await getPasswordInput().click();
+        await expect(mobileProxy).toBeVisible();
+        await mobileProxyInput.fill('123456');
         await expect(getRoomNameInput()).toHaveValue('移动端建房输入校验');
         await expect(getPasswordInput()).toHaveValue('123456');
 

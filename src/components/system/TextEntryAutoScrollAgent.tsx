@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { isTextEntryElement, scrollTextEntryIntoView } from '../../lib/textEntry';
+import { isTextEntryElement, isTextEntryProxyEligible, scrollTextEntryIntoView } from '../../lib/textEntry';
 
 /**
  * 移动端键盘弹出时，尽量保证「当前聚焦的输入框」可见。
@@ -18,22 +18,9 @@ export const TextEntryAutoScrollAgent = () => {
             return undefined;
         }
 
-        const modalRoot = document.getElementById('modal-root');
-        if (!modalRoot) {
-            return undefined;
-        }
-
-        const isCoarsePointer = () => {
-            try {
-                return window.matchMedia?.('(pointer: coarse)')?.matches ?? false;
-            } catch {
-                return false;
-            }
-        };
-
         const shouldHandleTarget = (target: HTMLElement) => {
-            if (!isCoarsePointer()) return false;
-            return modalRoot.contains(target);
+            if (!isTextEntryProxyEligible(target)) return false;
+            return document.documentElement.dataset.keyboardVisible !== 'true';
         };
 
         const runScroll = (target: HTMLElement, behavior: ScrollBehavior) => {
