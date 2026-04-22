@@ -94,3 +94,19 @@
 | Error | Impact | Resolution |
 | :--- | :--- | :--- |
 | 根工作区 `task_plan.md/findings.md/progress.md` 已服务其他任务 | 不能在原工作区继续维护本次计划 | 新建独立 worktree 承载本任务 |
+
+## Addendum（2026-04-22）：lane-S2R SmashUp 卡牌效果/文本偏差反馈修复
+
+### Goal
+> 核对并最小修复 7 条线上 human open 反馈：世界冠军/美人鱼效果、436-1337工厂计分、疯狂山脉抽牌、缅怀先祖、天守阁决斗、武士进弃牌堆加攻击力链路；补测试、运行验证，并产出 vidence/smashup/2026-04-22 逐条证据。
+
+### Phase
+- [ ] Phase A: 读取规范、锁权威基线与现有实现
+- [ ] Phase B: 最小修复反馈相关实现与文本
+- [ ] Phase C: 补现有测试文件中的回归用例并运行验证
+- [ ] Phase D: 写 evidence/smashup/2026-04-22 逐条结论与最终汇报
+
+### Scope Control
+- 只改 SmashUp 反馈相关文件和 evidence。
+- 不触碰当前工作区已有的非本轮改动；已发现 src/games/smashup/domain/index.ts 与 src/games/smashup/__tests__/smashup.smoke.test.ts 存在他人改动，本轮除非必要不修改。
+

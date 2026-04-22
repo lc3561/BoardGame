@@ -1,4 +1,7 @@
+import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { getAllGames } from '../../../config/games.config';
 
 interface GameStat {
     gameName: string;
@@ -21,13 +24,48 @@ const BASE_CHART_HEIGHT = 280;
 const ROW_HEIGHT = 42;
 
 export default function GamePopularityChart({ stats }: Props) {
-    // Process data for the chart
-    const data = stats.map((game, index) => ({
-        name: game.gameName,
-        duration: game.totalDuration,
-        count: game.count,
-        color: COLORS[index % COLORS.length]
-    }));
+    const { t } = useTranslation('lobby');
+    const gameConfigs = useMemo(
+        () => getAllGames().filter((game) => game.type === 'game' && !game.isUgc),
+        []
+    );
+    const data = useMemo(() => {
+        const statsByGameId = new Map(stats.map((game) => [game.gameName, game]));
+        const officialGameIdSet = new Set(gameConfigs.map((game) => game.id));
+        const merged = gameConfigs.map((game) => {
+            const stat = statsByGameId.get(game.id);
+            return {
+                gameId: game.id,
+                name: t(game.titleKey, { defaultValue: game.id }),
+                duration: stat?.totalDuration ?? 0,
+                count: stat?.count ?? 0,
+            };
+        });
+        stats.forEach((stat) => {
+            if (officialGameIdSet.has(stat.gameName)) {
+                return;
+            }
+            merged.push({
+                gameId: stat.gameName,
+                name: stat.gameName,
+                duration: stat.totalDuration,
+                count: stat.count,
+            });
+        });
+        merged.sort((a, b) => {
+            if (b.duration !== a.duration) {
+                return b.duration - a.duration;
+            }
+            if (b.count !== a.count) {
+                return b.count - a.count;
+            }
+            return a.name.localeCompare(b.name, 'zh-CN');
+        });
+        return merged.map((item, index) => ({
+            ...item,
+            color: COLORS[index % COLORS.length],
+        }));
+    }, [gameConfigs, stats, t]);
     const chartHeight = Math.max(BASE_CHART_HEIGHT, data.length * ROW_HEIGHT);
 
     return (

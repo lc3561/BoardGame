@@ -247,3 +247,12 @@
 - **[21:10] Action**: 收口 Cowboys 决斗链 i18n 混用
   - Result: 已确认根因是 `src/games/smashup/domain/duel.ts` 的阶段标题/跳过按钮仍是硬编码中文，而 `Board.tsx` 决斗横幅已走 locale；现已给交互选项补 `labelKey/labelParams` 渲染入口，补齐 `duel.ts` 的 locale key，并让 `PromptOverlay.tsx` 与 `Board.tsx` 的快捷按钮统一解析这些 key。`npm run typecheck` 通过，`newFactionAbilities + newBaseAbilities` 共 `123 passed, 1 skipped`，`npm run test:e2e:ci:file -- smashup-phase-transition-simple.e2e.ts "Oops Cowboys 决斗交互应按官方链路完成 Pinkerton/决斗牌/Deputy/结算"` 再次通过。
   - Next: 提交、推送并为这轮 i18n 收尾补开新 PR。
+
+## Session: 2026-04-22 lane-S2R SmashUp 反馈修复
+
+### Phase: 初始化与基线锁定
+**Status**: In Progress
+
+- **[2026-04-22 00:21:34] Action**: 读取 AGENTS、planning-with-files、数据录入、测试/审计、引擎系统规范，并检查工作区状态。
+  - Result: 确认本轮需要 Wiki/实现/测试/evidence 闭环；发现工作区存在非本轮改动，将避开无关文件。
+  - Next: 运行 SmashUp Wiki 抓取/对比并审查 7 条反馈的实现入口。

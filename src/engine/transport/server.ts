@@ -36,6 +36,7 @@ import {
 import { INTERACTION_COMMANDS, INTERACTION_EVENTS } from '../systems/InteractionSystem';
 import { setUndoAiSeatIds } from '../systems/UndoSystem';
 import { computeDiff } from './patch';
+import { resolveSetupPlayerIds } from './setupPlayerOrder';
 import {
     applyAiAutoRecoveryRejection,
     buildAiProgressMarker,
@@ -669,16 +670,22 @@ export class GameTransportServer {
         const engineConfig = this.gameIndex.get(gameId);
         if (!engineConfig) return null;
 
-        const trackedRandom = createTrackedRandom(seed, 0);
-        const core = engineConfig.domain.setup(playerIds, trackedRandom.random, setupData);
-        const sys = createInitialSystemState(
+        const setupSeatControllers = extractSetupSeatControllers(setupData);
+        const setupPlayerIds = resolveSetupPlayerIds({
             playerIds,
+            setupData,
+            seatControllers: setupSeatControllers,
+        });
+        const trackedRandom = createTrackedRandom(seed, 0);
+        const core = engineConfig.domain.setup(setupPlayerIds, trackedRandom.random, setupData);
+        const sys = createInitialSystemState(
+            setupPlayerIds,
             engineConfig.systems as EngineSystem[],
             matchID,
         );
         const state = setUndoAiSeatIds(
             { sys, core },
-            getAiSeatIds(extractSetupSeatControllers(setupData)),
+            getAiSeatIds(setupSeatControllers),
         );
         return {
             state,
@@ -1894,6 +1901,7 @@ export class GameTransportServer {
         });
 
         const canUseEmergencyOverlayFallback = candidate.reason === 'active-turn'
+            || candidate.reason === 'active-turn-legal-only'
             || candidate.reason === 'visible-interaction'
             || candidate.reason === 'hidden-interaction';
         const shouldRetryWithEmergencyOverlay = aiDispatchResult.kind === 'blocked'
@@ -2696,6 +2704,9 @@ export class GameTransportServer {
                         playerId: playerID,
                         incidentKind: 'unsatisfiable-interaction-auto-skipped',
                         severity: 'medium',
+                        // 该事件表示 watchdog 已经执行了应急跳过并解除卡死，默认按“已恢复”入库，
+                        // 避免把可恢复交互噪音持续堆积为 open 反馈。
+                        status: 'resolved',
                         reason,
                         trackerKey,
                         progressMarker: progressMarkerBeforeCommand,

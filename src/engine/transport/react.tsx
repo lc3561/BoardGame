@@ -60,6 +60,7 @@ import {
 import { persistLocalMatchSnapshot, readLocalMatchSnapshot } from './localSession';
 import { onAppVisible } from '../../lib/mobile/appVisibility';
 import { buildAiProgressMarker } from './onlineAiRecovery';
+import { resolveSetupPlayerIds } from './setupPlayerOrder';
 
 import { createCommandBatcher, type CommandBatcher } from './latency/commandBatcher';
 import { EventStreamRollbackContext, type EventStreamRollbackValue } from '../hooks/EventStreamRollbackContext';
@@ -446,6 +447,15 @@ export function GameProvider({
                 if (connected && optimisticEngineRef.current) {
                     optimisticEngineRef.current.reset();
                 }
+                if (connected) {
+                    // 重连成功后强制通知 EventStream 游标消费者重置到最新位置，
+                    // 避免失焦/断线期间的历史事件被再次消费，触发重复动画与状态抖动。
+                    setRollbackSignal(prev => ({
+                        watermark: null,
+                        seq: prev.seq + 1,
+                        reconcileSeq: prev.reconcileSeq,
+                    }));
+                }
                 if (!connected) {
                     // 断线时重置状态版本号追踪，重连后从服务端同步最新状态
                     lastConfirmedStateIDRef.current = null;
@@ -681,6 +691,14 @@ export function LocalGameProvider({
         () => Array.from({ length: numPlayers }, (_, i) => String(i)),
         [numPlayers],
     );
+    const setupPlayerIds = useMemo(
+        () => resolveSetupPlayerIds({
+            playerIds,
+            setupData,
+            seatControllers,
+        }),
+        [playerIds, seatControllers, setupData],
+    );
     const aiSeatIds = useMemo(() => getAiSeatIds(seatControllers), [seatControllers]);
     const persistedSnapshot = useMemo(
         () => (
@@ -724,7 +742,7 @@ export function LocalGameProvider({
             // 创建最小化的空白状态（仅包含必要的框架结构）
             const core: any = {
                 players: {},
-                turnOrder: playerIds,
+                turnOrder: setupPlayerIds,
                 currentPlayerIndex: 0,
                 bases: [],
                 baseDeck: [],
@@ -733,7 +751,7 @@ export function LocalGameProvider({
             };
             
             // 为每个玩家创建空白状态
-            for (const pid of playerIds) {
+            for (const pid of setupPlayerIds) {
                 core.players[pid] = {
                     id: pid,
                     vp: 0,
@@ -745,7 +763,7 @@ export function LocalGameProvider({
             }
             
             const sys = createInitialSystemState(
-                playerIds,
+                setupPlayerIds,
                 config.systems as EngineSystem[],
             );
             
@@ -761,9 +779,9 @@ export function LocalGameProvider({
         
         if (shouldSkipFactionSelect) {
             // 调用 domain.setup 创建初始状态
-            const core = config.domain.setup(playerIds, random, setupData) as any;
+            const core = config.domain.setup(setupPlayerIds, random, setupData) as any;
             const sys = createInitialSystemState(
-                playerIds,
+                setupPlayerIds,
                 config.systems as EngineSystem[],
             );
             let currentState: MatchState<unknown> = setUndoAiSeatIds({ sys, core }, aiSeatIds);
@@ -804,7 +822,7 @@ export function LocalGameProvider({
                     currentState,
                     command,
                     random,
-                    playerIds,
+                    setupPlayerIds,
                 );
                 
                 if (!result.success) {
@@ -818,9 +836,9 @@ export function LocalGameProvider({
         }
         
         // 正常流程：从 factionSelect 阶段开始
-        const core = config.domain.setup(playerIds, random, setupData);
+        const core = config.domain.setup(setupPlayerIds, random, setupData);
         const sys = createInitialSystemState(
-            playerIds,
+            setupPlayerIds,
             config.systems as EngineSystem[],
         );
         return setUndoAiSeatIds({ sys, core }, aiSeatIds);
@@ -926,7 +944,7 @@ export function LocalGameProvider({
                 prev,
                 command,
                 randomRef.current,
-                playerIds,
+                setupPlayerIds,
             );
 
 
@@ -943,7 +961,7 @@ export function LocalGameProvider({
             const refreshedState = refreshInteractionOptions(result.state);
             return refreshedState;
         });
-    }, [config, localPregameControlledPlayerId, playerIds]);
+    }, [config, localPregameControlledPlayerId, setupPlayerIds]);
 
     useEffect(() => {
         if (!persistSession) return;
@@ -1061,13 +1079,13 @@ export function LocalGameProvider({
     const reset = useCallback(() => {
         randomRef.current = createLocalProviderRandom(seed);
         const random = randomRef.current;
-        const core = config.domain.setup(playerIds, random, setupData);
+        const core = config.domain.setup(setupPlayerIds, random, setupData);
         const sys = createInitialSystemState(
-            playerIds,
+            setupPlayerIds,
             config.systems as EngineSystem[],
         );
         setState(setUndoAiSeatIds({ sys, core }, aiSeatIds));
-    }, [aiSeatIds, config, playerIds, seed, setupData]);
+    }, [aiSeatIds, config, seed, setupData, setupPlayerIds]);
 
     const matchPlayers = useMemo<MatchPlayerInfo[]>(
         () => playerIds.map((id) => ({ id: Number(id), isConnected: true })),

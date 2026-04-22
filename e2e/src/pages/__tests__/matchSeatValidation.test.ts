@@ -2376,6 +2376,87 @@ describe('LocalGameProvider 视角与重置契约', () => {
         cleanup();
     });
 
+    it('混合人机且未显式先手时，LocalGameProvider 初始化应先把真人座位传给 domain.setup', async () => {
+        const setupSpy = vi.fn((incomingPlayerIds: string[]) => ({
+            turnOrder: incomingPlayerIds,
+            currentPlayerIndex: 0,
+        }));
+
+        const engineConfig = {
+            gameId: '__test_local_human_first_default__',
+            domain: {
+                gameId: '__test_local_human_first_default__',
+                setup: setupSpy,
+                validate: () => ({ valid: true }),
+                execute: () => [],
+                reduce: (core: unknown) => core,
+            },
+            systems: [],
+        } as const;
+
+        render(
+            createElement(
+                LocalGameProvider,
+                {
+                    config: engineConfig as never,
+                    numPlayers: 2,
+                    seed: 'local-human-first-default-seed',
+                    seatControllers: {
+                        '0': { type: 'local-ai' },
+                        '1': { type: 'human' },
+                    },
+                },
+                createElement('div', { 'data-testid': 'local-human-first-default-probe' }, 'ready'),
+            ),
+        );
+
+        await waitFor(() => {
+            expect(setupSpy).toHaveBeenCalledTimes(1);
+        });
+        expect(setupSpy.mock.calls[0]?.[0]).toEqual(['1', '0']);
+    });
+
+    it('LocalGameProvider 存在显式 firstPlayerId 时，不应覆盖调用方 playerIds 顺序', async () => {
+        const setupSpy = vi.fn((incomingPlayerIds: string[]) => ({
+            turnOrder: incomingPlayerIds,
+            currentPlayerIndex: 0,
+        }));
+
+        const engineConfig = {
+            gameId: '__test_local_human_first_explicit__',
+            domain: {
+                gameId: '__test_local_human_first_explicit__',
+                setup: setupSpy,
+                validate: () => ({ valid: true }),
+                execute: () => [],
+                reduce: (core: unknown) => core,
+            },
+            systems: [],
+        } as const;
+
+        render(
+            createElement(
+                LocalGameProvider,
+                {
+                    config: engineConfig as never,
+                    numPlayers: 2,
+                    seed: 'local-human-first-explicit-seed',
+                    setupData: { firstPlayerId: '0' },
+                    seatControllers: {
+                        '0': { type: 'local-ai' },
+                        '1': { type: 'human' },
+                    },
+                },
+                createElement('div', { 'data-testid': 'local-human-first-explicit-probe' }, 'ready'),
+            ),
+        );
+
+        await waitFor(() => {
+            expect(setupSpy).toHaveBeenCalledTimes(1);
+        });
+        expect(setupSpy.mock.calls[0]?.[0]).toEqual(['0', '1']);
+    });
+
     it('传入固定 playerId 且关闭 followCurrentTurnPlayer 时，不应因当前回合变成对手而翻转视角', async () => {
         const engineConfig = {
             gameId: '__test_local_fixed_player_view__',

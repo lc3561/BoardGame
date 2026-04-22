@@ -1,4 +1,5 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
 import DataTable, { type Column } from './components/DataTable';
 import { ADMIN_API_URL } from '../../config/server';
@@ -8,6 +9,7 @@ import { cn } from '../../lib/utils';
 import Skeleton from '../../components/common/feedback/Skeleton';
 import CustomSelect, { type Option } from './components/ui/CustomSelect';
 import SearchInput from './components/ui/SearchInput';
+import { getAllGames } from '../../config/games.config';
 
 interface MatchPlayer {
     id: string;
@@ -57,15 +59,9 @@ interface MatchDetail {
     duration: number;
 }
 
-const GAME_OPTIONS: Option[] = [
-    { label: 'Dice Throne', value: 'dicethrone', icon: <Gamepad2 size={14} /> },
-    { label: 'Tic Tac Toe', value: 'tictactoe', icon: <Gamepad2 size={14} /> },
-    { label: 'Smash Up', value: 'smashup', icon: <Gamepad2 size={14} /> },
-    { label: 'Summoner Wars', value: 'summonerwars', icon: <Gamepad2 size={14} /> },
-];
-
 export default function MatchesPage() {
-    const { token } = useAuth();
+    const { t } = useTranslation('lobby');
+    const { token, user } = useAuth();
     const { error: toastError, success } = useToast();
     const [matches, setMatches] = useState<Match[]>([]);
     const [loading, setLoading] = useState(true);
@@ -77,6 +73,30 @@ export default function MatchesPage() {
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [detailMatch, setDetailMatch] = useState<MatchDetail | null>(null);
     const [detailLoading, setDetailLoading] = useState(false);
+    const isAdmin = user?.role === 'admin';
+
+    const gameConfigs = useMemo(
+        () => getAllGames().filter((game) => game.type === 'game' && !game.isUgc),
+        []
+    );
+
+    const gameOptions = useMemo<Option[]>(
+        () => gameConfigs.map((game) => ({
+            label: t(game.titleKey, { defaultValue: game.id }),
+            value: game.id,
+            icon: <Gamepad2 size={14} />,
+        })),
+        [gameConfigs, t]
+    );
+
+    const gameNameLabelMap = useMemo(
+        () => new Map(gameConfigs.map((game) => [game.id, t(game.titleKey, { defaultValue: game.id })])),
+        [gameConfigs, t]
+    );
+
+    const resolveGameName = useCallback((gameId: string) => {
+        return gameNameLabelMap.get(gameId) ?? gameId;
+    }, [gameNameLabelMap]);
 
     const fetchMatchDetail = useCallback(async (matchID: string) => {
         if (!token) return;
@@ -170,6 +190,10 @@ export default function MatchesPage() {
     };
 
     const handleDelete = async (matchID: string) => {
+        if (!isAdmin) {
+            toastError('仅管理员可删除对局记录');
+            return;
+        }
         if (!confirm('确定要删除该对局记录吗？')) return;
         try {
             const res = await fetch(`${ADMIN_API_URL}/matches/${matchID}`, {
@@ -189,6 +213,10 @@ export default function MatchesPage() {
     };
 
     const handleBulkDelete = async () => {
+        if (!isAdmin) {
+            toastError('仅管理员可删除对局记录');
+            return;
+        }
         if (selectedIds.length === 0) return;
         if (!confirm(`确定要删除选中的 ${selectedIds.length} 条对局记录吗？`)) return;
         try {
@@ -213,8 +241,7 @@ export default function MatchesPage() {
         }
     };
 
-    const columns: Column<Match>[] = [
-        {
+    const selectionColumn: Column<Match> = {
             header: (
                 <input
                     type="checkbox"
@@ -235,7 +262,10 @@ export default function MatchesPage() {
                     />
                 </div>
             )
-        },
+        };
+
+    const columns: Column<Match>[] = [
+        ...(isAdmin ? [selectionColumn] : []),
         {
             header: 'ID',
             accessorKey: 'matchID',
@@ -253,7 +283,7 @@ export default function MatchesPage() {
                                 "bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.4)]"
                     )} />
                     <span className="font-medium text-zinc-700 capitalize">
-                        {m.gameName}
+                        {resolveGameName(m.gameName)}
                     </span>
                 </div>
             )
@@ -320,12 +350,14 @@ export default function MatchesPage() {
             align: 'right', // New alignment
             cell: (m) => (
                 <div className="flex justify-end gap-3">
-                    <button
-                        onClick={() => handleDelete(m.matchID)}
-                        className="text-xs font-medium text-red-500 hover:text-red-600 transition-colors"
-                    >
-                        删除
-                    </button>
+                    {isAdmin && (
+                        <button
+                            onClick={() => handleDelete(m.matchID)}
+                            className="text-xs font-medium text-red-500 hover:text-red-600 transition-colors"
+                        >
+                            删除
+                        </button>
+                    )}
                     <button
                         onClick={() => fetchMatchDetail(m.matchID)}
                         className="text-xs font-medium text-zinc-500 hover:text-indigo-600 transition-colors"
@@ -354,19 +386,21 @@ export default function MatchesPage() {
                     <CustomSelect
                         value={gameFilter}
                         onChange={(val) => { setGameFilter(val); setPage(1); }}
-                        options={GAME_OPTIONS}
+                        options={gameOptions}
                         placeholder="所有游戏"
                         allOptionLabel="所有游戏"
                         prefixIcon={<Filter size={14} />}
                         className="w-full sm:w-48"
                     />
-                    <button
-                        onClick={handleBulkDelete}
-                        disabled={selectedIds.length === 0}
-                        className="px-4 py-2 text-xs font-semibold rounded-lg border border-red-200 text-red-500 hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                        删除选中 {selectedIds.length > 0 ? `(${selectedIds.length})` : ''}
-                    </button>
+                    {isAdmin && (
+                        <button
+                            onClick={handleBulkDelete}
+                            disabled={selectedIds.length === 0}
+                            className="px-4 py-2 text-xs font-semibold rounded-lg border border-red-200 text-red-500 hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                            删除选中 {selectedIds.length > 0 ? `(${selectedIds.length})` : ''}
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -389,6 +423,7 @@ export default function MatchesPage() {
             {detailMatch && (
                 <MatchDetailModal
                     detail={detailMatch}
+                    resolveGameName={resolveGameName}
                     loading={detailLoading}
                     onClose={() => setDetailMatch(null)}
                 />
@@ -435,10 +470,12 @@ function formatDurationText(seconds: number): string {
 
 function MatchDetailModal({
     detail,
+    resolveGameName,
     loading,
     onClose,
 }: {
     detail: MatchDetail;
+    resolveGameName: (gameId: string) => string;
     loading: boolean;
     onClose: () => void;
 }) {
@@ -503,7 +540,7 @@ function MatchDetailModal({
                         <div className="grid grid-cols-3 gap-4 text-sm">
                             <div>
                                 <span className="text-zinc-400 text-xs">游戏</span>
-                                <p className="font-medium text-zinc-700 capitalize mt-0.5">{detail.gameName}</p>
+                                <p className="font-medium text-zinc-700 mt-0.5">{resolveGameName(detail.gameName)}</p>
                             </div>
                             <div>
                                 <span className="text-zinc-400 text-xs">耗时</span>

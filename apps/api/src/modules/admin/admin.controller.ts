@@ -242,12 +242,14 @@ export class AdminController {
     }
 
     @Get('matches')
+    @Roles('admin', 'developer')
     async getMatches(@Query() query: QueryMatchesDto, @Res() res: Response) {
         const result = await this.adminService.getMatches(query);
         return res.json(result);
     }
 
     @Get('matches/:id')
+    @Roles('admin', 'developer')
     async getMatchDetail(@Param('id') matchId: string, @Req() req: Request, @Res() res: Response) {
         const { t } = createRequestI18n(req);
         const match = await this.adminService.getMatchDetail(matchId);

@@ -361,3 +361,8 @@
 - `3dd374b2` fix(smashup): cover drakkar reshuffle handoff
 - `05db8831` fix(smashup): close ancient egyptians feedback regressions
 - `d8ec6aad` fix(smashup): resolve open feedback regressions
+
+## 2026-04-22 lane-S2R Findings
+- 工作区当前有大量非本轮改动；本轮必须只碰 SmashUp 反馈相关文件与 evidence，不回滚/不覆盖他人修改。
+- 根目录旧 	ask_plan.md/findings.md/progress.md 服务历史 SmashUp/Oops 任务，本轮作为 2026-04-22 Addendum 追加，不创建第二份正式 plan。
+- 目标实现初步入口：src/games/smashup/abilities/world_champs.ts、src/games/smashup/abilities/mermaids.ts、src/games/smashup/abilities/samurai.ts、src/games/smashup/domain/baseAbilities.ts、src/games/smashup/domain/reducer.ts、对应 faction data/locale 与现有测试文件。

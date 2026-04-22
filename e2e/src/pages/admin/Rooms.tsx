@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Calendar, DoorOpen, Filter, Lock, Timer, Unlock } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
@@ -10,6 +11,7 @@ import CustomSelect, { type Option } from './components/ui/CustomSelect';
 import SearchInput from './components/ui/SearchInput';
 import { summarizeRoomPlayers } from './utils/roomPresence';
 import { formatDateTime, formatDurationMs, getElapsedDurationMs } from './utils/roomTime';
+import { getAllGames } from '../../config/games.config';
 
 interface RoomPlayer {
     id: number;
@@ -33,13 +35,6 @@ interface RoomItem {
 
 const PAGE_LIMIT = 10;
 
-const GAME_OPTIONS: Option[] = [
-    { label: 'Dice Throne', value: 'dicethrone', icon: <DoorOpen size={14} /> },
-    { label: 'Tic Tac Toe', value: 'tictactoe', icon: <DoorOpen size={14} /> },
-    { label: 'Smash Up', value: 'smashup', icon: <DoorOpen size={14} /> },
-    { label: 'Summoner Wars', value: 'summonerwars', icon: <DoorOpen size={14} /> },
-];
-
 const resolveOwnerLabel = (room: RoomItem) => {
     if (room.ownerName) return room.ownerName;
     if (room.ownerType === 'guest' && room.ownerKey) {
@@ -51,6 +46,7 @@ const resolveOwnerLabel = (room: RoomItem) => {
 const resolveRoomTitle = (room: RoomItem) => room.roomName?.trim() || '未命名房间';
 
 export default function RoomsPage() {
+    const { t } = useTranslation('lobby');
     const { token } = useAuth();
     const { error: toastError, success } = useToast();
     const [rooms, setRooms] = useState<RoomItem[]>([]);
@@ -62,6 +58,24 @@ export default function RoomsPage() {
     const [totalItems, setTotalItems] = useState(0);
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [selectAllFiltered, setSelectAllFiltered] = useState(false);
+
+    const gameConfigs = useMemo(
+        () => getAllGames().filter((game) => game.type === 'game' && !game.isUgc),
+        []
+    );
+    const gameOptions = useMemo<Option[]>(
+        () => gameConfigs.map((game) => ({
+            label: t(game.titleKey, { defaultValue: game.id }),
+            value: game.id,
+            icon: <DoorOpen size={14} />,
+        })),
+        [gameConfigs, t]
+    );
+    const gameNameLabelMap = useMemo(
+        () => new Map(gameConfigs.map((game) => [game.id, t(game.titleKey, { defaultValue: game.id })])),
+        [gameConfigs, t]
+    );
+    const resolveGameName = (gameId: string) => gameNameLabelMap.get(gameId) ?? gameId;
 
     const fetchRooms = async () => {
         if (!token) {
@@ -228,7 +242,7 @@ export default function RoomsPage() {
             header: '游戏',
             accessorKey: 'gameName',
             cell: (room) => (
-                <span className="font-medium capitalize text-zinc-700">{room.gameName}</span>
+                <span className="font-medium text-zinc-700">{resolveGameName(room.gameName)}</span>
             ),
         },
         {
@@ -334,7 +348,7 @@ export default function RoomsPage() {
                             setSelectedIds([]);
                             setSelectAllFiltered(false);
                         }}
-                        options={GAME_OPTIONS}
+                        options={gameOptions}
                         placeholder="所有游戏"
                         allOptionLabel="所有游戏"
                         prefixIcon={<Filter size={14} />}

@@ -226,7 +226,14 @@ const AppContent = () => {
                       />
                       <Route path="users" element={renderAdminOnly(<UsersPage />)} />
                       <Route path="users/:id" element={renderAdminOnly(<UserDetailPage />)} />
-                      <Route path="matches" element={renderAdminOnly(<MatchesPage />)} />
+                      <Route
+                        path="matches"
+                        element={(
+                          <AdminGuard allowedRoles={['admin', 'developer']} fallbackPath="/admin/changelogs">
+                            <MatchesPage />
+                          </AdminGuard>
+                        )}
+                      />
                       <Route path="rooms" element={renderAdminOnly(<RoomsPage />)} />
                       <Route path="sponsors" element={renderAdminOnly(<SponsorsPage />)} />
                       <Route

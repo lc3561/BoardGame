@@ -28,6 +28,7 @@ type NavItem = {
 
 const DEVELOPER_NAV_ITEMS: NavItem[] = [
     { icon: LayoutDashboard, label: '概览', path: '/admin' },
+    { icon: Gamepad2, label: '对局记录', path: '/admin/matches' },
     { icon: ScrollText, label: '更新日志', path: '/admin/changelogs' },
     { icon: MessageSquareWarning, label: '反馈管理', path: '/admin/feedback' },
 ];

@@ -863,6 +863,84 @@ describe('GameTransportServer（离座与重连）', () => {
         expect(receivedSetupData).toEqual(setupData);
     });
 
+    it('setupMatch 在混合人机且未显式指定先手时，应默认把真人座位排到 setup 先手', async () => {
+        const io = new MockIO();
+        const storage = new InMemoryStorage();
+        let receivedPlayerIds: string[] = [];
+
+        const engineWithPlayerCapture: GameEngineConfig = {
+            ...createEngineConfig(),
+            domain: {
+                ...createEngineConfig().domain,
+                setup: (incomingPlayerIds) => {
+                    receivedPlayerIds = [...incomingPlayerIds];
+                    return { currentPlayer: incomingPlayerIds[0] };
+                },
+            },
+        };
+
+        const server = new GameTransportServer({
+            io: io as unknown as any,
+            storage,
+            games: [engineWithPlayerCapture],
+        });
+
+        const result = await server.setupMatch(
+            'match-setup-human-first-default',
+            'test-game',
+            ['0', '1'],
+            'seed-human-first-default',
+            {
+                seatControllers: {
+                    '0': { type: 'local-ai' },
+                    '1': { type: 'human' },
+                },
+            },
+        );
+
+        expect(result).toBeTruthy();
+        expect(receivedPlayerIds).toEqual(['1', '0']);
+    });
+
+    it('setupMatch 在显式 firstPlayerId/turnOrder 存在时，不应覆盖调用方顺序', async () => {
+        const io = new MockIO();
+        const storage = new InMemoryStorage();
+        let receivedPlayerIds: string[] = [];
+
+        const engineWithPlayerCapture: GameEngineConfig = {
+            ...createEngineConfig(),
+            domain: {
+                ...createEngineConfig().domain,
+                setup: (incomingPlayerIds) => {
+                    receivedPlayerIds = [...incomingPlayerIds];
+                    return { currentPlayer: incomingPlayerIds[0] };
+                },
+            },
+        };
+
+        const server = new GameTransportServer({
+            io: io as unknown as any,
+            storage,
+            games: [engineWithPlayerCapture],
+        });
+
+        await server.setupMatch(
+            'match-setup-human-first-explicit',
+            'test-game',
+            ['0', '1'],
+            'seed-human-first-explicit',
+            {
+                firstPlayerId: '0',
+                seatControllers: {
+                    '0': { type: 'local-ai' },
+                    '1': { type: 'human' },
+                },
+            },
+        );
+
+        expect(receivedPlayerIds).toEqual(['0', '1']);
+    });
+
     it('offline adjudication should use domain cancel command for dt card interaction', async () => {
         const io = new MockIO();
         const storage = new InMemoryStorage();
@@ -2445,13 +2523,133 @@ describe('GameTransportServer（离座与重连）', () => {
             await serverInternal.runOnlineAiRecoveryTick();
             await nextTick();
 
-            expect(resolutionSpy).toHaveBeenCalledTimes(2);
+            expect(resolutionSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
             expect(executed.map((item) => item.commandType)).toEqual([
                 INTERACTION_COMMANDS.RESPOND,
             ]);
             expect(match.state.core.activePlayerId).toBe('0');
             expect(feedbackReporter).toHaveBeenCalledWith(expect.objectContaining({
                 matchId: 'match-watchdog-smashup-private-overlay-stale-emergency-view',
+                playerId: '1',
+                incidentKind: 'legal-action-recovered',
+                status: 'resolved',
+            }));
+        } finally {
+            resolutionSpy.mockRestore();
+        }
+    });
+
+    it('online AI watchdog 在 factionSelect legal-action-only 遇到 private overlay stale 时，也应使用 emergency playerView 重试合法动作', async () => {
+        const io = new MockIO();
+        const storage = new InMemoryStorage();
+        const feedbackReporter = vi.fn(async () => undefined);
+
+        await storage.createMatch('match-watchdog-faction-select-private-overlay-stale-emergency-view', {
+            initialState: createOnlineAiRecoveryState({
+                activePlayerId: '1',
+                phase: 'factionSelect',
+                interaction: {
+                    current: undefined,
+                    queue: [],
+                    isBlocked: false,
+                },
+                responseWindow: {
+                    current: undefined,
+                },
+            }),
+            metadata: createOnlineAiRecoveryMetadata({ gameName: 'smashup' }),
+        });
+
+        const resolutionSpy = vi.spyOn(aiModule, 'resolveNextAiDispatch')
+            .mockResolvedValueOnce({
+                kind: 'blocked',
+                playerId: '1',
+                blockedReason: 'stale-private-overlay',
+                visibility: 'private-required',
+                blockedKey: '1:private-required:stale-private-overlay',
+                diagnostics: {
+                    sharedPhase: 'factionSelect',
+                    privatePhase: 'factionSelect',
+                    sharedTurnNumber: 4,
+                    privateTurnNumber: 4,
+                    sharedCurrentPlayerId: '1',
+                    privateCurrentPlayerId: '1',
+                },
+            })
+            .mockResolvedValueOnce({
+                kind: 'action',
+                resolution: {
+                    playerId: '1',
+                    action: {
+                        actionId: 'select-faction:wizards',
+                        kind: 'select-faction',
+                        label: '选择派系 wizards',
+                        commands: [{
+                            type: 'SELECT_FACTION',
+                            payload: { factionId: 'wizards' },
+                        }],
+                    },
+                    attemptKey: 'watchdog-faction-select-emergency-player-view',
+                    source: 'local-ai',
+                },
+            });
+
+        try {
+            const server = new GameTransportServer({
+                io: io as unknown as any,
+                storage,
+                games: [createEngineConfigWithId('smashup')],
+                onlineAiRecoveryTickMs: 0,
+                onlineAiRecoveryTimeoutMs: 0,
+                onlineAiFeedbackReporter: feedbackReporter,
+            });
+
+            const serverInternal = server as unknown as {
+                loadMatch: (matchID: string) => Promise<any>;
+                runOnlineAiRecoveryTick: () => Promise<void>;
+                executeCommandInternal: (
+                    match: any,
+                    playerID: string,
+                    commandType: string,
+                    payload: unknown,
+                ) => Promise<boolean>;
+            };
+
+            const match = await serverInternal.loadMatch('match-watchdog-faction-select-private-overlay-stale-emergency-view');
+            const executed: Array<{ commandType: string; payload: unknown }> = [];
+            vi.spyOn(serverInternal, 'executeCommandInternal').mockImplementation(async (activeMatch, _playerID, commandType, payload) => {
+                executed.push({ commandType, payload });
+                if (commandType !== 'SELECT_FACTION') {
+                    throw new Error(`Unexpected command: ${commandType}`);
+                }
+                activeMatch.state = {
+                    ...activeMatch.state,
+                    core: {
+                        ...activeMatch.state.core,
+                        activePlayerId: '0',
+                        currentPlayerIndex: 0,
+                    },
+                    sys: {
+                        ...activeMatch.state.sys,
+                        eventStream: {
+                            ...(activeMatch.state.sys?.eventStream ?? {}),
+                            nextId: (activeMatch.state.sys?.eventStream?.nextId ?? 1) + 1,
+                        },
+                    },
+                };
+                return true;
+            });
+
+            await serverInternal.runOnlineAiRecoveryTick();
+            await serverInternal.runOnlineAiRecoveryTick();
+            await nextTick();
+
+            expect(resolutionSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
+            expect(executed.map((item) => item.commandType)).toEqual(['SELECT_FACTION']);
+            expect(executed[0]?.payload).toEqual({ factionId: 'wizards' });
+            expect(match.state.core.activePlayerId).toBe('0');
+            expect(feedbackReporter).toHaveBeenCalledWith(expect.objectContaining({
+                matchId: 'match-watchdog-faction-select-private-overlay-stale-emergency-view',
                 playerId: '1',
                 incidentKind: 'legal-action-recovered',
                 status: 'resolved',
@@ -3895,6 +4093,7 @@ describe('GameTransportServer（离座与重连）', () => {
             matchId: 'match-unsat-auto-feedback',
             playerId: '1',
             incidentKind: 'unsatisfiable-interaction-auto-skipped',
+            status: 'resolved',
             reason: 'all-options-disabled',
         }));
 

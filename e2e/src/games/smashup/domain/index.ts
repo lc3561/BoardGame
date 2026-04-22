@@ -931,6 +931,10 @@ function processImmediateStartTurnMinionTriggers(
 
 const DEFAULT_SMASHUP_EXPANSIONS = ['titans'];
 
+function isAiSeatControllerType(type: unknown): boolean {
+    return type === 'local-ai' || type === 'remote-ai';
+}
+
 function readEnabledExpansions(setupData?: Record<string, unknown>): string[] {
     if (Array.isArray(setupData?.expansions)) {
         return setupData.expansions.filter((value): value is string => typeof value === 'string');
@@ -989,15 +993,39 @@ function setup(playerIds: PlayerId[], random: RandomFn, setupData?: Record<strin
     const baseDeck = shuffledBaseIds;
 
     let initialTurnOrder = [...playerIds];
+    let hasExplicitTurnOrder = false;
+    let hasExplicitFirstPlayer = false;
     if (
         Array.isArray(setupData?.turnOrder)
         && setupData.turnOrder.length === playerIds.length
         && setupData.turnOrder.every((id: unknown) => typeof id === 'string' && playerIds.includes(id as PlayerId))
     ) {
         initialTurnOrder = setupData.turnOrder as PlayerId[];
+        hasExplicitTurnOrder = true;
     } else if (typeof setupData?.firstPlayerId === 'string' && playerIds.includes(setupData.firstPlayerId)) {
         const first = setupData.firstPlayerId;
         initialTurnOrder = [first, ...playerIds.filter(id => id !== first)];
+        hasExplicitFirstPlayer = true;
+    }
+
+    if (!hasExplicitTurnOrder && !hasExplicitFirstPlayer) {
+        const rawSeatControllers = setupData?.seatControllers;
+        if (rawSeatControllers && typeof rawSeatControllers === 'object' && !Array.isArray(rawSeatControllers)) {
+            const seatControllers = rawSeatControllers as Record<string, { type?: unknown } | undefined>;
+            const hasAiSeat = initialTurnOrder.some((playerId) => isAiSeatControllerType(seatControllers[playerId]?.type));
+            const hasHumanSeat = initialTurnOrder.some((playerId) => !isAiSeatControllerType(seatControllers[playerId]?.type));
+            if (hasAiSeat && hasHumanSeat) {
+                const firstHumanIndex = initialTurnOrder.findIndex(
+                    (playerId) => !isAiSeatControllerType(seatControllers[playerId]?.type),
+                );
+                if (firstHumanIndex > 0) {
+                    initialTurnOrder = [
+                        ...initialTurnOrder.slice(firstHumanIndex),
+                        ...initialTurnOrder.slice(0, firstHumanIndex),
+                    ];
+                }
+            }
+        }
     }
 
     return {

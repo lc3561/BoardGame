@@ -318,6 +318,7 @@ describe('Admin Module (e2e)', () => {
 
     it('developer 可访问概览统计，但不能访问管理员专属接口', async () => {
         const { adminToken } = await seedUsers();
+        const matchID = await seedMatch();
         const developer = await registerUser({
             username: 'dev-overview',
             email: 'dev-overview@example.com',
@@ -341,8 +342,27 @@ describe('Admin Module (e2e)', () => {
         expect(trendRes.body.days).toBe(7);
         expect(Array.isArray(trendRes.body.dailyUsers)).toBe(true);
 
+        const matchesRes = await request(app.getHttpServer())
+            .get('/admin/matches?limit=10')
+            .set('Authorization', `Bearer ${developer.token}`)
+            .expect(200);
+
+        expect(matchesRes.body.total).toBe(1);
+
+        const matchDetailRes = await request(app.getHttpServer())
+            .get(`/admin/matches/${matchID}`)
+            .set('Authorization', `Bearer ${developer.token}`)
+            .expect(200);
+
+        expect(matchDetailRes.body.matchID).toBe(matchID);
+
         await request(app.getHttpServer())
             .get('/admin/users?limit=10')
+            .set('Authorization', `Bearer ${developer.token}`)
+            .expect(403);
+
+        await request(app.getHttpServer())
+            .delete(`/admin/matches/${matchID}`)
             .set('Authorization', `Bearer ${developer.token}`)
             .expect(403);
 

@@ -123,6 +123,45 @@ describe('smashup', () => {
         expect(core.bases.length).toBe(PLAYER_IDS.length + 1);
     });
 
+    it('混合人机座位且未显式指定先手时，factionSelect 默认由真人先手', () => {
+        const runner = createRunner({
+            seatControllers: {
+                '0': { type: 'local-ai' },
+                '1': { type: 'human' },
+            },
+        });
+        const result = runner.run({ name: 'mixed seats human first draft', commands: [] });
+        const core = result.finalState.core;
+
+        expect(core.turnOrder).toEqual(['1', '0']);
+        expect(core.turnOrder[core.currentPlayerIndex]).toBe('1');
+        expect(result.finalState.sys.phase).toBe('factionSelect');
+    });
+
+    it('显式 firstPlayerId/turnOrder 优先于混合人机默认先手策略', () => {
+        const firstPlayerRunner = createRunner({
+            firstPlayerId: '0',
+            seatControllers: {
+                '0': { type: 'local-ai' },
+                '1': { type: 'human' },
+            },
+        });
+        const firstPlayerResult = firstPlayerRunner.run({ name: 'explicit first player keeps priority', commands: [] });
+        expect(firstPlayerResult.finalState.core.turnOrder).toEqual(['0', '1']);
+        expect(firstPlayerResult.finalState.core.turnOrder[firstPlayerResult.finalState.core.currentPlayerIndex]).toBe('0');
+
+        const turnOrderRunner = createRunner({
+            turnOrder: ['0', '1'],
+            seatControllers: {
+                '0': { type: 'local-ai' },
+                '1': { type: 'human' },
+            },
+        });
+        const turnOrderResult = turnOrderRunner.run({ name: 'explicit turn order keeps priority', commands: [] });
+        expect(turnOrderResult.finalState.core.turnOrder).toEqual(['0', '1']);
+        expect(turnOrderResult.finalState.core.turnOrder[turnOrderResult.finalState.core.currentPlayerIndex]).toBe('0');
+    });
+
     it('派系选择完成后初始化正确', () => {
         const runner = createRunner();
         const result = runner.run({

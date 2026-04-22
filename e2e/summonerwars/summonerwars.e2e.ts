@@ -10,7 +10,7 @@ import type { BrowserContext, Locator, Page, TestInfo } from '@playwright/test';
 import { waitForState, waitForPhaseChange } from '../helpers/waitForState';
 import { cloneState, createSWRoomViaAPI } from '../helpers/summonerwars';
 import { setChineseLocale } from '../helpers/common';
-import { injectMatchState } from '../helpers/state-injection';
+import { getMatchState, injectMatchState } from '../helpers/state-injection';
 import { clearEvidenceScreenshotsForTest, getEvidenceScreenshotPath } from '../framework/evidenceScreenshots';
 import { DESKTOP_REFERENCE_VIEWPORT, MOBILE_LANDSCAPE_REFERENCE_VIEWPORT } from '../../src/shared/referenceViewports';
 
@@ -1982,12 +1982,22 @@ const assertMobileLandscapeControlsReachable = async (page: Page, label: string)
 
 const advancePhase = async (page: Page, fromPhase: string) => {
   const endPhaseButton = page.getByTestId('sw-end-phase');
+  const clickEndPhase = async () => {
+    await expect(endPhaseButton).toBeVisible({ timeout: 5000 });
+    try {
+      await endPhaseButton.click({ timeout: 3000 });
+    } catch {
+      await endPhaseButton.evaluate((node) => {
+        (node as HTMLElement | null)?.click();
+      });
+    }
+  };
   await waitForMyTurn(page);
   const currentPhase = await getCurrentPhase(page);
   if (currentPhase !== fromPhase) {
     return currentPhase;
   }
-  await endPhaseButton.click();
+  await clickEndPhase();
   // move/attack 阶段有剩余行动时，第一次点击会进入确认状态（按钮变红），需要再点一次
   const stillSamePhase = await getCurrentPhase(page).catch(() => fromPhase) === fromPhase;
   if (stillSamePhase) {
@@ -1995,7 +2005,7 @@ const advancePhase = async (page: Page, fromPhase: string) => {
       const buttonClass = await endPhaseButton.getAttribute('class');
       return buttonClass?.includes('bg-red') || false;
     }, { timeout: 1000, message: '等待确认状态' }).catch(() => {});
-    await endPhaseButton.click();
+    await clickEndPhase();
   }
   await expect.poll(() => getCurrentPhase(page), { timeout: 8000 }).not.toBe(fromPhase);
   return getCurrentPhase(page);
@@ -5541,37 +5551,31 @@ test.describe('SummonerWars', () => {
     await waitForSummonerWarsUI(guestPage);
 
     // 移除玩家1召唤师，并通过服务端注入 gameover（状态注入不会自动跑一遍管线）
-    const liveMatchState = await hostPage.evaluate(() => {
-      const state = (window as Window & {
-        __BG_TEST_HARNESS__?: {
-          state?: { get?: () => unknown };
-        };
-      }).__BG_TEST_HARNESS__?.state?.get?.();
-      if (!state) {
-        throw new Error('测试态读取失败：__BG_TEST_HARNESS__.state.get 不可用');
-      }
-      return state;
-    }) as any;
-    const gameOverCore = removeSummonerFromCore(liveMatchState.core, '1');
+    const liveMatchState = await getMatchState(matchId!, hostPage);
+    const gameOverCore = removeSummonerFromCore((liveMatchState as any).core, '1');
+    const liveTurnOrder = Array.isArray((liveMatchState.sys as { turnOrder?: unknown } | undefined)?.turnOrder)
+      ? ((liveMatchState.sys as { turnOrder?: unknown[] }).turnOrder ?? []).filter((playerId): playerId is string => typeof playerId === 'string')
+      : Array.isArray((liveMatchState.core as { turnOrder?: unknown } | undefined)?.turnOrder)
+        ? ((liveMatchState.core as { turnOrder?: unknown[] }).turnOrder ?? []).filter((playerId): playerId is string => typeof playerId === 'string')
+        : Object.keys((liveMatchState as any)?.core?.players ?? {});
+    const nextCurrentPlayer = typeof (gameOverCore as { currentPlayer?: unknown })?.currentPlayer === 'string'
+      ? (gameOverCore as { currentPlayer: string }).currentPlayer
+      : (liveTurnOrder[0] ?? '0');
+    const nextCurrentPlayerIndex = Math.max(0, liveTurnOrder.indexOf(nextCurrentPlayer));
     await injectMatchState(matchId!, {
       ...(liveMatchState as any),
       core: gameOverCore,
       sys: {
         ...(liveMatchState as any).sys,
+        turnOrder: liveTurnOrder,
+        currentPlayerIndex: nextCurrentPlayerIndex,
         gameover: { winner: '0' },
       },
     } as any, hostPage);
-    await waitForState(hostPage, async () => {
-      const sysGameover = await hostPage.evaluate(() => {
-        const state = (window as Window & {
-          __BG_TEST_HARNESS__?: {
-            state?: { get?: () => unknown };
-          };
-        }).__BG_TEST_HARNESS__?.state?.get?.() as { sys?: { gameover?: unknown } } | undefined;
-        return state?.sys?.gameover;
-      });
-      return sysGameover !== null && sysGameover !== undefined;
-    }, { timeout: 10000, message: '等待游戏结束状态同步' });
+    await expect.poll(async () => {
+      const state = await getMatchState(matchId!, hostPage);
+      return state?.sys?.gameover ? 'ready' : 'pending';
+    }, { timeout: 10000 }).toBe('ready');
     await closeDebugPanelIfOpen(hostPage);
 
     // 验证结算界面出现
