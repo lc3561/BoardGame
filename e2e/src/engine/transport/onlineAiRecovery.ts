@@ -80,6 +80,7 @@ export type ForceEndTurnStalledAiResolution = {
     reason: ForceEndTurnStalledAiReason;
     requiresConfirmedAdvancePhase?: boolean;
     legalActionOnly?: boolean;
+    allowForceCommandAfterLegalActionExhausted?: boolean;
     fingerprintHint?: string;
     resolution: AiResolution;
 };
@@ -171,7 +172,7 @@ function buildForceEndTurnFromInteractionState(
     reason: 'hidden-interaction' | 'visible-interaction',
 ): ForceEndTurnStalledAiResolution | null {
     const current = (state.sys as { interaction?: { current?: unknown } } | undefined)?.interaction?.current as HiddenSimpleChoiceInteraction | undefined;
-    if (!current || String(current.playerId) !== playerId || typeof current.id !== 'string') {
+    if (!current || String(current.playerId) !== playerId) {
         return null;
     }
 
@@ -189,13 +190,17 @@ function buildForceEndTurnFromInteractionState(
         };
     }
 
+    const fallbackInteractionId = typeof current.id === 'string' && current.id.length > 0
+        ? current.id
+        : `${playerId}:unknown-interaction`;
+
     return {
         playerId,
         reason,
         requiresConfirmedAdvancePhase: true,
         resolution: buildForceEndTurnResolution({
             playerId,
-            suffix: `${reason}:${current.id}`,
+            suffix: `${reason}:${fallbackInteractionId}`,
             commands: [{ type: 'SYS_INTERACTION_CANCEL', payload: {} }],
         }),
     };
@@ -484,6 +489,37 @@ export function resolveForceEndTurnForStalledAi(args: {
         ? args.sharedState.sys.phase
         : '';
     const currentPlayerId = resolveCurrentPlayerId(args.sharedState);
+    const defensivePendingAttack = (args.sharedState?.core as {
+        pendingAttack?: { defenderId?: unknown };
+    } | undefined)?.pendingAttack;
+
+    // DiceThrone defensiveRoll 的真实操作者是防御方 defender（off-turn）。
+    // 当 activePlayer 是 AI 攻击方、但 defender 是 human 时，watchdog 不应误对 AI 攻击方执行 force-end-turn。
+    if (
+        phase === 'defensiveRoll'
+        && currentPlayerId
+        && defensivePendingAttack
+        && typeof defensivePendingAttack.defenderId === 'string'
+        && defensivePendingAttack.defenderId !== currentPlayerId
+        && args.seatControllers[currentPlayerId]?.type !== 'human'
+    ) {
+        const defenderId = defensivePendingAttack.defenderId;
+        if (args.seatControllers[defenderId]?.type === 'human') {
+            return null;
+        }
+        return {
+            playerId: defenderId,
+            reason: 'active-turn-legal-only',
+            legalActionOnly: true,
+            fingerprintHint: `active-turn-legal-only:${defenderId}:defensiveRoll`,
+            resolution: buildForceEndTurnResolution({
+                playerId: defenderId,
+                suffix: `active-turn-legal-only:${defenderId}:defensiveRoll`,
+                commands: [],
+            }),
+        };
+    }
+
     if (currentPlayerId && args.seatControllers[currentPlayerId]?.type !== 'human') {
         // 派系选择阶段的 AI 没动作，通常是 seat 凭据/seat state 还没准备好。
         // 这里若强行发 ADVANCE_PHASE，会把 match 非法推进到 startTurn/playCards，

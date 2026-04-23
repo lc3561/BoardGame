@@ -1185,6 +1185,40 @@ export class GameTransportServer {
             }
             return nextCandidate;
         };
+        const hasHumanResponderInCurrentWindow = (): boolean => {
+            const currentWindow = (match.state.sys as { responseWindow?: { current?: unknown } } | undefined)
+                ?.responseWindow?.current as {
+                    responderQueue?: unknown;
+                } | undefined;
+            if (!currentWindow) {
+                return false;
+            }
+            const responderQueue = Array.isArray(currentWindow.responderQueue) ? currentWindow.responderQueue : [];
+            return responderQueue.some((responderId) => {
+                const id = typeof responderId === 'string' ? responderId : '';
+                return id.length > 0 && seatControllers[id]?.type === 'human';
+            });
+        };
+        const canExecuteWatchdogAdvancePhase = (playerId: string): boolean => {
+            if (!playerId || seatControllers[playerId]?.type === 'human') {
+                return false;
+            }
+
+            if (resolveCurrentPlayerId(match.state) !== playerId) {
+                return false;
+            }
+
+            const interactionState = match.state.sys?.interaction as { current?: unknown; isBlocked?: unknown } | undefined;
+            if (interactionState?.current || interactionState?.isBlocked === true) {
+                return false;
+            }
+
+            if (hasHumanResponderInCurrentWindow()) {
+                return false;
+            }
+
+            return true;
+        };
 
         let currentCandidate = candidate;
         let phaseLabel = currentCandidate.requiresConfirmedAdvancePhase ? 'recover-interaction' : 'follow-up-advance';
@@ -1210,7 +1244,13 @@ export class GameTransportServer {
 
                 if (!actionRecoveryApplied) {
                     const recoveryCommands = currentCandidate.resolution.action.commands;
-                    if (currentCandidate.legalActionOnly === true || recoveryCommands.length === 0) {
+                    const canFallbackToRecoveryCommandAfterLegalActionAttempt =
+                        currentCandidate.allowForceCommandAfterLegalActionExhausted === true
+                        && currentCandidate.legalActionOnly === true
+                        && actionRecovery.outcome === 'no-legal-action'
+                        && recoveryCommands.length > 0;
+                    if ((currentCandidate.legalActionOnly === true && !canFallbackToRecoveryCommandAfterLegalActionAttempt)
+                        || recoveryCommands.length === 0) {
                         const legalActionUnavailableReason = actionRecovery.blockedReason === 'stale-private-overlay'
                             ? 'private_overlay_stale'
                             : actionRecovery.blockedReason === 'missing-private-overlay'
@@ -1232,6 +1272,18 @@ export class GameTransportServer {
                     usedForcedRecoveryCommand = true;
                     const nextCommand = mapRecoveryCommand(recoveryCommands[0]);
                     const nextCommandType = nextCommand?.type ?? 'UNKNOWN';
+                    if (nextCommandType === advancePhaseCommandType
+                        && !canExecuteWatchdogAdvancePhase(currentCandidate.playerId)) {
+                        await this.handleOnlineAiRecoveryFailure(
+                            match,
+                            tracker,
+                            currentCandidate,
+                            phaseLabel,
+                            progressMarkerBeforeRecovery,
+                            'advance_guard_blocked',
+                        );
+                        return;
+                    }
                     const nextSuccess = await this.executeCommandInternal(
                         match,
                         currentCandidate.playerId,
@@ -1324,17 +1376,30 @@ export class GameTransportServer {
                 const shouldRestrictFollowUpToLegalActions = candidate.requiresConfirmedAdvancePhase
                     && (candidate.reason === 'visible-interaction' || candidate.reason === 'hidden-interaction')
                     && nextCandidate.reason === 'active-turn';
+                const currentPhase = typeof match.state.sys?.phase === 'string' ? match.state.sys.phase : '';
+                const allowAdvancePhaseFallbackAfterLegalExhausted = shouldRestrictFollowUpToLegalActions
+                    && !hasHumanResponderInCurrentWindow()
+                    && (
+                        (match.gameId === 'dicethrone' && currentPhase === 'defensiveRoll')
+                        || (match.gameId === 'smashup' && currentPhase === 'scoreBases')
+                    );
                 const normalizedNextCandidate = shouldRestrictFollowUpToLegalActions
                     ? {
                         ...nextCandidate,
                         legalActionOnly: true,
-                        resolution: {
-                            ...nextCandidate.resolution,
-                            action: {
-                                ...nextCandidate.resolution.action,
-                                commands: [],
-                            },
-                        },
+                        ...(allowAdvancePhaseFallbackAfterLegalExhausted
+                            ? {
+                                allowForceCommandAfterLegalActionExhausted: true,
+                            }
+                            : {
+                                resolution: {
+                                    ...nextCandidate.resolution,
+                                    action: {
+                                        ...nextCandidate.resolution.action,
+                                        commands: [],
+                                    },
+                                },
+                            }),
                     }
                     : nextCandidate;
                 const hasLiveSeatConnection = (match.connections.get(candidate.playerId)?.size ?? 0) > 0;
@@ -1349,7 +1414,7 @@ export class GameTransportServer {
             const markerAfterRecovery = buildAiProgressMarker(match.state);
             const unresolvedCandidate = allowNaturalAiContinuation
                 ? null
-                : resolveChainedRecoveryCandidate(candidate.playerId);
+                : await resolveChainedRecoveryCandidate(candidate.playerId);
             if (unresolvedCandidate?.playerId === candidate.playerId) {
                 await this.handleOnlineAiRecoveryFailure(
                     match,
@@ -1913,10 +1978,11 @@ export class GameTransportServer {
         applied: boolean;
         blockedReason: 'missing-visible-state' | 'missing-private-overlay' | 'stale-private-overlay' | null;
         executedCommandTypes: string[];
+        outcome: 'applied' | 'blocked' | 'no-legal-action' | 'legal-action-command-failed';
     }> {
         const seatController = seatControllers[candidate.playerId];
         if (!seatController || seatController.type === 'human') {
-            return { applied: false, blockedReason: null, executedCommandTypes: [] };
+            return { applied: false, blockedReason: null, executedCommandTypes: [], outcome: 'no-legal-action' };
         }
 
         const resolveStrictOnlineDecisionView = (playerId: string) => resolveOnlineAiDecisionView({
@@ -1992,14 +2058,15 @@ export class GameTransportServer {
                     applied: false,
                     blockedReason: aiDispatchResult.blockedReason,
                     executedCommandTypes: [],
+                    outcome: 'blocked',
                 };
             }
-            return { applied: false, blockedReason: null, executedCommandTypes: [] };
+            return { applied: false, blockedReason: null, executedCommandTypes: [], outcome: 'no-legal-action' };
         }
 
         const resolution = aiDispatchResult.resolution;
         if (resolution.playerId !== candidate.playerId || resolution.action.commands.length === 0) {
-            return { applied: false, blockedReason: null, executedCommandTypes: [] };
+            return { applied: false, blockedReason: null, executedCommandTypes: [], outcome: 'no-legal-action' };
         }
 
         const markerBefore = buildAiProgressMarker(match.state);
@@ -2014,7 +2081,7 @@ export class GameTransportServer {
             );
             if (!success) {
                 tracker.autoSubmittedAt = null;
-                return { applied: false, blockedReason: null, executedCommandTypes: [] };
+                return { applied: false, blockedReason: null, executedCommandTypes: [], outcome: 'legal-action-command-failed' };
             }
             executedCommandTypes.push(command.type);
         }
@@ -2022,7 +2089,7 @@ export class GameTransportServer {
         const markerAfter = buildAiProgressMarker(match.state);
         if (markerAfter === markerBefore) {
             tracker.autoSubmittedAt = null;
-            return { applied: false, blockedReason: null, executedCommandTypes: [] };
+            return { applied: false, blockedReason: null, executedCommandTypes: [], outcome: 'legal-action-command-failed' };
         }
 
         // legal-action recovery 会串行执行 1..N 条命令，前面用 suppressBroadcast 合并中间态；
@@ -2065,7 +2132,7 @@ export class GameTransportServer {
             });
         }
 
-        return { applied: true, blockedReason: null, executedCommandTypes };
+        return { applied: true, blockedReason: null, executedCommandTypes, outcome: 'applied' };
     }
 
     private maybeTriggerOnlineAiOverlayResync(args: {
