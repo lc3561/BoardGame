@@ -33,6 +33,11 @@ const DEVELOPER_NAV_ITEMS: NavItem[] = [
     { icon: MessageSquareWarning, label: '反馈管理', path: '/admin/feedback' },
 ];
 
+const VIEWER_NAV_ITEMS: NavItem[] = [
+    { icon: LayoutDashboard, label: '概览', path: '/admin' },
+    { icon: Gamepad2, label: '对局记录', path: '/admin/matches' },
+];
+
 const ADMIN_NAV_ITEMS: NavItem[] = [
     { icon: LayoutDashboard, label: '概览', path: '/admin' },
     { icon: Users, label: '用户管理', path: '/admin/users' },
@@ -56,12 +61,15 @@ export default function AdminLayout() {
     }, [closeAll]);
 
     const isDeveloper = user?.role === 'developer';
-    const navItems = isDeveloper ? DEVELOPER_NAV_ITEMS : ADMIN_NAV_ITEMS;
+    const isViewer = !user || user.role === 'user';
+    const navItems = isDeveloper ? DEVELOPER_NAV_ITEMS : (isViewer ? VIEWER_NAV_ITEMS : ADMIN_NAV_ITEMS);
     const roleLabel = user?.role === 'admin'
         ? '管理员'
         : user?.role === 'developer'
             ? '开发者'
-            : '普通用户';
+            : user?.role === 'user'
+                ? '普通用户'
+                : '游客';
 
     const isActive = (path: string) => {
         if (path === '/admin') return location.pathname === '/admin';
@@ -78,10 +86,10 @@ export default function AdminLayout() {
                         </div>
                         <div>
                             <h1 className="text-sm font-bold tracking-wide text-white">
-                                {isDeveloper ? 'CONTENT PANEL' : 'ADMIN PANEL'}
+                                {isDeveloper ? 'CONTENT PANEL' : isViewer ? 'DATA PANEL' : 'ADMIN PANEL'}
                             </h1>
                             <p className="text-[10px] font-semibold uppercase tracking-wider opacity-60">
-                                {isDeveloper ? 'Creator Workspace' : 'BoardGame Platform'}
+                                {isDeveloper ? 'Creator Workspace' : isViewer ? 'Public Dashboard' : 'BoardGame Platform'}
                             </p>
                         </div>
                     </div>
@@ -137,17 +145,19 @@ export default function AdminLayout() {
                                 )}
                             </div>
                             <div className="min-w-0 flex-1">
-                                <p className="truncate text-sm font-bold text-white">{user?.username}</p>
+                                <p className="truncate text-sm font-bold text-white">{user?.username ?? '游客'}</p>
                                 <p className="truncate text-xs text-zinc-500">{roleLabel}</p>
                             </div>
                         </div>
-                        <button
-                            onClick={logout}
-                            className="flex w-full items-center justify-center gap-2 rounded-lg border border-transparent bg-red-400/10 px-3 py-2 text-xs font-medium text-red-400 transition-colors hover:border-red-400/20 hover:bg-red-400/20"
-                        >
-                            <LogOut size={14} />
-                            退出登录
-                        </button>
+                        {user ? (
+                            <button
+                                onClick={logout}
+                                className="flex w-full items-center justify-center gap-2 rounded-lg border border-transparent bg-red-400/10 px-3 py-2 text-xs font-medium text-red-400 transition-colors hover:border-red-400/20 hover:bg-red-400/20"
+                            >
+                                <LogOut size={14} />
+                                退出登录
+                            </button>
+                        ) : null}
                     </div>
                     <div className="mt-4 text-center">
                         <Link to="/" className="text-xs text-zinc-600 transition-colors hover:text-indigo-400">

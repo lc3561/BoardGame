@@ -188,7 +188,10 @@ function handleShowdownBonus({ attackerId, sourceAbilityId, timestamp, random, a
 function handleDuelResolve({ sourceAbilityId, state, timestamp, random, action }: CustomActionContext): DiceThroneEvent[] {
     if (!random) return [];
 
-    const defenderRoll = state.dice[0]?.value ?? 1;
+    // 产品特例：duel 可在未手动掷骰时直接结束防御，此时由系统为防御方自动掷 1 颗骰子。
+    const defenderRoll = (state.rollCount > 0 && state.rollConfirmed)
+        ? (state.dice[0]?.value ?? 1)
+        : random.d(6);
     const attackerRoll = random.d(6);
     const originalAttackerId = state.pendingAttack?.attackerId;
     const originalDefenderId = state.pendingAttack?.defenderId;
@@ -196,32 +199,53 @@ function handleDuelResolve({ sourceAbilityId, state, timestamp, random, action }
 
     const winOnTie = action.params?.winOnTie === true;
     const duelWon = winOnTie ? defenderRoll >= attackerRoll : defenderRoll > attackerRoll;
+    const defenderFace = getPlayerDieFace(state, originalDefenderId, defenderRoll);
+    const attackerFace = getPlayerDieFace(state, originalAttackerId, attackerRoll);
 
-    if (duelWon) {
-        return [{
-            type: 'CHOICE_REQUESTED',
-            payload: {
-                playerId: originalDefenderId,
-                sourceAbilityId,
-                titleKey: 'choices.gunslingerDuel.title',
-                options: [
+    return [{
+        type: 'CHOICE_REQUESTED',
+        payload: {
+            playerId: originalDefenderId,
+            sourceAbilityId,
+            titleKey: duelWon ? 'choices.gunslingerDuel.title' : 'compareRoll.gunslingerDuel.title',
+            options: duelWon
+                ? [
                     { value: 3, customId: 'gunslinger-duel-deal-3', labelKey: 'choices.gunslingerDuel.deal3' },
                     { value: 50, customId: 'gunslinger-duel-prevent-half', labelKey: 'choices.gunslingerDuel.preventHalf' },
+                ]
+                : [],
+            compareRoll: {
+                contestants: [
+                    {
+                        playerId: originalDefenderId,
+                        labelKey: 'compareRoll.gunslingerDuel.defender',
+                        roll: defenderRoll,
+                        face: defenderFace,
+                        characterId: state.players[originalDefenderId]?.characterId,
+                    },
+                    {
+                        playerId: originalAttackerId,
+                        labelKey: 'compareRoll.gunslingerDuel.attacker',
+                        roll: attackerRoll,
+                        face: attackerFace,
+                        characterId: state.players[originalAttackerId]?.characterId,
+                    },
                 ],
+                resultTextKey: duelWon
+                    ? 'compareRoll.gunslingerDuel.win'
+                    : (defenderRoll === attackerRoll && !winOnTie
+                        ? 'compareRoll.gunslingerDuel.tieLose'
+                        : 'compareRoll.gunslingerDuel.lose'),
+                resultTone: duelWon ? 'success' : 'danger',
+                ...(duelWon ? {} : {
+                    confirmValue: { value: 1, customId: 'gunslinger-duel-lose' },
+                    autoConfirmDelayMs: 1300,
+                }),
             },
-            sourceCommandType: 'ABILITY_EFFECT',
-            timestamp,
-        } as ChoiceRequestedEvent];
-    }
-
-    const damageCalc = createDamageCalculation({
-        source: { playerId: originalDefenderId, abilityId: sourceAbilityId },
-        target: { playerId: originalAttackerId },
-        baseDamage: 1,
-        state,
+        },
+        sourceCommandType: 'ABILITY_EFFECT',
         timestamp,
-    });
-    return damageCalc.toEvents() as DiceThroneEvent[];
+    } as ChoiceRequestedEvent];
 }
 
 function handleWildWest({ attackerId, sourceAbilityId, state, timestamp }: CustomActionContext): DiceThroneEvent[] {
@@ -774,6 +798,20 @@ export function registerGunslingerCustomActions(): void {
             source: { playerId, abilityId: sourceAbilityId },
             target: { playerId: originalAttackerId },
             baseDamage: 3,
+            state,
+            timestamp,
+        });
+        return damageCalc.toEvents() as DiceThroneEvent[];
+    });
+
+    registerChoiceResolvedEventHandler('gunslinger-duel-lose', ({ state, playerId, sourceAbilityId, timestamp }) => {
+        const originalAttackerId = state.pendingAttack?.attackerId;
+        if (!originalAttackerId) return [];
+
+        const damageCalc = createDamageCalculation({
+            source: { playerId, abilityId: sourceAbilityId },
+            target: { playerId: originalAttackerId },
+            baseDamage: 1,
             state,
             timestamp,
         });

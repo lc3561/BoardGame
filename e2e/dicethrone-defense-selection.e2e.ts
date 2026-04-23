@@ -160,13 +160,13 @@ async function setupGunslingerDuelCompareRollScene(game: GameTestContext): Promi
                     kind: 'compare-roll-choice',
                     playerId: '1',
                     data: {
-                        title: 'compareRoll.gunslinger.duel.title',
+                        title: 'compareRoll.gunslingerDuel.title',
                         sourceId: 'duel',
                         contestants: [
                             {
                                 playerId: '1',
-                                label: 'compareRoll.gunslinger.duel.defenderLabel',
-                                labelKey: 'compareRoll.gunslinger.duel.defenderLabel',
+                                label: 'compareRoll.gunslingerDuel.defender',
+                                labelKey: 'compareRoll.gunslingerDuel.defender',
                                 roll: 6,
                                 face: 'bullet',
                                 characterId: 'gunslinger',
@@ -175,8 +175,8 @@ async function setupGunslingerDuelCompareRollScene(game: GameTestContext): Promi
                             },
                             {
                                 playerId: '0',
-                                label: 'compareRoll.gunslinger.duel.attackerLabel',
-                                labelKey: 'compareRoll.gunslinger.duel.attackerLabel',
+                                label: 'compareRoll.gunslingerDuel.attacker',
+                                labelKey: 'compareRoll.gunslingerDuel.attacker',
                                 roll: 1,
                                 face: 'fist',
                                 characterId: 'monk',
@@ -184,8 +184,8 @@ async function setupGunslingerDuelCompareRollScene(game: GameTestContext): Promi
                                 effectParams: { value: 1 },
                             },
                         ],
-                        resultText: 'compareRoll.gunslinger.duel.win',
-                        resultTextKey: 'compareRoll.gunslinger.duel.win',
+                        resultText: 'compareRoll.gunslingerDuel.win',
+                        resultTextKey: 'compareRoll.gunslingerDuel.win',
                         resultTone: 'success',
                         options: [
                             {
@@ -271,13 +271,13 @@ async function setupGunslingerShowdownCompareRollScene(game: GameTestContext): P
                     kind: 'compare-roll-choice',
                     playerId: '0',
                     data: {
-                        title: 'compareRoll.gunslinger.showdown.title',
+                        title: 'compareRoll.gunslingerDuel.title',
                         sourceId: 'showdown',
                         contestants: [
                             {
                                 playerId: '0',
-                                label: 'compareRoll.gunslinger.showdown.attackerLabel',
-                                labelKey: 'compareRoll.gunslinger.showdown.attackerLabel',
+                                label: 'compareRoll.gunslingerDuel.attacker',
+                                labelKey: 'compareRoll.gunslingerDuel.attacker',
                                 roll: 6,
                                 face: 'bullet',
                                 characterId: 'gunslinger',
@@ -286,8 +286,8 @@ async function setupGunslingerShowdownCompareRollScene(game: GameTestContext): P
                             },
                             {
                                 playerId: '1',
-                                label: 'compareRoll.gunslinger.showdown.defenderLabel',
-                                labelKey: 'compareRoll.gunslinger.showdown.defenderLabel',
+                                label: 'compareRoll.gunslingerDuel.defender',
+                                labelKey: 'compareRoll.gunslingerDuel.defender',
                                 roll: 1,
                                 face: 'fist',
                                 characterId: 'monk',
@@ -295,9 +295,7 @@ async function setupGunslingerShowdownCompareRollScene(game: GameTestContext): P
                                 effectParams: { value: 1 },
                             },
                         ],
-                        resultText: 'compareRoll.gunslinger.showdown.win',
-                        resultTextKey: 'compareRoll.gunslinger.showdown.win',
-                        resultTextParams: { bonus: 2 },
+                        resultText: '本次攻击伤害 +2',
                         resultTone: 'success',
                         confirmValue: { value: 2, customId: 'gunslinger-showdown-apply-bonus' },
                         autoConfirmDelayMs: 400,
@@ -411,31 +409,31 @@ test.describe('DiceThrone - 防御技能选择', () => {
         await expect(overlay).toBeVisible({ timeout: 5000 });
         await expect(page.getByTestId('compare-roll-participant-0')).toBeVisible();
         await expect(page.getByTestId('compare-roll-participant-1')).toBeVisible();
-        await expect(page.getByTestId('compare-roll-result')).toContainText('你赢下对决');
+        await expect(page.getByTestId('compare-roll-result')).toContainText('你赢得了对决');
         await expect(page.getByRole('button', { name: /抵挡 1\/2 进攻伤害/i })).toBeVisible();
 
         await game.screenshot('gunslinger-duel-compare-roll-choice', testInfo);
 
         await page.getByRole('button', { name: /抵挡 1\/2 进攻伤害/i }).click();
+        await game.screenshot('gunslinger-duel-compare-roll-after-click', testInfo);
 
         await expect.poll(async () => {
             const state = await game.getState();
             return {
                 interactionKind: state?.sys?.interaction?.current?.kind ?? null,
                 phase: state?.sys?.phase ?? null,
-                defenderShieldReduction: state?.core?.players?.['1']?.damageShields?.[0]?.reductionPercent ?? null,
-                defenderShieldSource: state?.core?.players?.['1']?.damageShields?.[0]?.sourceId ?? null,
                 defenseAbilityId: state?.core?.pendingAttack?.defenseAbilityId ?? null,
+                pendingAttack: state?.core?.pendingAttack ?? null,
             };
         }, { timeout: 8000 }).toMatchObject({
             interactionKind: null,
-            phase: 'defensiveRoll',
-            defenderShieldReduction: 50,
-            defenderShieldSource: 'duel',
-            defenseAbilityId: 'duel',
+            phase: 'main2',
+            defenseAbilityId: null,
+            pendingAttack: null,
         });
 
         await expect(overlay).toBeHidden();
+        await game.screenshot('gunslinger-duel-compare-roll-settled', testInfo);
     });
 
     test('枪手 Showdown 应展示双方对掷 UI，并在自动确认后继续结算链路', async ({ page, game }, testInfo) => {

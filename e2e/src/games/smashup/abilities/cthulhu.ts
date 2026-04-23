@@ -212,13 +212,21 @@ function cthulhuCorruption(ctx: AbilityContext): AbilityResult {
         state: ctx.state,
         sourcePlayerId: ctx.playerId, sourceDefId: ctx.defId,
         effectType: 'destroy',
-    });
+    }).map(option => ({
+        ...option,
+        displayMode: 'card' as const,
+    }));
     if (targetOptions.length === 0) return { events };
     const interaction = createSimpleChoice(
         `cthulhu_corruption_${ctx.now}`, ctx.playerId,
         '选择要消灭的随从',
         targetOptions,
-        { sourceId: 'cthulhu_corruption', targetType: 'minion' },
+        {
+            sourceId: 'cthulhu_corruption',
+            targetType: 'generic',
+            autoRefresh: 'field',
+            responseValidationMode: 'live',
+        },
     );
     return { events, matchState: queueInteraction(ctx.matchState, interaction) };
 }

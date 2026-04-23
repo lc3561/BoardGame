@@ -632,21 +632,74 @@ export function registerZombieInteractionHandlers(): void {
     registerInteractionHandler('zombie_lord_pick', (state, playerId, value, iData, _random, timestamp) => {
         const selected = value as { done?: boolean; cardUid?: string; defId?: string; power?: number; baseIndex?: number };
         if (selected.done) return { state, events: [] }; // 完成
-        const { cardUid, defId, power, baseIndex } = selected as { cardUid: string; defId: string; power: number; baseIndex: number };
-        const contCtx = iData?.continuationContext as { emptyBases: { baseIndex: number; label: string }[]; usedCardUids: string[]; filledBases: number[] };
+
+        const contCtx = iData?.continuationContext as
+            | { emptyBases: { baseIndex: number; label: string }[]; usedCardUids: string[]; filledBases: number[] }
+            | undefined;
+        if (!contCtx || !Array.isArray(contCtx.emptyBases) || !Array.isArray(contCtx.usedCardUids) || !Array.isArray(contCtx.filledBases)) {
+            return { state, events: [] };
+        }
+
+        if (typeof selected.cardUid !== 'string') {
+            return { state, events: [] };
+        }
+
+        const player = state.core.players[playerId];
+        if (!player) return { state, events: [] };
+
+        const discardCard = player.discard.find(c => c.uid === selected.cardUid && c.type === 'minion');
+        if (!discardCard) return { state, events: [] };
+
+        const discardDef = getCardDef(discardCard.defId) as MinionCardDef | undefined;
+        if (!discardDef || discardDef.power > 2) return { state, events: [] };
+
+        const remainingBaseIndices = contCtx.emptyBases
+            .map(base => base.baseIndex)
+            .filter((baseIndex) =>
+                Number.isInteger(baseIndex)
+                && baseIndex >= 0
+                && baseIndex < state.core.bases.length
+                && !contCtx.filledBases.includes(baseIndex),
+            );
+        if (remainingBaseIndices.length === 0) return { state, events: [] };
+
+        // AI/自动恢复链路可能只回传 optionId，未合并 baseIndex；此时回退到首个可用基地，避免写入脏事件。
+        const resolvedBaseIndex = (
+            typeof selected.baseIndex === 'number' && remainingBaseIndices.includes(selected.baseIndex)
+        ) ? selected.baseIndex : remainingBaseIndices[0];
+
+        if (!validateDiscardMinionPlaySemantics(state.core, playerId, {
+            cardUid: discardCard.uid,
+            baseIndex: resolvedBaseIndex,
+            consumesNormalLimit: false,
+        }).valid) {
+            return { state, events: [] };
+        }
+
         const playedEvt: MinionPlayedEvent = {
             type: SU_EVENTS.MINION_PLAYED,
-            payload: { playerId, cardUid, defId, baseIndex, power, fromDiscard: true },
+            payload: {
+                playerId,
+                cardUid: discardCard.uid,
+                defId: discardCard.defId,
+                baseIndex: resolvedBaseIndex,
+                baseDefId: state.core.bases[resolvedBaseIndex]?.defId,
+                power: discardDef.power,
+                fromDiscard: true,
+                consumesNormalLimit: false,
+            },
             timestamp,
         };
         const events: SmashUpEvent[] = [playedEvt];
+
         // 更新已用列表
-        const usedCardUids = [...contCtx.usedCardUids, cardUid];
-        const filledBases = [...contCtx.filledBases, baseIndex];
+        const usedCardUids = [...contCtx.usedCardUids, discardCard.uid];
+        const filledBases = [...contCtx.filledBases, resolvedBaseIndex];
+
         // 检查是否还有空基地和弃牌堆随从
         const remainingBases = contCtx.emptyBases.filter(b => !filledBases.includes(b.baseIndex));
         if (remainingBases.length === 0) return { state, events };
-        const player = state.core.players[playerId];
+
         const remainingMinions = player.discard.filter(c => {
             if (c.type !== 'minion') return false;
             if (usedCardUids.includes(c.uid)) return false;
@@ -654,6 +707,7 @@ export function registerZombieInteractionHandlers(): void {
             return def != null && def.power <= 2;
         });
         if (remainingMinions.length === 0) return { state, events };
+
         // 继续下一轮
         const next = zombieLordBuildInteraction(playerId, remainingMinions, contCtx.emptyBases, usedCardUids, filledBases, timestamp);
         return { state: queueInteraction(state, next), events };

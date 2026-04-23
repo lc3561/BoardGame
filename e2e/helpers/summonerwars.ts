@@ -247,6 +247,31 @@ export const waitForFactionSelectionReady = async (page: Page, timeout = 30000) 
   await expect(getFactionSelectionRoot(page)).toBeVisible({ timeout });
 };
 
+export const waitForOverlayState = async (page: Page, overlayTestId: string, expected: 'open' | 'closed') => {
+  await expect
+    .poll(
+      async () =>
+        page.evaluate(
+          ({ testId, target }) => {
+            const overlays = Array.from(document.querySelectorAll(`[data-testid="${testId}"]`)) as HTMLElement[];
+            const visibleCount = overlays.filter((overlay) => {
+              const styles = window.getComputedStyle(overlay);
+              return (
+                styles.display !== 'none' &&
+                styles.visibility !== 'hidden' &&
+                styles.pointerEvents !== 'none' &&
+                styles.opacity !== '0'
+              );
+            }).length;
+            return target === 'open' ? visibleCount > 0 : visibleCount === 0;
+          },
+          { testId: overlayTestId, target: expected },
+        ),
+      { timeout: 5000 },
+    )
+    .toBe(true);
+};
+
 // ============================================================================
 // 阵营选择（通过 dispatch 命令）
 // ============================================================================

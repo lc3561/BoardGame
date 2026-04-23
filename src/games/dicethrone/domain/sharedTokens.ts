@@ -38,6 +38,28 @@ export const SHARED_TOKENS: TokenDef[] = [
     },
 
     /**
+     * 眩晕（Stun）- 跳过下个进攻掷骰阶段并自动移除
+     *
+     * 使用角色：炎术士
+     */
+    {
+        id: STATUS_IDS.STUN,
+        name: statusText(STATUS_IDS.STUN, 'name'),
+        colorTheme: 'from-yellow-600 to-amber-500',
+        description: statusText(STATUS_IDS.STUN, 'description') as unknown as string[],
+        sfxKey: 'fantasy.medieval_fantasy_sound_fx_pack_vol.weapons.weapon_power_up_lightning',
+        stackLimit: 1,
+        category: 'debuff',
+        passiveTrigger: {
+            timing: 'onPhaseEnter',
+            removable: true,
+            actions: [{ type: 'skipPhase', target: 'self' }],
+        },
+        frameId: 'stun',
+        atlasId: DICETHRONE_STATUS_ATLAS_IDS.PYROMANCER,
+    },
+
+    /**
      * 闪避（Evasive）- 下次攻击完全闪避
      * 
      * 使用角色：月精灵、武僧、枪手

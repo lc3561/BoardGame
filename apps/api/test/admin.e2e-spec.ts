@@ -308,12 +308,30 @@ describe('Admin Module (e2e)', () => {
         return record.matchID as string;
     };
 
-    it('非管理员访问 - forbidden', async () => {
+    it('游客与普通用户可访问公开概览与对局只读接口', async () => {
         const { userToken } = await seedUsers();
+        const matchID = await seedMatch();
+
+        await request(app.getHttpServer())
+            .get('/admin/stats')
+            .expect(200);
+
+        await request(app.getHttpServer())
+            .get('/admin/stats/trend?days=7')
+            .expect(200);
+
+        await request(app.getHttpServer())
+            .get('/admin/matches?limit=10')
+            .expect(200);
+
+        await request(app.getHttpServer())
+            .get(`/admin/matches/${matchID}`)
+            .expect(200);
+
         await request(app.getHttpServer())
             .get('/admin/stats')
             .set('Authorization', `Bearer ${userToken}`)
-            .expect(403);
+            .expect(200);
     });
 
     it('developer 可访问概览统计，但不能访问管理员专属接口', async () => {

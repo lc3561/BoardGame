@@ -100,8 +100,8 @@ export class GameTransportClient {
     /**
      * 更新本地缓存的最新状态
      *
-     * 供 GameProvider 在乐观引擎回滚时回写权威状态，
-     * 确保后续 patch 应用基准正确。
+     * 仅允许回写“服务端权威态”，作为后续 state:patch 的 apply 基线。
+     * 不要传入经过 reconcile / filter / UI 修饰后的渲染态，否则会污染 patch base。
      */
     updateLatestState(state: unknown): void {
         this._latestState = state;

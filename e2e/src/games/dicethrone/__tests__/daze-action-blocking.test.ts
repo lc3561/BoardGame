@@ -1,7 +1,8 @@
 /**
- * Daze 统一语义回归测试
+ * Daze / Stun 语义回归测试
  *
- * Daze 仅表示“攻击结算后立即额外攻击”，不再阻止玩家行动。
+ * - Daze：若在当前回合仍存在，应禁止打牌（反馈：中了眩晕还能出牌）。
+ * - Stun：本回合内禁止打牌。
  */
 
 import { describe, it, expect } from 'vitest';
@@ -15,8 +16,8 @@ function createCore(): DiceThroneCore {
     return createInitializedState(['0', '1'], fixedRandom).core;
 }
 
-describe('Daze 统一语义', () => {
-    it('daze 状态不阻止打牌', () => {
+describe('Daze / Stun 语义', () => {
+    it('daze 状态会阻止当前回合玩家打牌', () => {
         const core = createCore();
         core.players['0'].statusEffects[STATUS_IDS.DAZE] = 1;
 
@@ -33,9 +34,9 @@ describe('Daze 统一语义', () => {
             'main1'
         );
 
-        expect(result.valid).toBe(true);
+        expect(result.valid).toBe(false);
         if (!result.valid) {
-            expect(result.error).not.toBe('player_is_dazed');
+            expect(result.error).toBe('player_is_dazed');
         }
     });
 
@@ -59,6 +60,29 @@ describe('Daze 统一语义', () => {
         expect(result.valid).toBe(true);
         if (!result.valid) {
             expect(result.error).not.toBe('player_is_dazed');
+        }
+    });
+
+    it('stun 状态会阻止当前回合玩家打牌', () => {
+        const core = createCore();
+        core.players['0'].statusEffects[STATUS_IDS.STUN] = 1;
+
+        const firstCard = core.players['0'].hand[0];
+        expect(firstCard).toBeDefined();
+
+        const result = validateCommand(
+            core,
+            {
+                type: 'PLAY_CARD',
+                playerId: '0',
+                payload: { cardId: firstCard.id },
+            } as DiceThroneCommand,
+            'main1'
+        );
+
+        expect(result.valid).toBe(false);
+        if (!result.valid) {
+            expect(result.error).toBe('player_is_stunned');
         }
     });
 });

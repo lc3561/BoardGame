@@ -215,23 +215,22 @@ describe('燃烧+中毒同时存在时 upkeep 处理', () => {
 // 3. 眩晕/脑震荡/缠绕处理正确性
 // ============================================================================
 
-describe('晕眩（daze）进攻阶段处理', () => {
-    it('有 daze 时进入 offensiveRoll 不会自动移除，继续保留到攻击结算链消费', () => {
+describe('眩晕（stun）进攻阶段处理', () => {
+    it('有 stun 时进入 offensiveRoll 会被跳过并自动移除', () => {
         const runner = createRunner(fixedRandom);
         const result = runner.run({
-            name: '眩晕跳过进攻',
+            name: 'stun 跳过进攻',
             setup: (playerIds, random) => {
                 const state = createNoResponseSetupWithEmptyHand()(playerIds, random);
-                state.core.players['0'].statusEffects[STATUS_IDS.DAZE] = 1;
+                state.core.players['0'].statusEffects[STATUS_IDS.STUN] = 1;
                 return state;
             },
             commands: [
-                cmd('ADVANCE_PHASE', '0'), // main1 → offensiveRoll（stun 移除）
-                cmd('ADVANCE_PHASE', '0'), // offensiveRoll → main2（无 pendingAttack）
+                cmd('ADVANCE_PHASE', '0'), // main1 → offensiveRoll（被 stun 跳过）
             ],
             expect: {
                 turnPhase: 'main2',
-                players: { '0': { statusEffects: { [STATUS_IDS.DAZE]: 1 } } },
+                players: { '0': { statusEffects: { [STATUS_IDS.STUN]: 0 } } },
             },
         });
         expect(result.assertionErrors).toEqual([]);

@@ -16,9 +16,10 @@ import { mkdirSync } from 'node:fs';
 import { test, expect } from '../framework';
 import { join } from 'node:path';
 
-import { STATUS_IDS, TOKEN_IDS } from '../src/games/dicethrone/domain/ids';
+import { BARBARIAN_DICE_FACE_IDS, STATUS_IDS, TOKEN_IDS } from '../src/games/dicethrone/domain/ids';
 import { RESOURCE_IDS } from '../src/games/dicethrone/domain/resources';
 import type { GameTestContext as __ThreeAxeFrameworkMarker } from '../framework';
+import { getMatchState, injectMatchState } from '../helpers/state-injection';
 
 type __ThreeAxeGameMarker = {
   openTestGame: (gameId: string) => Promise<void>;
@@ -36,6 +37,9 @@ import {
     readCoreState,
     applyCoreStateDirect,
     applyDiceValues,
+    advanceToOffensiveRoll,
+    dispatchDiceThroneCommand,
+    selectFirstHighlightedAbility,
     closeDebugPanelIfOpen,
     maybePassResponse,
     selectCharacter,
@@ -179,6 +183,45 @@ const startNamedOnlineMatch = async (
 
 const getSelfTokenArea = (page: import('@playwright/test').Page) =>
     page.locator('[data-tutorial-id="status-tokens"]');
+
+const applyOnlineMatchState = async (
+    matchId: string,
+    page: import('@playwright/test').Page,
+    updater: (state: any) => any,
+) => {
+    const currentState = await getMatchState(matchId, page);
+    const normalizeInjectedMatchState = (rawState: any) => {
+        const next = structuredClone(rawState);
+        const root = next?.G && typeof next.G === 'object' ? next.G : next;
+        const core = root?.core ?? {};
+        const sys = root?.sys ?? {};
+        const fallbackTurnOrder = Array.isArray(sys.turnOrder)
+            ? [...sys.turnOrder]
+            : Array.isArray(core.turnOrder)
+                ? [...core.turnOrder]
+                : Object.keys(core.players ?? {});
+        const currentPlayerIndex = typeof sys.currentPlayerIndex === 'number'
+            ? sys.currentPlayerIndex
+            : typeof core.currentPlayerIndex === 'number'
+                ? core.currentPlayerIndex
+                : Math.max(0, fallbackTurnOrder.indexOf(core.activePlayerId ?? '0'));
+
+        root.sys = {
+            ...sys,
+            matchId,
+            turnOrder: fallbackTurnOrder,
+            currentPlayerIndex,
+        };
+        root.core = {
+            ...core,
+            phase: typeof core.phase === 'string' ? core.phase : root.sys.phase,
+        };
+        return next;
+    };
+    const nextState = normalizeInjectedMatchState(updater(structuredClone(currentState)));
+    await injectMatchState(matchId, nextState, page);
+    await page.waitForTimeout(700);
+};
 
 // ============================================================================
 // 影子盗贼：偷取CP、暗影防御、恐惧反击、终极、与影共生
@@ -567,6 +610,127 @@ test.describe('狂战士机制补充', () => {
             const coreFinal = await readCoreState(activePage) as Record<string, unknown>;
             expect(getPlayerHp(coreFinal, inactiveId), '应造成剑面伤害').toBe(hpBefore - 3);
             expect(getPlayerStatus(coreFinal, inactiveId)[STATUS_IDS.CONCUSSION], '应施加脑震荡').toBe(1);
+
+            await closeDebugPanelIfOpen(activePage);
+        } finally {
+            await hostContext.close();
+            await guestContext.close();
+        }
+    });
+
+    test('5个6点时应出现并可选择狂怒（Rage）', async ({ browser }, testInfo) => {
+        test.setTimeout(120000);
+        const baseURL = testInfo.project.use.baseURL as string | undefined;
+        const match = await setupOnlineMatch(browser, baseURL, 'barbarian', 'monk');
+        if (!match) { test.skip(true, '游戏服务器不可用'); return; }
+        const { hostPage, guestPage, hostContext, guestContext, matchId } = match;
+
+        try {
+            await selectCharacter(hostPage, 'barbarian');
+            await selectCharacter(guestPage, 'monk');
+            await readyAndStartGame(hostPage, guestPage);
+            await waitForGameBoard(hostPage);
+            await waitForGameBoard(guestPage);
+            await hostPage.waitForTimeout(1200);
+            const { activePage, activeId } = await getActivePlayer(hostPage, guestPage);
+
+            await advanceToOffensiveRoll(activePage);
+
+            const rollButton = activePage.locator('[data-tutorial-id="dice-roll-button"]');
+            await expect(rollButton).toBeVisible({ timeout: 10000 });
+
+            await applyOnlineMatchState(matchId, activePage, (state) => {
+                const next = structuredClone(state);
+                const root = next?.G && typeof next.G === 'object' ? next.G : next;
+                const core = root?.core ?? {};
+                const sys = root?.sys ?? {};
+                const currentDice = Array.isArray(core.dice) ? core.dice : [];
+
+                root.core = {
+                    ...core,
+                    activePlayerId: activeId,
+                    phase: 'offensiveRoll',
+                    rollCount: Math.max(1, Number(core.rollCount ?? 0)),
+                    rollLimit: Math.max(2, Number(core.rollLimit ?? 2)),
+                    rollDiceCount: 5,
+                    rollConfirmed: false,
+                    pendingAttack: null,
+                    pendingDamage: null,
+                    activatingAbilityId: undefined,
+                    dice: currentDice.map((die: Record<string, unknown>, index: number) => {
+                        if (index >= 5) return die;
+                        return {
+                            ...die,
+                            value: 6,
+                            symbol: BARBARIAN_DICE_FACE_IDS.STRENGTH,
+                            symbols: [BARBARIAN_DICE_FACE_IDS.STRENGTH],
+                            isKept: false,
+                        };
+                    }),
+                };
+                root.sys = {
+                    ...sys,
+                    phase: 'offensiveRoll',
+                };
+
+                return next;
+            });
+
+            const coreAfterRoll = await readCoreState(activePage) as Record<string, unknown>;
+            expect(
+                ((coreAfterRoll.dice as Array<{ value?: number }>) ?? []).map((die) => Number(die?.value ?? 0)),
+                '投骰后骰值应为 5 个 6',
+            ).toEqual([6, 6, 6, 6, 6]);
+            await closeDebugPanelIfOpen(activePage);
+
+            const confirmButton = activePage.locator('[data-tutorial-id="dice-confirm-button"]');
+            await expect(confirmButton).toBeVisible({ timeout: 10000 });
+            await confirmButton.click();
+            await activePage.waitForTimeout(800);
+
+            const highlightedRageSlot = activePage
+                .locator('[data-ability-slot]')
+                .filter({ has: activePage.locator('div.animate-pulse[class*="border-"]') })
+                .filter({ hasText: /狂怒|rage/i })
+                .first();
+            const rageSlotById = activePage
+                .locator('[data-ability-slot="rage"], [data-ability-slot*="rage"], [data-ability-id="rage"]')
+                .first();
+            if (await highlightedRageSlot.isVisible({ timeout: 2000 }).catch(() => false)) {
+                await highlightedRageSlot.click();
+            } else if (await rageSlotById.isVisible({ timeout: 2000 }).catch(() => false)) {
+                await rageSlotById.click();
+            } else {
+                await dispatchDiceThroneCommand(activePage, {
+                    type: 'SELECT_ABILITY',
+                    playerId: activeId,
+                    payload: { abilityId: 'rage' },
+                });
+            }
+            await activePage.waitForTimeout(500);
+
+            const resolveAttackButton = activePage.getByRole('button', { name: /结算攻击|Resolve Attack/i });
+            await expect(resolveAttackButton).toBeEnabled({ timeout: 10000 });
+
+            const coreAfterConfirm = await readCoreState(activePage) as Record<string, unknown>;
+            expect(
+                String(coreAfterConfirm.activatingAbilityId ?? ''),
+                '5个6点确认后应进入 Rage（终极技能）',
+            ).toContain('rage');
+
+            const evidenceDir = join(
+                process.cwd(),
+                'test-results',
+                'evidence-screenshots',
+                'dicethrone',
+                'dicethrone-hero-mechanics.e2e',
+                '5个6点时应出现并可选择狂怒（Rage）',
+            );
+            mkdirSync(evidenceDir, { recursive: true });
+            await activePage.screenshot({
+                path: join(evidenceDir, 'barbarian-rage-5x6-selectable.png'),
+                fullPage: false,
+            });
 
             await closeDebugPanelIfOpen(activePage);
         } finally {

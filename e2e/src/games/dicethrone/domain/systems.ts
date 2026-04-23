@@ -5,7 +5,7 @@
 
 import type { GameEvent } from '../../../engine/types';
 import type { EngineSystem, HookResult } from '../../../engine/systems/types';
-import { INTERACTION_EVENTS, queueInteraction, resolveInteraction, createSimpleChoice, createMultistepChoice } from '../../../engine/systems/InteractionSystem';
+import { INTERACTION_EVENTS, queueInteraction, resolveInteraction, createSimpleChoice, createCompareRollChoice, createMultistepChoice } from '../../../engine/systems/InteractionSystem';
 import type { InteractionDescriptor as EngineInteractionDescriptor, SimpleChoiceData, PromptOption, MultistepChoiceData } from '../../../engine/systems/InteractionSystem';
 import type {
     DiceThroneCore,
@@ -261,8 +261,55 @@ export function createDiceThroneEventSystem(): EngineSystem<DiceThroneCore> {
                     if (isResolvedTargetingChoice) {
                         continue;
                     }
-                    
-                    // 将 DiceThrone 的选择选项转换为 PromptOption
+
+                    // compare-roll-choice：双骰特写 + 分支选择 / 自动确认
+                    if (payload.compareRoll?.contestants?.length === 2) {
+                        const compareOptions: PromptOption<{
+                            statusId?: string;
+                            tokenId?: string;
+                            value: number;
+                            customId?: string;
+                            labelKey?: string;
+                            disabled?: boolean;
+                        }>[] = payload.options.map((opt, index) => {
+                            const label = opt.labelKey
+                                ?? (opt.tokenId ? `tokens.${opt.tokenId}.name`
+                                    : opt.statusId ? `statusEffects.${opt.statusId}.name`
+                                        : `choices.option-${index}`);
+                            return {
+                                id: `option-${index}`,
+                                label,
+                                value: opt,
+                                disabled: opt.disabled,
+                                labelKey: opt.labelKey,
+                            };
+                        });
+
+                        const compareRollInteraction = createCompareRollChoice(
+                            `compare-roll-${payload.sourceAbilityId}-${eventTimestamp}`,
+                            payload.playerId,
+                            {
+                                title: payload.titleKey,
+                                sourceId: payload.sourceAbilityId,
+                                contestants: [
+                                    payload.compareRoll.contestants[0],
+                                    payload.compareRoll.contestants[1],
+                                ],
+                                resultText: payload.compareRoll.resultText,
+                                resultTextKey: payload.compareRoll.resultTextKey,
+                                resultTextParams: payload.compareRoll.resultTextParams,
+                                resultTone: payload.compareRoll.resultTone,
+                                options: compareOptions.length > 0 ? compareOptions : undefined,
+                                confirmValue: payload.compareRoll.confirmValue,
+                                autoConfirmDelayMs: payload.compareRoll.autoConfirmDelayMs,
+                            },
+                        );
+
+                        newState = queueInteraction(newState, compareRollInteraction);
+                        continue;
+                    }
+
+                    // 将 DiceThrone 的选择选项转换为 simple-choice
                     const promptOptions: PromptOption<{
                         statusId?: string;
                         tokenId?: string;
@@ -282,7 +329,7 @@ export function createDiceThroneEventSystem(): EngineSystem<DiceThroneCore> {
                             disabled: opt.disabled,
                         };
                     });
-                    
+
                     const interaction = createSimpleChoice(
                         `choice-${payload.sourceAbilityId}-${eventTimestamp}`,
                         payload.playerId,
@@ -294,7 +341,7 @@ export function createDiceThroneEventSystem(): EngineSystem<DiceThroneCore> {
                     if (payload.slider) {
                         (interaction.data as SimpleChoiceData & { slider?: unknown }).slider = payload.slider;
                     }
-                    
+
                     newState = queueInteraction(newState, interaction);
                 }
 

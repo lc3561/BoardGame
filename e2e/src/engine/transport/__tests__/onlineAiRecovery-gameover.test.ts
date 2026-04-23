@@ -8,14 +8,26 @@
 
 import { describe, it, expect } from 'vitest';
 import {
+    ONLINE_AI_EMERGENCY_OVERLAY_FALLBACK_REASONS,
+    ONLINE_AI_LEGAL_ACTION_ONLY_REASONS,
     resolveForceAdvancePhaseAfterRecovery,
     resolveForceEndTurnForStalledAi,
     resolveManualForceEndAiPhase,
+    shouldUseOnlineAiEmergencyOverlayFallback,
 } from '../onlineAiRecovery';
 import type { MatchState } from '../../types';
 import type { AiSeatController } from '../../ai';
 
 describe('onlineAiRecovery - 游戏结束检查', () => {
+    it('legal-action-only reason 必须同步到 emergency overlay fallback 白名单', () => {
+        const uncovered = ONLINE_AI_LEGAL_ACTION_ONLY_REASONS.filter(
+            (reason) => !shouldUseOnlineAiEmergencyOverlayFallback(reason),
+        );
+        expect(uncovered).toEqual([]);
+        expect(ONLINE_AI_EMERGENCY_OVERLAY_FALLBACK_REASONS).toContain('active-turn-legal-only');
+        expect(ONLINE_AI_EMERGENCY_OVERLAY_FALLBACK_REASONS).toContain('seat-legal-only');
+    });
+
     it('游戏结束后应该返回 null，不再尝试强制推进 AI', () => {
         // 构造一个游戏已结束的状态
         const sharedState: MatchState<unknown> = {

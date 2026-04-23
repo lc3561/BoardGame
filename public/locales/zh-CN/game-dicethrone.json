@@ -714,6 +714,7 @@
     "not_enough_token": "Token 数量不足以支付费用",
     "invalid_die_index": "无效的骰子索引",
     "player_is_dazed": "玩家处于恍惚状态",
+    "player_is_stunned": "玩家处于眩晕状态，无法出牌",
     "attack_already_initiated": "攻击已发起，无法重新选择技能"
   },
   "actions": {
@@ -2704,7 +2705,16 @@
     "confirm": "确认"
   },
   "compareRoll": {
-    "confirming": "确认中..."
+    "confirming": "确认中...",
+    "rolled": "掷出 {{value}}",
+    "gunslingerDuel": {
+      "title": "对决比骰",
+      "defender": "防御方",
+      "attacker": "攻击方",
+      "win": "你赢得了对决，可选择后续效果。",
+      "lose": "你输掉了对决：对攻击方造成 1 点不可防御伤害。",
+      "tieLose": "平手不算获胜：对攻击方造成 1 点不可防御伤害。"
+    }
   },
   "endgame": {
     "ariaHero": "英雄：{{hero}}",

@@ -42,7 +42,7 @@ import { GameHints } from './ui/GameHints';
 import { useGameMode } from '../../contexts/GameModeContext';
 import { useEndgame } from '../../hooks/game/useEndgame';
 import { useCurrentChoice, useDiceThroneState } from './hooks/useDiceThroneState';
-import { INTERACTION_COMMANDS } from '../../engine/systems/InteractionSystem';
+import { INTERACTION_COMMANDS, asCompareRollChoice } from '../../engine/systems/InteractionSystem';
 import { diceModifyReducer, diceModifyToCommands, diceSelectReducer, diceSelectToCommands, type DiceModifyStep, type DiceSelectStep } from './domain/systems';
 // 引擎层 Hooks
 import { useSpectatorMoves, useEventStreamCursor } from '../../engine';
@@ -417,6 +417,7 @@ export const DiceThroneBoard: React.FC<DiceThroneBoardProps> = ({ G: rawG, dispa
 
     // 使用 useInteractionState Hook 管理交互状态（从 sys.interaction 读取）
     const sysInteraction = rawG.sys.interaction?.current;
+    const compareRollInteraction = asCompareRollChoice(sysInteraction);
     const pendingInteraction: InteractionDescriptor | undefined = sysInteraction?.kind === 'dt:card-interaction'
         ? sysInteraction.data as InteractionDescriptor
         : undefined;
@@ -1506,6 +1507,7 @@ export const DiceThroneBoard: React.FC<DiceThroneBoardProps> = ({ G: rawG, dispa
 
                     // 选择弹窗
                     choice={choice}
+                    compareRoll={compareRollInteraction}
                     canResolveChoice={canResolveChoice}
                     onResolveChoice={(optionId) => {
                         dispatch(INTERACTION_COMMANDS.RESPOND, { optionId });

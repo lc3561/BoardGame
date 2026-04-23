@@ -77,6 +77,24 @@ describe('useVisualStateBuffer', () => {
     expect(result.current.get('b', 99)).toBe(99);
   });
 
+  it('clearSync + commitSync 在 effect 阶段前后保持一致', () => {
+    const { result } = renderHook(() => useVisualStateBuffer());
+    act(() => {
+      result.current.freeze('a', 7);
+    });
+    expect(result.current.get('a', 99)).toBe(7);
+    expect(result.current.isBuffering).toBe(true);
+
+    act(() => {
+      result.current.clearSync();
+      result.current.commitSync();
+    });
+
+    expect(result.current.get('a', 99)).toBe(99);
+    expect(result.current.isBuffering).toBe(false);
+    expect(result.current.snapshot).toBeNull();
+  });
+
   it('freeze 覆盖已有 key', () => {
     const { result } = renderHook(() => useVisualStateBuffer());
     act(() => { result.current.freeze('a', 1); });

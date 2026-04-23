@@ -443,9 +443,22 @@ export const diceThroneFlowHooks: FlowHooks<DiceThroneCore> = {
                 events.push(statusRemovedEvent);
                 return { events, overrideNextPhase: 'main2' };
             }
-            // 注意：眩晕 (stun) 不在此处处理。
-            // stun 的规则是：进入 offensiveRoll 时移除 stun，但玩家仍需手动推进离开该阶段。
-            // 因此 stun 在 onPhaseEnter(to=offensiveRoll) 中处理（只移除状态，不跳过阶段）。
+            const stunStacks = player?.statusEffects[STATUS_IDS.STUN] ?? 0;
+            if (stunStacks > 0) {
+                // 眩晕（stun）：跳过本次 offensiveRoll 并移除
+                const statusRemovedEvent: StatusRemovedEvent = {
+                    type: 'STATUS_REMOVED',
+                    payload: {
+                        targetId: core.activePlayerId,
+                        statusId: STATUS_IDS.STUN,
+                        stacks: stunStacks,
+                    },
+                    sourceCommandType: command.type,
+                    timestamp,
+                };
+                events.push(statusRemovedEvent);
+                return { events, overrideNextPhase: 'main2' };
+            }
         }
 
         // ========== offensiveRoll 阶段退出：攻击前处理 ==========

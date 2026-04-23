@@ -18,6 +18,7 @@ import { createScopedLogger } from '../../../lib/logger';
 import { resolveBonusDieText } from './bonusDieTranslation';
 
 const bonusDieOverlayLogger = createScopedLogger('DT_BONUS_DIE_OVERLAY');
+const BONUS_DIE_CLOSE_CLICK_GUARD_MS = 300;
 
 interface BonusDieOverlayProps {
     /** 单颗骰子值 (1-6)，用于普通特写模式 */
@@ -168,6 +169,8 @@ export const BonusDieOverlay: React.FC<BonusDieOverlayProps> = ({
                 autoCloseDelay={resolvedAutoCloseDelay}
                 zIndex={UI_Z_INDEX.overlayRaised + 100}
                 closeOnContentClick={!isInteractive}
+                // 奖励骰特写保留短保护窗，避免触发它的同一次点击立刻关闭
+                closeClickGuardMs={BONUS_DIE_CLOSE_CLICK_GUARD_MS}
             >
                 <div className="flex flex-col items-center gap-[1.5vw]" data-testid="bonus-die-overlay">
                     {/* 提示文字 - DiceThrone 风格 */}
@@ -303,6 +306,8 @@ export const BonusDieOverlay: React.FC<BonusDieOverlayProps> = ({
             disableAutoClose={isManualCloseOnly && !hasForceAutoClose}
             autoCloseDelay={resolvedAutoCloseDelay}
             zIndex={UI_Z_INDEX.overlayRaised + 100}
+            // 奖励骰特写保留短保护窗，避免触发它的同一次点击立刻关闭
+            closeClickGuardMs={BONUS_DIE_CLOSE_CLICK_GUARD_MS}
         >
             <div data-testid="bonus-die-overlay">
                 <BonusDieSpotlightContent

@@ -10,6 +10,8 @@
 
 import type { Browser, Page } from '@playwright/test';
 import { test, expect } from '../framework';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import {
     setupDTOnlineMatch,
     selectCharacter,
@@ -53,6 +55,21 @@ type DiceThroneHarnessState = {
         };
     };
 };
+
+async function saveEvidenceScreenshot(page: Page, subdir: string, filename: string): Promise<string> {
+    const dir = path.join(
+        process.cwd(),
+        'test-results',
+        'evidence-screenshots',
+        'dicethrone',
+        'dicethrone-daze-extra-attack.e2e',
+        subdir,
+    );
+    await fs.mkdir(dir, { recursive: true });
+    const filePath = path.join(dir, filename);
+    await page.screenshot({ path: filePath, fullPage: true });
+    return filePath;
+}
 
 async function setupBarbarianMatch(
     browser: Browser,
@@ -199,6 +216,15 @@ test.describe('晕眩额外攻击机制', () => {
             const afterAdvance = await readHarnessState(hostPage);
             expect(afterAdvance.core.activePlayerId).toBe('0');
             expect(getDazeStacks(afterAdvance)).toBe(0);
+            const screenshotPath = await saveEvidenceScreenshot(
+                hostPage,
+                '晕眩应该在攻击结束后触发额外攻击',
+                'daze-extra-attack-triggered.png',
+            );
+            await testInfo.attach('daze-extra-attack-triggered', {
+                path: screenshotPath,
+                contentType: 'image/png',
+            });
         } finally {
             await guestContext.close().catch(() => {});
             await hostContext.close().catch(() => {});

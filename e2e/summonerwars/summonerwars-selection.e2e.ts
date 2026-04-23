@@ -588,6 +588,70 @@ test.describe('SummonerWars selection and turn-lock flows', () => {
     await guestContext.close();
   });
 
+  test('human room must not auto-promote seat 1 into AI during faction selection', async ({ browser }, testInfo) => {
+    test.setTimeout(120000);
+    const baseURL = testInfo.project.use.baseURL as string | undefined;
+
+    const hostContext = await browser.newContext({
+      baseURL,
+      viewport: DESKTOP_REFERENCE_VIEWPORT,
+    });
+    await initSWContext(hostContext, '__sw_selection_human_room_no_auto_ai_host');
+    const hostPage = await hostContext.newPage();
+    const hostGame = new GameTestContext(hostPage);
+
+    await hostPage.goto('/', { waitUntil: 'domcontentloaded' });
+    if (!(await ensureGameServerAvailable(hostPage))) {
+      test.skip(true, 'Game server unavailable');
+    }
+
+    const matchId = await createSWRoomViaAPI(hostPage);
+    if (!matchId) {
+      test.skip(true, 'Room creation failed');
+    }
+
+    await hostPage.evaluate((targetMatchId) => {
+      localStorage.setItem(
+        `match_ai_creds_${targetMatchId}`,
+        JSON.stringify({ '1': 'stale-ai-seat-credential' }),
+      );
+    }, matchId);
+
+    await hostPage.goto(`/play/${GAME_NAME}/match/${matchId}?playerID=0`, { waitUntil: 'domcontentloaded' });
+    await waitForFactionSelectionReady(hostPage);
+    await waitForSelectionLayoutStable(hostPage);
+
+    const waitForSeatOneHumanIdle = async (message: string) => {
+      await expect.poll(async () => {
+        const card = getPlayerStatusCard(hostPage, '1');
+        return {
+          factionId: await card.getAttribute('data-faction-id'),
+          ready: await card.getAttribute('data-ready'),
+        };
+      }, {
+        timeout: 8000,
+        message,
+      }).toEqual({
+        factionId: 'unselected',
+        ready: 'false',
+      });
+    };
+
+    await waitForSeatOneHumanIdle('开房后空闲等待时，2 号位不应自己选阵营或自己 ready');
+    await hostGame.screenshot('selection-human-room-no-auto-ai-idle', testInfo);
+
+    await selectFactionById(hostPage, 'necromancer');
+    await expect(getFactionCard(hostPage, 'necromancer')).toHaveAttribute('data-selected', 'true');
+    await expect(getFactionStartButton(hostPage)).toBeVisible();
+    await expect(getFactionStartButton(hostPage)).toBeDisabled();
+
+    await waitForSeatOneHumanIdle('房主已选阵营后，2 号位仍不应自动变成 AI');
+    await expect(getFactionStartButton(hostPage)).toBeDisabled();
+    await hostGame.screenshot('selection-human-room-no-auto-ai-after-host-pick', testInfo);
+
+    await hostContext.close();
+  });
+
   test('mobile landscape flow captures full selection-to-start chain', async ({ browser }, testInfo) => {
     test.setTimeout(120000);
     const baseURL = testInfo.project.use.baseURL as string | undefined;

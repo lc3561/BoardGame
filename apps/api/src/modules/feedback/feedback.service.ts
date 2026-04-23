@@ -16,6 +16,7 @@ const DEFAULT_USER_SOURCE = 'feedback-modal';
 const LEGACY_WATCHDOG_SOURCE = 'online-ai-watchdog';
 const WATCHDOG_AGGREGATION_SOURCE = 'online-ai-watchdog';
 export const WATCHDOG_AGGREGATION_WINDOW_MS = 6 * 60 * 60 * 1000;
+export const WATCHDOG_CLOSED_ARCHIVE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 const FEEDBACK_SEVERITY_RANK: Record<string, number> = {
     low: 1,
@@ -354,6 +355,7 @@ export class FeedbackService {
                 gameId,
             });
         }
+        await this.cleanupExpiredWatchdogClosedArchives(now);
         const aggregationKey = aggregationPlan.dedupeKey;
         const aggregationActiveKey = aggregationKey;
 
@@ -498,6 +500,25 @@ export class FeedbackService {
             return this.createOrUpdateAggregatedSystemFeedback(dto, source, gameId, retryDepth + 1);
         }
         return updated.toObject() as Feedback;
+    }
+
+    private async cleanupExpiredWatchdogClosedArchives(now: Date): Promise<void> {
+        const nowMs = now.getTime();
+        const cutoff = new Date(nowMs - WATCHDOG_CLOSED_ARCHIVE_RETENTION_MS);
+        try {
+            await this.feedbackModel.deleteMany({
+                source: WATCHDOG_AGGREGATION_SOURCE,
+                reporterType: FeedbackReporterType.SYSTEM,
+                status: FeedbackStatus.CLOSED,
+                aggregationKey: { $exists: true, $nin: ['', null] },
+                $or: [
+                    { lastOccurredAt: { $lte: cutoff } },
+                    { lastOccurredAt: { $exists: false }, updatedAt: { $lte: cutoff } },
+                ],
+            }).exec();
+        } catch {
+            // 清理失败不应影响线上 watchdog 反馈上报链路。
+        }
     }
 
     private isDuplicateKeyError(error: unknown): boolean {

@@ -58,8 +58,12 @@ export default function AdminDashboard() {
     useEffect(() => {
         const fetchStats = async () => {
             try {
+                const headers: Record<string, string> = {};
+                if (token) {
+                    headers.Authorization = `Bearer ${token}`;
+                }
                 const res = await fetch(`${ADMIN_API_URL}/stats`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
+                    headers,
                 });
                 if (!res.ok) throw new Error('Failed to fetch stats');
                 const data = await res.json();
@@ -72,7 +76,7 @@ export default function AdminDashboard() {
             }
         };
 
-        if (token) fetchStats();
+        fetchStats();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [token]);
 
@@ -80,8 +84,12 @@ export default function AdminDashboard() {
         const fetchTrend = async () => {
             setTrendLoading(true);
             try {
+                const headers: Record<string, string> = {};
+                if (token) {
+                    headers.Authorization = `Bearer ${token}`;
+                }
                 const res = await fetch(`${ADMIN_API_URL}/stats/trend?days=7`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
+                    headers,
                 });
                 if (!res.ok) throw new Error('Failed to fetch trend stats');
                 const data = await res.json();
@@ -94,7 +102,7 @@ export default function AdminDashboard() {
             }
         };
 
-        if (token) fetchTrend();
+        fetchTrend();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [token]);
 

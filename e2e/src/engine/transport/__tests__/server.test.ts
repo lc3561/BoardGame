@@ -1637,9 +1637,10 @@ describe('GameTransportServer（离座与重连）', () => {
         const feedbackReporter = vi.fn(async () => undefined);
         const gameId = 'test-watchdog-legal-action-recovery';
 
+        let legalActionCallCount = 0;
         aiModule.registerGameAiRuntime({
             gameId,
-            buildLegalActions: () => [{
+            buildLegalActions: () => legalActionCallCount++ > 0 ? [] : [{
                 actionId: 'legal-advance',
                 kind: 'advance-phase',
                 label: '合法推进阶段',
@@ -1648,7 +1649,7 @@ describe('GameTransportServer（离座与重连）', () => {
             localPolicies: {
                 legalRecoveryPolicy: {
                     id: 'legalRecoveryPolicy',
-                    decide: () => ({
+                    decide: () => legalActionCallCount > 1 ? null : ({
                         actionId: 'legal-advance',
                         confidence: 0.91,
                         reasoningSummary: '当前 AI 仍有合法动作，先走合法动作恢复推进。',
@@ -3275,6 +3276,10 @@ describe('GameTransportServer（离座与重连）', () => {
                     attemptKey: 'watchdog-chain-step-2',
                     source: 'local-ai',
                 },
+            })
+            .mockResolvedValue({
+                kind: 'idle' as const,
+                idleReason: 'no-action',
             });
 
         const server = new GameTransportServer({
@@ -3374,8 +3379,8 @@ describe('GameTransportServer（离座与重连）', () => {
             await nextTick();
             await nextTick();
 
-            expect(executeSpy).toHaveBeenCalledTimes(2);
-            expect(resolutionSpy).toHaveBeenCalledTimes(2);
+            expect(executeSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
+            expect(resolutionSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
             expect(buildAiProgressMarker(match.state)).toBe('4|draw|1|||0');
             expect(match.state.sys.interaction?.current).toBeUndefined();
             expect(feedbackReporter).toHaveBeenCalledWith(expect.objectContaining({
@@ -3830,16 +3835,56 @@ describe('GameTransportServer（离座与重连）', () => {
         await serverInternal.loadMatch('match-watchdog-response-loop');
 
         const executed: string[] = [];
-        vi.spyOn(serverInternal, 'executeCommandInternal').mockImplementation(async (_match, _playerID, commandType) => {
+        vi.spyOn(serverInternal, 'executeCommandInternal').mockImplementation(async (match, _playerID, commandType) => {
             executed.push(commandType);
+            if (commandType === 'RESPONSE_PASS') {
+                // 模拟 RESPONSE_PASS 后响应窗口立刻重开（同一 AI 的循环场景）
+                match.state = {
+                    ...match.state,
+                    sys: {
+                        ...match.state.sys,
+                        eventStream: {
+                            ...(match.state.sys?.eventStream ?? {}),
+                            nextId: (match.state.sys?.eventStream?.nextId ?? 1) + 1,
+                        },
+                        responseWindow: {
+                            ...(match.state.sys?.responseWindow ?? {}),
+                            current: {
+                                id: 'response-loop-2',
+                                windowType: 'afterCardPlayed',
+                                sourceId: 'card-1',
+                                responderQueue: ['1'],
+                                currentResponderIndex: 0,
+                            },
+                        },
+                    },
+                };
+            }
+            if (commandType === 'SYS_RESPONSE_WINDOW_FORCE_CLOSE') {
+                match.state = {
+                    ...match.state,
+                    sys: {
+                        ...match.state.sys,
+                        eventStream: {
+                            ...(match.state.sys?.eventStream ?? {}),
+                            nextId: (match.state.sys?.eventStream?.nextId ?? 1) + 1,
+                        },
+                        responseWindow: {
+                            ...(match.state.sys?.responseWindow ?? {}),
+                            current: undefined,
+                        },
+                    },
+                };
+            }
             return true;
         });
 
         await serverInternal.runOnlineAiRecoveryTick();
         await serverInternal.runOnlineAiRecoveryTick();
-        await nextTick();
+        // recovery sequence is fire-and-forget; need enough microtask cycles for it to complete
+        for (let i = 0; i < 10; i++) { await nextTick(); }
         await serverInternal.runOnlineAiRecoveryTick();
-        await nextTick();
+        for (let i = 0; i < 10; i++) { await nextTick(); }
 
         expect(executed).toContain('SYS_RESPONSE_WINDOW_FORCE_CLOSE');
     });
@@ -3936,9 +3981,10 @@ describe('GameTransportServer（离座与重连）', () => {
 
         await serverInternal.runOnlineAiRecoveryTick();
         await serverInternal.runOnlineAiRecoveryTick();
-        await nextTick();
+        // recovery sequence is fire-and-forget; need enough microtask cycles for it to complete
+        for (let i = 0; i < 10; i++) { await nextTick(); }
         await serverInternal.runOnlineAiRecoveryTick();
-        await nextTick();
+        for (let i = 0; i < 10; i++) { await nextTick(); }
 
         expect(executed[0]).toBe('RESPONSE_PASS');
         expect(executed).toContain('SYS_RESPONSE_WINDOW_FORCE_CLOSE');

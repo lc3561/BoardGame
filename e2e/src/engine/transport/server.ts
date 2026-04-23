@@ -43,6 +43,7 @@ import {
     resolveCurrentPlayerId,
     resolveUnsatisfiableReasonFromInteraction,
     resolveForceEndTurnForStalledAi,
+    shouldUseOnlineAiEmergencyOverlayFallback,
     type AiAutoRecoveryAttemptTracker,
     type HiddenInteractionDescriptor,
     type ForceEndTurnStalledAiResolution,
@@ -1283,6 +1284,40 @@ export class GameTransportServer {
                 if (!nextCandidate || nextCandidate.playerId !== candidate.playerId) {
                     break;
                 }
+                // 响应窗口循环检测：如果刚执行了 RESPONSE_PASS 但同一 AI 的 response-window 立刻重开，
+                // 说明 RESPONSE_PASS 无法推进，应升级为 FORCE_CLOSE 强制关闭窗口。
+                if (currentCandidate.reason === 'response-window'
+                    && nextCandidate.reason === 'response-window'
+                    && nextCandidate.playerId === candidate.playerId) {
+                    const phase = typeof match.state.sys?.phase === 'string' ? match.state.sys.phase : '';
+                    const currentWindow = (match.state.sys as { responseWindow?: { current?: unknown } } | undefined)
+                        ?.responseWindow?.current as {
+                            windowType?: unknown;
+                            responderQueue?: unknown;
+                        } | undefined;
+                    const windowType = typeof currentWindow?.windowType === 'string' ? currentWindow.windowType : '';
+                    const responderQueue = Array.isArray(currentWindow?.responderQueue)
+                        ? currentWindow.responderQueue.map((v: unknown) => typeof v === 'string' ? v : '').filter((v: string) => v.length > 0).join('|')
+                        : '';
+                    const suffix = `response-loop:${candidate.playerId}:${phase}:${windowType}:${responderQueue}`;
+                    currentCandidate = {
+                        ...nextCandidate,
+                        reason: 'response-loop',
+                        fingerprintHint: suffix,
+                        resolution: {
+                            playerId: candidate.playerId,
+                            attemptKey: `force-end-turn:${candidate.playerId}:${suffix}`,
+                            source: 'local-ai',
+                            action: {
+                                actionId: `force-end-turn:${suffix}`,
+                                kind: 'force-end-turn',
+                                label: '强制结束 AI 回合',
+                                commands: [{ type: 'SYS_RESPONSE_WINDOW_FORCE_CLOSE', payload: {} }],
+                            },
+                        },
+                    };
+                    continue;
+                }
                 const shouldRestrictFollowUpToLegalActions = candidate.requiresConfirmedAdvancePhase
                     && (candidate.reason === 'visible-interaction' || candidate.reason === 'hidden-interaction')
                     && nextCandidate.reason === 'active-turn';
@@ -1900,10 +1935,7 @@ export class GameTransportServer {
             visibleStateResolver: resolveStrictOnlineDecisionView,
         });
 
-        const canUseEmergencyOverlayFallback = candidate.reason === 'active-turn'
-            || candidate.reason === 'active-turn-legal-only'
-            || candidate.reason === 'visible-interaction'
-            || candidate.reason === 'hidden-interaction';
+        const canUseEmergencyOverlayFallback = shouldUseOnlineAiEmergencyOverlayFallback(candidate.reason);
         const shouldRetryWithEmergencyOverlay = aiDispatchResult.kind === 'blocked'
             && canUseEmergencyOverlayFallback
             && (

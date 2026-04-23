@@ -593,6 +593,21 @@ export interface MatchStatus {
     isHost: boolean; // 是否是房主（playerID === '0'）
 }
 
+const MATCH_STATUS_POLL_INTERVAL_MS = 3000;
+const MATCH_STATUS_ERROR_RETRY_INTERVAL_MS = 10000;
+const MATCH_STATUS_RETRY_BACKOFF_BASE_MS = 5000;
+const MATCH_STATUS_RETRY_BACKOFF_MAX_MS = 30000;
+const MATCH_STATUS_RETRY_JITTER_RATIO = 0.2;
+
+const computeTransientRetryDelayMs = (failureCount: number): number => {
+    const backoffDelayMs = Math.min(
+        MATCH_STATUS_RETRY_BACKOFF_MAX_MS,
+        MATCH_STATUS_RETRY_BACKOFF_BASE_MS * (2 ** Math.max(0, failureCount - 1)),
+    );
+    const jitterFactor = 1 + ((Math.random() * 2 - 1) * MATCH_STATUS_RETRY_JITTER_RATIO);
+    return Math.max(MATCH_STATUS_RETRY_BACKOFF_BASE_MS, Math.round(backoffDelayMs * jitterFactor));
+};
+
 /**
  * 房间状态 Hook
  * 用于实时获取房间信息和对手状态
@@ -602,8 +617,11 @@ export function useMatchStatus(gameName: string | undefined, matchID: string | u
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [errorKind, setErrorKind] = useState<'not_found' | 'transient_unreachable' | null>(null);
+    const [isPageVisible, setIsPageVisible] = useState(() => (typeof document === 'undefined' ? true : !document.hidden));
     const failureCountRef = useRef(0);
     const lastFailureAtRef = useRef<number | null>(null);
+    const inFlightRef = useRef(false);
+    const nextAllowedFetchAtRef = useRef<number | null>(null);
     // 用 ref 持有最新的 gameName/matchID，避免 fetchMatchStatus 依赖变化导致 useEffect 反复重建 interval
     const gameNameRef = useRef(gameName);
     const matchIDRef = useRef(matchID);
@@ -611,10 +629,15 @@ export function useMatchStatus(gameName: string | undefined, matchID: string | u
     matchIDRef.current = matchID;
 
     // 获取房间状态（无外部依赖，引用稳定）
-    const fetchMatchStatus = useCallback(async () => {
+    const fetchMatchStatus = useCallback(async (options?: { force?: boolean }) => {
         const requestMatchID = matchIDRef.current;
         if (!requestMatchID) return;
+        if (inFlightRef.current) return;
+        if (!options?.force && nextAllowedFetchAtRef.current && Date.now() < nextAllowedFetchAtRef.current) {
+            return;
+        }
 
+        inFlightRef.current = true;
         try {
             const effectiveGameName = gameNameRef.current || 'tictactoe';
             const match = await matchApi.getMatch(effectiveGameName, requestMatchID);
@@ -627,22 +650,25 @@ export function useMatchStatus(gameName: string | undefined, matchID: string | u
             })));
             failureCountRef.current = 0;
             lastFailureAtRef.current = null;
+            nextAllowedFetchAtRef.current = null;
             setError(null);
             setErrorKind(null);
         } catch (err: unknown) {
-            console.error('获取房间状态失败:', err);
             // 切房间后旧请求报错也直接忽略
             if (requestMatchID !== matchIDRef.current) return;
             // 404 错误（房间不存在）立即触发错误状态，无需等待 3 次失败
             const is404 = isMatchNotFoundError(err);
             if (is404) {
+                nextAllowedFetchAtRef.current = null;
                 setErrorKind('not_found');
                 setError('房间不存在或已被删除');
                 return;
             }
-             
+
+            console.error('获取房间状态失败:', err);
             // 其他错误（网络问题等）需要连续 3 次失败才触发
             failureCountRef.current += 1;
+            nextAllowedFetchAtRef.current = Date.now() + computeTransientRetryDelayMs(failureCountRef.current);
             if (!lastFailureAtRef.current) {
                 lastFailureAtRef.current = Date.now();
             }
@@ -655,6 +681,7 @@ export function useMatchStatus(gameName: string | undefined, matchID: string | u
                 setError(null);
             }
         } finally {
+            inFlightRef.current = false;
             if (requestMatchID === matchIDRef.current) {
                 setIsLoading(false);
             }
@@ -665,33 +692,60 @@ export function useMatchStatus(gameName: string | undefined, matchID: string | u
     useEffect(() => {
         failureCountRef.current = 0;
         lastFailureAtRef.current = null;
+        inFlightRef.current = false;
+        nextAllowedFetchAtRef.current = null;
         setError(null);
         setErrorKind(null);
         setPlayers([]);
         setIsLoading(Boolean(matchID));
     }, [matchID, gameName]);
 
+    useEffect(() => {
+        if (typeof document === 'undefined') return;
+        const handleVisibilityChange = () => {
+            setIsPageVisible(!document.hidden);
+        };
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+    }, []);
+
+    // 回到前台或网络恢复后立即重拉一次，降低“恢复焦点后仍显示旧状态”的窗口期
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        if (!matchID || errorKind === 'not_found') return;
+        const handleWakeUp = () => {
+            if (typeof document !== 'undefined' && document.hidden) return;
+            void fetchMatchStatus({ force: true });
+        };
+        window.addEventListener('focus', handleWakeUp);
+        window.addEventListener('online', handleWakeUp);
+        return () => {
+            window.removeEventListener('focus', handleWakeUp);
+            window.removeEventListener('online', handleWakeUp);
+        };
+    }, [matchID, errorKind, fetchMatchStatus]);
+
     // 定期轮询房间状态
     useEffect(() => {
-        if (!matchID || error) return;
+        if (!matchID || error || !isPageVisible) return;
 
         fetchMatchStatus();
 
         // 每 3 秒轮询一次（可以后续改为 WebSocket）
-        const interval = setInterval(fetchMatchStatus, 3000);
+        const interval = setInterval(fetchMatchStatus, MATCH_STATUS_POLL_INTERVAL_MS);
 
         return () => clearInterval(interval);
-    }, [matchID, error, fetchMatchStatus]);
+    }, [matchID, error, fetchMatchStatus, isPageVisible]);
 
     // 报错后低频重试，避免错误态卡死
     useEffect(() => {
-        if (!matchID || !error) return;
+        if (!matchID || !error || errorKind === 'not_found' || !isPageVisible) return;
 
         fetchMatchStatus();
-        const interval = setInterval(fetchMatchStatus, 10000);
+        const interval = setInterval(fetchMatchStatus, MATCH_STATUS_ERROR_RETRY_INTERVAL_MS);
 
         return () => clearInterval(interval);
-    }, [matchID, error, fetchMatchStatus]);
+    }, [matchID, error, errorKind, fetchMatchStatus, isPageVisible]);
 
     // 计算对手信息
     const myIndex = myPlayerID ? parseInt(myPlayerID) : -1;

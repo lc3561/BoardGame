@@ -771,6 +771,17 @@ const validatePlayCard = (
         return fail('card_not_in_hand');
     }
 
+    if (isMoveAllowed(playerId, state.activePlayerId)) {
+        const dazeStacks = player.statusEffects[STATUS_IDS.DAZE] ?? 0;
+        if (dazeStacks > 0) {
+            return fail('player_is_dazed');
+        }
+        const stunStacks = player.statusEffects[STATUS_IDS.STUN] ?? 0;
+        if (stunStacks > 0) {
+            return fail('player_is_stunned');
+        }
+    }
+
     // 主要阶段牌：仅允许当前回合玩家
     if (card.timing === 'main' && !isMoveAllowed(playerId, state.activePlayerId)) {
         console.warn('[validatePlayCard] 验证失败 - 主要阶段牌只能由当前玩家打出:', {

@@ -74,6 +74,8 @@ const FAST_AI_COMMAND_TYPES = new Set([
     'ADVANCE_PHASE',
     'sw:end_phase',
     'RESPONSE_PASS',
+    'REROLL_BONUS_DIE',
+    'SKIP_BONUS_DICE_REROLL',
 ]);
 
 function shouldUseFastAiDelay(action: { kind?: string; commands?: Array<{ type?: string }> }): boolean {
@@ -430,9 +432,9 @@ export function GameProvider({
                     finalState = newState as MatchState<unknown>;
                 }
 
-                // reconcile 结果可能与原始服务端包不同（回滚过滤、保留乐观态、可疑确认兜底）。
-                // 回写传输层 patch 基线，避免后续 state:patch 基于错误快照继续叠错。
-                client.updateLatestState(finalState);
+                // 传输层 patch 基线必须保持“服务端权威态”，不能混入 reconcile/filter 后的渲染态；
+                // 否则后续 state:patch 会基于被 UI 修饰过的快照 apply，导致 patch 失败并只能靠 resync/刷新恢复。
+                client.updateLatestState(newState);
 
                 // 实时刷新交互选项（如果策略是 realtime）
                 const refreshedState = refreshInteractionOptions(finalState);
@@ -959,6 +961,8 @@ export function LocalGameProvider({
 
             // 实时刷新交互选项（如果策略是 realtime）
             const refreshedState = refreshInteractionOptions(result.state);
+            // 立即同步 ref，避免 AI 无进展检测读取到渲染前的旧快照而误触发重复重试
+            stateRef.current = refreshedState;
             return refreshedState;
         });
     }, [config, localPregameControlledPlayerId, setupPlayerIds]);

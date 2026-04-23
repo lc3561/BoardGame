@@ -30,7 +30,13 @@ import {
     onAppVisible,
 } from '../../../lib/mobile/appVisibility';
 import { resolveInAppUrlPath } from '../../../lib/mobile/appUrlRouting';
-import { isTextEntryElement, scrollTextEntryIntoView } from '../../../lib/textEntry';
+import {
+    isTextEntryElement,
+    isTextEntryProxyEligible,
+    readTextEntryValue,
+    scrollTextEntryIntoView,
+    syncProxyValueToTextEntry,
+} from '../../../lib/textEntry';
 import {
     applyRuntimeViewportCssVars,
     resolveRuntimeKeyboardInsetBottom,
@@ -449,6 +455,72 @@ describe('Runtime viewport helpers', () => {
 
         expect(scrollTextEntryIntoView(button, 'smooth')).toBe(false);
         expect(button.scrollIntoView).not.toHaveBeenCalled();
+    });
+
+    it('仅在 modal 作用域 + coarse pointer 或键盘 inset 下启用输入代理', () => {
+        const matchMediaMock = vi.fn().mockReturnValue({ matches: true });
+        Object.defineProperty(window, 'matchMedia', {
+            value: matchMediaMock,
+            configurable: true,
+        });
+
+        const modalRoot = document.createElement('div');
+        modalRoot.id = 'modal-root';
+        const modalInput = document.createElement('input');
+        modalInput.type = 'text';
+        modalRoot.appendChild(modalInput);
+        document.body.appendChild(modalRoot);
+
+        const modalContainer = document.createElement('div');
+        modalContainer.className = 'modal-base-container';
+        const nestedModalInput = document.createElement('input');
+        nestedModalInput.type = 'text';
+        modalContainer.appendChild(nestedModalInput);
+        document.body.appendChild(modalContainer);
+
+        const outsideInput = document.createElement('input');
+        outsideInput.type = 'text';
+        document.body.appendChild(outsideInput);
+
+        expect(isTextEntryProxyEligible(modalInput)).toBe(true);
+        expect(isTextEntryProxyEligible(nestedModalInput)).toBe(true);
+        expect(isTextEntryProxyEligible(outsideInput)).toBe(false);
+
+        matchMediaMock.mockReturnValue({ matches: false });
+        expect(isTextEntryProxyEligible(modalInput)).toBe(false);
+        expect(isTextEntryProxyEligible(nestedModalInput)).toBe(false);
+
+        document.documentElement.style.setProperty('--keyboard-inset-height', '280px');
+        expect(isTextEntryProxyEligible(modalInput)).toBe(true);
+        expect(isTextEntryProxyEligible(nestedModalInput)).toBe(true);
+        expect(isTextEntryProxyEligible(outsideInput)).toBe(false);
+    });
+
+    it('代理输入会把值同步回原始输入目标', () => {
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = 'old';
+        const onInput = vi.fn();
+        const onChange = vi.fn();
+        input.addEventListener('input', onInput);
+        input.addEventListener('change', onChange);
+
+        expect(syncProxyValueToTextEntry(input, 'next value')).toBe(true);
+        expect(readTextEntryValue(input)).toBe('next value');
+        expect(onInput).toHaveBeenCalledTimes(1);
+        expect(onChange).toHaveBeenCalledTimes(1);
+    });
+
+    it('代理输入会把值同步回 contenteditable 目标', () => {
+        const editable = document.createElement('div');
+        editable.setAttribute('contenteditable', 'true');
+        editable.textContent = 'before';
+        const onInput = vi.fn();
+        editable.addEventListener('input', onInput);
+
+        expect(syncProxyValueToTextEntry(editable, 'after')).toBe(true);
+        expect(readTextEntryValue(editable)).toBe('after');
+        expect(onInput).toHaveBeenCalledTimes(1);
     });
 
     it('优先滚动最近的可滚容器，而不是把整个弹窗顶飞', () => {

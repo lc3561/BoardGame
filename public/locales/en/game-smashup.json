@@ -170,8 +170,7 @@
     "titan_ability": "Titan Ability",
     "titan_play_available": "Playable",
     "no_valid_targets": "No valid targets",
-    "faction_implementation_in_progress": "Implementation in Progress",
-    "faction_implementation_in_progress_hint": "This faction is being delivered in batches. Rules and interactions may continue to improve."
+    "faction_implementation_in_progress": "Implementation in Progress"
   },
   "feedback": {
     "deck_search_no_match": "No matching card found in deck. Deck reshuffled.",

@@ -67,7 +67,7 @@ describe('Pyromancer 技能升级路径验证', () => {
         const customAction = v2?.effects.find(e => e.action.customActionId === 'meteor-resolve');
         expect(customAction).toBeDefined();
         // 验证有 STUN 效果
-        const stun = v2?.effects.find(e => e.action.statusId === STATUS_IDS.DAZE);
+        const stun = v2?.effects.find(e => e.action.statusId === STATUS_IDS.STUN);
         expect(stun).toBeDefined();
     });
 

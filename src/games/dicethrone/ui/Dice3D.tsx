@@ -3,6 +3,7 @@
 import React from 'react';
 import { createScopedLogger } from '../../../lib/logger';
 import { SHIMMER_BG } from '../../../components/common/media/OptimizedImage';
+import { getDieFaceByValue } from '../domain/diceRegistry';
 import {
     DICE_BG_SIZE,
     getDiceSpritePosition,
@@ -50,6 +51,46 @@ const DICE3D_STYLE_TEXT = `
 .animate-dice3d-tumble { animation: dice3d-tumble 1s linear infinite; }
 .animate-dice3d-bonus-tumble { animation: dice3d-bonus-tumble 0.8s linear infinite; }
 `;
+
+const DICE_FACE_FALLBACK_LABELS: Record<string, string> = {
+    fist: 'FS',
+    palm: 'PM',
+    taiji: 'TJ',
+    lotus: 'LT',
+    katana: 'KT',
+    sword: 'SW',
+    helm: 'HM',
+    heart: 'HP',
+    pray: 'PR',
+    rising_sun: 'RS',
+    strength: 'ST',
+    fire: 'FR',
+    fiery_soul: 'FY',
+    magma: 'MG',
+    meteor: 'MT',
+    bow: 'BW',
+    foot: 'FT',
+    moon: 'MN',
+    dagger: 'DG',
+    bag: 'BG',
+    card: 'CD',
+    shadow: 'SD',
+    bullet: 'BL',
+    dash: 'DS',
+    bullseye: 'BE',
+};
+
+const resolveFallbackLabel = (faceValue: number, definitionId?: string) => {
+    const symbol = definitionId
+        ? getDieFaceByValue(definitionId, faceValue)?.symbols?.[0]
+        : null;
+    const symbolKey = typeof symbol === 'string' ? symbol.toLowerCase() : '';
+    const label = DICE_FACE_FALLBACK_LABELS[symbolKey];
+    return {
+        symbol: symbolKey || '',
+        label: label ?? String(faceValue),
+    };
+};
 
 /** 3D 骰子组件 */
 export const Dice3D = ({
@@ -240,6 +281,7 @@ export const Dice3D = ({
                     const needsFlip = face.id === 1 || face.id === 6;
                     const faceTransform = needsFlip ? `${face.trans} rotateZ(180deg)` : face.trans;
                     const hasSprite = Boolean(isSpriteReady && resolvedSpriteUrl);
+                    const fallbackMeta = resolveFallbackLabel(face.id, definitionId);
 
                     return (
                         <div
@@ -264,8 +306,21 @@ export const Dice3D = ({
                                 imageRendering: 'auto',
                             }}
                             data-face-id={face.id}
-                            data-face-fallback={hasSprite ? 'false' : 'loading'}
+                            data-face-fallback={hasSprite ? 'false' : 'glyph'}
+                            data-face-symbol={fallbackMeta.symbol}
                         >
+                            {!hasSprite && (
+                                <span
+                                    className="pointer-events-none select-none text-slate-100 font-black uppercase tracking-[0.08em]"
+                                    style={{
+                                        fontSize: isSpotlight ? '1.5vw' : '1.1vw',
+                                        textShadow: '0 0 0.4vw rgba(0, 0, 0, 0.75)',
+                                        lineHeight: 1,
+                                    }}
+                                >
+                                    {fallbackMeta.label}
+                                </span>
+                            )}
                         </div>
                     );
                 })}

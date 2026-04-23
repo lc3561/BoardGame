@@ -36,8 +36,14 @@ export const SEO: React.FC<SEOProps> = ({
             <title>{fullTitle}</title>
             {description && <meta name="description" content={description} />}
             {keywords && <meta name="keywords" content={keywords} />}
-            <meta name="robots" content={noIndex ? 'noindex,nofollow' : 'index,follow'} />
-            <meta name="googlebot" content={noIndex ? 'noindex,nofollow' : 'index,follow'} />
+            <meta
+                name="robots"
+                content={noIndex ? 'noindex,nofollow' : 'index,follow,max-snippet:160,max-image-preview:large,max-video-preview:-1'}
+            />
+            <meta
+                name="googlebot"
+                content={noIndex ? 'noindex,nofollow' : 'index,follow,max-snippet:160,max-image-preview:large,max-video-preview:-1'}
+            />
 
             {/* Open Graph 元信息 */}
             <meta property="og:title" content={ogTitle || fullTitle} />

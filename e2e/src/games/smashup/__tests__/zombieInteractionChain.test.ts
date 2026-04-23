@@ -573,19 +573,18 @@ describe('zombie_lord（僵尸领主）循环链', () => {
         expect(choice1).toBeDefined();
         expect(choice1.sourceId).toBe('zombie_lord_pick');
 
-        // 第一轮：选一个随从（zombie_walker）
-        // zombie_lord_pick handler 需要 value 包含 cardUid + baseIndex
-        // 但 SimpleChoice 的 RESPOND 只传 optionId，handler 从 option.value 获取数据
-        // 这里选第一个随从选项
+        // 第一轮：只传 optionId（模拟 AI/自动恢复链路未合并 baseIndex）
         const cardOpt = findOption(choice1, (o: any) => o.value?.cardUid === 'disc-w1');
         const r2 = respond(r1.finalState, '0', cardOpt, 'zombie_lord: 选随从');
         expect(r2.steps[0]?.success).toBe(true);
-        // zombie_lord_pick handler 需要 baseIndex，但 SimpleChoice 只有 optionId
-        // 实际上 zombie_lord 的交互是"选随从+点基地"合并为单步
-        // handler 从 value 中读取 { cardUid, defId, power, baseIndex }
-        // 但 createSimpleChoice 的 options 只有 { cardUid, defId, power }，没有 baseIndex
-        // 这意味着 baseIndex 需要通过其他方式传递（可能是 UI 层的 targetType: 'discard_minion'）
-        // 在测试中，我们验证交互创建正确即可
+        const p0After = r2.finalState.core.players['0'];
+        expect(p0After.discard.some((c: CardInstance) => c.uid === 'disc-w1')).toBe(false);
+        expect(r2.finalState.core.bases[0].minions.some((m: MinionOnBase) => m.uid === 'disc-w1')).toBe(true);
+        expect(Object.prototype.hasOwnProperty.call(p0After.minionsPlayedPerBase ?? {}, 'undefined')).toBe(false);
+
+        const choice2 = asSimpleChoice(r2.finalState.sys.interaction.current)!;
+        expect(choice2).toBeDefined();
+        expect(choice2.sourceId).toBe('zombie_lord_pick');
     });
 
     it('选完成 → 直接结束', () => {

@@ -261,7 +261,7 @@ describe('StatusEffectsIcons', () => {
         expect(getDiceSpritePosition(6)).toEqual({ xPos: 100, yPos: 100 });
     });
 
-    it('dice sprite 缺失时应渲染 shimmer 占位（与手牌一致），避免整块空白', () => {
+    it('dice sprite 缺失时应渲染可见骰面文本兜底，避免整块空白', () => {
         const html = renderToStaticMarkup(
             <Dice3D
                 value={6}
@@ -274,6 +274,8 @@ describe('StatusEffectsIcons', () => {
 
         expect(html).toContain('data-sprite-ready="false"');
         expect(html).toContain('data-face-id="1"');
-        expect(html).toContain('data-face-fallback="loading"');
+        expect(html).toContain('data-face-fallback="glyph"');
+        expect(html).toContain('data-face-symbol="moon"');
+        expect(html).toContain('MN');
     });
 });

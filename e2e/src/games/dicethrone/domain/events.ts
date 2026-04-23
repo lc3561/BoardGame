@@ -583,6 +583,38 @@ export interface ChoiceRequestedEvent extends GameEvent<'CHOICE_REQUESTED'> {
         sourceAbilityId: string;
         titleKey: string;
         /**
+         * 对比掷骰特写元数据（可选）。
+         * 当存在时，UI 使用 compare-roll-choice 覆盖层展示双方骰面与结果。
+         */
+        compareRoll?: {
+            contestants: Array<{
+                playerId?: PlayerId;
+                label?: string;
+                labelKey?: string;
+                labelParams?: Record<string, string | number>;
+                roll: number;
+                face?: DieFace;
+                characterId?: string;
+                effectKey?: string;
+                effectParams?: Record<string, string | number>;
+            }>;
+            resultText?: string;
+            resultTextKey?: string;
+            resultTextParams?: Record<string, string | number>;
+            resultTone?: 'neutral' | 'success' | 'warning' | 'danger';
+            /**
+             * 无选项时的自动确认值。
+             * 由 compare-roll-choice 的 confirm 命令回传，并在领域层转为 CHOICE_RESOLVED。
+             */
+            confirmValue?: {
+                statusId?: string;
+                tokenId?: string;
+                value: number;
+                customId?: string;
+            };
+            autoConfirmDelayMs?: number;
+        };
+        /**
          * slider 模式配置（连续数值选择）。
          * 约定：options[0] = 确认选项（value=max），options[last] = 跳过选项（value=0）。
          * - confirmLabelKey: 确认按钮文案 i18n key，支持 {{count}} 插值

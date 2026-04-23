@@ -681,6 +681,7 @@
     "not_enough_token": "Not enough tokens to pay the cost",
     "invalid_die_index": "Invalid die index",
     "player_is_dazed": "Player is dazed",
+    "player_is_stunned": "Player is stunned and cannot play cards",
     "attack_already_initiated": "Attack already initiated, cannot reselect ability"
   },
   "actions": {
@@ -2648,7 +2649,16 @@
     "confirm": "OK"
   },
   "compareRoll": {
-    "confirming": "Confirming..."
+    "confirming": "Confirming...",
+    "rolled": "Rolled {{value}}",
+    "gunslingerDuel": {
+      "title": "Duel Roll-Off",
+      "defender": "Defender",
+      "attacker": "Attacker",
+      "win": "You won the duel. Choose the resolution.",
+      "lose": "You lost the duel: deal 1 undefendable damage to the attacker.",
+      "tieLose": "Tie does not win this duel: deal 1 undefendable damage to the attacker."
+    }
   },
   "selection": {
     "title": "Select Your Hero",

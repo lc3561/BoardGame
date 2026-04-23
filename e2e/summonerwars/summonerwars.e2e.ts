@@ -1429,6 +1429,8 @@ const waitForOverlayState = async (page: Page, overlayTestId: string, expected: 
   }, { testId: overlayTestId, target: expected }), { timeout: 5000 }).toBe(true);
 };
 
+void waitForOverlayState;
+
 const getExpandedFabMetrics = async (page: Page) => (
   page.evaluate(() => {
     const buttons = Array.from(document.querySelectorAll('[data-testid="fab-menu"] [data-fab-id]')) as HTMLElement[];
@@ -3020,7 +3022,9 @@ test.describe('SummonerWars', () => {
     await applyOnlineCoreState(preparedCore);
 
     attachPageDiagnostics(hostPage);
+    attachPageDiagnostics(guestPage);
     const beforeAttackErrorCount = attachPageDiagnostics(hostPage).errors.length;
+    const guestBeforeAttackErrorCount = attachPageDiagnostics(guestPage).errors.length;
 
     const assertDesktopLayoutStable = async (snapshotKey: string) => {
       await expect(hostPage.getByTestId('sw-hand-area')).toBeVisible({ timeout: 8000 });
@@ -3280,6 +3284,8 @@ test.describe('SummonerWars', () => {
 
     // 攻击后：不报错 + 布局仍稳定
     expect(attachPageDiagnostics(hostPage).errors.length).toBe(beforeAttackErrorCount);
+    expect(attachPageDiagnostics(guestPage).errors.length).toBe(guestBeforeAttackErrorCount);
+    await expect(guestPage.getByText(/游戏加载失败/i)).toHaveCount(0);
     await assertDesktopLayoutStable('51-pc-online-layout-after-attack');
 
     // 切到魔力阶段后弃牌

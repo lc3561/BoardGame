@@ -57,6 +57,8 @@ interface AnimStep {
 
 /** 护盾值阈值：>= 此值视为"完全免疫"（如暗影守护 999 护盾） */
 const FULL_IMMUNITY_SHIELD_THRESHOLD = 100;
+/** 已处理事件 ID 的保留窗口，避免长局内存持续增长 */
+const MAX_TRACKED_EVENT_IDS = 1200;
 
 /**
  * 动画效果配置
@@ -342,6 +344,8 @@ export function useAnimationEffects(config: AnimationEffectsConfig): {
     // 注意：这里必须是“累积队列”，不能被新批次覆盖。
     // 否则 AI 高频命令下，后一批事件会顶掉前一批，导致动画偶发不播。
     const pendingPushRef = useRef<AnimStep[]>([]);
+    // 去重：防止 rollback/reconnect 场景同一 EventStream id 被重复消费
+    const processedEventIdsRef = useRef<Set<number>>(new Set());
 
     /** 推入队列中的下一步，返回是否成功 */
     const pushNextStep = useCallback(() => {
@@ -375,15 +379,41 @@ export function useAnimationEffects(config: AnimationEffectsConfig): {
     // ── 阶段 1：render 阶段同步消费事件 + freezeSync ──
     // consumeNew() 是幂等的（内部游标 ref 保证同一批 entries 只消费一次），
     // 在 render 中调用安全（无 setState，仅写 ref）。
-    const { entries: newEntries } = consumeNew();
-    if (newEntries.length > 0) {
+    const { entries: newEntries, didReset, didOptimisticRollback } = consumeNew();
+    if (didReset || didOptimisticRollback) {
+        pendingStepsRef.current = [];
+        pendingPushRef.current = [];
+        activeFxIdRef.current = null;
+        fxImpactMapRef.current.clear();
+        // render 阶段只清 ref，避免 setState；effect 阶段通过 commitSync 同步到 UI
+        damageBuffer.clearSync();
+        if (didReset) {
+            processedEventIdsRef.current.clear();
+        }
+    }
+
+    const dedupedEntries = newEntries.filter((entry) => {
+        if (processedEventIdsRef.current.has(entry.id)) {
+            return false;
+        }
+        processedEventIdsRef.current.add(entry.id);
+        if (processedEventIdsRef.current.size > MAX_TRACKED_EVENT_IDS) {
+            const [oldestId] = processedEventIdsRef.current;
+            if (oldestId !== undefined) {
+                processedEventIdsRef.current.delete(oldestId);
+            }
+        }
+        return true;
+    });
+
+    if (dedupedEntries.length > 0) {
         const damageSteps: AnimStep[] = [];
         const healSteps: AnimStep[] = [];
         const cpSteps: AnimStep[] = [];
 
         // 收集本批次中被大额护盾完全保护的目标（用于跳过伤害动画）
         const shieldedTargets = new Set<string>();
-        for (const entry of newEntries) {
+        for (const entry of dedupedEntries) {
             const event = entry.event as { type: string; payload?: Record<string, unknown> };
             if (event.type !== 'DAMAGE_SHIELD_GRANTED') continue;
 
@@ -396,7 +426,7 @@ export function useAnimationEffects(config: AnimationEffectsConfig): {
             }
         }
 
-        for (const entry of newEntries) {
+        for (const entry of dedupedEntries) {
             const event = entry.event as { type: string; payload: Record<string, unknown> };
             if (event.type === 'DAMAGE_DEALT') {
                 const step = buildDamageStep(

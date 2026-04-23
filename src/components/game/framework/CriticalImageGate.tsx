@@ -10,6 +10,7 @@ import {
     signalCriticalImagesReady,
 } from '../../../core';
 import { resolveCriticalImages } from '../../../core/CriticalImageResolverRegistry';
+import { HudPortal } from '../../../core/ui/portal';
 import { warmPreloadScheduler } from './warmPreloadScheduler';
 
 const criticalImageGateWindow = typeof window !== 'undefined'
@@ -263,7 +264,13 @@ export const CriticalImageGate: React.FC<CriticalImageGateProps> = ({
         const progressText = loadingProgress
             ? t('matchRoom.loadingProgress.loadingAssets', { loaded: loadingProgress.loaded, total: loadingProgress.total })
             : undefined;
-        return <LoadingScreen anchor={loadingAnchor} description={loadingDescription} progressText={progressText} />;
+        const loadingScreen = (
+            <LoadingScreen anchor={loadingAnchor} description={loadingDescription} progressText={progressText} />
+        );
+        if (loadingAnchor === 'viewport') {
+            return <HudPortal>{loadingScreen}</HudPortal>;
+        }
+        return loadingScreen;
     }
 
     return <>{children}</>;

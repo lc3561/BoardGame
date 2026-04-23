@@ -170,7 +170,7 @@ describe('炎术士 GTR 技能覆盖', () => {
             //   preDefense: inflictStatus(stun, 1) → 对手眩晕
             //   withDamage: meteor-resolve → +2 FM → FM(2) 伤害
             //   withDamage: damage(2, target: 'allOpponents') → 对手 2 伤害（不伤自己）
-            // 不可防御 → 跳过防御 → daze 立即触发额外攻击
+            // 不可防御 → 跳过防御 → 进入 main2，给对手挂上 stun
             const random = createQueuedRandom([6, 6, 6, 6, 1]);
             const runner = new GameTestRunner({
                 domain: DiceThroneDomain, systems: testSystems,
@@ -184,10 +184,10 @@ describe('炎术士 GTR 技能覆盖', () => {
                     cmd('ROLL_DICE', '0'),
                     cmd('CONFIRM_ROLL', '0'),
                     cmd('SELECT_ABILITY', '0', { abilityId: 'meteor' }),
-                    cmd('ADVANCE_PHASE', '0'),       // offensiveRoll exit → daze 触发额外攻击
+                    cmd('ADVANCE_PHASE', '0'),       // offensiveRoll exit → main2
                 ],
                 expect: {
-                    turnPhase: 'offensiveRoll',
+                    turnPhase: 'main2',
                     players: {
                         '0': {
                             hp: 50,  // 不再自伤
@@ -195,7 +195,7 @@ describe('炎术士 GTR 技能覆盖', () => {
                         },
                         '1': {
                             hp: 46,  // 50 - 2(FM伤害) - 2(对手伤害) = 46
-                            statusEffects: { [STATUS_IDS.DAZE]: 0 },
+                            statusEffects: { [STATUS_IDS.STUN]: 1 },
                         },
                     },
                 },
@@ -293,10 +293,10 @@ describe('炎术士 METEOR_2 升级后变体', () => {
                 cmd('CONFIRM_ROLL', '0'),
                 // 选择 meteor-2（priority 2，有伤害）而非 meteor-shower（priority 1，无伤害）
                 cmd('SELECT_ABILITY', '0', { abilityId: 'meteor-2' }),
-                cmd('ADVANCE_PHASE', '0'),       // offensiveRoll exit → daze 触发额外攻击
+                cmd('ADVANCE_PHASE', '0'),       // offensiveRoll exit → main2
             ],
             expect: {
-                turnPhase: 'offensiveRoll',
+                turnPhase: 'main2',
                 players: {
                     '0': {
                         hp: 50,  // 不再自伤
@@ -304,7 +304,7 @@ describe('炎术士 METEOR_2 升级后变体', () => {
                     },
                     '1': {
                         hp: 45,  // 50 - 2(FM伤害) - 3(对手伤害) = 45
-                        statusEffects: { [STATUS_IDS.DAZE]: 0 },
+                        statusEffects: { [STATUS_IDS.STUN]: 1 },
                     },
                 },
             },
@@ -312,7 +312,7 @@ describe('炎术士 METEOR_2 升级后变体', () => {
         expect(result.assertionErrors).toEqual([]);
     });
 
-    it('3 陨石 → meteor-shower 施加状态后立即触发额外攻击', () => {
+    it('3 陨石 → meteor-shower 施加状态并进入 main2', () => {
         // 进攻骰: [6,6,6,1,1] → 3 meteor + 2 fire
         // meteor-shower 只有 inflictStatus 效果，无伤害 → 不进入防御阶段
         const random = createQueuedRandom([6, 6, 6, 1, 1]);
@@ -328,17 +328,17 @@ describe('炎术士 METEOR_2 升级后变体', () => {
                 cmd('ROLL_DICE', '0'),
                 cmd('CONFIRM_ROLL', '0'),
                 cmd('SELECT_ABILITY', '0', { abilityId: 'meteor-shower' }),
-                cmd('ADVANCE_PHASE', '0'),       // offensiveRoll exit → daze 触发额外攻击
+                cmd('ADVANCE_PHASE', '0'),       // offensiveRoll exit → main2
             ],
             expect: {
-                turnPhase: 'offensiveRoll',
+                turnPhase: 'main2',
                 players: {
                     '1': {
                         hp: 50,  // 无伤害
                         statusEffects: {
                             [STATUS_IDS.KNOCKDOWN]: 1,
                             [STATUS_IDS.BURN]: 1,
-                            [STATUS_IDS.DAZE]: 0,
+                            [STATUS_IDS.STUN]: 1,
                         },
                     },
                 },

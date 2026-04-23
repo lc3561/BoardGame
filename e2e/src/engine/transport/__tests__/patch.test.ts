@@ -731,5 +731,43 @@ describe('Feature: incremental-state-sync', () => {
         { numRuns: 100 },
       );
     });
+
+    it('resyncs when patch base is polluted by render-only filtered state', () => {
+      const onStateUpdate = vi.fn();
+      const { client } = createConnectedClient({ onStateUpdate });
+
+      const authoritativeState = {
+        core: { hp: 10 },
+        sys: { eventStream: { entries: [{ id: 1, type: 'damage' }], nextId: 2 } },
+      };
+      simulateSync(authoritativeState);
+      simulateUpdate(authoritativeState, { stateID: 1, randomCursor: 0 });
+
+      onStateUpdate.mockClear();
+      mockSocket.clearEmitted();
+
+      const renderFilteredState = {
+        core: { hp: 10 },
+        sys: { eventStream: { entries: [], nextId: 2 } },
+      };
+      client.updateLatestState(renderFilteredState);
+
+      const nextAuthoritativeState = {
+        core: { hp: 8 },
+        sys: { eventStream: { entries: [{ id: 1, type: 'damage' }, { id: 2, type: 'hp-changed' }], nextId: 3 } },
+      };
+      const diff = computeDiff(authoritativeState, nextAuthoritativeState, Infinity);
+      expect(diff.type).toBe('patch');
+      expect(diff.patches).toBeDefined();
+      expect(diff.patches!.length).toBeGreaterThan(0);
+
+      simulatePatch(diff.patches!, { stateID: 2, randomCursor: 0 });
+
+      expect(onStateUpdate).not.toHaveBeenCalled();
+      expect(mockSocket.findEmitted('sync').length).toBeGreaterThan(0);
+      expect(client.latestState).toEqual(renderFilteredState);
+
+      client.disconnect();
+    });
   });
 });

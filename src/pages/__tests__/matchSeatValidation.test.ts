@@ -2562,6 +2562,7 @@ describe('LocalGameProvider 视角与重置契约', () => {
 
 describe('useMatchStatus 竞态保护', () => {
     afterEach(() => {
+        vi.useRealTimers();
         vi.restoreAllMocks();
         cleanup();
     });
@@ -2608,6 +2609,56 @@ describe('useMatchStatus 竞态保护', () => {
             expect(result.current.error).toBeNull();
             expect(result.current.isLoading).toBe(false);
         });
+    });
+
+    it('房间 404 后停止重试，避免持续刷请求', async () => {
+        vi.useFakeTimers();
+        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+        const getMatchSpy = vi.spyOn(matchApi, 'getMatch').mockRejectedValue(new Error('404: Match not found'));
+        const { result } = renderHook(() => useMatchStatus('dicethrone', 'missing-match', '0'));
+
+        await act(async () => {
+            await Promise.resolve();
+            await Promise.resolve();
+        });
+        expect(result.current.errorKind).toBe('not_found');
+        expect(result.current.error).toBe('房间不存在或已被删除');
+
+        const callsAfter404 = getMatchSpy.mock.calls.length;
+        act(() => {
+            vi.advanceTimersByTime(30_000);
+        });
+        await act(async () => Promise.resolve());
+
+        expect(getMatchSpy).toHaveBeenCalledTimes(callsAfter404);
+    });
+
+    it('瞬时网络错误会触发退避，避免固定 3 秒频率重试', async () => {
+        vi.useFakeTimers();
+        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        vi.spyOn(Math, 'random').mockReturnValue(0.5);
+
+        const getMatchSpy = vi.spyOn(matchApi, 'getMatch').mockRejectedValue(new Error('network timeout'));
+        renderHook(() => useMatchStatus('dicethrone', 'backoff-match', '0'));
+
+        await act(async () => {
+            await Promise.resolve();
+            await Promise.resolve();
+        });
+        expect(getMatchSpy).toHaveBeenCalledTimes(1);
+
+        act(() => {
+            vi.advanceTimersByTime(3000);
+        });
+        await act(async () => Promise.resolve());
+        expect(getMatchSpy).toHaveBeenCalledTimes(1);
+
+        act(() => {
+            vi.advanceTimersByTime(3000);
+        });
+        await act(async () => Promise.resolve());
+        expect(getMatchSpy).toHaveBeenCalledTimes(2);
     });
 });
 

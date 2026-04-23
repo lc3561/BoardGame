@@ -72,6 +72,10 @@ export const SpotlightContainer: React.FC<SpotlightContainerProps> = ({
 }) => {
     const visibleSinceRef = React.useRef<number>(0);
     const onCloseRef = React.useRef(onClose);
+    const isVisibleRef = React.useRef(isVisible);
+    const queuedCloseTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+    const lastBackdropPointerDownAtRef = React.useRef<number | null>(null);
+    const lastContentPointerDownAtRef = React.useRef<number | null>(null);
     const shouldCaptureBackdropClick = !disableBackdropClose;
     const [portalReady, setPortalReady] = React.useState(false);
 
@@ -83,10 +87,31 @@ export const SpotlightContainer: React.FC<SpotlightContainerProps> = ({
         setPortalReady(true);
     }, []);
 
+    const clearQueuedCloseTimer = React.useCallback(() => {
+        if (!queuedCloseTimerRef.current) return;
+        clearTimeout(queuedCloseTimerRef.current);
+        queuedCloseTimerRef.current = null;
+    }, []);
+
+    React.useEffect(() => {
+        isVisibleRef.current = isVisible;
+        if (!isVisible) {
+            clearQueuedCloseTimer();
+        }
+    }, [clearQueuedCloseTimer, isVisible]);
+
+    React.useEffect(() => {
+        return () => {
+            clearQueuedCloseTimer();
+        };
+    }, [clearQueuedCloseTimer]);
+
     React.useEffect(() => {
         if (isVisible) {
             const now = Date.now();
             visibleSinceRef.current = now;
+            lastBackdropPointerDownAtRef.current = null;
+            lastContentPointerDownAtRef.current = null;
             spotlightContainerLogger.info('visible', {
                 id,
                 visibleSince: now,
@@ -107,6 +132,50 @@ export const SpotlightContainer: React.FC<SpotlightContainerProps> = ({
         });
         return isActive;
     }, [closeClickGuardMs, id]);
+
+    const queueCloseAfterGuard = React.useCallback((
+        source: 'backdrop' | 'content',
+        pointerDownAt: number | null,
+    ) => {
+        if (closeClickGuardMs <= 0) return false;
+        if (pointerDownAt === null || pointerDownAt < visibleSinceRef.current) return false;
+        const now = Date.now();
+        const pointerAge = now - pointerDownAt;
+        if (pointerAge < 0 || pointerAge > 1200) return false;
+
+        const elapsed = now - visibleSinceRef.current;
+        const remaining = Math.max(0, closeClickGuardMs - elapsed);
+        if (remaining <= 0) {
+            clearQueuedCloseTimer();
+            spotlightContainerLogger.info('close', { id, source, mode: 'guard-expired' });
+            onCloseRef.current();
+            return true;
+        }
+
+        if (queuedCloseTimerRef.current) {
+            spotlightContainerLogger.info('close-queued', {
+                id,
+                source,
+                mode: 'already-queued',
+                remaining,
+            });
+            return true;
+        }
+
+        spotlightContainerLogger.info('close-queued', {
+            id,
+            source,
+            mode: 'delay-until-guard-end',
+            remaining,
+        });
+        queuedCloseTimerRef.current = setTimeout(() => {
+            queuedCloseTimerRef.current = null;
+            if (!isVisibleRef.current) return;
+            spotlightContainerLogger.info('close', { id, source, mode: 'guard-queue-flush' });
+            onCloseRef.current();
+        }, remaining);
+        return true;
+    }, [clearQueuedCloseTimer, closeClickGuardMs, id]);
 
     // 自动关闭计时器
     React.useEffect(() => {
@@ -138,6 +207,11 @@ export const SpotlightContainer: React.FC<SpotlightContainerProps> = ({
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.3 }}
+                onPointerDown={shouldCaptureBackdropClick
+                    ? () => {
+                        lastBackdropPointerDownAtRef.current = Date.now();
+                    }
+                    : undefined}
                 onClick={!shouldCaptureBackdropClick
                     ? undefined
                     : () => {
@@ -147,9 +221,15 @@ export const SpotlightContainer: React.FC<SpotlightContainerProps> = ({
                             guardActive,
                         });
                         if (guardActive) {
-                            spotlightContainerLogger.info('close-skipped', { reason: 'guard-active', id, source: 'backdrop' });
+                            const queued = queueCloseAfterGuard('backdrop', lastBackdropPointerDownAtRef.current);
+                            spotlightContainerLogger.info('close-skipped', {
+                                reason: queued ? 'guard-active-queued' : 'guard-active',
+                                id,
+                                source: 'backdrop',
+                            });
                             return;
                         }
+                        clearQueuedCloseTimer();
                         spotlightContainerLogger.info('close', { id, source: 'backdrop' });
                         onClose();
                     }}
@@ -161,6 +241,10 @@ export const SpotlightContainer: React.FC<SpotlightContainerProps> = ({
                     animate={m.animate}
                     exit={m.exit}
                     transition={m.transition}
+                    onPointerDown={(e) => {
+                        e.stopPropagation();
+                        lastContentPointerDownAtRef.current = Date.now();
+                    }}
                     onClick={(e) => {
                         e.stopPropagation();
                         const guardActive = isCloseClickGuardActive();
@@ -174,9 +258,15 @@ export const SpotlightContainer: React.FC<SpotlightContainerProps> = ({
                             return;
                         }
                         if (guardActive) {
-                            spotlightContainerLogger.info('close-skipped', { reason: 'guard-active', id, source: 'content' });
+                            const queued = queueCloseAfterGuard('content', lastContentPointerDownAtRef.current);
+                            spotlightContainerLogger.info('close-skipped', {
+                                reason: queued ? 'guard-active-queued' : 'guard-active',
+                                id,
+                                source: 'content',
+                            });
                             return;
                         }
+                        clearQueuedCloseTimer();
                         spotlightContainerLogger.info('close', { id, source: 'content' });
                         onClose();
                     }}

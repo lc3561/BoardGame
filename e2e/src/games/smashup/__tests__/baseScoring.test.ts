@@ -9,6 +9,7 @@
 
 import { describe, expect, it, beforeAll } from 'vitest';
 import { SmashUpDomain, scoreOneBase } from '../domain';
+import { smashUpFlowHooks } from '../domain/index';
 import type {
     SmashUpCore, SmashUpEvent, MinionOnBase, BaseInPlay,
     OngoingActionOnBase, AttachedActionOnMinion,
@@ -16,6 +17,15 @@ import type {
 import { SU_EVENTS, getTotalPowerOnBase, getPlayerPowerOnBase } from '../domain/types';
 import { initAllAbilities } from '../abilities';
 import { SMASHUP_FACTION_IDS } from '../domain/ids';
+import {
+    createFlowSystem,
+    createBaseSystems,
+    createInitialSystemState,
+    createSeededRandom,
+    executePipeline,
+} from '../../../engine';
+import type { MatchState } from '../../../engine/types';
+import { getEventStreamEntries } from '../../../engine/systems/EventStreamSystem';
 
 const PLAYER_IDS = ['0', '1'];
 
@@ -78,6 +88,76 @@ describe('基地记分与力量计算', () => {
 
     // Property 16: VP 分配正确性
     describe('Property 16: VP 分配', () => {
+        it('罗德百货商场计分时，每个随从 VP 只结算一次（不翻倍）', () => {
+            const systems = [
+                createFlowSystem<SmashUpCore>({ hooks: smashUpFlowHooks }),
+                ...createBaseSystems<SmashUpCore>(),
+            ];
+            const rng = createSeededRandom('rhodes-plaza-vp-once');
+
+            const initialCore: SmashUpCore = {
+                players: {
+                    '0': makePlayer('0'),
+                    '1': makePlayer('1', { factions: [SMASHUP_FACTION_IDS.PIRATES, SMASHUP_FACTION_IDS.NINJAS] }),
+                },
+                turnOrder: PLAYER_IDS,
+                currentPlayerIndex: 0,
+                bases: [
+                    {
+                        defId: 'base_rhodes_plaza',
+                        minions: [
+                            { uid: 'p0-a', defId: 'd1', controller: '0', owner: '0', basePower: 12, powerCounters: 0, powerModifier: 0, tempPowerModifier: 0, talentUsed: false, attachedActions: [] },
+                            { uid: 'p0-b', defId: 'd2', controller: '0', owner: '0', basePower: 10, powerCounters: 0, powerModifier: 0, tempPowerModifier: 0, talentUsed: false, attachedActions: [] },
+                            { uid: 'p1-a', defId: 'd3', controller: '1', owner: '1', basePower: 3, powerCounters: 0, powerModifier: 0, tempPowerModifier: 0, talentUsed: false, attachedActions: [] },
+                        ],
+                        ongoingActions: [],
+                    },
+                    {
+                        defId: 'base_central_brain',
+                        minions: [],
+                        ongoingActions: [],
+                    },
+                ],
+                baseDeck: ['base_the_homeworld'],
+                turnNumber: 1,
+                nextUid: 100,
+            };
+
+            const sys = createInitialSystemState(PLAYER_IDS, systems);
+            sys.phase = 'playCards';
+            let state: MatchState<SmashUpCore> = { core: initialCore, sys };
+
+            const commands = [
+                { type: 'ADVANCE_PHASE', playerId: '0', payload: undefined, timestamp: 1 },
+                { type: 'RESPONSE_PASS', playerId: '0', payload: undefined, timestamp: 2 },
+                { type: 'RESPONSE_PASS', playerId: '1', payload: undefined, timestamp: 3 },
+            ] as const;
+
+            for (const command of commands) {
+                const result = executePipeline(
+                    { domain: SmashUpDomain, systems },
+                    state,
+                    command as any,
+                    rng,
+                    PLAYER_IDS,
+                );
+                expect(result.success).toBe(true);
+                state = result.state;
+            }
+
+            // base_rhodes_plaza 的基础 VP 是 [0,0,0]，只应按“每个随从 +1VP”结算
+            expect(state.core.players['0'].vp).toBe(2);
+            expect(state.core.players['1'].vp).toBe(1);
+
+            const vpEvents = getEventStreamEntries(state)
+                .filter(entry => entry.event.type === SU_EVENTS.VP_AWARDED)
+                .map(entry => (entry.event as any).payload);
+            expect(vpEvents).toEqual([
+                { playerId: '0', amount: 2, reason: '罗德百货商场：每个随从1VP' },
+                { playerId: '1', amount: 1, reason: '罗德百货商场：每个随从1VP' },
+            ]);
+        });
+
         it('scoreOneBase 会把基地级总力量修正计入 rankings.power', () => {
             const state: SmashUpCore = {
                 players: {
@@ -122,6 +202,43 @@ describe('基地记分与力量计算', () => {
                     defId: 'base_tar_pits',
                     minions: [
                         { uid: 'bushi-pod-1', defId: 'samurai_bushi_pod', controller: '0', owner: '0', basePower: 4, powerCounters: 1, powerModifier: 0, tempPowerModifier: 0, talentUsed: false, attachedActions: [] },
+                        { uid: 'ally-13', defId: 'ally_big', controller: '0', owner: '0', basePower: 13, powerCounters: 0, powerModifier: 0, tempPowerModifier: 0, talentUsed: false, attachedActions: [] },
+                    ],
+                    ongoingActions: [],
+                }],
+                baseDeck: [],
+                turnNumber: 1,
+                nextUid: 10,
+            };
+
+            const result = scoreOneBase(state, 0, [], '0', 1000);
+            const scoredEvent = result.events.find((event) => event.type === SU_EVENTS.BASE_SCORED) as any;
+            const bonusVpEvent = result.events.find((event) =>
+                event.type === SU_EVENTS.VP_AWARDED
+                && (event as any).payload?.reason === 'samurai_bushi'
+            ) as any;
+
+            expect(scoredEvent).toBeDefined();
+            expect(bonusVpEvent).toBeDefined();
+            expect(bonusVpEvent.payload.playerId).toBe('0');
+            expect(bonusVpEvent.payload.amount).toBe(1);
+
+            const finalState = result.events.reduce((acc, event) => SmashUpDomain.reduce(acc, event), state);
+            expect(finalState.players['0'].vp).toBe(scoredEvent.payload.rankings[0].vp + 1);
+        });
+
+        it('scoreOneBase 会把武士 POD 的临时力量也计入弃牌时的 +1VP 判定', () => {
+            const state: SmashUpCore = {
+                players: {
+                    '0': makePlayer('0', { factions: [SMASHUP_FACTION_IDS.SAMURAI_POD, SMASHUP_FACTION_IDS.ALIENS] }),
+                    '1': makePlayer('1'),
+                },
+                turnOrder: PLAYER_IDS,
+                currentPlayerIndex: 0,
+                bases: [{
+                    defId: 'base_tar_pits',
+                    minions: [
+                        { uid: 'bushi-pod-temp', defId: 'samurai_bushi_pod', controller: '0', owner: '0', basePower: 4, powerCounters: 0, powerModifier: 0, tempPowerModifier: 3, talentUsed: false, attachedActions: [] },
                         { uid: 'ally-13', defId: 'ally_big', controller: '0', owner: '0', basePower: 13, powerCounters: 0, powerModifier: 0, tempPowerModifier: 0, talentUsed: false, attachedActions: [] },
                     ],
                     ongoingActions: [],

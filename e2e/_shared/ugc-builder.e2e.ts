@@ -17,7 +17,7 @@ const dismissViteOverlay = async (page: Page) => {
 
 const DRAFT_STORAGE_KEY = 'ugc-builder-state';
 const DRAFT_FIXTURE = JSON.parse(
-    fs.readFileSync(new URL('../docs/ugc/doudizhu-preview.ugc.json', import.meta.url), 'utf-8')
+    fs.readFileSync(new URL('../../docs/ugc/doudizhu-preview.ugc.json', import.meta.url), 'utf-8')
 );
 
 const seedDraftState = async (page: Page) => {

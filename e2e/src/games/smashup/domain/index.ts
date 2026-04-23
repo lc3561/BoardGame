@@ -543,14 +543,14 @@ export function scoreOneBase(
     events.push(scoreEvt);
 
     for (const m of scoringBase.minions) {
-        const queued = collectTriggers(core, 'onMinionDiscardedFromBase', {
-            state: core,
+        const queued = collectTriggers(updatedCore, 'onMinionDiscardedFromBase', {
+            state: updatedCore,
             matchState: ms,
             playerId: m.controller,
             baseIndex,
             triggerMinionUid: m.uid,
             triggerMinionDefId: m.defId,
-            triggerMinionPower: getEffectivePower(core, m, baseIndex),
+            triggerMinionPower: getEffectivePower(updatedCore, m, baseIndex),
             triggerMinion: m,
             random: rng,
             now,
@@ -1256,6 +1256,7 @@ export const smashUpFlowHooks: FlowHooks<SmashUpCore> = {
                 return events;
             }
 
+            const preScoreCore = currentState.core;
             const result = scoreOneBase(
                 currentState.core,
                 activeBaseIndex,
@@ -1266,12 +1267,19 @@ export const smashUpFlowHooks: FlowHooks<SmashUpCore> = {
                 currentState,
             );
             const nextState = result.matchState ?? currentState;
-            if (nextState.sys.interaction?.current || getSmashUpReactionSession(nextState)) {
-                return { events: result.events, halt: true, updatedState: nextState } as PhaseExitResult;
+            // scoreOneBase / reaction queue 会在 matchState.core 上做内部 reduce 以便继续计算。
+            // 但这些领域事件同时会通过 result.events 交给 pipeline 再 reduce 一次。
+            // 这里必须把 updatedState.core 回退到“事件应用前”快照，避免 VP/计数类效果双重结算。
+            const pipelineReadyState = result.events.length > 0
+                ? { ...nextState, core: preScoreCore }
+                : nextState;
+
+            if (pipelineReadyState.sys.interaction?.current || getSmashUpReactionSession(pipelineReadyState)) {
+                return { events: result.events, halt: true, updatedState: pipelineReadyState } as PhaseExitResult;
             }
 
             const completedState = updateScoringSession(
-                markScoringBaseCompleted(nextState, activeBaseRef),
+                markScoringBaseCompleted(pipelineReadyState, activeBaseRef),
                 (session) => session ? { ...session, currentStep: 'awaiting-post-reduce' } : session,
             );
             return {

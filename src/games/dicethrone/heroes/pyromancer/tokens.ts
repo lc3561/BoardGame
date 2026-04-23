@@ -5,7 +5,7 @@
  * 包含：
  * - consumable 类型：火焰精通（可主动消耗，增加伤害）
  * - debuff 类型：燃烧（被动触发）
- * - 共享 token：击倒、晕眩（从 sharedTokens 导入）
+ * - 共享 token：击倒、眩晕（从 sharedTokens 导入）
  */
 
 import type { TokenDef, TokenState } from '../../domain/tokenTypes';
@@ -74,7 +74,7 @@ export const PYROMANCER_TOKENS: TokenDef[] = [
     // ============================================
     ...SHARED_TOKENS.filter(t => 
         t.id === STATUS_IDS.KNOCKDOWN || 
-        t.id === STATUS_IDS.DAZE
+        t.id === STATUS_IDS.STUN
     ),
 ];
 
@@ -91,5 +91,5 @@ export const PYROMANCER_INITIAL_TOKENS: TokenState = {
     [TOKEN_IDS.FIRE_MASTERY]: 0,
     [STATUS_IDS.KNOCKDOWN]: 0,
     [STATUS_IDS.BURN]: 0,
-    [STATUS_IDS.DAZE]: 0, // 使用 DAZE 替代 STUN
+    [STATUS_IDS.STUN]: 0,
 };

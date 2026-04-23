@@ -17,7 +17,10 @@ import { AuthModule } from '../src/modules/auth/auth.module';
 import { AuthService } from '../src/modules/auth/auth.service';
 import { FeedbackModule } from '../src/modules/feedback/feedback.module';
 import { Feedback, type FeedbackDocument } from '../src/modules/feedback/feedback.schema';
-import { WATCHDOG_AGGREGATION_WINDOW_MS } from '../src/modules/feedback/feedback.service';
+import {
+    WATCHDOG_AGGREGATION_WINDOW_MS,
+    WATCHDOG_CLOSED_ARCHIVE_RETENTION_MS,
+} from '../src/modules/feedback/feedback.service';
 import { User, type UserDocument } from '../src/modules/auth/schemas/user.schema';
 import { GlobalHttpExceptionFilter } from '../src/shared/filters/http-exception.filter';
 
@@ -510,6 +513,119 @@ describe('Feedback Module (e2e)', () => {
         expect(docs).toHaveLength(2);
         expect(docs[0].status).toBe('closed');
         expect(docs[1].status).toBe('open');
+    });
+
+    it('online-ai-watchdog 超过保留期的 closed 聚合归档应在新上报时自动清理，避免数据库累积', async () => {
+        const payload = {
+            content: '[system][online-ai-watchdog] force-end-turn-success active-turn:follow-up-advance:steps=1',
+            source: 'online-ai-watchdog',
+            type: 'bug',
+            severity: 'medium',
+            status: 'resolved',
+            autoReportKind: 'force-end-turn-success',
+            incidentKey: 'archive-retention-a',
+            gameName: 'dicethrone',
+            clientContext: {
+                gameId: 'dicethrone',
+                route: 'server-watchdog',
+                mode: 'online',
+            },
+            errorContext: {
+                source: 'online-ai-watchdog',
+                name: 'force-end-turn-success',
+                message: 'active-turn:follow-up-advance:steps=1',
+            },
+        };
+
+        const first = await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+            .send(payload)
+            .expect(201);
+
+        const staleOccurredAt = new Date(Date.now() - WATCHDOG_CLOSED_ARCHIVE_RETENTION_MS - 60_000);
+        await feedbackModel.updateOne(
+            { _id: first.body._id },
+            {
+                $set: {
+                    status: 'closed',
+                    firstOccurredAt: staleOccurredAt,
+                    lastOccurredAt: staleOccurredAt,
+                },
+                $unset: { aggregationActiveKey: '' },
+            },
+        );
+
+        const second = await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+            .send({
+                ...payload,
+                incidentKey: 'archive-retention-b',
+            })
+            .expect(201);
+
+        const docs = await feedbackModel.find({ source: 'online-ai-watchdog' }).sort({ createdAt: 1 }).lean();
+        expect(docs).toHaveLength(1);
+        expect(docs[0]._id.toString()).toBe(second.body._id);
+        expect(docs[0].status).toBe('resolved');
+        expect(docs[0].latestIncidentKey).toBe('archive-retention-b');
+    });
+
+    it('online-ai-watchdog 未超过保留期的 closed 聚合归档不应被提前清理', async () => {
+        const payload = {
+            content: '[system][online-ai-watchdog] force-end-turn-success active-turn:follow-up-advance:steps=1',
+            source: 'online-ai-watchdog',
+            type: 'bug',
+            severity: 'medium',
+            status: 'resolved',
+            autoReportKind: 'force-end-turn-success',
+            incidentKey: 'archive-fresh-a',
+            gameName: 'dicethrone',
+            clientContext: {
+                gameId: 'dicethrone',
+                route: 'server-watchdog',
+                mode: 'online',
+            },
+            errorContext: {
+                source: 'online-ai-watchdog',
+                name: 'force-end-turn-success',
+                message: 'active-turn:follow-up-advance:steps=1',
+            },
+        };
+
+        const first = await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+            .send(payload)
+            .expect(201);
+
+        const freshOccurredAt = new Date(Date.now() - WATCHDOG_CLOSED_ARCHIVE_RETENTION_MS + 60_000);
+        await feedbackModel.updateOne(
+            { _id: first.body._id },
+            {
+                $set: {
+                    status: 'closed',
+                    firstOccurredAt: freshOccurredAt,
+                    lastOccurredAt: freshOccurredAt,
+                },
+                $unset: { aggregationActiveKey: '' },
+            },
+        );
+
+        await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+            .send({
+                ...payload,
+                incidentKey: 'archive-fresh-b',
+            })
+            .expect(201);
+
+        const docs = await feedbackModel.find({ source: 'online-ai-watchdog' }).sort({ createdAt: 1 }).lean();
+        expect(docs).toHaveLength(2);
+        const retainedClosed = docs.find((doc) => String(doc._id) === String(first.body._id));
+        expect(retainedClosed?.status).toBe('closed');
     });
 
     it('online-ai-watchdog clientContext.gameId 为空白时应回退到 gameName 作为聚合 gameId', async () => {

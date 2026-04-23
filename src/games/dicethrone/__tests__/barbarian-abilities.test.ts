@@ -221,6 +221,7 @@ describe('狂战士技能定义', () => {
         it('鲁莽打击 II - 伤害提升到 20，自伤 5', () => {
             expect(RECKLESS_STRIKE_2.effects![0].action.value).toBe(20);
             expect(RECKLESS_STRIKE_2.effects![1].action.value).toBe(5);
+            expect(RECKLESS_STRIKE_2.tags ?? []).not.toContain('unblockable');
         });
 
         it('厚皮 II - 骰子数量提升到 4', () => {

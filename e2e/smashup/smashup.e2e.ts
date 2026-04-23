@@ -312,10 +312,17 @@ test.describe('大杀四方大厅 E2E', () => {
     const mermaidsBanner = hostPage.getByTestId('faction-implementation-banner-mermaids');
     const skeletonsBanner = hostPage.getByTestId('faction-implementation-banner-skeletons');
     const worldChampsBanner = hostPage.getByTestId('faction-implementation-banner-world_champs');
+    const mermaidsBannerLabel = hostPage.getByTestId('faction-implementation-banner-mermaids-label');
+    const skeletonsBannerLabel = hostPage.getByTestId('faction-implementation-banner-skeletons-label');
+    const worldChampsBannerLabel = hostPage.getByTestId('faction-implementation-banner-world_champs-label');
 
     await expect(mermaidsBanner).toBeVisible({ timeout: 15000 });
     await expect(skeletonsBanner).toBeVisible({ timeout: 15000 });
     await expect(worldChampsBanner).toBeVisible({ timeout: 15000 });
+    await expect(mermaidsBannerLabel).toHaveText(/^(实施中|Implementation in Progress)$/);
+    await expect(skeletonsBannerLabel).toHaveText(/^(实施中|Implementation in Progress)$/);
+    await expect(worldChampsBannerLabel).toHaveText(/^(实施中|Implementation in Progress)$/);
+    await expect(hostPage.getByText(/分批实施|持续完善|being delivered in batches|continue to improve/i)).toHaveCount(0);
 
     const sharedDir = join(process.cwd(), 'test-results', 'evidence-screenshots', '_shared');
     mkdirSync(sharedDir, { recursive: true });

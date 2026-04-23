@@ -196,7 +196,7 @@ describe('BonusDieOverlay', () => {
         expect(screen.queryByTestId('bonus-die-multi-reroll-spotlight')).not.toBeInTheDocument();
     });
 
-    it('奖励骰展示态特写应保留首次点击保护，保护窗后才允许关闭', () => {
+    it('奖励骰展示态特写应保留首次点击保护，0.3 秒后才允许关闭', () => {
         vi.useFakeTimers();
         const onClose = vi.fn();
 
@@ -213,12 +213,12 @@ describe('BonusDieOverlay', () => {
         fireEvent.click(document.querySelector('.fixed.inset-0') as Element);
         expect(onClose).not.toHaveBeenCalled();
 
-        vi.advanceTimersByTime(250);
+        vi.advanceTimersByTime(350);
         fireEvent.click(document.querySelector('.fixed.inset-0') as Element);
         expect(onClose).toHaveBeenCalledTimes(1);
     });
 
-    it('displayOnly 的 settlement 分支也应保留首次点击保护', () => {
+    it('displayOnly 的 settlement 分支也应保留 0.3 秒首次点击保护', () => {
         vi.useFakeTimers();
         const onClose = vi.fn();
 
@@ -234,7 +234,7 @@ describe('BonusDieOverlay', () => {
         fireEvent.click(document.querySelector('.fixed.inset-0') as Element);
         expect(onClose).not.toHaveBeenCalled();
 
-        vi.advanceTimersByTime(250);
+        vi.advanceTimersByTime(350);
         fireEvent.click(document.querySelector('.fixed.inset-0') as Element);
         expect(onClose).toHaveBeenCalledTimes(1);
     });

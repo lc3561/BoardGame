@@ -145,8 +145,7 @@
     "faction_titan_preview": "泰坦预览",
     "faction_titan_missing": "该种族泰坦暂未接入",
     "cancel_selection": "取消选择",
-    "faction_implementation_in_progress": "实施中",
-    "faction_implementation_in_progress_hint": "该派系正在分批实施，规则与交互会持续完善。"
+    "faction_implementation_in_progress": "实施中"
   },
   "feedback": {
     "deck_search_no_match": "牌库中未找到符合条件的卡牌，已重洗牌库",

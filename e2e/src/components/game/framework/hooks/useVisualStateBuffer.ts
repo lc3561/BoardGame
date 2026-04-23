@@ -65,6 +65,12 @@ export interface UseVisualStateBufferReturn {
   commitSync: () => void;
 
   /**
+   * 同步清空：仅写 ref（render 阶段安全），不触发 setState。
+   * 调用后需在 effect 中调用 commitSync() 同步到 React state。
+   */
+  clearSync: () => void;
+
+  /**
    * 释放指定 key（删除快照），UI 将回退到 core 真实值。
    * 通常在动画 impact 瞬间调用。
    */
@@ -151,6 +157,10 @@ export function useVisualStateBuffer(): UseVisualStateBufferReturn {
     setSnapshot(snapshotRef.current);
   }, []);
 
+  const clearSync = useCallback(() => {
+    snapshotRef.current = null;
+  }, []);
+
   const get = useCallback((key: string, fallback: number): number => {
     const val = snapshotRef.current?.get(key);
     return val !== undefined ? val : fallback;
@@ -161,6 +171,7 @@ export function useVisualStateBuffer(): UseVisualStateBufferReturn {
     freezeBatch,
     freezeSync,
     commitSync,
+    clearSync,
     release,
     clear,
     get,

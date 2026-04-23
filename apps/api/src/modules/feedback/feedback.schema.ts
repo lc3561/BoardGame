@@ -128,6 +128,16 @@ FeedbackSchema.index({ status: 1, createdAt: -1 });
 FeedbackSchema.index({ incidentKey: 1 }, { sparse: true });
 FeedbackSchema.index({ aggregationKey: 1 }, { sparse: true });
 FeedbackSchema.index(
+    { source: 1, status: 1, lastOccurredAt: 1 },
+    {
+        partialFilterExpression: {
+            source: 'online-ai-watchdog',
+            status: 'closed',
+            aggregationKey: { $exists: true },
+        },
+    },
+);
+FeedbackSchema.index(
     { aggregationActiveKey: 1 },
     {
         unique: true,

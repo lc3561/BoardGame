@@ -12,6 +12,7 @@ import {
     createFlowSystem,
     createInteractionSystem,
     createSimpleChoiceSystem,
+    createCompareRollChoiceSystem,
     createMultistepChoiceSystem,
     createRematchSystem,
     createResponseWindowSystem,
@@ -1012,6 +1013,7 @@ const systems = [
     }),
     createInteractionSystem(),
     createSimpleChoiceSystem(),
+    createCompareRollChoiceSystem(),
     createMultistepChoiceSystem(),
     createRematchSystem(),
     createResponseWindowSystem({

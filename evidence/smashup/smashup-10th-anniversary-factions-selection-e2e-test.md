@@ -1,4 +1,4 @@
-# Smash Up 10 周年三派系选择页 E2E 证据（更新于 2026-04-20）
+# Smash Up 10 周年三派系选择页 E2E 证据（更新于 2026-04-22）
 
 ## 验证范围
 
@@ -43,6 +43,22 @@ node scripts/infra/run-e2e-command.mjs isolated e2e/smashup/smashup.e2e.ts --gre
   - `node scripts/infra/run-e2e-command.mjs isolated e2e/smashup/smashup.e2e.ts --grep "派系选择页应显示 10 周年三派系与统一斜向实施中横幅"`
 - 复测结果：`1 passed`
 - 复测截图（绝对路径）：
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-selection.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-mermaids-banner.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-skeletons-banner.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-world-champs-banner.png`
+
+## 复测记录（2026-04-22）
+
+- 触发原因：继续收敛“只保留统一实施中样式/文案”。
+- 代码收敛：
+  - 删除 `public/locales/zh-CN/game-smashup.json` 与 `public/locales/en/game-smashup.json` 中 `faction_implementation_in_progress_hint`。
+  - E2E 增加“横幅文案必须仅为 `实施中/Implementation in Progress` 且页面不存在 `分批实施/持续完善` 长文案”的断言。
+- 校验命令：
+  - `npm run i18n:check`
+  - `npm run test:e2e:ci:file -- e2e/smashup/smashup.e2e.ts "派系选择页应显示 10 周年三派系与统一斜向实施中横幅"`
+- 结果：`i18n-check 通过`，E2E `1 passed`。
+- 本次复测截图（绝对路径）：
   - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-selection.png`
   - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-mermaids-banner.png`
   - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-skeletons-banner.png`

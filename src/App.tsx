@@ -214,13 +214,20 @@ const AppContent = () => {
 
                     {/* Admin Routes */}
                     <Route path="/admin" element={
-                      <AdminGuard allowedRoles={['admin', 'developer']}>
+                      <AdminGuard allowedRoles={['admin', 'developer', 'user']} allowGuest>
                         <React.Suspense fallback={<AdminShellSkeleton />}>
                           <AdminLayout />
                         </React.Suspense>
                       </AdminGuard>
                     }>
-                      <Route path="changelogs" element={<GameChangelogsPage />} />
+                      <Route
+                        path="changelogs"
+                        element={(
+                          <AdminGuard allowedRoles={['admin', 'developer']} fallbackPath="/admin">
+                            <GameChangelogsPage />
+                          </AdminGuard>
+                        )}
+                      />
                       <Route
                         index
                         element={<AdminDashboard />}
@@ -230,7 +237,7 @@ const AppContent = () => {
                       <Route
                         path="matches"
                         element={(
-                          <AdminGuard allowedRoles={['admin', 'developer']} fallbackPath="/admin/changelogs">
+                          <AdminGuard allowedRoles={['admin', 'developer', 'user']} allowGuest fallbackPath="/admin">
                             <MatchesPage />
                           </AdminGuard>
                         )}

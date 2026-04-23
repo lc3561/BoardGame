@@ -23,6 +23,9 @@ export const STATUS_IDS = {
     /** 晕眩（野蛮人 / 炎术士） */
     DAZE: 'daze',
 
+    /** 眩晕（炎术士） */
+    STUN: 'stun',
+
     /** 致盲（月精灵） */
     BLINDED: 'blinded',
 

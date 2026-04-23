@@ -171,6 +171,8 @@ const FAST_AI_COMMAND_TYPES = new Set([
     'ADVANCE_PHASE',
     'sw:end_phase',
     'RESPONSE_PASS',
+    'REROLL_BONUS_DIE',
+    'SKIP_BONUS_DICE_REROLL',
 ]);
 
 function shouldUseFastAiDelay(action: { kind?: string; commands?: Array<{ type?: string }> }): boolean {

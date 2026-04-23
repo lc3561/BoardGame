@@ -99,11 +99,14 @@ export default function MatchesPage() {
     }, [gameNameLabelMap]);
 
     const fetchMatchDetail = useCallback(async (matchID: string) => {
-        if (!token) return;
         setDetailLoading(true);
         try {
+            const headers: Record<string, string> = {};
+            if (token) {
+                headers.Authorization = `Bearer ${token}`;
+            }
             const res = await fetch(`${ADMIN_API_URL}/matches/${matchID}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
+                headers,
             });
             if (!res.ok) throw new Error('获取详情失败');
             const data = await res.json();
@@ -117,13 +120,6 @@ export default function MatchesPage() {
     }, [token, toastError]);
 
     const fetchMatches = async () => {
-        if (!token) {
-            setMatches([]);
-            setTotalPages(1);
-            setTotalItems(0);
-            setLoading(false);
-            return;
-        }
         setLoading(true);
         try {
             const query = new URLSearchParams({
@@ -132,8 +128,12 @@ export default function MatchesPage() {
                 gameName: gameFilter,
                 search
             });
+            const headers: Record<string, string> = {};
+            if (token) {
+                headers.Authorization = `Bearer ${token}`;
+            }
             const res = await fetch(`${ADMIN_API_URL}/matches?${query}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
+                headers,
             });
             if (!res.ok) throw new Error('Failed to fetch matches');
             const data = await res.json();

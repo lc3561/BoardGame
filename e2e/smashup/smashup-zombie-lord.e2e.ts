@@ -159,6 +159,93 @@ test.describe('SmashUp 僵尸领主直点交互', () => {
         await saveEvidenceScreenshot(page, testInfo, 'smashup-zombie-lord', '04-no-eligible-discard.png');
     });
 
+    test('僵尸领主：仅回传 optionId 时也应回退到首个合法基地，不写入 undefined 基地状态', async ({ page, game }, testInfo) => {
+        test.setTimeout(90000);
+
+        await game.openTestGame('smashup', SMASHUP_TEST_QUERY, 45000);
+
+        await game.setupScene({
+            gameId: 'smashup',
+            player0: {
+                hand: [
+                    { uid: 'hand-zombie-lord-ai-fallback', defId: 'zombie_lord', type: 'minion' },
+                ],
+                discard: [
+                    { uid: 'discard-zombie-tenacious-z-ai-fallback', defId: 'zombie_tenacious_z', type: 'minion' },
+                ],
+                factions: ['zombies', 'ghosts'],
+                minionsPlayed: 0,
+                minionLimit: 1,
+            },
+            player1: {
+                factions: ['aliens', 'ninjas'],
+                field: [
+                    { uid: 'opp-anchor-minion', defId: 'alien_invader', baseIndex: 2, owner: '1', controller: '1', power: 3 },
+                ],
+            },
+            bases: [
+                { defId: 'base_the_mothership' },
+                { defId: 'base_jungle_oasis' },
+                { defId: 'base_the_central_brain' },
+            ],
+            currentPlayer: '0',
+            phase: 'playCards',
+        });
+
+        await page.waitForFunction(
+            () => {
+                const state = (window as any).__BG_TEST_HARNESS__?.state?.get?.();
+                return state?.sys?.phase === 'playCards'
+                    && state?.core?.players?.['0']?.hand?.some((card: any) => card.uid === 'hand-zombie-lord-ai-fallback')
+                    && state?.core?.players?.['0']?.discard?.some((card: any) => card.uid === 'discard-zombie-tenacious-z-ai-fallback');
+            },
+            { timeout: 5000 }
+        );
+
+        await game.playCard('zombie_lord', { targetBaseIndex: 2 });
+        await game.waitForInteraction('zombie_lord_pick', 10000);
+
+        const interactionOptions = await game.getInteractionOptions();
+        const selectedOptionId = interactionOptions.find((option: any) =>
+            option?.value?.cardUid === 'discard-zombie-tenacious-z-ai-fallback'
+        )?.id;
+        expect(selectedOptionId).toBeTruthy();
+
+        await page.evaluate((optionId) => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            harness.command.dispatch({
+                type: 'SYS_INTERACTION_RESPOND',
+                playerId: '0',
+                payload: { optionId },
+            });
+        }, selectedOptionId);
+
+        await page.waitForFunction(
+            () => {
+                const state = (window as any).__BG_TEST_HARNESS__?.state?.get?.();
+                return !state?.sys?.interaction?.current;
+            },
+            { timeout: 5000 }
+        );
+
+        const finalState = await game.getState();
+        expect(finalState.core.bases[0].minions.some((minion: any) =>
+            minion.uid === 'discard-zombie-tenacious-z-ai-fallback'
+                && minion.defId === 'zombie_tenacious_z'
+                && minion.owner === '0'
+        )).toBe(true);
+        expect(finalState.core.bases[1].minions.some((minion: any) =>
+            minion.uid === 'discard-zombie-tenacious-z-ai-fallback'
+        )).toBe(false);
+        expect(finalState.core.players['0'].discard.some((card: any) =>
+            card.uid === 'discard-zombie-tenacious-z-ai-fallback'
+        )).toBe(false);
+        expect(finalState.core.players['0'].minionsPlayedPerBase?.undefined).toBeUndefined();
+
+        await game.screenshot('zombie-lord-ai-optionid-fallback-after', testInfo);
+        await saveEvidenceScreenshot(page, testInfo, 'smashup-zombie-lord', '05-ai-optionid-fallback-after.png');
+    });
+
     test('zombie_they_keep_coming: 应从弃牌堆直接额外打出，不回手也不返还随从位', async ({ page, game }, testInfo) => {
         test.setTimeout(90000);
 

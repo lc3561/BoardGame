@@ -126,9 +126,12 @@ describe('interaction handler regressions', () => {
 
         const prompt = playResult.finalState.sys.interaction?.current as any;
         expect(prompt?.data?.sourceId).toBe('cthulhu_corruption');
+        expect(prompt?.data?.targetType).toBe('generic');
+        expect(prompt?.data?.responseValidationMode).toBe('live');
 
         const targetOption = prompt?.data?.options?.find((option: any) => option?.value?.minionUid === 'm1');
         expect(targetOption).toBeDefined();
+        expect(targetOption?.displayMode).toBe('card');
 
         const respondResult = runCommand(
             playResult.finalState,

@@ -256,3 +256,47 @@
 - **[2026-04-22 00:21:34] Action**: 读取 AGENTS、planning-with-files、数据录入、测试/审计、引擎系统规范，并检查工作区状态。
   - Result: 确认本轮需要 Wiki/实现/测试/evidence 闭环；发现工作区存在非本轮改动，将避开无关文件。
   - Next: 运行 SmashUp Wiki 抓取/对比并审查 7 条反馈的实现入口。
+
+### Phase: SmashUp 三派系审计复审（Mermaids / Skeletons / World Champs）
+**Status**: In Progress
+
+- **[2026-04-22 23:22:32] Action**: 复跑三派系能力回归与审计门禁
+  - Result: `newFactionAbilities`（`146 passed / 1 skipped`）、`interactionTargetTypeAudit`（`7 passed`）、`interactionDefIdAudit`（`2 passed`）、`abilityBehaviorAudit`（`22 passed`）、`interactionCompletenessAudit`（`5 passed`）全部通过。
+  - Next: 复跑三派系“统一斜向实施中横幅”E2E，并回填证据文档维度。
+
+- **[2026-04-22 23:25:58] Action**: 复跑三派系横幅 E2E + i18n 门禁
+  - Result: `npm run i18n:check` 通过；`npm run test:e2e:ci:file -- e2e/smashup/smashup.e2e.ts "派系选择页应显示 10 周年三派系与统一斜向实施中横幅"` 通过（`1 passed`），并生成最新截图。
+  - Next: 更新 `smashup-10th-anniversary-factions-audit-20260419.md`，补齐 D1-D49 与最新截图路径。
+
+- **[2026-04-22 23:30:00] Action**: 完成三派系审计文档补全
+  - Result: `evidence/smashup/smashup-10th-anniversary-factions-audit-20260419.md` 已新增“2026-04-22 复审记录 + D1-D49 维度”；`public/locales/zh-CN/game-smashup.json` 与 `public/locales/en/game-smashup.json` 已删除 `faction_implementation_in_progress_hint`，仅保留“实施中 / Implementation in Progress”文案。
+  - Next: 按长期任务继续推进剩余未收口反馈与专项审计。
+
+- **[2026-04-22 23:34:00] Action**: 扫描三派系能力覆盖缺口并回写风险
+  - Result: 静态比对 `registerAbility` 与 `newFactionAbilities.test.ts` 后确认仍有 20 条能力未被主回归文件直接点名（Mermaids 7 / Skeletons 6 / World Champs 7），已在三派系审计文档新增“未覆盖风险”与后续补测计划。
+  - Next: 按“配置直通 / 新机制 / 新 UI-E2E”三批继续补专项断言与证据。
+
+- **[2026-04-23 00:26:40] Action**: 完成三派系缺口补测并复跑审计链
+  - Result: `src/games/smashup/__tests__/newFactionAbilities.test.ts` 已补齐三派系 21 条缺口能力断言，最新结果 `166 passed / 1 skipped`；同时复跑 `interactionTargetTypeAudit(7 passed)`、`interactionDefIdAudit(2 passed)`、`abilityBehaviorAudit(22 passed)`、`interactionCompletenessAudit(5 passed)` 与 `npm run i18n:check` 全部通过。
+  - Next: 回填审计文档与计划文件，把“20 条未覆盖风险”收敛为 0 缺口。
+
+- **[2026-04-23 00:27:10] Action**: 回填审计文档与 planning 文件
+  - Result: `evidence/smashup/smashup-10th-anniversary-factions-audit-20260419.md` 已新增“补测收敛记录（2026-04-23）”；`task_plan.md` 将三派系覆盖缺口任务标记完成；`findings.md` 追加补测结论（缺口 `0/0/0`）。
+  - Next: 继续执行长期任务下一批实施/审计项，直至用户最终验收总结。
+
+## Session: 2026-04-22 Dicethrone critical 反馈补强（69c3c83e / 69cba605）
+
+### Phase: 实施与验证
+**Status**: Complete
+
+- **[2026-04-22 23:00] Action**: 锁定两个线上 critical 的当前实现入口并确认最小改动面。
+  - Result: `69cba605` 命中 `src/games/dicethrone/ui/Dice3D.tsx` 失败路径可见性缺口；`69c3c83e` 当前以历史 board-shell 兼容修复链路复核为主。
+  - Next: 修 `Dice3D` 的无 sprite 文本兜底并补单测。
+
+- **[2026-04-22 23:03] Action**: 完成 `Dice3D` 无 sprite 可见性兜底修复并更新断言。
+  - Result: 已新增 face symbol -> fallback label 映射；无 sprite 时输出 `data-face-fallback="glyph"` 与可见标签；`StatusEffectsIcons` 用例同步覆盖。
+  - Next: 跑 lint + vitest + compat helper 回归。
+
+- **[2026-04-22 23:06] Action**: 运行回归并落证据文档。
+  - Result: `eslint` 通过；`StatusEffectsIcons.test.tsx` 15/15 通过；`androidCompatSmoke.test.ts` 5/5 通过；新增证据文档 `evidence/dicethrone/dicethrone-feedback-69c3c83e-69cba605-followup-2026-04-22.md`。
+  - Next: 汇总给用户并等待是否继续回写线上状态。

@@ -46,9 +46,38 @@ export type ForceSkippableHiddenAiInteraction = {
     resolution: AiResolution;
 };
 
+export type ForceEndTurnStalledAiReason =
+    | 'hidden-interaction'
+    | 'visible-interaction'
+    | 'response-window'
+    | 'active-turn'
+    | 'active-turn-legal-only'
+    | 'seat-legal-only';
+
+export const ONLINE_AI_LEGAL_ACTION_ONLY_REASONS = [
+    'active-turn-legal-only',
+    'seat-legal-only',
+] as const satisfies ReadonlyArray<ForceEndTurnStalledAiReason>;
+
+export const ONLINE_AI_EMERGENCY_OVERLAY_FALLBACK_REASONS = [
+    'active-turn',
+    'active-turn-legal-only',
+    'seat-legal-only',
+    'visible-interaction',
+    'hidden-interaction',
+] as const satisfies ReadonlyArray<ForceEndTurnStalledAiReason>;
+
+const ONLINE_AI_EMERGENCY_OVERLAY_FALLBACK_REASON_SET = new Set<ForceEndTurnStalledAiReason>(
+    ONLINE_AI_EMERGENCY_OVERLAY_FALLBACK_REASONS,
+);
+
+export const shouldUseOnlineAiEmergencyOverlayFallback = (
+    reason: ForceEndTurnStalledAiReason,
+): boolean => ONLINE_AI_EMERGENCY_OVERLAY_FALLBACK_REASON_SET.has(reason);
+
 export type ForceEndTurnStalledAiResolution = {
     playerId: string;
-    reason: 'hidden-interaction' | 'visible-interaction' | 'response-window' | 'active-turn' | 'active-turn-legal-only' | 'seat-legal-only';
+    reason: ForceEndTurnStalledAiReason;
     requiresConfirmedAdvancePhase?: boolean;
     legalActionOnly?: boolean;
     fingerprintHint?: string;

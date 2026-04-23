@@ -15,6 +15,7 @@ import { ConfirmRemoveKnockdownModal } from './ConfirmRemoveKnockdownModal';
 import { ChoiceModal } from './ChoiceModal';
 import { BonusDieOverlay } from './BonusDieOverlay';
 import { CardSpotlightOverlay } from './CardSpotlightOverlay';
+import { CompareRollOverlay } from './CompareRollOverlay';
 import { TokenResponseModal } from './TokenResponseModal';
 import { PurifyModal } from './PurifyModal';
 import { InteractionOverlay } from './InteractionOverlay';
@@ -27,7 +28,7 @@ import type { PlayerId } from '../../../engine/types';
 import type { CardSpotlightItem } from './CardSpotlightOverlay';
 import type { PendingDamage } from '../domain/types';
 import type { TokenDef } from '../domain/tokenTypes';
-import { INTERACTION_COMMANDS } from '../../../engine/systems/InteractionSystem';
+import { INTERACTION_COMMANDS, type CompareRollChoiceData } from '../../../engine/systems/InteractionSystem';
 import {
     getAbilitySlotLayoutForCharacter,
     getPlayerBoardAspectRatio,
@@ -85,6 +86,13 @@ export interface BoardOverlaysProps {
         /** slider 模式配置（存在时渲染滑动条） */
         slider?: { confirmLabelKey: string; hintKey?: string; skipLabelKey?: string };
     };
+    // 对比掷骰特写（compare-roll-choice）
+    compareRoll?: CompareRollChoiceData<{
+        statusId?: string;
+        tokenId?: string;
+        value: number;
+        customId?: string;
+    }> & { id: string; playerId: string };
     canResolveChoice: boolean;
     onResolveChoice: (optionId: string) => void;
 
@@ -367,6 +375,22 @@ export const BoardOverlays: React.FC<BoardOverlaysProps> = (props) => {
                         onCancel={props.onCancelInteraction}
                         statusIconAtlas={props.statusIconAtlas}
                         locale={props.locale}
+                    />
+                )}
+
+                {/* 对比掷骰特写（如枪手对决） */}
+                {props.compareRoll && (
+                    <CompareRollOverlay
+                        key="compare-roll"
+                        compareRoll={props.compareRoll}
+                        isVisible={true}
+                        locale={props.locale}
+                        onResolveOption={(optionId) => {
+                            props.dispatch(INTERACTION_COMMANDS.RESPOND, { optionId });
+                        }}
+                        onConfirm={() => {
+                            props.dispatch(INTERACTION_COMMANDS.CONFIRM, {});
+                        }}
                     />
                 )}
 

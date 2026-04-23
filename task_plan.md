@@ -110,3 +110,30 @@
 - 只改 SmashUp 反馈相关文件和 evidence。
 - 不触碰当前工作区已有的非本轮改动；已发现 src/games/smashup/domain/index.ts 与 src/games/smashup/__tests__/smashup.smoke.test.ts 存在他人改动，本轮除非必要不修改。
 
+## Addendum（2026-04-22）：SmashUp 10 周年三派系审计复审
+
+### Goal
+> 持续验证 `mermaids / skeletons / world_champs` 三派系在当前主线上的实现稳定性，并补齐审计维度（D1-D49）与横幅统一样式证据，确保“实施中”文案与样式收敛后无回归。
+
+### Phase
+- [x] 复跑三派系能力与审计门禁（newFactionAbilities + 4 个 audit suite）
+- [x] 复跑三派系统一斜向横幅 E2E 并更新截图证据
+- [x] 删除中英文 locale 里的 `faction_implementation_in_progress_hint`，只保留“实施中”主文案
+- [x] 在 `evidence/smashup/smashup-10th-anniversary-factions-audit-20260419.md` 补齐 D1-D49 维度
+- [x] 按“配置直通 / 新机制 / 新 UI-E2E”补齐主回归文件三派系能力覆盖缺口（静态比对为 0）
+
+
+## Addendum（2026-04-22）：线上 Dicethrone critical 反馈收口补强（69c3c83e / 69cba605）
+
+### Goal
+> 对 `69c3c83e`（黑屏）与 `69cba605`（骰面不可见）做当前代码基线复核；对仍存在前端兜底缺口的骰面链路做最小修复并补回归证据。
+
+### Phase
+- [x] Phase A: 复核反馈上下文与当前实现入口
+- [x] Phase B: 最小修复 `Dice3D` 无 sprite 可见性兜底
+- [x] Phase C: 补现有测试断言并运行验证
+- [x] Phase D: 产出 evidence 文档并回填 planning 文件
+
+### Scope Control
+- 仅修改 `src/games/dicethrone/ui/Dice3D.tsx` 与对应现有测试文件。
+- 黑屏链路仅做兼容修复有效性复核，不引入额外架构改动。

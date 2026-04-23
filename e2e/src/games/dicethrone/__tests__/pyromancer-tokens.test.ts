@@ -69,14 +69,14 @@ describe('炎术士 Token 定义', () => {
         );
     });
 
-    it('应包含 Daze（晕眩）— debuff, onAttackEnd', () => {
-        const daze = PYROMANCER_TOKENS.find(t => t.id === STATUS_IDS.DAZE);
-        expect(daze).toBeDefined();
-        expect(daze!.category).toBe('debuff');
-        expect(daze!.stackLimit).toBe(1);
-        expect(daze!.passiveTrigger).toBeDefined();
-        expect(daze!.passiveTrigger!.timing).toBe('onAttackEnd');
-        expect(daze!.passiveTrigger!.removable).toBe(true);
+    it('应包含 Stun（眩晕）— debuff, onPhaseEnter', () => {
+        const stun = PYROMANCER_TOKENS.find(t => t.id === STATUS_IDS.STUN);
+        expect(stun).toBeDefined();
+        expect(stun!.category).toBe('debuff');
+        expect(stun!.stackLimit).toBe(1);
+        expect(stun!.passiveTrigger).toBeDefined();
+        expect(stun!.passiveTrigger!.timing).toBe('onPhaseEnter');
+        expect(stun!.passiveTrigger!.removable).toBe(true);
     });
 
     it('Token 数量应为 4', () => {
@@ -93,7 +93,7 @@ describe('炎术士初始 Token 状态', () => {
         expect(PYROMANCER_INITIAL_TOKENS[TOKEN_IDS.FIRE_MASTERY]).toBe(0);
         expect(PYROMANCER_INITIAL_TOKENS[STATUS_IDS.KNOCKDOWN]).toBe(0);
         expect(PYROMANCER_INITIAL_TOKENS[STATUS_IDS.BURN]).toBe(0);
-        expect(PYROMANCER_INITIAL_TOKENS[STATUS_IDS.DAZE]).toBe(0);
+        expect(PYROMANCER_INITIAL_TOKENS[STATUS_IDS.STUN]).toBe(0);
     });
 
     it('初始状态键数量与 Token 定义一致', () => {

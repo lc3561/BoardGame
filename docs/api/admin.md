@@ -1,6 +1,6 @@
 # 后台管理 API
 
-> 默认需要 `admin` 权限；其中统计概览（`/admin/stats`、`/admin/stats/trend`）、对局记录只读接口（`GET /admin/matches`、`GET /admin/matches/:id`）与更新日志管理接口允许 `admin` 与 `developer` 访问。`developer` 仅可访问被放行的只读能力，并仅可操作自己被分配到的游戏更新日志。
+> 默认需要 `admin` 权限；其中统计概览（`/admin/stats`、`/admin/stats/trend`）与对局记录只读接口（`GET /admin/matches`、`GET /admin/matches/:id`）对游客开放，更新日志管理接口允许 `admin` 与 `developer` 访问。`developer` 仅可访问被放行的只读能力，并仅可操作自己被分配到的游戏更新日志。
 
 ## 概述
 
@@ -17,6 +17,8 @@
 ### GET /admin/stats
 
 获取平台统计数据。
+
+> 公开只读接口，游客可访问。
 
 **缓存**: Redis 缓存 5 分钟
 
@@ -60,6 +62,8 @@ Authorization: Bearer <token>
 ### GET /admin/stats/trend
 
 获取最近 7/30 天每日新增用户、每日对局数与游戏分布。
+
+> 公开只读接口，游客可访问。
 
 **缓存**: Redis 缓存 5 分钟
 
@@ -567,7 +571,7 @@ Authorization: Bearer <admin_token>
 
 获取对局记录列表。
 
-> 允许 `admin` 与 `developer` 访问（只读）。
+> 公开只读接口，游客可访问。
 
 **查询参数**:
 | 参数 | 类型 | 必填 | 说明 |
@@ -613,7 +617,7 @@ Authorization: Bearer <token>
 
 获取对局详情。
 
-> 允许 `admin` 与 `developer` 访问（只读）。
+> 公开只读接口，游客可访问。
 
 **路径参数**:
 | 参数 | 类型 | 说明 |

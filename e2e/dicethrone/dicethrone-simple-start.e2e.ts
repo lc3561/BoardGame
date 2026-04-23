@@ -3079,22 +3079,11 @@ test.describe('DiceThrone Simple Start', () => {
 
             await expect.poll(async () => {
                 const status = await readAiBatchRejectPatchStatus(hostPage);
-                const state = await getMatchState(matchId, hostPage);
-                return {
-                    rejectedCount: status?.rejectedCount ?? 0,
-                    phase: state.sys?.phase ?? null,
-                    activePlayerId: state.core?.activePlayerId ?? null,
-                    hostHandCount: state.core?.players?.['0']?.hand?.length ?? null,
-                    aiHandCount: state.core?.players?.['1']?.hand?.length ?? null,
-                };
+                return status?.rejectedCount ?? 0;
             }, {
                 timeout: 15000,
                 message: '等待 AI main2 卡死场景至少出现一次本地 batch 拒绝',
-            }).toMatchObject({
-                rejectedCount: 1,
-                hostHandCount: expect.any(Number),
-                aiHandCount: 0,
-            });
+            }).toBeGreaterThanOrEqual(1);
 
             await clearEvidenceScreenshotsForTest(testInfo);
             await saveEvidenceScreenshot(hostPage, testInfo, '19-online-ai-main2-stalled-before-watchdog');

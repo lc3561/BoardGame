@@ -3,7 +3,19 @@ const parseCssPixelValue = (value: string | null | undefined): number => {
     return Number.isFinite(parsed) ? parsed : 0;
 };
 
-const readKeyboardInsetHeight = () => {
+const dispatchSyntheticTextInput = (candidate: HTMLInputElement | HTMLTextAreaElement, value: string) => {
+    const inputEvent = typeof InputEvent === 'function'
+        ? new InputEvent('input', {
+            bubbles: true,
+            data: value,
+            inputType: 'insertText',
+        })
+        : new Event('input', { bubbles: true });
+    candidate.dispatchEvent(inputEvent);
+    candidate.dispatchEvent(new Event('change', { bubbles: true }));
+};
+
+export const readKeyboardInsetHeight = () => {
     if (typeof window === 'undefined' || typeof document === 'undefined') {
         return 0;
     }
@@ -96,6 +108,15 @@ export const isTextEntryElement = (candidate: Element | null): candidate is HTML
     return !blockedTypes.has(input.type.toLowerCase());
 };
 
+const isWithinTextEntryProxyScope = (candidate: HTMLElement) => {
+    const modalRoot = document.getElementById('modal-root');
+    if (modalRoot?.contains(candidate)) {
+        return true;
+    }
+
+    return candidate.closest('.modal-base-container') !== null;
+};
+
 export const isTextEntryProxyEligible = (candidate: Element | null): candidate is HTMLElement => {
     if (typeof window === 'undefined' || typeof document === 'undefined') {
         return false;
@@ -104,16 +125,21 @@ export const isTextEntryProxyEligible = (candidate: Element | null): candidate i
         return false;
     }
 
-    const modalRoot = document.getElementById('modal-root');
-    if (!modalRoot?.contains(candidate)) {
+    if (!isWithinTextEntryProxyScope(candidate)) {
         return false;
     }
 
+    const keyboardInsetHeight = readKeyboardInsetHeight();
+
     try {
-        return window.matchMedia?.('(pointer: coarse)')?.matches ?? false;
+        if (window.matchMedia?.('(pointer: coarse)')?.matches) {
+            return true;
+        }
     } catch {
-        return false;
+        // ignore matchMedia failures and fall back to runtime keyboard signal
     }
+
+    return keyboardInsetHeight >= 72;
 };
 
 export const readTextEntryValue = (candidate: Element | null): string => {
@@ -135,21 +161,39 @@ export const syncProxyValueToTextEntry = (candidate: Element | null, value: stri
 
     if (candidate instanceof HTMLInputElement) {
         const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+        const previousReadOnly = candidate.readOnly;
+        if (previousReadOnly) {
+            candidate.readOnly = false;
+        }
         setter?.call(candidate, value);
-        candidate.dispatchEvent(new Event('input', { bubbles: true }));
-        candidate.dispatchEvent(new Event('change', { bubbles: true }));
+        dispatchSyntheticTextInput(candidate, value);
+        if (previousReadOnly) {
+            candidate.readOnly = true;
+        }
         return true;
     }
 
     if (candidate instanceof HTMLTextAreaElement) {
         const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+        const previousReadOnly = candidate.readOnly;
+        if (previousReadOnly) {
+            candidate.readOnly = false;
+        }
         setter?.call(candidate, value);
-        candidate.dispatchEvent(new Event('input', { bubbles: true }));
-        candidate.dispatchEvent(new Event('change', { bubbles: true }));
+        dispatchSyntheticTextInput(candidate, value);
+        if (previousReadOnly) {
+            candidate.readOnly = true;
+        }
         return true;
     }
 
-    if (candidate.isContentEditable) {
+    const contentEditableAttr = candidate.getAttribute('contenteditable')?.toLowerCase();
+    if (
+        candidate.isContentEditable
+        || contentEditableAttr === ''
+        || contentEditableAttr === 'true'
+        || contentEditableAttr === 'plaintext-only'
+    ) {
         candidate.textContent = value;
         candidate.dispatchEvent(new Event('input', { bubbles: true }));
         candidate.dispatchEvent(new Event('change', { bubbles: true }));
