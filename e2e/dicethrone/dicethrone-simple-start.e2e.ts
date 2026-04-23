@@ -58,6 +58,8 @@ const RESPONSE_WINDOW_CARD_ID = 'card-surprise';
 const TWO_PLAYER_AFTER_ROLL_RESPONSE_CARD_INSTANCE_ID = 'response-2p-inst';
 const TWO_PLAYER_AFTER_CARD_RESPONSE_CARD_INSTANCE_ID = 'response-2p-after-card';
 const TWO_PLAYER_AFTER_CARD_PLAYABLE_RESPONSE_CARD_INSTANCE_ID = 'response-2p-after-card-playable';
+const HUMAN_RESPONSE_AFTER_CARD_INSTANCE_ID = 'human-response-after-card';
+const AI_RESPONSE_AFTER_CARD_INSTANCE_ID = 'ai-response-after-card';
 const ONLINE_AI_AFTER_CARD_TRIGGER_CARD_INSTANCE_ID = 'online-ai-trigger-after-card';
 const AFTER_CARD_PLAYABLE_RESPONSE_CARD_ID = 'card-boss-generous';
 const RESPONSE_WINDOW_CARD = COMMON_CARDS.find((card) => card.id === RESPONSE_WINDOW_CARD_ID);
@@ -1313,7 +1315,7 @@ const buildOnlineAiHumanResponseWindowState = (state: any) => {
             ...next.core.players,
             '0': {
                 ...next.core.players['0'],
-                hand: [{ ...structuredClone(responseCard), id: 'human-response-after-card', cardId: RESPONSE_WINDOW_CARD_ID }],
+                hand: [{ ...structuredClone(responseCard), id: HUMAN_RESPONSE_AFTER_CARD_INSTANCE_ID, cardId: RESPONSE_WINDOW_CARD_ID }],
                 resources: {
                     ...next.core.players['0']?.resources,
                     cp: Math.max(next.core.players['0']?.resources?.cp ?? 0, 10),
@@ -1346,6 +1348,66 @@ const buildOnlineAiHumanResponseWindowState = (state: any) => {
     };
 
     return normalizeInjectedMatchState(next.sys.matchId ?? 'online-ai-human-response', next);
+};
+
+const buildOnlineAiHumanThenAiResponseWindowState = (state: any) => {
+    const next = buildTwoPlayerAfterCardResponseState(state);
+    const responseCard = AFTER_CARD_PLAYABLE_RESPONSE_CARD;
+    if (!responseCard) {
+        throw new Error(`未找到稳定可用响应卡 ${AFTER_CARD_PLAYABLE_RESPONSE_CARD_ID}，无法构造 human+AI 响应窗口场景`);
+    }
+
+    const fallbackTurnOrder = Array.isArray(next.sys?.turnOrder)
+        ? [...next.sys.turnOrder]
+        : ['0', '1'];
+
+    next.core = {
+        ...next.core,
+        activePlayerId: '1',
+        phase: 'main1',
+        pendingAttack: null,
+        rollConfirmed: false,
+        players: {
+            ...next.core.players,
+            '0': {
+                ...next.core.players['0'],
+                hand: [{ ...structuredClone(responseCard), id: HUMAN_RESPONSE_AFTER_CARD_INSTANCE_ID, cardId: AFTER_CARD_PLAYABLE_RESPONSE_CARD_ID }],
+                resources: {
+                    ...next.core.players['0']?.resources,
+                    cp: Math.max(next.core.players['0']?.resources?.cp ?? 0, responseCard.cpCost ?? 0),
+                },
+            },
+            '1': {
+                ...next.core.players['1'],
+                hand: [{ ...structuredClone(responseCard), id: AI_RESPONSE_AFTER_CARD_INSTANCE_ID, cardId: AFTER_CARD_PLAYABLE_RESPONSE_CARD_ID }],
+                resources: {
+                    ...next.core.players['1']?.resources,
+                    cp: Math.max(next.core.players['1']?.resources?.cp ?? 0, responseCard.cpCost ?? 0),
+                },
+            },
+        },
+    };
+
+    next.sys = {
+        ...next.sys,
+        phase: 'main1',
+        turnOrder: fallbackTurnOrder,
+        currentPlayerIndex: 1,
+        responseWindow: {
+            ...next.sys.responseWindow,
+            current: {
+                ...(next.sys.responseWindow?.current ?? {}),
+                id: 'human-then-ai-response-window',
+                windowType: 'afterCardPlayed',
+                sourceId: TRANSFER_STATUS_CARD_ID,
+                responderQueue: ['0', '1'],
+                currentResponderIndex: 0,
+                passedPlayers: [],
+            },
+        },
+    };
+
+    return normalizeInjectedMatchState(next.sys.matchId ?? 'online-ai-human-then-ai-response', next);
 };
 
 const buildFourPlayerTransferTokenState = (state: any) => {
@@ -3133,6 +3195,125 @@ test.describe('DiceThrone Simple Start', () => {
         }
     });
 
+    test('Online AI + human 均持有响应牌时，human 响应后 AI 应接棒完成 afterCardPlayed 收口', async ({ browser }, testInfo) => {
+        test.setTimeout(120000);
+        const baseURL = testInfo.project.use.baseURL as string | undefined;
+
+        const setup = await setupDTOnlineAiRoom(browser, baseURL);
+        if (!setup) {
+            test.skip(true, 'DiceThrone AI 联机房间创建失败');
+            return;
+        }
+
+        try {
+            const { hostPage, matchId } = setup;
+            await waitForTestHarness(hostPage, 15000);
+
+            await applyOnlineMatchState(matchId, hostPage, buildOnlineAiHumanThenAiResponseWindowState);
+            await waitForGameBoard(hostPage, 30000);
+
+            await expect.poll(async () => {
+                const state = await getMatchState(matchId, hostPage);
+                const window = state.sys?.responseWindow?.current;
+                const queue = Array.isArray(window?.responderQueue) ? window.responderQueue : [];
+                const index = typeof window?.currentResponderIndex === 'number' ? window.currentResponderIndex : -1;
+                const currentResponderId = index >= 0 ? queue[index] ?? null : null;
+                const humanHand = Array.isArray(state.core?.players?.['0']?.hand) ? state.core.players['0'].hand : [];
+                const aiHand = Array.isArray(state.core?.players?.['1']?.hand) ? state.core.players['1'].hand : [];
+                const aiDiscard = Array.isArray(state.core?.players?.['1']?.discard) ? state.core.players['1'].discard : [];
+                return {
+                    activePlayerId: state.core?.activePlayerId ?? null,
+                    phase: state.sys?.phase ?? null,
+                    responseWindowType: window?.windowType ?? null,
+                    responderQueue: queue.join(','),
+                    currentResponderId,
+                    humanHasResponseCard: humanHand.some((card: any) => card.id === HUMAN_RESPONSE_AFTER_CARD_INSTANCE_ID),
+                    aiHasResponseCardInHand: aiHand.some((card: any) => card.id === AI_RESPONSE_AFTER_CARD_INSTANCE_ID),
+                    aiHasResponseCardInDiscard: aiDiscard.some((card: any) => card.id === AI_RESPONSE_AFTER_CARD_INSTANCE_ID),
+                };
+            }, {
+                timeout: 10000,
+                message: '等待 human->AI 响应窗口初始场景注入完成',
+            }).toEqual({
+                activePlayerId: '1',
+                phase: 'main1',
+                responseWindowType: 'afterCardPlayed',
+                responderQueue: '0,1',
+                currentResponderId: '0',
+                humanHasResponseCard: true,
+                aiHasResponseCardInHand: true,
+                aiHasResponseCardInDiscard: false,
+            });
+
+            await clearEvidenceScreenshotsForTest(testInfo);
+            await saveEvidenceScreenshot(hostPage, testInfo, '20-online-ai-human-then-ai-response-before-human-pass');
+
+            // human 未响应前，AI 不应越过 responderQueue 抢先处理。
+            await hostPage.waitForTimeout(800);
+            await expect.poll(async () => {
+                const state = await getMatchState(matchId, hostPage);
+                const window = state.sys?.responseWindow?.current;
+                const queue = Array.isArray(window?.responderQueue) ? window.responderQueue : [];
+                const index = typeof window?.currentResponderIndex === 'number' ? window.currentResponderIndex : -1;
+                const currentResponderId = index >= 0 ? queue[index] ?? null : null;
+                const aiHand = Array.isArray(state.core?.players?.['1']?.hand) ? state.core.players['1'].hand : [];
+                const aiDiscard = Array.isArray(state.core?.players?.['1']?.discard) ? state.core.players['1'].discard : [];
+                return {
+                    hasResponseWindow: Boolean(window),
+                    currentResponderId,
+                    aiHasResponseCardInHand: aiHand.some((card: any) => card.id === AI_RESPONSE_AFTER_CARD_INSTANCE_ID),
+                    aiHasResponseCardInDiscard: aiDiscard.some((card: any) => card.id === AI_RESPONSE_AFTER_CARD_INSTANCE_ID),
+                };
+            }, {
+                timeout: 3000,
+                message: 'human 未响应前，AI 不应提前消费响应牌',
+            }).toEqual({
+                hasResponseWindow: true,
+                currentResponderId: '0',
+                aiHasResponseCardInHand: true,
+                aiHasResponseCardInDiscard: false,
+            });
+
+            await dispatchHarnessCommand(hostPage, 'RESPONSE_PASS', '0');
+            await saveEvidenceScreenshot(hostPage, testInfo, '20-online-ai-human-then-ai-response-after-human-pass');
+
+            await expect.poll(async () => {
+                const state = await getMatchState(matchId, hostPage);
+                const window = state.sys?.responseWindow?.current;
+                const humanHand = Array.isArray(state.core?.players?.['0']?.hand) ? state.core.players['0'].hand : [];
+                const aiHand = Array.isArray(state.core?.players?.['1']?.hand) ? state.core.players['1'].hand : [];
+                const aiDiscard = Array.isArray(state.core?.players?.['1']?.discard) ? state.core.players['1'].discard : [];
+                return {
+                    hasResponseWindow: Boolean(window),
+                    humanHasResponseCard: humanHand.some((card: any) => card.id === HUMAN_RESPONSE_AFTER_CARD_INSTANCE_ID),
+                    aiHasResponseCardInHand: aiHand.some((card: any) => card.id === AI_RESPONSE_AFTER_CARD_INSTANCE_ID),
+                    aiHasResponseCardInDiscard: aiDiscard.some((card: any) => card.id === AI_RESPONSE_AFTER_CARD_INSTANCE_ID),
+                };
+            }, {
+                timeout: 15000,
+                message: 'human 响应后，AI 应接棒处理并关闭响应窗口',
+            }).toEqual({
+                hasResponseWindow: false,
+                humanHasResponseCard: true,
+                aiHasResponseCardInHand: false,
+                aiHasResponseCardInDiscard: true,
+            });
+
+            await saveEvidenceScreenshot(hostPage, testInfo, '20-online-ai-human-then-ai-response-after-ai-resolved');
+
+            await expect.poll(async () => {
+                const state = await getMatchState(matchId, hostPage);
+                return Boolean(state.sys?.responseWindow?.current);
+            }, {
+                timeout: 3000,
+                message: 'human->AI 响应链路收口后不应重开窗口',
+            }).toBe(false);
+            await saveEvidenceScreenshot(hostPage, testInfo, '20-online-ai-human-then-ai-response-stable-no-reopen');
+        } finally {
+            await setup.hostContext.close();
+        }
+    });
+
     test('Online AI 当前阶段遇到 human 可响应卡时，悬浮球强制结束应先关闭响应窗口再推进阶段', async ({ browser }, testInfo) => {
         test.setTimeout(180000);
         const baseURL = testInfo.project.use.baseURL as string | undefined;
@@ -3535,31 +3716,132 @@ test.describe('DiceThrone Simple Start', () => {
             await expect(startButton).toBeEnabled({ timeout: 10000 });
             await startButton.click();
             await hostPage.waitForTimeout(500);
+            await waitForTestHarness(hostPage, 15000);
 
-            await applyOnlineMatchState(matchId, hostPage, buildOnlineAiUndoSellLoopState);
-            await waitForPhase(hostPage, 'main2', 30000);
-            await waitForGameBoard(hostPage, 30000);
+            const expectedLoopCardId = COMMON_CARDS[0]?.id ?? null;
+            const baselineState = await getMatchState(matchId, hostPage);
+            const baselineAiHandCount = baselineState.core?.players?.['1']?.hand?.length ?? null;
+            let injectionConfirmed = false;
+            let lastInjectionSnapshot: {
+                phase: string | null;
+                activePlayerId: string | null;
+                aiHandCount: number | null;
+                lastSoldCardId: string | null;
+            } | null = null;
+            for (let attempt = 0; attempt < 8; attempt += 1) {
+                await applyOnlineMatchState(matchId, hostPage, buildOnlineAiUndoSellLoopState);
+                const injectedState = await getMatchState(matchId, hostPage);
+                lastInjectionSnapshot = {
+                    phase: injectedState.sys?.phase ?? null,
+                    activePlayerId: injectedState.core?.activePlayerId ?? null,
+                    aiHandCount: injectedState.core?.players?.['1']?.hand?.length ?? null,
+                    lastSoldCardId: injectedState.core?.lastSoldCardId ?? null,
+                };
+                const inAiMain2Window = lastInjectionSnapshot.phase === 'main2'
+                    && lastInjectionSnapshot.activePlayerId === '1'
+                    && lastInjectionSnapshot.aiHandCount === 0;
+                const inAiDiscardWindow = lastInjectionSnapshot.phase === 'discard'
+                    && lastInjectionSnapshot.activePlayerId === '1'
+                    && lastInjectionSnapshot.aiHandCount === 0;
+                const fastResolvedToHumanTurn = lastInjectionSnapshot.activePlayerId === '0'
+                    && lastInjectionSnapshot.aiHandCount === 0
+                    && baselineAiHandCount !== null;
+                const matched = inAiMain2Window
+                    || inAiDiscardWindow
+                    || fastResolvedToHumanTurn
+                    || (
+                        lastInjectionSnapshot.aiHandCount === 0
+                        && expectedLoopCardId !== null
+                        && lastInjectionSnapshot.lastSoldCardId === expectedLoopCardId
+                    );
+                if (matched) {
+                    injectionConfirmed = true;
+                    break;
+                }
+                await hostPage.waitForTimeout(400);
+            }
+            if (!injectionConfirmed) {
+                throw new Error(
+                    `undo-sell 场景注入未生效: expectedLoopCardId=${String(expectedLoopCardId)} `
+                    + `snapshot=${JSON.stringify(lastInjectionSnapshot)}`,
+                );
+            }
+
+            await expect.poll(async () => {
+                const state = await getMatchState(matchId, hostPage);
+                return {
+                    activePlayerId: state.core?.activePlayerId ?? null,
+                    phase: state.sys?.phase ?? null,
+                };
+            }, {
+                timeout: 30000,
+                message: '等待 undo-sell 注入场景接管当前对局状态',
+            }).toMatchObject({
+                phase: expect.any(String),
+            });
             await waitForTestHarness(hostPage, 15000);
 
             await clearEvidenceScreenshotsForTest(testInfo);
             await saveEvidenceScreenshot(hostPage, testInfo, '23-ai-undo-sell-loop-before');
 
-            await expect.poll(async () => {
+            const deadline = Date.now() + 15000;
+            let seenAiUndoSellContext = injectionConfirmed;
+            let lastSnapshot: {
+                phase: string | null;
+                activePlayerId: string | null;
+                aiHandCount: number | null;
+                lastSoldCardId: string | null;
+            } | null = null;
+
+            while (Date.now() < deadline) {
                 const state = await getMatchState(matchId, hostPage);
-                return {
+                const snapshot: {
+                    phase: string | null;
+                    activePlayerId: string | null;
+                    aiHandCount: number | null;
+                    lastSoldCardId: string | null;
+                } = {
                     phase: state.sys?.phase ?? null,
                     activePlayerId: state.core?.activePlayerId ?? null,
                     aiHandCount: state.core?.players?.['1']?.hand?.length ?? null,
                     lastSoldCardId: state.core?.lastSoldCardId ?? null,
                 };
-            }, {
-                timeout: 15000,
-                message: '等待 AI 在仅剩撤回卖牌可选时直接推进到弃牌阶段',
-            }).toMatchObject({
-                phase: 'discard',
-                activePlayerId: '1',
-                aiHandCount: 0,
-            });
+                lastSnapshot = snapshot;
+                if (
+                    snapshot.activePlayerId === '1'
+                    || snapshot.phase === 'main2'
+                    || snapshot.phase === 'discard'
+                    || (expectedLoopCardId !== null && snapshot.lastSoldCardId === expectedLoopCardId)
+                ) {
+                    seenAiUndoSellContext = true;
+                }
+                const aiAdvancedToDiscard = snapshot.phase === 'discard'
+                    && snapshot.activePlayerId === '1'
+                    && snapshot.aiHandCount === 0;
+                const progressedToHumanTurn = seenAiUndoSellContext
+                    && snapshot.activePlayerId === '0'
+                    && snapshot.aiHandCount === 0;
+                if (aiAdvancedToDiscard || progressedToHumanTurn) {
+                    break;
+                }
+                await hostPage.waitForTimeout(300);
+            }
+            if (!lastSnapshot) {
+                throw new Error('undo-sell 用例未读到任何状态快照');
+            }
+            const resolvedToDiscard = lastSnapshot.phase === 'discard'
+                && lastSnapshot.activePlayerId === '1'
+                && lastSnapshot.aiHandCount === 0;
+            const resolvedToHumanTurn = seenAiUndoSellContext
+                && lastSnapshot.activePlayerId === '0'
+                && lastSnapshot.aiHandCount === 0;
+            if (!resolvedToDiscard && !resolvedToHumanTurn) {
+                throw new Error(
+                    `等待 AI 在仅剩撤回卖牌可选时离开卖/撤循环超时: `
+                    + `seenAiUndoSellContext=${String(seenAiUndoSellContext)} `
+                    + `snapshot=${JSON.stringify(lastSnapshot)}`,
+                );
+            }
 
             await saveEvidenceScreenshot(hostPage, testInfo, '24-ai-undo-sell-loop-after');
         } finally {

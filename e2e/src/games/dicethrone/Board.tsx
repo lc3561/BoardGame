@@ -629,7 +629,9 @@ export const DiceThroneBoard: React.FC<DiceThroneBoardProps> = ({ G: rawG, dispa
     // 进攻技能特写期间阻止所有操作
     const canAdvancePhase = isFocusPlayer && access.canAdvancePhase && !isAttackShowcaseVisible;
     const canResolveChoice = Boolean(choice.hasChoice && choice.playerId === rootPid);
-    const canInteractDice = canOperateView && isViewRolling && !isAttackShowcaseVisible;
+    // 产品特例：Duel 在防御阶段只能“结束防御”进入对掷，不允许手动掷防御骰。
+    const isDuelDirectDefenseOnly = currentPhase === 'defensiveRoll' && G.pendingAttack?.defenseAbilityId === 'duel';
+    const canInteractDice = canOperateView && isViewRolling && !isAttackShowcaseVisible && !isDuelDirectDefenseOnly;
 
     // 防御阶段进入时就应高亮可用的防御技能，不需要等投骰
     // 响应窗口打开时，如果本地玩家是响应者，也应该高亮可用技能

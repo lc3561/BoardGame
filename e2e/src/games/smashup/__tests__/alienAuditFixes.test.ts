@@ -21,7 +21,7 @@ import { clearInteractionHandlers, getInteractionHandler } from '../domain/abili
 import type { BaseInPlay, CardInstance, MinionOnBase, PlayerState, SmashUpCore, TitanState } from '../domain/types';
 import { ALIEN_ACTIONS } from '../data/factions/aliens';
 import { ALIEN_POD_ACTIONS } from '../data/factions/aliens_pod';
-import { actionLikeNeedsPlayBase, actionLikeNeedsPlayMinion } from '../domain/utils';
+import { actionLikeNeedsPlayBase, actionLikeNeedsPlayMinion, buildDeck } from '../domain/utils';
 import { makeMatchState as makeMatchStateFromHelpers } from './helpers';
 import { runCommand } from './testRunner';
 
@@ -113,6 +113,19 @@ describe('Aliens 审计修复回归（新 ID）', () => {
       expect(actionLikeNeedsPlayMinion(card!)).toBe(true);
       expect(actionLikeNeedsPlayBase(card!)).toBe(false);
     }
+  });
+
+  it('D8: 外星人关键行动卡数量应锁定为反馈口径（麦田怪圈=1，分解者=2，光束捕捉=2）', () => {
+    const actionCount = (id: string) => ALIEN_ACTIONS.find(card => card.id === id)?.count;
+    expect(actionCount('alien_crop_circles')).toBe(1);
+    expect(actionCount('alien_disintegrator')).toBe(2);
+    expect(actionCount('alien_beam_up')).toBe(2);
+
+    const { deck } = buildDeck(['aliens', 'pirates'], '0', 0, dummyRandom);
+    const deckCount = (defId: string) => deck.filter(card => card.defId === defId).length;
+    expect(deckCount('alien_crop_circles')).toBe(1);
+    expect(deckCount('alien_disintegrator')).toBe(2);
+    expect(deckCount('alien_beam_up')).toBe(2);
   });
 
   it('alien_disintegrator: 结算为 CARD_TO_DECK_BOTTOM', () => {

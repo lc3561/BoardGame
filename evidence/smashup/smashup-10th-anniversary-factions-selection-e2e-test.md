@@ -63,3 +63,18 @@ node scripts/infra/run-e2e-command.mjs isolated e2e/smashup/smashup.e2e.ts --gre
   - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-mermaids-banner.png`
   - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-skeletons-banner.png`
   - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-world-champs-banner.png`
+
+## 复测记录（2026-04-23）
+
+- 触发原因：同文件里的“3 人房间可加入且大厅会显示座位状态”用例出现断言回归，原断言误写为 `空位/空位/空位`。
+- 根因：3 人房创建后房主已占 1 席，大厅真实展示应为“玩家 / 空位 / 空位”。
+- 修复：将该断言改为 `toContainText(/空位\\s*\\/\\s*空位/)`，保留“仍有两个空位”的语义验证。
+- 校验命令：
+  - `npm run test:e2e:ci:file -- e2e/smashup/smashup.e2e.ts "3 人房间可加入且大厅会显示座位状态"`
+  - `npm run test:e2e:ci -- e2e/smashup/smashup.e2e.ts`
+- 结果：单用例 `1 passed`；整文件 `3 passed`（含三派系统一斜向“实施中”横幅用例）。
+- 关键截图（绝对路径）：
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-selection.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-mermaids-banner.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-skeletons-banner.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-world-champs-banner.png`

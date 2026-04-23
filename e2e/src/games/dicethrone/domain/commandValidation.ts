@@ -205,6 +205,11 @@ const validateRollDice = (
         return fail('defense_ability_not_selected');
     }
 
+    // 产品特例：枪手 duel 在防御阶段只能“直接结束防御”进入对掷结算，不允许手动掷防御骰。
+    if (phase === 'defensiveRoll' && state.pendingAttack?.defenseAbilityId === 'duel') {
+        return fail('defense_roll_disabled_for_duel');
+    }
+
     // 晕眩额外攻击检查：如果当前是晕眩触发的额外攻击，防御方（原攻击方）不能防御掷骰
     // 注意：根据 Wiki 规则，Daze 只是"攻击方再次攻击"，不影响防御能力
     // 额外攻击中防御方可以正常防御

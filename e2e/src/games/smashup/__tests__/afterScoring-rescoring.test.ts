@@ -76,6 +76,25 @@ function findOptionId(
     return option.id;
 }
 
+function findQueuedTriggerOptionId(
+    state: MatchState<SmashUpCore>,
+    choice: NonNullable<ReturnType<typeof getCurrentChoice>>,
+    sourceDefId: string,
+    message: string,
+) {
+    const triggersById = new Map(
+        (state.core.triggerQueue ?? []).map((trigger: any) => [trigger.id, trigger]),
+    );
+    const option = choice.options.find((candidate: any) => {
+        const triggerId = candidate?.value?.triggerId;
+        return triggerId && triggersById.get(triggerId)?.sourceDefId === sourceDefId;
+    });
+    if (!option) {
+        throw new Error(`${message}: ${JSON.stringify(choice.options.map(item => item.id))}`);
+    }
+    return option.id;
+}
+
 function collectBaseEventCount(events: SmashUpEvent[], type: typeof SU_EVENTS.BASE_SCORED | typeof SU_EVENTS.BASE_CLEARED | typeof SU_EVENTS.BASE_REPLACED) {
     return events.filter(event => event.type === type).length;
 }
@@ -414,5 +433,75 @@ describe('After Scoring 响应窗口 - 真实链路', () => {
         );
         expect(playFromChooser.success).toBe(true);
         expect(getCurrentChoice(runner.getState())?.sourceId).toBe('giant_ant_we_are_the_champions_choose_source');
+    });
+
+    it('base_greenhouse 在 afterScoring 选牌落地后会正常收口，不会卡在 scoreBases', () => {
+        const runner = createRunner((ids, random) => {
+            const core = SmashUpDomain.setup(ids, random);
+            const sys = createInitialSystemState(ids, smashUpSystemsForTest, undefined);
+
+            core.factionSelection = undefined;
+            sys.phase = 'playCards';
+            core.bases = [
+                {
+                    defId: 'base_greenhouse',
+                    minions: [
+                        makeMinion('m1', 'alien_invader', '0', '0', 13, 0),
+                        makeMinion('m2', 'robot_microbot_alpha', '0', '0', 11, 0),
+                        makeMinion('m3', 'ninja_shinobi', '1', '1', 8, 0),
+                    ],
+                    ongoingActions: [],
+                },
+            ];
+            core.baseDeck = ['base_secret_garden'];
+            core.players['0'].deck = [
+                { uid: 'deck-minion', defId: 'alien_collector', type: 'minion', owner: '0' },
+            ];
+            core.players['0'].hand = [];
+            core.players['1'].hand = [];
+
+            return { sys, core };
+        });
+
+        const { eventLog, choice } = advanceToAfterScoring(runner);
+        const chooseGreenhouse = runner.resolveInteraction('0', {
+            optionId: findQueuedTriggerOptionId(
+                runner.getState(),
+                choice,
+                'base_greenhouse',
+                '找不到温室的统一反应入口',
+            ),
+        });
+        expect(chooseGreenhouse.success).toBe(true);
+        eventLog.push(...chooseGreenhouse.events);
+
+        const greenhouseChoice = getCurrentChoice(runner.getState());
+        expect(greenhouseChoice?.sourceId).toBe('base_greenhouse');
+        const chooseDeckMinion = runner.resolveInteraction('0', {
+            optionId: findOptionId(
+                greenhouseChoice!,
+                option => option.value?.cardUid === 'deck-minion',
+                '找不到温室牌库随从选项',
+            ),
+        });
+        expect(chooseDeckMinion.success).toBe(true);
+        eventLog.push(...chooseDeckMinion.events);
+
+        const finalState = runner.getState();
+        expect(collectBaseEventCount(eventLog, SU_EVENTS.BASE_SCORED)).toBe(1);
+        expect(collectBaseEventCount(eventLog, SU_EVENTS.BASE_CLEARED)).toBe(1);
+        expect(collectBaseEventCount(eventLog, SU_EVENTS.BASE_REPLACED)).toBe(1);
+        expect(getReactionSession(finalState)).toBeUndefined();
+        expect(finalState.sys.responseWindow?.current).toBeUndefined();
+        expect(['startTurn', 'playCards']).toContain(finalState.sys.phase);
+        expect(finalState.core.currentPlayerIndex).toBe(1);
+        expect(finalState.core.bases[0].defId).toBe('base_secret_garden');
+        expect(finalState.core.bases[0].minions.map(minion => minion.uid)).toEqual(['deck-minion']);
+        expect(finalState.core.players['0'].deck).toHaveLength(0);
+        const nextChoice = getCurrentChoice(finalState);
+        if (nextChoice) {
+            expect(nextChoice.sourceId).toBe('smashup_immediate_extra_minion');
+            expect(nextChoice.playerId).toBe('1');
+        }
     });
 });

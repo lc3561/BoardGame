@@ -390,3 +390,28 @@
   - `interactionCompletenessAudit` `5 passed`
   - `npm run i18n:check` 通过
 - 静态比对 `registerAbility('<id>')` 与 `newFactionAbilities.test.ts` 后，三派系缺口已收敛为 `0 / 0 / 0`（Mermaids / Skeletons / World Champs）。
+
+## 2026-04-23 SmashUp 三派系大厅 E2E 断言修正 Findings
+- 失败根因不是业务回归，而是测试语义错配：3 人房创建后房主占 1 席，座位文本应为“玩家 / 空位 / 空位”，旧断言误写成“空位 / 空位 / 空位”。
+- 已将 `e2e/smashup/smashup.e2e.ts` 的座位校验收敛为 `toContainText(/空位\\s*\\/\\s*空位/)`，保留“仍有两个空位”的真实业务约束。
+- 修正后复跑结果：
+  - 单用例：`npm run test:e2e:ci:file -- e2e/smashup/smashup.e2e.ts "3 人房间可加入且大厅会显示座位状态"` → `1 passed`
+  - 整文件：`npm run test:e2e:ci -- e2e/smashup/smashup.e2e.ts` → `3 passed`
+- 三派系统一斜向“实施中”横幅用例在整文件复跑中仍保持通过，无新增样式回归。
+
+## 2026-04-23 SmashUp 三派系审计门禁补记 Findings
+- 复跑 `interactionTargetTypeAudit` 时出现 1 条门禁失败：`cthulhu_corruption` 已切到 `targetType: 'generic'`，但审计白名单未登记保留理由。
+- 已在 `src/games/smashup/__tests__/interactionTargetTypeAudit.test.ts` 补齐两处登记：
+  - `REQUIRED_SOURCE_CONFIGS`：补 `targetType/generic + autoRefresh: field + responseValidationMode: live`
+  - `APPROVED_GENERIC_SOURCE_REASONS`：补 `cthulhu_corruption` 的 generic 保留原因
+- 修复后整组门禁回归恢复全绿：
+  - `newFactionAbilities`：`166 passed / 1 skipped`
+  - `interactionTargetTypeAudit`：`7 passed`
+  - `interactionDefIdAudit`：`2 passed`
+  - `abilityBehaviorAudit`：`22 passed`
+  - `interactionCompletenessAudit`：`5 passed`
+  - `npm run i18n:check`：通过
+
+## 2026-04-23 Workflow 升级补记（派系实施流程）
+- 已在 `docs/games/smashup/workflows/smashup-faction-implementation.md` 增补强制门禁：凡新增 `targetType: 'generic'` 的 `sourceId`，必须同步更新 `interactionTargetTypeAudit` 的 `REQUIRED_SOURCE_CONFIGS` 与 `APPROVED_GENERIC_SOURCE_REASONS`。
+- 这次补记把“审计规则”前置到 workflow，避免后续新增派系时再次踩到“实现对了但审计登记漏了”的回归坑。

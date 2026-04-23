@@ -35,6 +35,7 @@ import {
     testSystems,
     createRunner,
     createInitializedState,
+    createHeroMatchup,
     createSetupWithHand,
     createNoResponseSetup,
     getCardById,
@@ -2664,6 +2665,59 @@ describe('王权骰铸流程测试', () => {
             });
 
             expect(result.assertionErrors).toEqual([]);
+        });
+
+        it('闪避投掷成功后应自动收口到 main2，而不是卡在 defensiveRoll', () => {
+            const random = createQueuedRandom([
+                1, 2, 3, 4, 5,
+                1, 2, 3, 4, 5,
+                2,
+            ]);
+
+            const runner = new GameTestRunner({
+                domain: DiceThroneDomain,
+                systems: testSystems,
+                playerIds: ['0', '1'],
+                random,
+                setup: createHeroMatchup('shadow_thief', 'moon_elf', (core) => {
+                    core.players['1'].tokens[TOKEN_IDS.EVASIVE] = 1;
+                }),
+                assertFn: assertState,
+                silent: true,
+            });
+
+            const result = runner.run({
+                name: '闪避投掷成功后自动收口',
+                commands: [
+                    ...advanceTo('offensiveRoll'),
+                    cmd('ROLL_DICE', '0'),
+                    cmd('CONFIRM_ROLL', '0'),
+                    cmd('RESPONSE_PASS', '0'),
+                    cmd('RESPONSE_PASS', '1'),
+                    cmd('SELECT_ABILITY', '0', { abilityId: 'kidney-shot' }),
+                    cmd('ADVANCE_PHASE', '0'),
+                    cmd('ROLL_DICE', '1'),
+                    cmd('CONFIRM_ROLL', '1'),
+                    cmd('SELECT_ABILITY', '1', { abilityId: 'elusive-step' }),
+                    cmd('ADVANCE_PHASE', '1'),
+                    cmd('USE_TOKEN', '1', { tokenId: TOKEN_IDS.EVASIVE, amount: 1 }),
+                ],
+                expect: {
+                    turnPhase: 'main2',
+                    players: {
+                        '1': {
+                            hp: INITIAL_HEALTH,
+                            tokens: { [TOKEN_IDS.EVASIVE]: 0 },
+                        },
+                    },
+                    pendingDamage: null,
+                },
+            });
+
+            expect(result.assertionErrors).toEqual([]);
+            expect(result.finalState.sys.responseWindow?.current).toBeUndefined();
+            expect(result.finalState.sys.interaction?.current).toBeUndefined();
+            expect(result.finalState.core.pendingDamage).toBeUndefined();
         });
 
         it('防御投掷确认后响应窗口排除防御方（不排除攻击方）', () => {

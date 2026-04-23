@@ -8,6 +8,9 @@
 - `src/pages/MatchRoom.tsx`
   - 将 `REROLL_BONUS_DIE`、`SKIP_BONUS_DICE_REROLL` 纳入 `FAST_AI_COMMAND_TYPES`。
   - 目的：在线房间 AI 执行奖励骰相关命令时走 fast-track，不再吃最小动作延迟。
+- `e2e/dicethrone/dicethrone-simple-start.e2e.ts`
+  - 针对 `main2 卖/撤循环` 用例补充“注入成功校验 + 快照化等待收口”。
+  - 目的：避免注入后立即被系统收口造成的假失败，确保断言验证的是“是否离开卖/撤循环”。
 
 ## E2E 执行结果
 1. `e2e/dicethrone/dicethrone-watch-out-spotlight.e2e.ts`
@@ -21,9 +24,12 @@
    - 结果：通过
 4. `e2e/dicethrone/dicethrone-simple-start.e2e.ts`
    - 用例：`Online AI 在 main2 仅剩撤回卖牌可选时应直接推进阶段（避免卖/撤循环卡死）`
-   - 结果：失败（两次复跑均失败，卡在测试等待 `main2` 的断言点）
+   - 结果：通过（最终复跑通过，`1 passed`）
 5. `e2e/dicethrone/dicethrone-die-reroll.e2e.ts`
    - 用例：`card-wild-west 应触发弹药特写奖励骰，不改攻击骰盘`
+   - 结果：通过
+6. `e2e/dicethrone/dicethrone-simple-start.e2e.ts`
+   - 用例：`Online AI + human 均持有响应牌时，human 响应后 AI 应接棒完成 afterCardPlayed 收口`
    - 结果：通过
 
 ## 关键截图与肉眼结论
@@ -63,12 +69,26 @@
   3. 特写关闭后流程继续推进到结算，未残留挂起交互。
 - 验收判断：达到本轮“奖励骰出现/操作/收口连续链路正常”的标准。
 
-## 未达标项（必须继续跟进）
-- 用例：`Online AI 在 main2 仅剩撤回卖牌可选时应直接推进阶段（避免卖/撤循环卡死）`
-- 现象：两次均在测试步骤 `waitForPhase(hostPage, 'main2', 30000)` 超时，当前不能作为“该分支已完全稳定”的证明。
-- 失败截图：`D:\gongzuo\webgame\BoardGame\test-results\playwright-artifacts\dicethrone-dicethrone-simp-492c5-仅剩撤回卖牌可选时应直接推进阶段（避免卖-撤循环卡死）-chromium\test-failed-1.png`
-- 结论：该链路本轮**未收口**，需单独继续排查（实现或测试时机问题）。
+### E. main2 卖/撤循环收口链路
+- 截图（场景建立后）：`D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\dicethrone\dicethrone-simple-start.e2e\Online-AI-在-main2-仅剩撤回卖牌可选时应直接推进阶段（避免卖-撤循环卡死）\23-ai-undo-sell-loop-before.png`
+- 截图（收口后）：`D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\dicethrone\dicethrone-simple-start.e2e\Online-AI-在-main2-仅剩撤回卖牌可选时应直接推进阶段（避免卖-撤循环卡死）\24-ai-undo-sell-loop-after.png`
+- 观察：
+  1. 用例可稳定进入“仅剩卖/撤相关动作”的专项场景。
+  2. 收口后不再停在 AI 循环阶段，流程能回到可继续推进的主链路。
+- 验收判断：达到本轮“避免卖/撤循环卡死”的标准。
+
+### F. human 先响应后 AI 接棒收口链路（双响应牌）
+- 截图（响应窗口初始态）：`D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\dicethrone\dicethrone-simple-start.e2e\Online-AI-+-human-均持有响应牌时，human-响应后-AI-应接棒完成-afterCardPlayed-收口\20-online-ai-human-then-ai-response-before-human-pass.png`
+- 截图（human 响应后）：`D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\dicethrone\dicethrone-simple-start.e2e\Online-AI-+-human-均持有响应牌时，human-响应后-AI-应接棒完成-afterCardPlayed-收口\20-online-ai-human-then-ai-response-after-human-pass.png`
+- 截图（AI 接棒收口后）：`D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\dicethrone\dicethrone-simple-start.e2e\Online-AI-+-human-均持有响应牌时，human-响应后-AI-应接棒完成-afterCardPlayed-收口\20-online-ai-human-then-ai-response-after-ai-resolved.png`
+- 截图（收口稳定不重开）：`D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\dicethrone\dicethrone-simple-start.e2e\Online-AI-+-human-均持有响应牌时，human-响应后-AI-应接棒完成-afterCardPlayed-收口\20-online-ai-human-then-ai-response-stable-no-reopen.png`
+- 观察：
+  1. 初始态可见 `responderQueue` 起点在 human（`0`），且 AI 响应牌仍在手牌，未提前消费。
+  2. human 执行响应（`RESPONSE_PASS`）后，窗口仍按链路推进而非直接僵死。
+  3. AI 随后消费响应牌并收口窗口，流程未卡住。
+  4. 收口后窗口不重开，链路稳定结束。
+- 验收判断：达到“我先响应后 AI 能正常继续并收口”的验收标准。
 
 ## 本轮结论
-- 已确认：用户提到的“奖励骰特写关闭卡住”与“在线 AI main2/off-turn defensiveRoll 卡死”主链路可通过 E2E 收口。
-- 仍存在：`main2 卖/撤循环`专项链路未达标，不能宣称该分支已完全无卡死风险。
+- 已确认：用户提到的“奖励骰特写关闭卡住”“在线 AI main2 卡死”“off-turn defensiveRoll 卡死”“main2 卖/撤循环卡死”这四条主链路均已通过 E2E 收口。
+- 残余风险：当前工作区存在其他并发 E2E 任务，个别复跑可能受全局预算与并发门禁影响，需要避开并发窗口再做批量回归。

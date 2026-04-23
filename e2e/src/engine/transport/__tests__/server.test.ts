@@ -3990,6 +3990,180 @@ describe('GameTransportServer（离座与重连）', () => {
         expect(executed).toContain('SYS_RESPONSE_WINDOW_FORCE_CLOSE');
     });
 
+    it('online AI watchdog 在 response window 先执行非 pass 合法动作时，不应误触发强制关窗', async () => {
+        const io = new MockIO();
+        const storage = new InMemoryStorage();
+        const gameId = 'test-watchdog-response-window-non-pass';
+
+        aiModule.registerGameAiRuntime({
+            gameId,
+            buildLegalActions: ({ playerId, state }) => {
+                if (playerId !== '1') {
+                    return [];
+                }
+
+                const responseWindow = (state.sys?.responseWindow as { current?: unknown } | undefined)?.current as
+                    | { responderQueue?: unknown; currentResponderIndex?: unknown }
+                    | undefined;
+                if (!responseWindow) {
+                    return [];
+                }
+
+                const responderQueue = Array.isArray(responseWindow.responderQueue)
+                    ? responseWindow.responderQueue
+                    : [];
+                const responderIndex = typeof responseWindow.currentResponderIndex === 'number'
+                    ? responseWindow.currentResponderIndex
+                    : 0;
+                const currentResponderId = responderQueue[responderIndex];
+                if (currentResponderId !== '1') {
+                    return [];
+                }
+
+                const core = state.core as { modifiedOnce?: boolean };
+                if (core.modifiedOnce !== true) {
+                    return [{
+                        actionId: 'legal-modify-die',
+                        kind: 'modify-die',
+                        label: '合法改骰',
+                        commands: [{ type: 'MODIFY_DIE', payload: { dieIndex: 0, value: 6 } }],
+                    }];
+                }
+
+                return [{
+                    actionId: 'legal-response-pass',
+                    kind: 'response-pass',
+                    label: '结束响应',
+                    commands: [{ type: 'RESPONSE_PASS', payload: {} }],
+                }];
+            },
+            localPolicies: {
+                responseWindowPolicy: {
+                    id: 'responseWindowPolicy',
+                    decide: (context) => ({
+                        actionId: context.legalActions[0]?.actionId ?? 'legal-response-pass',
+                        confidence: 0.95,
+                        reasoningSummary: '先执行改骰动作，再按合法动作收口响应窗口。',
+                    }),
+                },
+            },
+            defaultLocalPolicyId: 'responseWindowPolicy',
+        });
+
+        await storage.createMatch('match-watchdog-response-window-non-pass', {
+            initialState: createOnlineAiRecoveryState({
+                activePlayerId: '0',
+                phase: 'defensiveRoll',
+                responseWindow: {
+                    current: {
+                        id: 'response-window-non-pass-1',
+                        windowType: 'afterRollConfirmed',
+                        sourceId: 'attack-1',
+                        responderQueue: ['1'],
+                        currentResponderIndex: 0,
+                    },
+                },
+            }),
+            metadata: createOnlineAiRecoveryMetadata({
+                gameName: gameId,
+                seatControllers: {
+                    '0': { type: 'human' },
+                    '1': { type: 'local-ai', policyId: 'responseWindowPolicy' },
+                },
+            }),
+        });
+
+        const server = new GameTransportServer({
+            io: io as unknown as any,
+            storage,
+            games: [createEngineConfigWithId(gameId)],
+            onlineAiRecoveryTickMs: 0,
+            onlineAiRecoveryTimeoutMs: 0,
+            onlineAiRecoveryMaxAdvanceSteps: 2,
+        });
+
+        const serverInternal = server as unknown as {
+            loadMatch: (matchID: string) => Promise<any>;
+            runOnlineAiRecoveryTick: () => Promise<void>;
+            executeCommandInternal: (
+                match: any,
+                playerID: string,
+                commandType: string,
+                payload: unknown,
+            ) => Promise<boolean>;
+        };
+
+        await serverInternal.loadMatch('match-watchdog-response-window-non-pass');
+
+        const executed: string[] = [];
+        vi.spyOn(serverInternal, 'executeCommandInternal').mockImplementation(async (match, playerID, commandType) => {
+            executed.push(commandType);
+            expect(playerID).toBe('1');
+
+            if (commandType === 'MODIFY_DIE') {
+                match.state = {
+                    ...match.state,
+                    core: {
+                        ...match.state.core,
+                        modifiedOnce: true,
+                    },
+                    sys: {
+                        ...match.state.sys,
+                        eventStream: {
+                            ...(match.state.sys?.eventStream ?? {}),
+                            nextId: (match.state.sys?.eventStream?.nextId ?? 1) + 1,
+                        },
+                        responseWindow: {
+                            ...(match.state.sys?.responseWindow ?? {}),
+                            current: {
+                                id: 'response-window-non-pass-2',
+                                windowType: 'afterRollConfirmed',
+                                sourceId: 'attack-1',
+                                responderQueue: ['1'],
+                                currentResponderIndex: 0,
+                            },
+                        },
+                    },
+                };
+                return true;
+            }
+
+            if (commandType === 'RESPONSE_PASS') {
+                match.state = {
+                    ...match.state,
+                    sys: {
+                        ...match.state.sys,
+                        eventStream: {
+                            ...(match.state.sys?.eventStream ?? {}),
+                            nextId: (match.state.sys?.eventStream?.nextId ?? 1) + 1,
+                        },
+                        responseWindow: {
+                            ...(match.state.sys?.responseWindow ?? {}),
+                            current: undefined,
+                        },
+                    },
+                };
+                return true;
+            }
+
+            if (commandType === 'SYS_RESPONSE_WINDOW_FORCE_CLOSE') {
+                return true;
+            }
+
+            return true;
+        });
+
+        await serverInternal.runOnlineAiRecoveryTick();
+        await serverInternal.runOnlineAiRecoveryTick();
+        for (let i = 0; i < 10; i++) { await nextTick(); }
+        await serverInternal.runOnlineAiRecoveryTick();
+        for (let i = 0; i < 10; i++) { await nextTick(); }
+
+        expect(executed).toContain('MODIFY_DIE');
+        expect(executed).toContain('RESPONSE_PASS');
+        expect(executed).not.toContain('SYS_RESPONSE_WINDOW_FORCE_CLOSE');
+    });
+
     it('online AI watchdog 在 response window 中 responder 不是 activePlayer 时，仍应执行 RESPONSE_PASS', async () => {
         const io = new MockIO();
         const storage = new InMemoryStorage();

@@ -655,6 +655,7 @@
     "tutorial_command_blocked": "This action is blocked in the tutorial",
     "tutorial_step_locked": "The current step cannot be skipped",
     "defense_ability_not_selected": "Must select a defense ability before rolling",
+    "defense_roll_disabled_for_duel": "Duel defense cannot be rolled manually. Click \"End Defense\" directly.",
     "invalid_character": "Invalid character selection",
     "character_not_selected": "Please select a character first",
     "game_already_started": "The match has already started, so seating and ready state can no longer be changed",

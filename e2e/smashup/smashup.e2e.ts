@@ -173,7 +173,8 @@ test.describe('大杀四方大厅 E2E', () => {
     await expect(roomTitle).toBeVisible({ timeout: 15000 });
 
     const roomInfo = roomTitle.locator('..').locator('..');
-    await expect(roomInfo.getByText(/空位\s*\/\s*空位\s*\/\s*空位/)).toBeVisible({ timeout: 15000 });
+    // 房主已占 1 个座位，3 人房在大厅应展示“玩家 / 空位 / 空位”
+    await expect(roomInfo).toContainText(/空位\s*\/\s*空位/, { timeout: 15000 });
 
     await viewerContext.close();
 

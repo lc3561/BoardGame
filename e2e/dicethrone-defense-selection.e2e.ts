@@ -1,6 +1,16 @@
 import { test, expect } from './framework';
 import type { GameTestContext } from './framework';
 
+async function dismissAttackShowcaseIfVisible(
+    page: import('@playwright/test').Page,
+): Promise<void> {
+    const continueButton = page.getByRole('button', { name: /开始防御|继续/i });
+    if ((await continueButton.count()) > 0) {
+        await continueButton.first().click();
+        await expect(continueButton).toHaveCount(0, { timeout: 5000 });
+    }
+}
+
 async function setupDefenseSelectionScene(
     game: GameTestContext,
     defenderCharacter: 'shadow_thief' | 'paladin',
@@ -60,6 +70,81 @@ async function setupDefenseSelectionScene(
         defenderId: '1',
         defenseAbilityId,
         rollCount: 0,
+    });
+}
+
+async function setupGunslingerDuelDirectDefenseScene(game: GameTestContext): Promise<void> {
+    await game.openTestGame('dicethrone');
+
+    await game.setupScene({
+        gameId: 'dicethrone',
+        player0: {
+            resources: { CP: 2, HP: 50 },
+        },
+        player1: {
+            resources: { CP: 2, HP: 50 },
+        },
+        currentPlayer: '0',
+        phase: 'defensiveRoll',
+        sys: {
+            interaction: {
+                current: null,
+                queue: [],
+            },
+            responseWindow: {
+                current: null,
+            },
+        },
+        extra: {
+            selectedCharacters: { '0': 'gunslinger', '1': 'monk' },
+            hostStarted: true,
+            rollCount: 0,
+            rollLimit: 1,
+            rollConfirmed: false,
+            pendingDamage: null,
+            dice: [
+                { id: 0, definitionId: 'gunslinger-dice', value: 1, symbol: 'bullet', symbols: ['bullet'], isKept: false },
+                { id: 1, definitionId: 'gunslinger-dice', value: 2, symbol: 'dash', symbols: ['dash'], isKept: false },
+                { id: 2, definitionId: 'gunslinger-dice', value: 3, symbol: 'bullseye', symbols: ['bullseye'], isKept: false },
+                { id: 3, definitionId: 'gunslinger-dice', value: 4, symbol: 'bullet', symbols: ['bullet'], isKept: false },
+                { id: 4, definitionId: 'gunslinger-dice', value: 5, symbol: 'dash', symbols: ['dash'], isKept: false },
+            ],
+            pendingAttack: {
+                attackerId: '1',
+                defenderId: '0',
+                isDefendable: true,
+                damage: 8,
+                bonusDamage: 0,
+                sourceAbilityId: 'fist-technique-5',
+                defenseAbilityId: 'duel',
+            },
+            activePlayerId: '0',
+        },
+    });
+
+    await expect.poll(async () => {
+        const state = await game.getState();
+        return {
+            phase: state?.sys?.phase ?? null,
+            activePlayerId: state?.core?.activePlayerId ?? null,
+            defenderId: state?.core?.pendingAttack?.defenderId ?? null,
+            defenseAbilityId: state?.core?.pendingAttack?.defenseAbilityId ?? null,
+            rollCount: state?.core?.rollCount ?? null,
+            rollConfirmed: state?.core?.rollConfirmed ?? null,
+            interactionKind: state?.sys?.interaction?.current?.kind ?? null,
+            responseWindowId: state?.sys?.responseWindow?.current?.id ?? null,
+            pendingDamageId: state?.core?.pendingDamage?.id ?? null,
+        };
+    }, { timeout: 10000 }).toMatchObject({
+        phase: 'defensiveRoll',
+        activePlayerId: '0',
+        defenderId: '0',
+        defenseAbilityId: 'duel',
+        rollCount: 0,
+        rollConfirmed: false,
+        interactionKind: null,
+        responseWindowId: null,
+        pendingDamageId: null,
     });
 }
 
@@ -360,6 +445,7 @@ test.describe('DiceThrone - 防御技能选择', () => {
 
     test('圣骑防御场景应显示 holy-defense 并允许投骰', async ({ page, game }) => {
         await setupDefenseSelectionScene(game, 'paladin', 'holy-defense');
+        await dismissAttackShowcaseIfVisible(page);
 
         await expect.poll(async () => {
             const state = await game.getState();
@@ -375,6 +461,43 @@ test.describe('DiceThrone - 防御技能选择', () => {
         const state = await game.getState();
         expect(state.core.pendingAttack?.defenseAbilityId).toBe('holy-defense');
         await expect(page.locator('[data-tutorial-id="dice-roll-button"]')).toBeEnabled({ timeout: 5000 });
+    });
+
+    test('枪手 Duel 防御阶段应禁用手动投掷并可直接结束防御进入对掷', async ({ page, game }, testInfo) => {
+        await setupGunslingerDuelDirectDefenseScene(game);
+        await dismissAttackShowcaseIfVisible(page);
+
+        const rollButton = page.locator('[data-tutorial-id="dice-roll-button"]');
+        const advanceButton = page.locator('[data-tutorial-id="advance-phase-button"]');
+
+        await expect(rollButton).toBeDisabled({ timeout: 5000 });
+        await expect(advanceButton).toBeEnabled();
+        await game.screenshot('gunslinger-duel-direct-defense-before-advance', testInfo);
+
+        await advanceButton.click();
+
+        const overlay = page.getByTestId('compare-roll-overlay');
+        await expect(overlay).toBeVisible({ timeout: 5000 });
+        await expect(page.getByTestId('compare-roll-participant-0')).toBeVisible();
+        await expect(page.getByTestId('compare-roll-participant-1')).toBeVisible();
+        await game.screenshot('gunslinger-duel-direct-defense-after-advance', testInfo);
+
+        await expect.poll(async () => {
+            const state = await game.getState();
+            return {
+                phase: state?.sys?.phase ?? null,
+                interactionKind: state?.sys?.interaction?.current?.kind ?? null,
+                sourceId: state?.sys?.interaction?.current?.data?.sourceId ?? null,
+                defenseAbilityId: state?.core?.pendingAttack?.defenseAbilityId ?? null,
+                rollCount: state?.core?.rollCount ?? null,
+            };
+        }, { timeout: 5000 }).toMatchObject({
+            phase: 'defensiveRoll',
+            interactionKind: 'compare-roll-choice',
+            sourceId: 'duel',
+            defenseAbilityId: 'duel',
+            rollCount: 0,
+        });
     });
 
     test('自己处于响应窗口时应高亮对方可选技能', async ({ page, game }, testInfo) => {

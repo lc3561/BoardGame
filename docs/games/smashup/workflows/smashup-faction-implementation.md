@@ -186,6 +186,15 @@
 - 一份专项审计文档：`evidence/smashup/<task>-audit-YYYY-MM-DD.md`
 - 文档内必须包含：命令、结果、失败归因（本任务/历史基线）、后续动作
 
+#### `targetType: 'generic'` 门禁补充（强制）
+
+凡是新增或调整到 `targetType: 'generic'` 的 `sourceId`，必须同步更新：
+
+1. `src/games/smashup/__tests__/interactionTargetTypeAudit.test.ts` 的 `REQUIRED_SOURCE_CONFIGS`
+2. 同文件 `APPROVED_GENERIC_SOURCE_REASONS`（写清保留 generic 的语义理由）
+
+否则 `interactionTargetTypeAudit` 会在“所有 generic targetType 都必须登记保留原因”处直接失败。
+
 ## 多 agent 使用建议
 
 允许并行的通常是：

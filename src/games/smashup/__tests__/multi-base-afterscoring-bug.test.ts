@@ -693,6 +693,32 @@ describe('多基地同时计分 afterScoring 触发问题', () => {
         );
     });
 
+    it('反馈 69a27d：海盗王移动到托尔图加后，计分交互链结束应退出 scoreBases 而不是卡死', () => {
+        const initialState = createPirateKingFirstMateEndToEndSetup();
+
+        const advance = runCommand(initialState, {
+            type: 'ADVANCE_PHASE',
+            playerId: '0',
+            payload: undefined,
+        });
+        expect(advance.success).toBe(true);
+
+        const chain = resolvePirateKingFirstMateScoringChain(advance.finalState, runCommand);
+        assertPirateKingFirstMateChainResult(
+            chain.finalState,
+            [...advance.events, ...chain.chainEvents] as SmashUpEvent[],
+        );
+
+        const finalState = chain.finalState;
+        expect(finalState.sys.phase).toBe('playCards');
+        expect(finalState.sys.responseWindow?.current).toBeUndefined();
+        expect((finalState.sys as any).smashupReactionSession).toBeUndefined();
+        expect(finalState.sys.interaction?.current).toBeUndefined();
+        expect(finalState.sys.interaction?.queue ?? []).toHaveLength(0);
+        expect(finalState.core.bases[0].defId).toBe('base_central_brain');
+        expect(finalState.core.bases[2].minions.map(minion => minion.uid)).toContain('mate-0');
+    });
+
     it('复杂链路：计分前从手牌打出便衣忍者后，海盗王 + 托尔图加 + 大副链仍只结算一次', () => {
         const initialState = createPirateKingFirstMateWithHandSpecialSetup();
 

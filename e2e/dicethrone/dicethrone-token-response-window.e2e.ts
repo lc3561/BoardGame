@@ -164,6 +164,83 @@ async function expectTokenCount(
     ).toBe(count);
 }
 
+async function injectMoonElfEvasiveResponseScene(page: Page): Promise<void> {
+    await page.evaluate((evasiveTokenId: string) => {
+        const harness = (window as any).__BG_TEST_HARNESS__;
+        const state = harness?.state?.get?.();
+        if (!harness || !state) {
+            throw new Error('TestHarness state not ready');
+        }
+
+        harness.dice.setValues([1]);
+
+        const nextState = structuredClone(state);
+        nextState.sys = {
+            ...(nextState.sys ?? {}),
+            phase: 'defensiveRoll',
+            interaction: {
+                current: undefined,
+                queue: [],
+            },
+        };
+        nextState.core = {
+            ...(nextState.core ?? {}),
+            hostStarted: true,
+            activePlayerId: '1',
+            selectedCharacters: {
+                ...(nextState.core?.selectedCharacters ?? {}),
+                '0': 'moon_elf',
+                '1': 'shadow_thief',
+            },
+            rollCount: 1,
+            rollLimit: 1,
+            rollConfirmed: true,
+            pendingAttack: {
+                attackerId: '1',
+                defenderId: '0',
+                isDefendable: true,
+                sourceAbilityId: 'kidney-shot',
+                defenseAbilityId: 'elusive-step',
+                damage: 5,
+                bonusDamage: 0,
+                attackModifierBonusDamage: 0,
+                damageResolved: false,
+                resolvedDamage: 0,
+                preDefenseResolved: false,
+                offensiveRollEndTokenResolved: false,
+            },
+            pendingDamage: {
+                id: 'moon-elf-evasive-response',
+                sourcePlayerId: '1',
+                targetPlayerId: '0',
+                originalDamage: 5,
+                currentDamage: 5,
+                sourceAbilityId: 'kidney-shot',
+                responseType: 'beforeDamageReceived',
+                responderId: '0',
+                isFullyEvaded: false,
+            },
+            players: {
+                ...(nextState.core?.players ?? {}),
+                '0': {
+                    ...(nextState.core?.players?.['0'] ?? {}),
+                    resources: {
+                        ...((nextState.core?.players?.['0']?.resources ?? {}) as Record<string, number>),
+                        hp: 50,
+                    },
+                    tokens: {
+                        ...((nextState.core?.players?.['0']?.tokens ?? {}) as Record<string, number>),
+                        [evasiveTokenId]: 1,
+                    },
+                },
+            },
+        };
+
+        harness.state.set(nextState);
+        (window as any).__BG_LAST_COMMAND_REJECTED__ = null;
+    }, TOKEN_IDS.EVASIVE);
+}
+
 test.describe('Token 响应窗口完整流程', () => {
     test('攻击方暴击 token 注入后可见', async ({ page, game }, testInfo: TestInfo) => {
         await setupTokenScene(game, { '0': 'paladin', '1': 'barbarian' });
@@ -199,6 +276,52 @@ test.describe('Token 响应窗口完整流程', () => {
 
         await expectTokenCount(game, '0', TOKEN_IDS.CRIT, 1);
         await expectTokenCount(game, '0', TOKEN_IDS.CRIT, 1);
+    });
+
+    test('月精灵闪避成功后应自动收口到 main2，不再卡在 defensiveRoll', async ({ page, game }, testInfo) => {
+        await setupTokenScene(game, { '0': 'moon_elf', '1': 'shadow_thief' }, '0');
+        await injectMoonElfEvasiveResponseScene(page);
+
+        const defenderTitle = page.getByText(/响应（防御方）|defender/i).first();
+        const evasiveLabel = page.getByText(/^闪避$|^Evasive$/i).first();
+        const useButton = page.getByRole('button', { name: /^(使用|Use|Use Token)(?: x\d+)?$/i }).first();
+
+        await expect(defenderTitle).toBeVisible({ timeout: 5000 });
+        await expect(evasiveLabel).toBeVisible({ timeout: 5000 });
+        await expect(useButton).toBeVisible({ timeout: 5000 });
+        await game.screenshot('moon-elf-evasive-before-use', testInfo);
+
+        await useButton.click();
+
+        await expect.poll(async () => {
+            const state = await game.getState();
+            const entries = state?.sys?.eventStream?.entries ?? [];
+            const evasiveUseEvent = [...entries]
+                .reverse()
+                .find((entry: any) => entry.event?.type === 'TOKEN_USED' && entry.event?.payload?.tokenId === TOKEN_IDS.EVASIVE);
+
+            return {
+                phase: state?.sys?.phase ?? null,
+                pendingDamage: state?.core?.pendingDamage ?? null,
+                interaction: state?.sys?.interaction?.current ?? null,
+                defenderHp: state?.core?.players?.['0']?.resources?.hp ?? null,
+                evasive: state?.core?.players?.['0']?.tokens?.evasive ?? null,
+                evasionRoll: evasiveUseEvent?.event?.payload?.evasionRoll?.value ?? null,
+                evasionSuccess: evasiveUseEvent?.event?.payload?.evasionRoll?.success ?? null,
+                lastEventTypes: entries.slice(-8).map((entry: any) => entry.event?.type),
+            };
+        }, { timeout: 10000 }).toMatchObject({
+            phase: 'main2',
+            pendingDamage: null,
+            interaction: null,
+            defenderHp: 50,
+            evasive: 0,
+            evasionRoll: 1,
+            evasionSuccess: true,
+        });
+
+        await expect(useButton).toBeHidden({ timeout: 5000 });
+        await game.screenshot('moon-elf-evasive-after-use', testInfo);
     });
 });
 

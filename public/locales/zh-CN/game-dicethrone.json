@@ -688,6 +688,7 @@
     "tutorial_command_blocked": "教程中禁止该操作",
     "tutorial_step_locked": "当前步骤不能跳过",
     "defense_ability_not_selected": "需要先选择防御技能才能掷骰",
+    "defense_roll_disabled_for_duel": "对决（Duel）防御阶段不能手动掷骰，请直接点击“结束防御”",
     "invalid_character": "无效的角色选择",
     "character_not_selected": "请先选择角色",
     "game_already_started": "对局已经开始，不能再调整站位或准备状态",

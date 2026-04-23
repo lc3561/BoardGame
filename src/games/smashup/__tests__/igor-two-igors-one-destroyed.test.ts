@@ -126,6 +126,11 @@ describe('Igor: 场上有两个 Igor，一个被消灭', () => {
         expect(result3.success).toBe(true);
         if (!result3.success) return;
 
+        const igorCounterEvents = result3.events.filter((event: any) =>
+            event.type === 'su:power_counter_added'
+            && event.payload?.reason === 'frankenstein_igor',
+        );
+
         // 最终状态：Igor 交互已被解决
         const finalInteraction = result3.finalState.sys.interaction.current as any;
         expect(finalInteraction).toBeUndefined();
@@ -137,5 +142,13 @@ describe('Igor: 场上有两个 Igor，一个被消灭', () => {
         const igor2Final = finalBase.minions.find(m => m.uid === 'igor2');
         expect(igor2Final).toBeDefined();
         expect(igor2Final!.powerCounters).toBe(1);
+        expect(igorCounterEvents).toHaveLength(1);
+        expect(igorCounterEvents[0]).toMatchObject({
+            payload: {
+                minionUid: 'igor2',
+                amount: 1,
+                reason: 'frankenstein_igor',
+            },
+        });
     });
 });

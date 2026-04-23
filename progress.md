@@ -284,6 +284,30 @@
   - Result: `evidence/smashup/smashup-10th-anniversary-factions-audit-20260419.md` 已新增“补测收敛记录（2026-04-23）”；`task_plan.md` 将三派系覆盖缺口任务标记完成；`findings.md` 追加补测结论（缺口 `0/0/0`）。
   - Next: 继续执行长期任务下一批实施/审计项，直至用户最终验收总结。
 
+- **[2026-04-23 00:35:48] Action**: 复现并定位 SmashUp 大厅 3 人房 E2E 失败
+  - Result: `npm run test:e2e:ci:file -- e2e/smashup/smashup.e2e.ts "3 人房间可加入且大厅会显示座位状态"` 首次失败，确认失败点为座位文本断言误写（期望 `空位/空位/空位`），截图实际为“玩家/空位/空位”。
+  - Next: 按真实语义最小修正断言并重跑单用例。
+
+- **[2026-04-23 00:37:46] Action**: 最小修正座位断言并复跑单用例
+  - Result: 已将 `e2e/smashup/smashup.e2e.ts` 中断言收敛为 `toContainText(/空位\\s*\\/\\s*空位/)`；`npx eslint e2e/smashup/smashup.e2e.ts` 通过；单用例复跑 `1 passed`。
+  - Next: 复跑整文件，确认三派系统一横幅用例不受影响。
+
+- **[2026-04-23 00:43:22] Action**: 复跑 SmashUp 大厅整文件并回填证据
+  - Result: `npm run test:e2e:ci -- e2e/smashup/smashup.e2e.ts` 全量 `3 passed`；已在 `evidence/smashup/smashup-10th-anniversary-factions-selection-e2e-test.md` 与 `evidence/smashup/smashup-10th-anniversary-factions-audit-20260419.md` 增补 2026-04-23 复测记录与截图路径。
+  - Next: 继续三派系审计收口项，直至本轮长期任务最终汇总。
+
+- **[2026-04-23 08:49:58] Action**: 复跑三派系审计门禁并定位新增失败
+  - Result: `interactionTargetTypeAudit` 首次复跑出现 `cthulhu_corruption` 未登记 generic 保留理由导致的 1 条失败；其余审计项未见新增失败。
+  - Next: 最小补齐审计登记并复跑全套门禁。
+
+- **[2026-04-23 08:53:26] Action**: 补齐 `cthulhu_corruption` 审计登记并完成全套复跑
+  - Result: 已在 `src/games/smashup/__tests__/interactionTargetTypeAudit.test.ts` 补齐 `REQUIRED_SOURCE_CONFIGS + APPROVED_GENERIC_SOURCE_REASONS`；`eslint` 通过；`newFactionAbilities(166/1) + 4 个 audit suite + i18n` 全部通过。
+  - Next: 回填三派系审计证据文档，继续长期任务直到最终汇总。
+
+- **[2026-04-23 09:03:12] Action**: 回写派系实施 workflow 门禁，沉淀可复用流程
+  - Result: `docs/games/smashup/workflows/smashup-faction-implementation.md` 已新增 `targetType: 'generic'` 强制补记规则（`REQUIRED_SOURCE_CONFIGS + APPROVED_GENERIC_SOURCE_REASONS` 双登记），将本次踩坑前置为流程约束。
+  - Next: 进入本轮长期任务最终收口准备（等待你要求最终总汇报时一次性给出）。
+
 ## Session: 2026-04-22 Dicethrone critical 反馈补强（69c3c83e / 69cba605）
 
 ### Phase: 实施与验证

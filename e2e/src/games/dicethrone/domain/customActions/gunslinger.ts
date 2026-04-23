@@ -188,7 +188,7 @@ function handleShowdownBonus({ attackerId, sourceAbilityId, timestamp, random, a
 function handleDuelResolve({ sourceAbilityId, state, timestamp, random, action }: CustomActionContext): DiceThroneEvent[] {
     if (!random) return [];
 
-    // 产品特例：duel 可在未手动掷骰时直接结束防御，此时由系统为防御方自动掷 1 颗骰子。
+    // 产品特例：duel 只能通过“直接结束防御”进入对掷，此时由系统为防御方自动掷 1 颗骰子。
     const defenderRoll = (state.rollCount > 0 && state.rollConfirmed)
         ? (state.dice[0]?.value ?? 1)
         : random.d(6);

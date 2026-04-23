@@ -47,18 +47,73 @@ describe('火法小顺子二级技能 - 焚灭触发', () => {
                 cmd('ROLL_DICE', '0'),
             ],
             expect: (state) => {
-                console.log('当前阶段:', state.core.phase);
-                console.log('当前玩家:', state.core.activePlayer);
                 const availableAbilities = state.core.availableAbilities;
-                console.log('骰子值:', state.core.dice.slice(0, state.core.rollDiceCount).map(d => d.value));
-                console.log('可用技能:', availableAbilities);
-                
                 // 应该包含 fiery-combo-2（小顺子触发）
                 expect(availableAbilities).toContain('fiery-combo-2');
             }
         });
 
-        console.log('测试结果:', result);
+        expect(result.passed).toBe(true);
+    });
+
+    it('应该在满足 2火+2爆发 条件时触发 incinerate', () => {
+        const random = createQueuedRandom([
+            1, 2, 4, 4, 5, 6
+        ]);
+        const runner = createRunner(random, false);
+
+        const result = runner.run({
+            name: '火法焚灭触发',
+            setup: createHeroMatchup('pyromancer', 'barbarian', (core) => {
+                const player = core.players['0'];
+                if (!player) return;
+                const abilityIndex = player.abilities.findIndex(a => a.id === 'fiery-combo');
+                if (abilityIndex !== -1) {
+                    player.abilities[abilityIndex] = HOT_STREAK_2;
+                }
+            }),
+            commands: [
+                ...advanceTo('offensiveRoll'),
+                cmd('ROLL_DICE', '0'),
+            ],
+            expect: (state) => {
+                const availableAbilities = state.core.availableAbilities;
+                expect(availableAbilities).toContain('incinerate');
+                expect(availableAbilities[0]).toBe('incinerate');
+            }
+        });
+
+        expect(result.passed).toBe(true);
+    });
+
+    it('当小顺子与焚灭条件同时满足时，应优先给出 incinerate', () => {
+        const random = createQueuedRandom([
+            1, 2, 3, 4, 4, 6
+        ]);
+        const runner = createRunner(random, false);
+
+        const result = runner.run({
+            name: '火法小顺子与焚灭同时满足时优先焚灭',
+            setup: createHeroMatchup('pyromancer', 'barbarian', (core) => {
+                const player = core.players['0'];
+                if (!player) return;
+                const abilityIndex = player.abilities.findIndex(a => a.id === 'fiery-combo');
+                if (abilityIndex !== -1) {
+                    player.abilities[abilityIndex] = HOT_STREAK_2;
+                }
+            }),
+            commands: [
+                ...advanceTo('offensiveRoll'),
+                cmd('ROLL_DICE', '0'),
+            ],
+            expect: (state) => {
+                const availableAbilities = state.core.availableAbilities;
+                expect(availableAbilities).toContain('incinerate');
+                expect(availableAbilities).toContain('fiery-combo-2');
+                expect(availableAbilities[0]).toBe('incinerate');
+            }
+        });
+
         expect(result.passed).toBe(true);
     });
 });

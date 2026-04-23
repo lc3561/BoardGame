@@ -1206,6 +1206,7 @@ export class GameTransportServer {
                     seatControllers,
                 );
                 const actionRecoveryApplied = actionRecovery.applied;
+                const executedCommandTypes = new Set<string>(actionRecovery.executedCommandTypes);
 
                 if (!actionRecoveryApplied) {
                     const recoveryCommands = currentCandidate.resolution.action.commands;
@@ -1248,6 +1249,7 @@ export class GameTransportServer {
                         );
                         return;
                     }
+                    executedCommandTypes.add(nextCommandType);
 
                     if (nextCommandType === advancePhaseCommandType) {
                         totalAdvanceSteps += 1;
@@ -1287,6 +1289,7 @@ export class GameTransportServer {
                 // 响应窗口循环检测：如果刚执行了 RESPONSE_PASS 但同一 AI 的 response-window 立刻重开，
                 // 说明 RESPONSE_PASS 无法推进，应升级为 FORCE_CLOSE 强制关闭窗口。
                 if (currentCandidate.reason === 'response-window'
+                    && executedCommandTypes.has('RESPONSE_PASS')
                     && nextCandidate.reason === 'response-window'
                     && nextCandidate.playerId === candidate.playerId) {
                     const phase = typeof match.state.sys?.phase === 'string' ? match.state.sys.phase : '';
@@ -1909,10 +1912,11 @@ export class GameTransportServer {
     ): Promise<{
         applied: boolean;
         blockedReason: 'missing-visible-state' | 'missing-private-overlay' | 'stale-private-overlay' | null;
+        executedCommandTypes: string[];
     }> {
         const seatController = seatControllers[candidate.playerId];
         if (!seatController || seatController.type === 'human') {
-            return { applied: false, blockedReason: null };
+            return { applied: false, blockedReason: null, executedCommandTypes: [] };
         }
 
         const resolveStrictOnlineDecisionView = (playerId: string) => resolveOnlineAiDecisionView({
@@ -1987,17 +1991,19 @@ export class GameTransportServer {
                 return {
                     applied: false,
                     blockedReason: aiDispatchResult.blockedReason,
+                    executedCommandTypes: [],
                 };
             }
-            return { applied: false, blockedReason: null };
+            return { applied: false, blockedReason: null, executedCommandTypes: [] };
         }
 
         const resolution = aiDispatchResult.resolution;
         if (resolution.playerId !== candidate.playerId || resolution.action.commands.length === 0) {
-            return { applied: false, blockedReason: null };
+            return { applied: false, blockedReason: null, executedCommandTypes: [] };
         }
 
         const markerBefore = buildAiProgressMarker(match.state);
+        const executedCommandTypes: string[] = [];
         for (const command of resolution.action.commands) {
             const success = await this.executeCommandInternal(
                 match,
@@ -2008,14 +2014,15 @@ export class GameTransportServer {
             );
             if (!success) {
                 tracker.autoSubmittedAt = null;
-                return { applied: false, blockedReason: null };
+                return { applied: false, blockedReason: null, executedCommandTypes: [] };
             }
+            executedCommandTypes.push(command.type);
         }
 
         const markerAfter = buildAiProgressMarker(match.state);
         if (markerAfter === markerBefore) {
             tracker.autoSubmittedAt = null;
-            return { applied: false, blockedReason: null };
+            return { applied: false, blockedReason: null, executedCommandTypes: [] };
         }
 
         // legal-action recovery 会串行执行 1..N 条命令，前面用 suppressBroadcast 合并中间态；
@@ -2058,7 +2065,7 @@ export class GameTransportServer {
             });
         }
 
-        return { applied: true, blockedReason: null };
+        return { applied: true, blockedReason: null, executedCommandTypes };
     }
 
     private maybeTriggerOnlineAiOverlayResync(args: {

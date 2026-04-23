@@ -354,10 +354,7 @@ describe('cross hero battles', () => {
                     cmd('RESPONSE_PASS', '1'),
                     cmd('SELECT_ABILITY', '0', { abilityId: 'fist-technique-5' }),
                     cmd('ADVANCE_PHASE', '0'),
-                    cmd('ROLL_DICE', '1'),
-                    cmd('CONFIRM_ROLL', '1'),
-                    cmd('RESPONSE_PASS', '0'),
-                    cmd('RESPONSE_PASS', '1'),
+                    // 产品特例：duel 只能直接结束防御，不允许手动投掷防御骰
                     cmd('ADVANCE_PHASE', '1'),
                     cmd('SYS_INTERACTION_RESPOND', '1', { optionId: 'option-1' }),
                 ],
@@ -375,72 +372,60 @@ describe('cross hero battles', () => {
             expect(result.finalState.core.pendingAttack).toBeNull();
         });
 
-        it('duel win allows skipping manual defensive roll and still resolves compare-roll choice', () => {
-            const runner = createCrossHeroRunner(
-                createQueuedRandom([1, 1, 1, 1, 1, 6, 1]),
+        it('duel defensiveRoll rejects manual ROLL_DICE and requires direct phase advance', () => {
+            const random = createQueuedRandom([1, 1, 1, 1, 1, 6, 1]);
+            const playerIds: PlayerId[] = ['0', '1'];
+            const pipelineConfig = {
+                domain: DiceThroneDomain,
+                systems: testSystems,
+            };
+
+            let state = createInitializedStateWithCharacters(
+                playerIds,
+                random,
                 { '0': 'monk', '1': 'gunslinger' }
             );
 
-            const result = runner.run({
-                name: 'gunslinger duel win without manual defensive roll',
-                commands: [
-                    cmd('ADVANCE_PHASE', '0'),
-                    cmd('ROLL_DICE', '0'),
-                    cmd('CONFIRM_ROLL', '0'),
-                    cmd('RESPONSE_PASS', '0'),
-                    cmd('RESPONSE_PASS', '1'),
-                    cmd('SELECT_ABILITY', '0', { abilityId: 'fist-technique-5' }),
-                    cmd('ADVANCE_PHASE', '0'),
-                    // 产品特例：duel 无需先手动投掷防御骰，可直接结束防御进入对掷结算
-                    cmd('ADVANCE_PHASE', '1'),
-                    cmd('SYS_INTERACTION_RESPOND', '1', { optionId: 'option-1' }),
-                ],
-                expect: {
-                    turnPhase: 'main2',
-                    pendingInteraction: null,
-                    players: {
-                        '0': { hp: 50 },
-                        '1': { hp: 46 },
-                    },
-                },
-            });
+            const toDefensiveRoll: CommandInput[] = [
+                cmd('ADVANCE_PHASE', '0'),
+                cmd('ROLL_DICE', '0'),
+                cmd('CONFIRM_ROLL', '0'),
+                cmd('RESPONSE_PASS', '0'),
+                cmd('RESPONSE_PASS', '1'),
+                cmd('SELECT_ABILITY', '0', { abilityId: 'fist-technique-5' }),
+                cmd('ADVANCE_PHASE', '0'),
+            ];
 
-            expect(result.assertionErrors).toEqual([]);
-            expect(result.finalState.core.pendingAttack).toBeNull();
-        });
+            for (const input of toDefensiveRoll) {
+                const command = {
+                    type: input.type,
+                    playerId: input.playerId,
+                    payload: input.payload,
+                    timestamp: Date.now(),
+                } as DiceThroneCommand;
+                const result = executePipeline(pipelineConfig, state, command, random, playerIds);
+                expect(result.success).toBe(true);
+                state = result.state as MatchState<DiceThroneCore>;
+            }
 
-        it('duel win allows skipping manual defensive roll and still resolves compare-roll choice', () => {
-            const runner = createCrossHeroRunner(
-                createQueuedRandom([1, 1, 1, 1, 1, 6, 1]),
-                { '0': 'monk', '1': 'gunslinger' }
+            expect(state.sys.phase).toBe('defensiveRoll');
+            expect(state.core.pendingAttack?.defenseAbilityId).toBe('duel');
+            expect(state.core.rollCount).toBe(0);
+
+            const manualRollResult = executePipeline(
+                pipelineConfig,
+                state,
+                {
+                    type: 'ROLL_DICE',
+                    playerId: '1',
+                    payload: {},
+                    timestamp: Date.now(),
+                } as DiceThroneCommand,
+                random,
+                playerIds,
             );
-
-            const result = runner.run({
-                name: 'gunslinger duel win without manual defensive roll',
-                commands: [
-                    cmd('ADVANCE_PHASE', '0'),
-                    cmd('ROLL_DICE', '0'),
-                    cmd('CONFIRM_ROLL', '0'),
-                    cmd('RESPONSE_PASS', '0'),
-                    cmd('RESPONSE_PASS', '1'),
-                    cmd('SELECT_ABILITY', '0', { abilityId: 'fist-technique-5' }),
-                    cmd('ADVANCE_PHASE', '0'),
-                    // 产品特例：duel 无需先手动投掷防御骰，可直接结束防御进入对掷结算
-                    cmd('ADVANCE_PHASE', '1'),
-                    cmd('SYS_INTERACTION_RESPOND', '1', { optionId: 'option-1' }),
-                ],
-                expect: {
-                    turnPhase: 'main2',
-                    pendingInteraction: null,
-                    players: {
-                        '0': { hp: 50 },
-                        '1': { hp: 46 },
-                    },
-                },
-            });
-
-            expect(result.assertionErrors).toEqual([]);
-            expect(result.finalState.core.pendingAttack).toBeNull();
+            expect(manualRollResult.success).toBe(false);
+            expect(manualRollResult.error).toBe('defense_roll_disabled_for_duel');
         });
 
         it('duel loss deals 1 undefendable damage without choice', () => {
@@ -459,10 +444,7 @@ describe('cross hero battles', () => {
                     cmd('RESPONSE_PASS', '1'),
                     cmd('SELECT_ABILITY', '0', { abilityId: 'fist-technique-5' }),
                     cmd('ADVANCE_PHASE', '0'),
-                    cmd('ROLL_DICE', '1'),
-                    cmd('CONFIRM_ROLL', '1'),
-                    cmd('RESPONSE_PASS', '0'),
-                    cmd('RESPONSE_PASS', '1'),
+                    // 产品特例：duel 只能直接结束防御，不允许手动投掷防御骰
                     cmd('ADVANCE_PHASE', '1'),
                     cmd('SYS_INTERACTION_CONFIRM', '1'),
                 ],
@@ -560,10 +542,7 @@ describe('cross hero battles', () => {
                     cmd('RESPONSE_PASS', '1'),
                     cmd('SELECT_ABILITY', '0', { abilityId: 'fist-technique-5' }),
                     cmd('ADVANCE_PHASE', '0'),
-                    cmd('ROLL_DICE', '1'),
-                    cmd('CONFIRM_ROLL', '1'),
-                    cmd('RESPONSE_PASS', '0'),
-                    cmd('RESPONSE_PASS', '1'),
+                    // 产品特例：duel 只能直接结束防御，不允许手动投掷防御骰
                     cmd('ADVANCE_PHASE', '1'),
                     cmd('SYS_INTERACTION_CONFIRM', '1'),
                 ],

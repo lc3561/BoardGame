@@ -192,3 +192,41 @@
 - Mermaids：`0` 缺口
 - Skeletons：`0` 缺口
 - World Champs：`0` 缺口
+
+### E2E 回归补记（2026-04-23）
+
+- 背景：同文件内大厅 3 人房用例出现断言偏差（误要求 `空位/空位/空位`）。
+- 修复：将断言调整为“房主占 1 席后仍可见两个空位”：
+  - `toContainText(/空位\\s*\\/\\s*空位/)`
+- 复跑命令：
+  1. `npm run test:e2e:ci:file -- e2e/smashup/smashup.e2e.ts "3 人房间可加入且大厅会显示座位状态"`
+     - 结果：`1 passed`
+  2. `npm run test:e2e:ci -- e2e/smashup/smashup.e2e.ts`
+     - 结果：`3 passed`
+- 关键截图（绝对路径）：
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-selection.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-mermaids-banner.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-skeletons-banner.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-world-champs-banner.png`
+
+### 审计补记（2026-04-23）
+
+- 触发：复跑 `interactionTargetTypeAudit` 时发现 `cthulhu_corruption` 采用 `targetType: 'generic'` 后，缺少“保留 generic 原因”登记导致门禁失败。
+- 修复文件：`src/games/smashup/__tests__/interactionTargetTypeAudit.test.ts`
+  - 在 `REQUIRED_SOURCE_CONFIGS` 补登记：
+    - `cthulhu_corruption: { targetType: 'generic', autoRefresh: 'field', responseValidationMode: 'live' }`
+  - 在 `APPROVED_GENERIC_SOURCE_REASONS` 补登记：
+    - `cthulhu_corruption` 的 generic 保留理由（候选由 `buildActionMinionTargetOptions` 生成，存在复合语义）。
+- 复跑结果：
+  1. `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/newFactionAbilities.test.ts --configLoader native --maxWorkers 1`
+     - `166 passed / 1 skipped`
+  2. `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/interactionTargetTypeAudit.test.ts --config vitest.config.audit.ts --configLoader native --maxWorkers 1`
+     - `7 passed`
+  3. `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/interactionDefIdAudit.test.ts --config vitest.config.audit.ts --configLoader native --maxWorkers 1`
+     - `2 passed`
+  4. `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/abilityBehaviorAudit.test.ts --config vitest.config.audit.ts --configLoader native --maxWorkers 1`
+     - `22 passed`
+  5. `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/interactionCompletenessAudit.test.ts --config vitest.config.audit.ts --configLoader native --maxWorkers 1`
+     - `5 passed`
+  6. `npm run i18n:check`
+     - 通过（`no missing keys detected`）
