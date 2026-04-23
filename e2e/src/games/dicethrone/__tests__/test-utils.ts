@@ -20,6 +20,7 @@ import type { EngineSystem } from '../../../engine/systems/types';
 import { createInitialSystemState, executePipeline } from '../../../engine/pipeline';
 import { MONK_CARDS } from '../heroes/monk/cards';
 import { findHeroCard } from '../heroes';
+import { initHeroState } from '../domain/characters';
 
 // ============================================================================
 // 固定随机数（保证回放确定性）
@@ -193,9 +194,10 @@ export const createHeroMatchup = (
         const sys = createInitialSystemState(playerIds, testSystems, undefined);
         let state: MatchState<DiceThroneCore> = { sys, core };
 
+        const setupHero1 = hero0 === hero1 ? 'monk' : hero1;
         const setupCmds = [
             { type: 'SELECT_CHARACTER', playerId: '0', payload: { characterId: hero0 } },
-            { type: 'SELECT_CHARACTER', playerId: '1', payload: { characterId: hero1 } },
+            { type: 'SELECT_CHARACTER', playerId: '1', payload: { characterId: setupHero1 } },
             { type: 'PLAYER_READY', playerId: '1', payload: {} },
             { type: 'HOST_START_GAME', playerId: '0', payload: {} },
         ];
@@ -204,6 +206,13 @@ export const createHeroMatchup = (
         for (const c of setupCmds) {
             const r = executePipeline(cfg, state, { ...c, timestamp: Date.now() } as any, random, playerIds);
             if (r.success) state = r.state as MatchState<DiceThroneCore>;
+        }
+
+        // 新规则禁止 setup 阶段双方直选同一英雄；若测试需要镜像对战，
+        // 则在 setup 完成后覆写玩家 1 英雄状态，保留旧测例语义。
+        if (hero0 === hero1) {
+            state.core.selectedCharacters['1'] = hero1 as any;
+            state.core.players['1'] = initHeroState('1', hero1 as any, random);
         }
 
         // 将手牌移到牌库避免响应窗口干扰

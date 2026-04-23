@@ -629,7 +629,10 @@ export function formatSmashUpActionEntry({
             case SU_EVENTS.BREAKPOINT_MODIFIED: {
                 const payload = event.payload as { baseIndex: number; delta: number; reason?: string };
                 const baseLabel = formatBaseLabel(getBaseDefId(payload.baseIndex), payload.baseIndex);
-                const segments: ActionLogSegment[] = [i18nSeg('actionLog.breakpointModified', {
+                const key = payload.reason === 'killer_plant_overgrowth'
+                    ? 'actionLog.breakpointReducedToZero'
+                    : 'actionLog.breakpointModified';
+                const segments: ActionLogSegment[] = [i18nSeg(key, {
                     base: baseLabel,
                     delta: payload.delta > 0 ? `+${payload.delta}` : `${payload.delta}`,
                 }, ['base'])];

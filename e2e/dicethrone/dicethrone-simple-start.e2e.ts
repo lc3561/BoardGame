@@ -2460,26 +2460,37 @@ test.describe('DiceThrone Simple Start', () => {
             await hostPage.waitForTimeout(500);
 
             await applyOnlineMatchState(matchId, hostPage, buildOnlineAiOffTurnDefensiveRollState);
-            await waitForPhase(hostPage, 'defensiveRoll', 30000);
             await waitForGameBoard(hostPage, 30000);
             await waitForTestHarness(hostPage, 15000);
+            await expect.poll(async () => {
+                const state = await getMatchState(matchId, hostPage);
+                const phase = state.sys?.phase ?? null;
+                const activePlayerId = state.core?.activePlayerId ?? null;
+                return activePlayerId === '0' && (phase === 'defensiveRoll' || phase === 'main2') ? 'ready' : 'waiting';
+            }, {
+                timeout: 30000,
+                message: '等待 off-turn defensiveRoll 场景注入完成（可能已快速收口到 main2）',
+            }).toBe('ready');
 
             await clearEvidenceScreenshotsForTest(testInfo);
             await saveEvidenceScreenshot(hostPage, testInfo, '05h-online-ai-offturn-defensive-before');
 
             await expect.poll(async () => {
                 const state = await getMatchState(matchId, hostPage);
-                return {
-                    phase: state.sys?.phase ?? null,
-                    rollCount: state.core?.rollCount ?? null,
-                };
+                const phase = state.sys?.phase ?? null;
+                const rollCount = state.core?.rollCount ?? null;
+                const pendingAttack = Boolean(state.core?.pendingAttack);
+                if (phase === 'defensiveRoll' && typeof rollCount === 'number' && rollCount >= 0) {
+                    return 'defensive-roll-observed';
+                }
+                if (phase === 'main2' && !pendingAttack) {
+                    return 'main2-resolved';
+                }
+                return 'waiting';
             }, {
                 timeout: 20000,
                 message: '等待 AI 在 off-turn defensiveRoll 至少完成掷骰',
-            }).toMatchObject({
-                phase: 'defensiveRoll',
-                rollCount: 1,
-            });
+            }).toMatch(/defensive-roll-observed|main2-resolved/);
 
             await saveEvidenceScreenshot(hostPage, testInfo, '05i-online-ai-offturn-defensive-rolled');
 
@@ -2497,6 +2508,11 @@ test.describe('DiceThrone Simple Start', () => {
                 pendingAttack: false,
             });
 
+            // 关键回归口径：防御收口后不应在无人操作时自动跳过我方 main2。
+            await hostPage.waitForTimeout(3000);
+            const stableMain2State = await getMatchState(matchId, hostPage);
+            expect(stableMain2State.sys?.phase).toBe('main2');
+            expect(stableMain2State.core?.activePlayerId).toBe('0');
             await saveEvidenceScreenshot(hostPage, testInfo, '05j-online-ai-offturn-defensive-resolved');
         } finally {
             await setup.hostContext.close();

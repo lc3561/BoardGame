@@ -156,6 +156,7 @@ const APPROVED_GENERIC_SOURCE_REASONS: Record<string, string> = {
     steampunk_scrap_diving: '从弃牌堆行动卡中选择回收目标，来源为 discard 卡面。',
     skeletons_dig_em_up: '候选项是玩家已埋葬牌的快照，需同时保留 buried card 与原基地上下文。',
     skeletons_burst_forth: '候选项是当前基地已埋葬牌快照，需保留 buried card 与基地上下文。',
+    skeletons_returned_one: '候选项混合“手牌低力量随从”与“本体自埋葬（buriedFrom=play）”两类语义，不能压缩成单一 hand/minion 直选。',
     trickster_hideout_pod_swap: '候选项混合手牌与牌库中的持续战术卡面，不能映射为单一 hand/deck 直选。',
     vampire_fledgling_vampire_pod_bury_source: '候选项混合手牌与弃牌堆来源，且后续还要串联基地选择。',
     vampire_wolf_pact_pod_action: '从弃牌堆静态卡面中选择洗回牌库的目标，来源为 discard 卡面。',

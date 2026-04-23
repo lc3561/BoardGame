@@ -11,6 +11,9 @@
 - `e2e/dicethrone/dicethrone-simple-start.e2e.ts`
   - 针对 `main2 卖/撤循环` 用例补充“注入成功校验 + 快照化等待收口”。
   - 目的：避免注入后立即被系统收口造成的假失败，确保断言验证的是“是否离开卖/撤循环”。
+- `e2e/dicethrone/dicethrone-simple-start.e2e.ts`
+  - 将 `off-turn defensiveRoll` 用例前置从“强等 defensiveRoll”改为“允许已快速收口到 main2”，并新增“main2 空闲 3 秒稳定性”断言。
+  - 目的：区分“真实跳过我方 main2”与“阶段过快导致的中间态误判”，直接对齐“防御结束后概率跳过第二主要阶段”的反馈。
 
 ## E2E 执行结果
 1. `e2e/dicethrone/dicethrone-watch-out-spotlight.e2e.ts`
@@ -30,6 +33,12 @@
    - 结果：通过
 6. `e2e/dicethrone/dicethrone-simple-start.e2e.ts`
    - 用例：`Online AI + human 均持有响应牌时，human 响应后 AI 应接棒完成 afterCardPlayed 收口`
+   - 结果：通过
+7. `e2e/smashup/smashup-phase-transition-simple.e2e.ts`
+   - 用例：`在线 AI 结束回合切回我方时不应出现整板重挂载或 loading 闪屏`
+   - 结果：通过
+8. `e2e/smashup/smashup-phase-transition-simple.e2e.ts`
+   - 用例：`在线 AI 连续 8 秒没有任何实际进展时，应自动强制结束当前回合`
    - 结果：通过
 
 ## 关键截图与肉眼结论
@@ -88,6 +97,17 @@
   3. AI 随后消费响应牌并收口窗口，流程未卡住。
   4. 收口后窗口不重开，链路稳定结束。
 - 验收判断：达到“我先响应后 AI 能正常继续并收口”的验收标准。
+
+### G. 防御结束后“我方 main2 是否被自动跳过”复现链路
+- 场景：`Online AI 在 off-turn defensiveRoll 也应自动掷骰并收口，不应卡死在玩家回合下的防御阶段`
+- 截图（注入后）：`D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\dicethrone\dicethrone-simple-start.e2e\Online-AI-在-off-turn-defensiveRoll-也应自动掷骰并收口，不应卡死在玩家回合下的防御阶段\05h-online-ai-offturn-defensive-before.png`
+- 截图（收口中）：`D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\dicethrone\dicethrone-simple-start.e2e\Online-AI-在-off-turn-defensiveRoll-也应自动掷骰并收口，不应卡死在玩家回合下的防御阶段\05i-online-ai-offturn-defensive-rolled.png`
+- 截图（收口后）：`D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\dicethrone\dicethrone-simple-start.e2e\Online-AI-在-off-turn-defensiveRoll-也应自动掷骰并收口，不应卡死在玩家回合下的防御阶段\05j-online-ai-offturn-defensive-resolved.png`
+- 观察：
+  1. 复跑中曾出现“等待 defensiveRoll 超时/到达 main2 过快”的中间态抖动，但截图里阶段高亮在 `main2`，不属于“直接跳过 main2”。
+  2. 更新断言后改为直接验证“`main2 + pendingAttack 清空`”并额外等待 3 秒，确认无人操作下不会自动从我方 `main2` 再跳走。
+  3. 新断言连续 4 轮通过，未复现“防御结束后自动跳过我方第二主要阶段”。
+- 验收判断：当前可复现的是“阶段收口过快导致旧断言误判”，尚未复现“我方 main2 被自动跳过”的实质问题。
 
 ## 本轮结论
 - 已确认：用户提到的“奖励骰特写关闭卡住”“在线 AI main2 卡死”“off-turn defensiveRoll 卡死”“main2 卖/撤循环卡死”这四条主链路均已通过 E2E 收口。

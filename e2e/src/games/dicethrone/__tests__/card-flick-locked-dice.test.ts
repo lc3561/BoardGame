@@ -114,4 +114,34 @@ describe('弹一手修改对手锁定骰子', () => {
         
         // UI 层应该只允许修改未锁定的骰子（骰子1-4），不能修改骰子0
     });
+
+    it('自己打出"俺也一样"时，已锁定骰子也可以作为复制目标', () => {
+        const random = createQueuedRandom([4, 2, 3, 5, 6]);
+        const runner = createRunner(random, false);
+
+        const result = runner.run({
+            name: '俺也一样复制到已锁定骰子',
+            setup: createSetupWithHand(['card-me-too'], {
+                playerId: '0',
+                cp: 10,
+                mutate: (core) => {
+                    core.players['1'].hand = [];
+                    core.players['0'].deck = [];
+                    core.players['1'].deck = [];
+                },
+            }),
+            commands: [
+                ...advanceTo('offensiveRoll'),
+                cmd('ROLL_DICE', '0'),
+                cmd('TOGGLE_DIE_LOCK', '0', { dieId: 0 }),
+                cmd('PLAY_CARD', '0', { cardId: 'card-me-too' }),
+                cmd('MODIFY_DIE', '0', { dieId: 4, newValue: 6 }),
+                cmd('MODIFY_DIE', '0', { dieId: 0, newValue: 6 }),
+            ],
+        });
+
+        const die0 = result.finalState.core.dice.find(d => d.id === 0);
+        expect(die0?.value).toBe(6);
+        expect(die0?.isKept).toBe(true);
+    });
 });

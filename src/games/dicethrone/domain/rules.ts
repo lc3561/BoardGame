@@ -738,7 +738,7 @@ export const checkPlayCard = (
             return { ok: false, reason: 'upgradeCardCannotPlay' };
         }
         
-        // 检查技能等级（必须逐级升级）
+        // 检查技能等级（当前规则允许直接 I -> III）
         const currentLevel = player.abilityLevels[targetAbilityId] ?? 1;
         const replaceAction = card.effects?.find(e => e.action?.type === 'replaceAbility')?.action;
         const desiredLevel = (replaceAction?.type === 'replaceAbility' ? replaceAction.newAbilityLevel : undefined) ?? (currentLevel + 1);

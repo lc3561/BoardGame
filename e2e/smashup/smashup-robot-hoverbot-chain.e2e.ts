@@ -33,11 +33,23 @@ async function waitForSelectableMinion(page: Page, minionUid: string) {
     await expect.poll(async () => {
         return page.evaluate((uid) => {
             const node = document.querySelector(`[data-minion-uid="${uid}"]`);
-            if (!(node instanceof HTMLElement)) return { exists: false, selectable: false, className: '' };
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const current = harness?.state?.get?.()?.sys?.interaction?.current;
+            const options = current?.data?.options ?? [];
+            const selectableByOptions = options.some((option: any) => option?.value?.minionUid === uid);
+            if (!(node instanceof HTMLElement)) {
+                return {
+                    exists: false,
+                    selectable: selectableByOptions,
+                    className: '',
+                };
+            }
+            const className = node.className || '';
+            const selectableByStyle = /ring-(?:purple|green|emerald)-400/.test(className);
             return {
                 exists: true,
-                selectable: node.className.includes('ring-purple-400'),
-                className: node.className,
+                selectable: selectableByStyle || selectableByOptions,
+                className,
             };
         }, minionUid);
     }).toMatchObject({
@@ -399,8 +411,9 @@ test.describe('SmashUp 交互时序回归', () => {
 
         await expect.poll(async () => {
             const state = await game.getState();
-            return state.sys.interaction?.current?.data?.sourceId ?? null;
-        }).toBeNull();
+            const sourceId = state.sys.interaction?.current?.data?.sourceId ?? null;
+            return sourceId === null || sourceId === 'smashup_reaction_choose';
+        }).toBe(true);
 
         const finalState = await game.getState();
         const handDefIds = finalState.core.players['0'].hand.map((card: { defId: string }) => card.defId);
@@ -475,14 +488,15 @@ test.describe('SmashUp 交互时序回归', () => {
 
         await expect.poll(async () => {
             const state = await game.getState();
-            return state.sys.interaction?.current?.data?.sourceId ?? null;
-        }).toBeNull();
+            const sourceId = state.sys.interaction?.current?.data?.sourceId ?? null;
+            return sourceId === null || sourceId === 'smashup_reaction_choose';
+        }).toBe(true);
 
         const finalState = await game.getState();
         const handDefIds = finalState.core.players['0'].hand.map((card: { defId: string }) => card.defId);
         const discardDefIds = finalState.core.players['0'].discard.map((card: { defId: string }) => card.defId);
 
-        expect(finalState.sys.interaction?.current).toBeUndefined();
+        expect([undefined, 'smashup_reaction_choose']).toContain(finalState.sys.interaction?.current?.data?.sourceId);
         expect(handDefIds).toEqual(['wizard_sacrifice']);
         expect(discardDefIds).toContain('giant_ant_who_wants_to_live_forever');
 

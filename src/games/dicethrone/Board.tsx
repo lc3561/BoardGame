@@ -6,7 +6,7 @@ import { RESOURCE_IDS } from './domain/resources';
 import { STATUS_IDS, TOKEN_IDS } from './domain/ids';
 import type { DiceThroneCore } from './domain';
 import type { InteractionDescriptor } from './domain/types';
-import { getUsableTokensForTiming } from './domain/tokenResponse';
+import { getUsableTokenAmountForTiming, getUsableTokensForTiming } from './domain/tokenResponse';
 import { isCardPlayableInResponseWindow, getAvailableAbilityIds, getSeatingOrder, getOpponents, areTeammates, getUpgradeTargetAbilityId } from './domain/rules';
 import { useTranslation } from 'react-i18next';
 import { OptimizedImage } from '../../components/common/media/OptimizedImage';
@@ -507,16 +507,21 @@ export const DiceThroneBoard: React.FC<DiceThroneBoardProps> = ({ G: rawG, dispa
         return tokens;
     }, [G, pendingDamage]);
 
-    // 太极本回合限制：攻击方加伤时，可用数量 = 持有量 - 本回合获得量
     const tokenUsableOverrides = React.useMemo(() => {
-        if (!pendingDamage || pendingDamage.responseType !== 'beforeDamageDealt') return undefined;
+        if (!pendingDamage) return undefined;
         const pid = pendingDamage.responderId;
-        const gainedThisTurn = G.taijiGainedThisTurn?.[pid] ?? 0;
-        if (gainedThisTurn <= 0) return undefined;
-        const total = G.players[pid]?.tokens[TOKEN_IDS.TAIJI] ?? 0;
-        const usable = Math.max(0, total - gainedThisTurn);
-        return usable < total ? { [TOKEN_IDS.TAIJI]: usable } : undefined;
-    }, [G, pendingDamage]);
+        const overrides: Record<string, number> = {};
+
+        for (const tokenDef of usableTokens) {
+            const total = G.players[pid]?.tokens[tokenDef.id] ?? 0;
+            const usable = getUsableTokenAmountForTiming(G, pid, tokenDef.id, pendingDamage.responseType);
+            if (usable < total) {
+                overrides[tokenDef.id] = usable;
+            }
+        }
+
+        return Object.keys(overrides).length > 0 ? overrides : undefined;
+    }, [G, pendingDamage, usableTokens]);
 
     const isActivePlayer = G.activePlayerId === rootPid;
 

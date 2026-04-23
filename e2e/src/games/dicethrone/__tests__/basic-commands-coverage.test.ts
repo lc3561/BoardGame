@@ -1547,7 +1547,7 @@ describe('AI legal actions', () => {
 
         const executedKinds: string[] = [];
         const attemptKeys: string[] = [];
-        for (let step = 0; step < 2; step += 1) {
+        for (let step = 0; step < 3; step += 1) {
             const resolution = await resolveNextLocalAiAction({
                 engineConfig,
                 state,
@@ -1572,9 +1572,9 @@ describe('AI legal actions', () => {
             }
         }
 
-        expect(executedKinds).toEqual(['token-response', 'skip-token-response']);
-        expect(new Set(attemptKeys).size).toBe(2);
-        expect(state.core.players['0'].tokens.taiji).toBe(1);
+        expect(executedKinds).toEqual(['token-response', 'token-response', 'skip-token-response']);
+        expect(new Set(attemptKeys).size).toBe(3);
+        expect(state.core.players['0'].tokens.taiji).toBe(0);
         expect(state.core.pendingDamage).toBeUndefined();
         expect(state.sys.interaction.current).toBeUndefined();
         expect(state.sys.responseWindow?.current).toBeUndefined();

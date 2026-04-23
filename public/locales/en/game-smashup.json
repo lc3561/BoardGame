@@ -250,6 +250,7 @@
     "tempPowerAdded": "+{{amount}} temp power:",
     "ongoingCounterChanged": "Ongoing counter {{delta}}:",
     "breakpointModified": "{{base}} breakpoint {{delta}}",
+    "breakpointReducedToZero": "{{base}} breakpoint reduced to 0 ({{delta}})",
     "baseDeckShuffled": "Base deck shuffled",
     "specialLimitUsed": "{{playerId}} uses special {{limitType}} limit",
     "abilityTriggered": "Ability triggered ({{triggerType}}):",

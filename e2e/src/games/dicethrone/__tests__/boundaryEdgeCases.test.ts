@@ -20,7 +20,7 @@ import { reduce } from '../domain/reducer';
 import { INITIAL_HEALTH, INITIAL_CP, CP_MAX, HAND_LIMIT } from '../domain/types';
 import { RESOURCE_IDS } from '../domain/resources';
 import { STATUS_IDS, TOKEN_IDS } from '../domain/ids';
-import { getUsableTokensForTiming } from '../domain/tokenResponse';
+import { getUsableTokenAmountForTiming, getUsableTokensForTiming } from '../domain/tokenResponse';
 import type { DiceThroneCore, DiceThroneEvent } from '../domain/types';
 import {
     createRunner, createInitializedState, createSetupWithHand,
@@ -102,6 +102,16 @@ describe('HP 边界', () => {
         const core = getInitCore();
         core.players['0'].tokens[TOKEN_IDS.TAIJI] = 6;
         core.players['0'].tokenStackLimits[TOKEN_IDS.TAIJI] = 6;
+        core.pendingDamage = {
+            id: 'taiji-cap-boundary',
+            sourcePlayerId: '0',
+            targetPlayerId: '1',
+            originalDamage: 7,
+            currentDamage: 7,
+            responseType: 'beforeDamageDealt',
+            responderId: '0',
+            isFullyEvaded: false,
+        };
 
         const result = reduce(core, ev('TOKEN_GRANTED', {
             targetId: '0',
@@ -112,7 +122,43 @@ describe('HP 边界', () => {
 
         expect(result.players['0'].tokens[TOKEN_IDS.TAIJI]).toBe(6);
         expect(result.taijiGainedThisTurn?.['0'] ?? 0).toBe(0);
+        expect(getUsableTokenAmountForTiming(result, '0', TOKEN_IDS.TAIJI, 'beforeDamageDealt')).toBe(6);
         expect(getUsableTokensForTiming(result, '0', 'beforeDamageDealt').some(token => token.id === TOKEN_IDS.TAIJI)).toBe(true);
+    });
+
+    it('TURN_CHANGED 后旧太极应恢复为全量可用于加伤', () => {
+        const core = getInitCore();
+        core.players['0'].tokens[TOKEN_IDS.TAIJI] = 6;
+        core.players['0'].tokenStackLimits[TOKEN_IDS.TAIJI] = 6;
+        core.taijiGainedThisTurn = { '0': 2 };
+        core.pendingDamage = {
+            id: 'taiji-old-window',
+            sourcePlayerId: '0',
+            targetPlayerId: '1',
+            originalDamage: 7,
+            currentDamage: 7,
+            responseType: 'beforeDamageDealt',
+            responderId: '0',
+            isFullyEvaded: false,
+        };
+
+        expect(getUsableTokenAmountForTiming(core, '0', TOKEN_IDS.TAIJI, 'beforeDamageDealt')).toBe(4);
+
+        const nextTurn = reduce(core, ev('TURN_CHANGED', { nextPlayerId: '0', turnNumber: core.turnNumber + 1 }));
+        nextTurn.pendingDamage = {
+            id: 'taiji-old-window-next-turn',
+            sourcePlayerId: '0',
+            targetPlayerId: '1',
+            originalDamage: 7,
+            currentDamage: 7,
+            responseType: 'beforeDamageDealt',
+            responderId: '0',
+            isFullyEvaded: false,
+        };
+
+        expect(nextTurn.taijiGainedThisTurn).toBeUndefined();
+        expect(getUsableTokenAmountForTiming(nextTurn, '0', TOKEN_IDS.TAIJI, 'beforeDamageDealt')).toBe(6);
+        expect(getUsableTokensForTiming(nextTurn, '0', 'beforeDamageDealt').some(token => token.id === TOKEN_IDS.TAIJI)).toBe(true);
     });
 });
 

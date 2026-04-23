@@ -12,6 +12,7 @@ import { initializeCustomActions } from '../domain/customActions';
 import { registerDiceDefinition } from '../domain/diceRegistry';
 import { moonElfDiceDefinition } from '../heroes/moon_elf/diceConfig';
 import { reduce } from '../domain/reducer';
+import { getFaceCounts } from '../domain/rules';
 
 initializeCustomActions();
 registerDiceDefinition(moonElfDiceDefinition);
@@ -134,6 +135,21 @@ describe('月精灵 Custom Action 运行时行为断言', () => {
             const handler = getCustomActionHandler('moon_elf-longbow-bonus-check-4')!;
             const events = handler(buildCtx(state, 'moon_elf-longbow-bonus-check-4'));
             expect(events).toHaveLength(0);
+        });
+
+        it('不同数字但同为弓面时，仍按相同符号施加缠绕', () => {
+            const mixedBowDice = [3, 2, 2, 1, 2].map((value, index) => ({
+                ...createMoonElfDie(value),
+                id: index,
+            }));
+            const state = createState({
+                dice: mixedBowDice,
+                pendingAttackFaceCounts: getFaceCounts(mixedBowDice),
+            });
+            const handler = getCustomActionHandler('moon_elf-longbow-bonus-check-4')!;
+            const events = handler(buildCtx(state, 'moon_elf-longbow-bonus-check-4'));
+
+            expect(eventsOfType(events, 'STATUS_APPLIED')).toHaveLength(1);
         });
 
         it('无pendingAttack快照时不施加', () => {

@@ -60,8 +60,9 @@ import {
 import { RESOURCE_IDS } from './resources';
 import { STATUS_IDS, DICETHRONE_COMMANDS, TOKEN_IDS } from './ids';
 import { DICETHRONE_CHARACTER_CATALOG } from './core-types';
-import { getUsableTokensForTiming } from './tokenResponse';
-import { getMaxTokenUseAmount, getTokenUseOptions } from './tokenTypes';
+import { getUsableTokenAmountForTiming } from './tokenResponse';
+import { getTokenUseOptions } from './tokenTypes';
+import { getGameMode } from './utils';
 
 // ============================================================================
 // 验证函数
@@ -245,11 +246,12 @@ const validateSelectCharacter = (
         return fail('unsupported_character');
     }
 
+    const isTutorialMode = getGameMode() === 'tutorial';
     const selectedByOtherPlayer = Object.entries(state.selectedCharacters)
         .some(([otherPlayerId, selectedCharacterId]) => (
             otherPlayerId !== playerId && selectedCharacterId === cmd.payload.characterId
         ));
-    if (selectedByOtherPlayer) {
+    if (selectedByOtherPlayer && !isTutorialMode) {
         return fail('character_already_taken');
     }
 
@@ -1118,22 +1120,15 @@ const validateUseToken = (
         return fail('invalid_token_timing');
     }
 
-    const usedInWindow = pendingDamage.tokenUsageTotals?.[cmd.payload.tokenId] ?? 0;
-    const maxWindowUsage = getMaxTokenUseAmount(tokenDef);
-    const hasExplicitWindowCap = (tokenDef.activeUse.allowedConsumeAmounts?.length ?? 0) > 0;
-    const remainingWindowUsage = hasExplicitWindowCap
-        ? Math.max(0, maxWindowUsage - usedInWindow)
-        : currentAmount;
-    if (remainingWindowUsage <= 0) {
-        return fail('invalid_amount');
-    }
-
-    const usableTokens = getUsableTokensForTiming(state, playerId, pendingDamage.responseType);
-    if (!usableTokens.some(token => token.id === cmd.payload.tokenId)) {
+    if (tokenDef.activeUse.requiresAttackDamage && !state.pendingAttack) {
         return fail('invalid_token_timing');
     }
 
-    const availableAmount = Math.min(currentAmount, remainingWindowUsage);
+    const availableAmount = getUsableTokenAmountForTiming(state, playerId, cmd.payload.tokenId, pendingDamage.responseType);
+    if (availableAmount <= 0) {
+        return fail('invalid_amount');
+    }
+
     const allowedConsumeAmounts = getTokenUseOptions(tokenDef, availableAmount);
     if (!allowedConsumeAmounts.includes(cmd.payload.amount)) {
         return fail('invalid_amount');

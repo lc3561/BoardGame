@@ -215,6 +215,36 @@ describe('formatSmashUpActionEntry', () => {
         expect(reasonSeg?.params?.reason).toBe('test-reason');
     });
 
+    it('过度生长的 BREAKPOINT_MODIFIED 使用“降至0”文案', () => {
+        const command: Command = {
+            type: SU_COMMANDS.PLAY_ACTION,
+            playerId: '0',
+            payload: { cardUid: 'killer_plant_overgrowth-1-1' },
+            timestamp: 5,
+        };
+        const event: GameEvent = {
+            type: SU_EVENTS.BREAKPOINT_MODIFIED,
+            payload: { baseIndex: 0, delta: -21, reason: 'killer_plant_overgrowth' },
+            timestamp: 5,
+        } as GameEvent;
+        const state = makeMatchState(makeStateWithBases([makeBase('base_mystic_garden')]));
+
+        const result = formatSmashUpActionEntry({
+            command,
+            state,
+            events: [event],
+        });
+        const entries = normalizeEntries(result);
+        const breakpointEntry = entries.find((entry) => entry.kind === SU_EVENTS.BREAKPOINT_MODIFIED);
+
+        expect(breakpointEntry).toBeTruthy();
+        const breakpointSeg = findI18nSegment(breakpointEntry!.segments, 'actionLog.breakpointReducedToZero');
+        expect(breakpointSeg?.params?.base).toBe('#1');
+        expect(breakpointSeg?.params?.delta).toBe('-21');
+        const reasonCards = breakpointEntry!.segments.filter(segment => segment.type === 'card');
+        expect(reasonCards[0]).toMatchObject({ cardId: 'killer_plant_overgrowth' });
+    });
+
     it('REVEAL_HAND 生成正确的 i18n segment', () => {
         const command: Command = {
             type: SU_COMMANDS.PLAY_ACTION,

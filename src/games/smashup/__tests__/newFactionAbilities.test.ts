@@ -2831,6 +2831,41 @@ describe('Samurai abilities', () => {
         )).toBe(true);
     });
 
+    it('samurai_bushi 在被消灭时应使用离场前有效力量判定 5 力量奖励 VP', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0'),
+                '1': makePlayer('1'),
+            },
+            bases: [{
+                defId: 'base_a',
+                minions: [makeMinion('bushi-1', 'samurai_bushi', '0', 4, { powerCounters: 1 })],
+                ongoingActions: [],
+            }],
+        });
+        const state = makeMatchState(core);
+        const destroyEvent = {
+            type: SU_EVENTS.MINION_DESTROYED,
+            payload: {
+                minionUid: 'bushi-1',
+                minionDefId: 'samurai_bushi',
+                fromBaseIndex: 0,
+                ownerId: '0',
+                destroyerId: '1',
+                reason: 'test_destroy',
+            },
+            timestamp: 1010,
+        } as any;
+
+        const processed = processDestroyTriggers([destroyEvent], state, '1', defaultTestRandom, 1010);
+        const queuedEvent = processed.events.find(event => event.type === SU_EVENTS.TRIGGER_QUEUED) as any;
+        expect(queuedEvent).toBeDefined();
+
+        const bushiTrigger = (queuedEvent.payload?.triggers ?? []).find((trigger: any) => trigger.sourceDefId === 'samurai_bushi');
+        expect(bushiTrigger).toBeDefined();
+        expect(bushiTrigger.triggerMinionPower).toBe(5);
+    });
+
     it('samurai_final_haiku 在附着随从离场后给你的随从直到回合结束 +2 力量', () => {
         const state = makeState({
             players: {
@@ -6802,6 +6837,38 @@ describe('Skeletons abilities', () => {
 
         expect((resolved.finalState.core.bases[0].buriedCards ?? []).some(card => card.uid === 'target-low')).toBe(true);
         expect(resolved.finalState.core.players['0'].hand.some(card => card.uid === 'target-low')).toBe(false);
+    });
+
+    it('skeletons_returned_one 在没有其他目标时也可埋葬自己', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0', {
+                    hand: [makeCard('returned-one', 'skeletons_returned_one', 'minion', '0')],
+                }),
+                '1': makePlayer('1'),
+            },
+            bases: [{ defId: 'base_a', minions: [], ongoingActions: [] }],
+        });
+
+        const played = runCommand(
+            makeMatchState(core),
+            { type: SU_COMMANDS.PLAY_MINION, playerId: '0', payload: { cardUid: 'returned-one', baseIndex: 0 } },
+            defaultTestRandom,
+        );
+        const prompt = getInteractionsFromMS(played.finalState)[0] as any;
+        expect(prompt?.data?.sourceId).toBe('skeletons_returned_one');
+
+        const selfOption = prompt.data.options.find((entry: any) => entry.value?.cardUid === 'returned-one');
+        expect(selfOption?.value?.buriedFrom).toBe('play');
+
+        const resolved = runCommand(
+            played.finalState,
+            { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: selfOption.id } } as any,
+            defaultTestRandom,
+        );
+
+        expect(resolved.finalState.core.bases[0].minions.some(minion => minion.uid === 'returned-one')).toBe(false);
+        expect((resolved.finalState.core.bases[0].buriedCards ?? []).some(card => card.uid === 'returned-one')).toBe(true);
     });
 
     it('skeletons_place_em_down 先选手牌再选基地并埋葬', () => {

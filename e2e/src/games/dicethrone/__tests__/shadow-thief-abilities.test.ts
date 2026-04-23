@@ -25,6 +25,7 @@ import type { MatchState, PlayerId, RandomFn } from '../../../engine/types';
 import type { EngineSystem } from '../../../engine/systems/types';
 import { createInitialSystemState, executePipeline } from '../../../engine/pipeline';
 import { diceThroneSystemsForTest } from '../game';
+import { initHeroState } from '../domain/characters';
 import {
     createQueuedRandom,
     fixedRandom,
@@ -42,7 +43,7 @@ const testSystems = diceThroneSystemsForTest as unknown as EngineSystem<DiceThro
 
 const shadowThiefSetupCommands = [
     { type: 'SELECT_CHARACTER', playerId: '0', payload: { characterId: 'shadow_thief' } },
-    { type: 'SELECT_CHARACTER', playerId: '1', payload: { characterId: 'shadow_thief' } },
+    { type: 'SELECT_CHARACTER', playerId: '1', payload: { characterId: 'monk' } },
     { type: 'PLAYER_READY', playerId: '1', payload: {} },
     { type: 'HOST_START_GAME', playerId: '0', payload: {} },
 ];
@@ -57,6 +58,10 @@ function createShadowThiefState(playerIds: PlayerId[], random: RandomFn): MatchS
         const result = executePipeline(pipelineConfig, state, command, random, playerIds);
         if (result.success) state = result.state as MatchState<DiceThroneCore>;
     }
+    // 现行规则禁止 setup 阶段双方直选同一英雄；旧测试需要镜像对战时，
+    // 在 setup 完成后覆写玩家 1 为暗影刺客，保留原测试语义。
+    state.core.selectedCharacters['1'] = 'shadow_thief';
+    state.core.players['1'] = initHeroState('1', 'shadow_thief', random);
     return state;
 }
 

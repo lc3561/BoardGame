@@ -31,10 +31,13 @@ import {
 import type { DiceThroneCore } from '../domain/types';
 import type { MatchState, PlayerId, RandomFn } from '../../../engine/types';
 import { createInitialSystemState, executePipeline } from '../../../engine/pipeline';
+import { initHeroState } from '../domain/characters';
 import { BLESSING_OF_MIGHT_2, HOLY_STRIKE_2, RIGHTEOUS_PRAYER_2 } from '../heroes/paladin/abilities';
 
 // ============================================================================
-// 自定义 Setup：双方圣骑士，移除响应卡避免干扰
+// 自定义 Setup：镜像对战测试。
+// 现行规则禁止 setup 阶段双方直选同一英雄，因此先用合法选角开局，
+// 再在测试态把玩家 1 覆盖成圣骑士，保留旧覆盖用例的“圣骑士打圣骑士”语义。
 // ============================================================================
 
 function createPaladinSetup() {
@@ -46,7 +49,7 @@ function createPaladinSetup() {
         const cfg = { domain: DiceThroneDomain, systems: testSystems };
         const setupCmds = [
             { type: 'SELECT_CHARACTER', playerId: '0', payload: { characterId: 'paladin' } },
-            { type: 'SELECT_CHARACTER', playerId: '1', payload: { characterId: 'paladin' } },
+            { type: 'SELECT_CHARACTER', playerId: '1', payload: { characterId: 'monk' } },
             { type: 'PLAYER_READY', playerId: '1', payload: {} },
             { type: 'HOST_START_GAME', playerId: '0', payload: {} },
         ];
@@ -57,6 +60,10 @@ function createPaladinSetup() {
                 random, playerIds);
             if (r.success) state = r.state as MatchState<DiceThroneCore>;
         }
+
+        // 旧覆盖测试要求镜像对战；在 setup 成功后把玩家 1 覆盖为圣骑士。
+        state.core.selectedCharacters['1'] = 'paladin';
+        state.core.players['1'] = initHeroState('1', 'paladin', random);
 
         // 移除响应卡避免触发响应窗口
         for (const pid of playerIds) {

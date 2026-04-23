@@ -43,7 +43,8 @@ describe('vampires_pod: Nightstalker POD', () => {
             { type: SU_COMMANDS.USE_TALENT, playerId: '0', payload: { minionUid: 'ns', baseIndex: 0 } } as any,
             defaultTestRandom,
         );
-        expect(use1.success).toBe(true);
+        expect(use1.success).toBe(false);
+        expect(String(use1.error ?? '')).toContain('本回合你还没有消灭过随从');
         expect(use1.events.some(e => e.type === SU_EVENTS.TEMP_POWER_ADDED)).toBe(false);
 
         // Fresh state: mark as destroyed-this-turn, reset talentUsed, then talent should work

@@ -101,10 +101,11 @@ function collectBaseEventCount(events: SmashUpEvent[], type: typeof SU_EVENTS.BA
 
 function advanceToAfterScoring(
     runner: GameTestRunner<SmashUpCore, SmashUpCommand, SmashUpEvent>,
+    actingPlayerId: PlayerId = '0',
 ) {
     const eventLog: SmashUpEvent[] = [];
 
-    const advance = runner.dispatch('ADVANCE_PHASE', { playerId: '0' });
+    const advance = runner.dispatch('ADVANCE_PHASE', { playerId: actingPlayerId });
     expect(advance.success).toBe(true);
     eventLog.push(...advance.events);
 
@@ -503,5 +504,151 @@ describe('After Scoring 响应窗口 - 真实链路', () => {
             expect(nextChoice.sourceId).toBe('smashup_immediate_extra_minion');
             expect(nextChoice.playerId).toBe('1');
         }
+    });
+
+    it('base_great_library 与 alien_scout 同时进入 afterScoring 时，先结算抽牌也不会触发命令异常', () => {
+        const runner = createRunner((ids, random) => {
+            const core = SmashUpDomain.setup(ids, random);
+            const sys = createInitialSystemState(ids, smashUpSystemsForTest, undefined);
+
+            core.factionSelection = undefined;
+            core.currentPlayerIndex = 1;
+            sys.phase = 'playCards';
+            core.bases = [
+                {
+                    defId: 'base_great_library',
+                    minions: [
+                        makeMinion('scout-0', 'alien_scout', '0', '0', 3, 12),
+                        makeMinion('bot-1', 'robot_microbot_alpha', '1', '1', 2, 12),
+                    ],
+                    ongoingActions: [],
+                },
+            ];
+            core.baseDeck = ['base_secret_garden'];
+            core.players['0'].deck = [
+                { uid: 'p0-deck-1', defId: 'alien_invader', type: 'minion', owner: '0' },
+            ];
+            core.players['0'].discard = [];
+            core.players['0'].hand = [];
+            core.players['1'].deck = [];
+            core.players['1'].discard = [
+                { uid: 'p1-discard-1', defId: 'wizard_neophyte', type: 'minion', owner: '1' },
+                { uid: 'p1-discard-2', defId: 'wizard_portal', type: 'action', owner: '1' },
+            ];
+            core.players['1'].hand = [];
+
+            return { sys, core };
+        });
+
+        const { eventLog, choice } = advanceToAfterScoring(runner, '1');
+        const chooseGreatLibrary = runner.resolveInteraction('1', {
+            optionId: findQueuedTriggerOptionId(
+                runner.getState(),
+                choice,
+                'base_great_library',
+                '找不到大图书馆的统一反应入口',
+            ),
+        });
+
+        expect(chooseGreatLibrary.success).toBe(true);
+        eventLog.push(...chooseGreatLibrary.events);
+
+        const player1Reshuffle = eventLog.find(event =>
+            event.type === SU_EVENTS.DECK_RESHUFFLED
+            && (event as any).payload?.playerId === '1',
+        );
+        expect(player1Reshuffle).toBeDefined();
+
+        const drawEvents = eventLog.filter(event => event.type === SU_EVENTS.CARDS_DRAWN);
+        expect(drawEvents).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    payload: expect.objectContaining({
+                        playerId: '0',
+                        count: 1,
+                        cardUids: ['p0-deck-1'],
+                    }),
+                }),
+                expect.objectContaining({
+                    payload: expect.objectContaining({
+                        playerId: '1',
+                        count: 1,
+                        cardUids: ['p1-discard-1'],
+                    }),
+                }),
+            ]),
+        );
+
+        const nextChoice = getCurrentChoice(runner.getState());
+        expect(nextChoice?.sourceId).toBe('alien_scout_return');
+        expect(runner.getState().core.players['1'].hand.map(card => card.uid)).toContain('p1-discard-1');
+    });
+
+    it('smashup_immediate_extra_minion 选牌后应推进到基地选择，不应停留在原交互', () => {
+        const runner = createRunner((ids, random) => {
+            const core = SmashUpDomain.setup(ids, random);
+            const sys = createInitialSystemState(ids, smashUpSystemsForTest, undefined);
+
+            core.factionSelection = undefined;
+            core.currentPlayerIndex = 0;
+            core.bases = [
+                {
+                    defId: 'base_secret_garden',
+                    minions: [],
+                    ongoingActions: [],
+                },
+                {
+                    defId: 'base_the_jungle',
+                    minions: [],
+                    ongoingActions: [],
+                },
+            ];
+            core.players['0'].hand = [
+                { uid: 'h1', defId: 'zombie_walker', type: 'minion', owner: '0' },
+            ];
+            core.players['1'].hand = [];
+            sys.phase = 'startTurn';
+
+            const interaction = createSimpleChoice(
+                'smashup_immediate_extra_0',
+                '0',
+                '立刻打出一个额外随从，或放弃这次机会',
+                [
+                    {
+                        id: 'card-0',
+                        label: '行尸 (力量 2)',
+                        value: { cardUid: 'h1', defId: 'zombie_walker' },
+                        displayMode: 'card',
+                        _source: 'hand' as const,
+                    },
+                ] as any[],
+                { sourceId: 'smashup_immediate_extra_minion', targetType: 'hand', autoResolveIfSingle: false },
+            );
+            (interaction.data as any).continuationContext = {
+                extra: {
+                    playerId: '0',
+                    limitType: 'minion',
+                    delta: 1,
+                    reason: '神秘花园：额外打出力量≤2的随从',
+                    playTiming: 'immediate',
+                    restrictToBase: 0,
+                },
+            };
+            sys.interaction.current = interaction as any;
+            sys.interaction.queue = [];
+
+            return { sys, core };
+        });
+
+        const current = getCurrentChoice(runner.getState());
+        expect(current?.sourceId).toBe('smashup_immediate_extra_minion');
+
+        const playExtraMinion = runner.resolveInteraction('0', { optionId: 'card-0' });
+        expect(playExtraMinion.success).toBe(true);
+
+        const nextChoice = getCurrentChoice(runner.getState());
+        expect(nextChoice?.sourceId).toBe('smashup_immediate_extra_minion_base');
+        expect(nextChoice?.options.some(option => option.value?.baseIndex === 0)).toBe(true);
+        expect(nextChoice?.options.some(option => option.value?.baseIndex === 1)).toBe(true);
     });
 });

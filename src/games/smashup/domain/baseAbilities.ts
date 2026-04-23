@@ -5,7 +5,7 @@
  * FlowHooks 在对应时机调用 triggerBaseAbilities() 获取事件。
  */
 
-import type { PlayerId, MatchState } from '../../../engine/types';
+import type { PlayerId, MatchState, RandomFn } from '../../../engine/types';
 import type {
     SmashUpCore,
     SmashUpEvent,
@@ -72,6 +72,8 @@ export interface BaseAbilityContext {
     state: SmashUpCore;
     /** 完整的 match 状态，用于调用 queueInteraction */
     matchState?: MatchState<SmashUpCore>;
+    /** 触发能力时用于洗牌/随机选择的随机源 */
+    random?: RandomFn;
     baseIndex: number;
     baseDefId: string;
     /**
@@ -262,6 +264,7 @@ export function triggerAllBaseAbilities(
     /** 在 onMinionPlayed 时需要 */
     minionContext?: { baseIndex: number; minionUid: string; minionDefId: string; minionPower: number },
     matchState?: MatchState<SmashUpCore>,
+    random?: RandomFn,
 ): BaseAbilityResult {
     const events: SmashUpEvent[] = [];
     let ms = matchState;
@@ -274,6 +277,7 @@ export function triggerAllBaseAbilities(
         const ctx: BaseAbilityContext = {
             state,
             matchState: ms,
+            random,
             baseIndex: i,
             baseDefId: base.defId,
             playerId,

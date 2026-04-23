@@ -140,13 +140,13 @@ describe('月精灵长弓文案一致性', () => {
     const zhAbilities = (zhCN as Record<string, unknown>).abilities as Record<string, { description?: string }> ?? {};
     const enAbilities = (en as Record<string, unknown>).abilities as Record<string, { description?: string }> ?? {};
 
-    it('长弓 II / III 应明确使用相同数字文案', () => {
-        expect(zhAbilities['longbow-2']?.description).toContain('相同数字');
-        expect(zhAbilities['longbow-2']?.description).not.toContain('相同符号');
-        expect(zhAbilities['longbow-3']?.description).toContain('相同数字');
-        expect(zhAbilities['longbow-3']?.description).not.toContain('相同符号');
-        expect(enAbilities['longbow-2']?.description).toContain('matching numbers');
-        expect(enAbilities['longbow-3']?.description).toContain('matching numbers');
+    it('长弓 II / III 应明确使用相同符号文案', () => {
+        expect(zhAbilities['longbow-2']?.description).toContain('相同符号');
+        expect(zhAbilities['longbow-2']?.description).not.toContain('相同数字');
+        expect(zhAbilities['longbow-3']?.description).toContain('相同符号');
+        expect(zhAbilities['longbow-3']?.description).not.toContain('相同数字');
+        expect(enAbilities['longbow-2']?.description).toContain('matching symbols');
+        expect(enAbilities['longbow-3']?.description).toContain('matching symbols');
     });
 });
 

@@ -18,7 +18,7 @@ import { getBaseDef, getCardDef } from '../data/cards';
 import { SU_EVENTS } from '../domain/types';
 import type { CardInstance, MinionCardDef, MinionMetadataUpdatedEvent, SmashUpCore, SmashUpEvent } from '../domain/types';
 
-type CardChoice = { cardUid?: string; defId?: string; skip?: boolean };
+type CardChoice = { cardUid?: string; defId?: string; buriedFrom?: 'hand' | 'play'; skip?: boolean };
 type BaseChoice = { baseIndex?: number; skip?: boolean };
 type BuriedChoice = { cardUid?: string; baseIndex?: number; defId?: string; skip?: boolean };
 type MinionChoice = { minionUid?: string; baseIndex?: number; defId?: string; skip?: boolean };
@@ -129,10 +129,20 @@ function buildHandMinionOptions(cards: CardInstance[]) {
     return cards.map((card, index) => ({
         id: `hand-${index}`,
         label: getCardDef(card.defId)?.name ?? card.defId,
-        value: { cardUid: card.uid, defId: card.defId },
+        value: { cardUid: card.uid, defId: card.defId, buriedFrom: 'hand' as const },
         _source: 'hand' as const,
         displayMode: 'card' as const,
     }));
+}
+
+function buildPlayedMinionOption(cardUid: string, defId: string) {
+    return {
+        id: 'played-self',
+        label: getCardDef(defId)?.name ?? defId,
+        value: { cardUid, defId, buriedFrom: 'play' as const },
+        _source: 'play' as const,
+        displayMode: 'card' as const,
+    };
 }
 
 function buildDiscardMinionOptions(cards: CardInstance[]) {
@@ -147,15 +157,20 @@ function buildDiscardMinionOptions(cards: CardInstance[]) {
 
 function skeletonsReturnedOneOnPlay(ctx: AbilityContext): AbilityResult {
     const handTargets = getLowPowerHandCards(ctx.state, ctx.playerId, 3);
-    if (handTargets.length === 0) {
+    const options = [
+        createSkipOption('跳过（不埋葬）'),
+        buildPlayedMinionOption(ctx.cardUid, ctx.defId),
+        ...buildHandMinionOptions(handTargets),
+    ];
+    if (options.length === 1) {
         return { events: [buildAbilityFeedback(ctx.playerId, 'feedback.no_valid_targets', ctx.now)] };
     }
     const interaction = createSimpleChoice(
         `skeletons_returned_one_${ctx.now}`,
         ctx.playerId,
         '归来者：你可以将一张力量 3 或以下的随从埋葬到此基地',
-        [createSkipOption('跳过（不埋葬）'), ...buildHandMinionOptions(handTargets)],
-        { sourceId: 'skeletons_returned_one', targetType: 'hand' },
+        options,
+        { sourceId: 'skeletons_returned_one', targetType: 'generic' },
     );
     (interaction.data as { continuationContext?: GraveyardContinuation }).continuationContext = { targetBaseIndex: ctx.baseIndex };
     return { events: [], matchState: queueInteraction(ctx.matchState, interaction) };
@@ -489,7 +504,7 @@ const handleSkeletonsReturnedOne: InteractionHandler = (state, playerId, value, 
             defId: selected.defId,
             baseIndex: continuation.targetBaseIndex,
             trueOwnerId: playerId,
-            buriedFrom: 'hand',
+            buriedFrom: selected.buriedFrom ?? 'hand',
             reason: 'skeletons_returned_one',
             random,
             now,

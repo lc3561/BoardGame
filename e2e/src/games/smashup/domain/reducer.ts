@@ -67,6 +67,7 @@ import { resolveOnPlay, resolveSpecial, resolveTalent, resolveOnDestroy, resolve
 import type { AbilityContext } from './abilityRegistry';
 import { triggerActiveBaseAbility, triggerExtendedBaseAbility } from './baseAbilities';
 import { fireTriggers, collectTriggers, isMinionProtected, getConsumableProtectionSource } from './ongoingEffects';
+import { getEffectivePower } from './ongoingModifiers';
 import { maybeResolveReactionQueue } from './reactionQueue';
 import { canPlayFromDiscard } from './discardPlayability';
 import { reduce } from './reduce';
@@ -1066,6 +1067,7 @@ export function processDestroyTriggers(
         const { minionUid, minionDefId, fromBaseIndex, ownerId: eventOwnerId, destroyerId: eventDestroyerId, reason } = de.payload;
         const base = core.bases[fromBaseIndex];
         const minion = base?.minions.find(m => m.uid === minionUid);
+        const triggerMinionPower = minion ? getEffectivePower(core, minion, fromBaseIndex) : undefined;
         // ✅ 优先从 state 读取 owner（兜底修复：即使事件中的 ownerId 错了也能修复）
         const ownerId = minion?.owner ?? eventOwnerId;
         const destroyerId = eventDestroyerId ?? playerId ?? minion?.controller ?? ownerId;
@@ -1134,6 +1136,7 @@ export function processDestroyTriggers(
             triggerMinionUid: minionUid,
             triggerMinionDefId: minionDefId,
             triggerMinion: minion,
+            triggerMinionPower,
             destroyerId,
             reason: de.payload.reason,
             random,
@@ -1206,6 +1209,7 @@ export function processDestroyTriggers(
                 triggerMinionUid: minionUid,
                 triggerMinionDefId: minionDefId,
                 triggerMinion: minion,
+                triggerMinionPower,
                 destroyerId,
                 reason: de.payload.reason,
                 frameId,

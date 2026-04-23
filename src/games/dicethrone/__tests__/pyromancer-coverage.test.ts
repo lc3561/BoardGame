@@ -28,9 +28,12 @@ import {
 import type { DiceThroneCore } from '../domain/types';
 import type { MatchState, PlayerId, RandomFn } from '../../../engine/types';
 import { createInitialSystemState, executePipeline } from '../../../engine/pipeline';
+import { initHeroState } from '../domain/characters';
 
 // ============================================================================
-// 自定义 Setup：双方炎术士，移除响应卡避免干扰
+// 自定义 Setup：镜像对战测试。
+// 现行规则禁止 setup 阶段双方直选同一英雄，因此先用合法选角开局，
+// 再在测试态把玩家 1 覆盖成炎术士，保留旧覆盖用例的“炎术士打炎术士”语义。
 // ============================================================================
 
 function createPyromancerSetup() {
@@ -42,7 +45,7 @@ function createPyromancerSetup() {
         const cfg = { domain: DiceThroneDomain, systems: testSystems };
         const setupCmds = [
             { type: 'SELECT_CHARACTER', playerId: '0', payload: { characterId: 'pyromancer' } },
-            { type: 'SELECT_CHARACTER', playerId: '1', payload: { characterId: 'pyromancer' } },
+            { type: 'SELECT_CHARACTER', playerId: '1', payload: { characterId: 'monk' } },
             { type: 'PLAYER_READY', playerId: '1', payload: {} },
             { type: 'HOST_START_GAME', playerId: '0', payload: {} },
         ];
@@ -53,6 +56,10 @@ function createPyromancerSetup() {
                 random, playerIds);
             if (r.success) state = r.state as MatchState<DiceThroneCore>;
         }
+
+        // 旧覆盖测试要求镜像对战；在 setup 成功后把玩家 1 覆盖为炎术士。
+        state.core.selectedCharacters['1'] = 'pyromancer';
+        state.core.players['1'] = initHeroState('1', 'pyromancer', random);
 
         // 移除响应卡避免触发响应窗口
         for (const pid of playerIds) {

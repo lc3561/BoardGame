@@ -10,7 +10,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { DiceThroneDomain } from '../domain';
 import { execute as executeDomainCommand } from '../domain/execute';
-import type { DiceThroneCore, DiceThroneCommand, DiceThroneEvent, TurnPhase } from '../domain/types';
+import { DICETHRONE_CHARACTER_CATALOG, type DiceThroneCore, type DiceThroneCommand, type DiceThroneEvent, type TurnPhase } from '../domain/types';
 import { CP_MAX, HAND_LIMIT, INITIAL_CP, INITIAL_HEALTH } from '../domain/types';
 import { STATUS_IDS, TOKEN_IDS, DICETHRONE_COMMANDS, DICETHRONE_CARD_ATLAS_IDS } from '../domain/ids';
 import { RESOURCE_IDS } from '../domain/resources';
@@ -27,6 +27,7 @@ import { createSimpleChoice } from '../../../engine/systems/InteractionSystem';
 import { GameTestRunner, type TestCase } from '../../../engine/testing';
 import type { MatchState, PlayerId, RandomFn } from '../../../engine/types';
 import { createInitialSystemState, executePipeline } from '../../../engine/pipeline';
+import { initHeroState } from '../domain/characters';
 
 import {
     fixedRandom,
@@ -70,8 +71,25 @@ function createInitializedStateWithCharacters(
         sys: createInitialSystemState(playerIds, testSystems, undefined),
     };
 
+    const allCharacterIds = DICETHRONE_CHARACTER_CATALOG.map((item) => item.id);
+    const usedCharacterIds = new Set<string>();
+    const setupCharacters: Record<PlayerId, string> = {} as Record<PlayerId, string>;
+
+    for (const playerId of playerIds) {
+        const desiredCharacterId = characters[playerId] ?? 'monk';
+        if (!usedCharacterIds.has(desiredCharacterId)) {
+            setupCharacters[playerId] = desiredCharacterId;
+            usedCharacterIds.add(desiredCharacterId);
+            continue;
+        }
+
+        const fallbackCharacterId = allCharacterIds.find((id) => !usedCharacterIds.has(id)) ?? desiredCharacterId;
+        setupCharacters[playerId] = fallbackCharacterId;
+        usedCharacterIds.add(fallbackCharacterId);
+    }
+
     const commands: CommandInput[] = [
-        ...playerIds.map((playerId) => cmd('SELECT_CHARACTER', playerId, { characterId: characters[playerId] ?? 'monk' })),
+        ...playerIds.map((playerId) => cmd('SELECT_CHARACTER', playerId, { characterId: setupCharacters[playerId] })),
         ...playerIds
             .filter((playerId) => playerId !== playerIds[0])
             .map((playerId) => cmd('PLAYER_READY', playerId)),
@@ -91,7 +109,77 @@ function createInitializedStateWithCharacters(
         }
     }
 
+    for (const playerId of playerIds) {
+        const desiredCharacterId = characters[playerId];
+        if (!desiredCharacterId) continue;
+        if (state.core.selectedCharacters[playerId] === desiredCharacterId) continue;
+        state.core.selectedCharacters[playerId] = desiredCharacterId as any;
+        state.core.players[playerId] = initHeroState(playerId, desiredCharacterId as any, random);
+    }
+
     return state;
+}
+
+const MONK_MIRROR_CHARACTERS = {
+    '0': 'monk',
+    '1': 'monk',
+} as const;
+
+function createMonkMirrorInitializedState(
+    playerIds: PlayerId[],
+    random: RandomFn
+): MatchState<DiceThroneCore> {
+    return createInitializedStateWithCharacters(
+        playerIds,
+        random,
+        MONK_MIRROR_CHARACTERS as unknown as Record<PlayerId, string>
+    );
+}
+
+function createMonkMirrorSetupWithHand(
+    handCardIds: string[],
+    options: { playerId?: PlayerId; cp?: number; mutate?: (core: DiceThroneCore) => void } = {}
+) {
+    return (playerIds: PlayerId[], random: RandomFn): MatchState<DiceThroneCore> => {
+        const state = createMonkMirrorInitializedState(playerIds, random);
+        const pid = options.playerId ?? '0';
+        const player = state.core.players[pid];
+        if (player) {
+            player.hand = handCardIds.map(getCardById);
+            player.deck = player.deck.filter((card) => !handCardIds.includes(card.id));
+            if (options.cp !== undefined) {
+                player.resources[RESOURCE_IDS.CP] = options.cp;
+            }
+        }
+        options.mutate?.(state.core);
+        return state;
+    };
+}
+
+function createMonkMirrorNoResponseSetup() {
+    return (playerIds: PlayerId[], random: RandomFn): MatchState<DiceThroneCore> => {
+        const state = createMonkMirrorInitializedState(playerIds, random);
+
+        for (const pid of playerIds) {
+            const player = state.core.players[pid];
+            if (!player) continue;
+
+            const handRespondable = player.hand.filter((card) => card.timing === 'instant' || card.timing === 'roll');
+            const handNonRespondable = player.hand.filter((card) => card.timing !== 'instant' && card.timing !== 'roll');
+            const deckRespondable = player.deck.filter((card) => card.timing === 'instant' || card.timing === 'roll');
+            const deckNonRespondable = player.deck.filter((card) => card.timing !== 'instant' && card.timing !== 'roll');
+
+            player.deck = [...deckNonRespondable, ...handRespondable, ...deckRespondable];
+            player.hand = handNonRespondable;
+
+            while (player.hand.length < 4 && player.deck.length > 0) {
+                const card = player.deck.shift();
+                if (card) player.hand.push(card);
+            }
+        }
+
+        return state;
+    };
 }
 
 // ============================================================================
@@ -150,6 +238,7 @@ const baseTestCases: TestCase<DiceThroneExpectation>[] = [
     },
     {
         name: '进入防御阶段后掷骰配置正确',
+        setup: createMonkMirrorInitializedState,
         commands: [
             ...advanceTo('offensiveRoll'),
             cmd('ROLL_DICE', '0'),
@@ -290,7 +379,7 @@ describe('王权骰铸流程测试', () => {
 
             const commands = [
                 cmd('SELECT_CHARACTER', '0', { characterId: 'monk' }),
-                cmd('SELECT_CHARACTER', '1', { characterId: 'monk' }),
+                cmd('SELECT_CHARACTER', '1', { characterId: 'barbarian' }),
                 cmd('PLAYER_READY', '1'),
                 cmd('HOST_START_GAME', '0'),
             ];
@@ -2607,6 +2696,7 @@ describe('王权骰铸流程测试', () => {
             const runner = createRunner(createQueuedRandom([1, 1, 1, 1, 1]));
             const result = runner.run({
                 name: '清修在防御阶段可用',
+                setup: createMonkMirrorInitializedState,
                 commands: [
                     ...advanceTo('offensiveRoll'),
                     cmd('ROLL_DICE', '0'),
@@ -2633,7 +2723,7 @@ describe('王权骰铸流程测试', () => {
                 systems: testSystems,
                 playerIds: ['0', '1'],
                 random,
-                setup: createNoResponseSetup(),
+                setup: createMonkMirrorNoResponseSetup(),
                 assertFn: assertState,
                 silent: true,
             });
@@ -2726,7 +2816,7 @@ describe('王权骰铸流程测试', () => {
                 systems: testSystems,
                 playerIds: ['0', '1'],
                 random: createQueuedRandom([1, 1, 1, 1, 1, 1, 1, 1, 1]),
-                setup: createNoResponseSetup(),
+                setup: createMonkMirrorNoResponseSetup(),
                 assertFn: assertState,
                 silent: true,
             });
@@ -2759,6 +2849,7 @@ describe('王权骰铸流程测试', () => {
             const runner = createRunner(createQueuedRandom([1, 1, 1, 1, 1]));
             const result = runner.run({
                 name: '防御阶段掉骰上限1',
+                setup: createMonkMirrorInitializedState,
                 commands: [
                     ...advanceTo('offensiveRoll'),
                     cmd('ROLL_DICE', '0'),
@@ -2896,7 +2987,7 @@ describe('王权骰铸流程测试', () => {
 
     describe('雷霆万钧 奖励骰重掷', () => {
         const createThunderStrikeSetup = (options: { taiji?: number } = {}) => {
-            return createSetupWithHand([], {
+            return createMonkMirrorSetupWithHand([], {
                 playerId: '0',
                 mutate: (core) => {
                     if (options.taiji !== undefined) {
@@ -3144,7 +3235,7 @@ describe('王权骰铸流程测试', () => {
 
     describe('雷霆一击 II 奖励骰重掷', () => {
         const createThunderStrikeSetup = (options: { taiji?: number } = {}) => {
-            return createSetupWithHand(['card-storm-assault-2'], {
+            return createMonkMirrorSetupWithHand(['card-storm-assault-2'], {
                 playerId: '0',
                 mutate: (core) => {
                     if (options.taiji !== undefined) {
@@ -3204,7 +3295,7 @@ describe('王权骰铸流程测试', () => {
                 systems: testSystems,
                 playerIds: ['0', '1'],
                 random,
-                setup: createSetupWithHand(['card-storm-assault-2'], {
+                setup: createMonkMirrorSetupWithHand(['card-storm-assault-2'], {
                     playerId: '0',
                     mutate: (core) => { core.players['0'].tokens[TOKEN_IDS.TAIJI] = 2; },
                 }),
@@ -3251,7 +3342,7 @@ describe('王权骰铸流程测试', () => {
                 systems: testSystems,
                 playerIds: ['0', '1'],
                 random,
-                setup: createSetupWithHand(['card-storm-assault-2'], {
+                setup: createMonkMirrorSetupWithHand(['card-storm-assault-2'], {
                     playerId: '0',
                     mutate: (core) => {
                         const opponent = core.players['1'];
@@ -3304,7 +3395,7 @@ describe('王权骰铸流程测试', () => {
                 systems: testSystems,
                 playerIds: ['0', '1'],
                 random,
-                setup: createSetupWithHand(['card-storm-assault-2'], {
+                setup: createMonkMirrorSetupWithHand(['card-storm-assault-2'], {
                     playerId: '0',
                     mutate: (core) => {
                         const opponent = core.players['1'];
@@ -3357,7 +3448,7 @@ describe('王权骰铸流程测试', () => {
                 systems: testSystems,
                 playerIds: ['0', '1'],
                 random,
-                setup: createSetupWithHand(['card-storm-assault-2'], {
+                setup: createMonkMirrorSetupWithHand(['card-storm-assault-2'], {
                     playerId: '0',
                     mutate: (core) => { core.players['0'].tokens[TOKEN_IDS.TAIJI] = 2; },
                 }),

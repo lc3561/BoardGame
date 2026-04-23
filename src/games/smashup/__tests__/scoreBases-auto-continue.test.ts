@@ -1173,6 +1173,44 @@ describe('scoreBases 阶段自动推进', () => {
         expect(legalActions.some(action => action.kind === 'advance-phase')).toBe(false);
     });
 
+    it('AI 在计分阶段打出泰坦后，若已无后续 special，应恢复暴露 advance-phase 收口', () => {
+        const state: MatchState<SmashUpCore> = {
+            core: makeMinimalCore({
+                bases: [makeBase('base_pirate_cove', [
+                    makeMinion('0', 'robot_hoverbot', 4),
+                    makeMinion('0', 'robot_microbot_alpha', 2),
+                    makeMinion('0', 'robot_microbot_beta', 2),
+                    makeMinion('1', 'pirate_first_mate', 3),
+                ])],
+                scoringEligibleBaseIndices: [0],
+                titans: [{
+                    uid: 't-megabot-setaside',
+                    defId: 'mega_troopers_megabot',
+                    faction: 'mega_troopers',
+                    ownerId: '0',
+                    controllerId: '0',
+                    powerCounters: 0,
+                    talentUsed: false,
+                    location: { zone: 'base', baseIndex: 0 },
+                }] as any,
+            }),
+            sys: {
+                phase: 'scoreBases',
+                flowHalted: false,
+                interaction: { current: null, queue: [] },
+                responseWindow: { current: null, history: [] },
+            } as any,
+        };
+
+        const legalActions = buildSmashUpAiLegalActions({
+            playerId: '0',
+            state: state as any,
+        });
+
+        expect(legalActions.some(action => action.kind === 'activate-special')).toBe(false);
+        expect(legalActions.some(action => action.kind === 'advance-phase')).toBe(true);
+    });
+
     it('buff 型随从目标交互应透传 AI hints，且 AI 优先选择己方随从', async () => {
         registerGameAiRuntime(smashUpAiRuntime);
 

@@ -29,9 +29,12 @@ import {
 import type { DiceThroneCore } from '../domain/types';
 import type { MatchState, PlayerId, RandomFn } from '../../../engine/types';
 import { createInitialSystemState, executePipeline } from '../../../engine/pipeline';
+import { initHeroState } from '../domain/characters';
 
 // ============================================================================
-// 自定义 Setup：玩家0=狂战士，玩家1=狂战士（移除响应卡避免干扰）
+// 自定义 Setup：镜像对战测试。
+// 现行规则禁止双方在 setup 阶段选择同一英雄，因此先用合法选角完成开局，
+// 再在测试态把玩家 1 覆盖成狂战士，保留旧覆盖用例要验证的“狂战士打狂战士”语义。
 // ============================================================================
 
 function createBarbarianSetup() {
@@ -43,7 +46,7 @@ function createBarbarianSetup() {
         const pipelineConfig = { domain: DiceThroneDomain, systems: testSystems };
         const setupCmds = [
             { type: 'SELECT_CHARACTER', playerId: '0', payload: { characterId: 'barbarian' } },
-            { type: 'SELECT_CHARACTER', playerId: '1', payload: { characterId: 'barbarian' } },
+            { type: 'SELECT_CHARACTER', playerId: '1', payload: { characterId: 'monk' } },
             { type: 'PLAYER_READY', playerId: '1', payload: {} },
             { type: 'HOST_START_GAME', playerId: '0', payload: {} },
         ];
@@ -56,6 +59,10 @@ function createBarbarianSetup() {
             );
             if (result.success) state = result.state as MatchState<DiceThroneCore>;
         }
+
+        // 旧覆盖测试要求镜像对战；在 setup 成功后把玩家 1 覆盖为狂战士。
+        state.core.selectedCharacters['1'] = 'barbarian';
+        state.core.players['1'] = initHeroState('1', 'barbarian', random);
 
         // 移除响应卡避免触发响应窗口
         for (const pid of playerIds) {

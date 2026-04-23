@@ -548,9 +548,10 @@ export function execute(
                 
                 // 规则 3.3 步骤 3：如果骰面被修改且已选择技能，触发重选
                 // 注意：终极技能不受影响（行动锁定）
-                if (phase === 'offensiveRoll' && 
-                    state.pendingAttack && 
-                    !state.pendingAttack.isUltimate) {
+                if (phase === 'offensiveRoll'
+                    && state.pendingAttack
+                    && !state.pendingAttack.isUltimate
+                    && newValue !== die.value) {
                     events.push({
                         type: 'ABILITY_RESELECTION_REQUIRED',
                         payload: {
@@ -1004,9 +1005,10 @@ export function execute(
                 } as DieRerolledEvent);
 
                 // 重掷后如果在进攻阶段且已选技能，触发重选
-                if (phase === 'offensiveRoll' &&
-                    state.pendingAttack &&
-                    !state.pendingAttack.isUltimate) {
+                if (phase === 'offensiveRoll'
+                    && state.pendingAttack
+                    && !state.pendingAttack.isUltimate
+                    && newValue !== die.value) {
                     events.push({
                         type: 'ABILITY_RESELECTION_REQUIRED',
                         payload: {

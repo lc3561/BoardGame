@@ -15,7 +15,7 @@ import { DiceThroneDomain } from '../domain';
 import { diceThroneSystemsForTest } from '../game';
 import type { DiceThroneCommand, DiceThroneCore } from '../domain/types';
 import { STATUS_IDS } from '../domain/ids';
-import { createQueuedRandom, cmd } from './test-utils';
+import { createQueuedRandom, cmd, getCardById } from './test-utils';
 import { MOON_ELF_CARDS } from '../heroes/moon_elf/cards';
 
 const setupCommands = [
@@ -58,7 +58,11 @@ function createVolleyState(playerIds: PlayerId[], random: RandomFn): MatchState<
     state.sys.phase = 'offensiveRoll';
     state.core.rollCount = 1;
     state.core.rollConfirmed = true;
-    state.core.dice = [1, 2, 3, 4, 5] as typeof state.core.dice;
+    state.core.dice = state.core.dice.map((die, index) => ({
+        ...die,
+        value: [1, 2, 3, 4, 5][index] ?? die.value,
+        isKept: false,
+    }));
     state.core.pendingAttack = {
         attackerId: '0',
         defenderId: '1',
@@ -68,6 +72,27 @@ function createVolleyState(playerIds: PlayerId[], random: RandomFn): MatchState<
         bonusDamage: 0,
     };
 
+    return state;
+}
+
+function createVolleyCopyState(playerIds: PlayerId[], random: RandomFn): MatchState<DiceThroneCore> {
+    const state = createVolleyState(playerIds, random);
+    state.core.players['0'].hand = [getCardById('volley'), getCardById('card-me-too')];
+    state.core.players['0'].resources.CP = 5;
+    state.core.dice = state.core.dice.map((die, index) => ({
+        ...die,
+        value: [2, 2, 2, 1, 5][index] ?? die.value,
+        isKept: false,
+    }));
+    state.core.pendingAttack = {
+        attackerId: '0',
+        defenderId: '1',
+        isDefendable: true,
+        sourceAbilityId: 'longbow-4-2',
+        damage: 6,
+        bonusDamage: 0,
+        attackModifierBonusDamage: 0,
+    } as any;
     return state;
 }
 
@@ -157,5 +182,34 @@ describe('Volley 5 Dice Display', () => {
             const currTimestamp = bonusDieEvents[index].event.timestamp;
             expect(currTimestamp).toBeGreaterThan(prevTimestamp);
         }
+    });
+
+    it('copy 模式首个同值源骰选择不应提前清空 Volley 加伤', () => {
+        const queuedRandom = createQueuedRandom([1, 2, 3, 4, 5]);
+
+        const runner = new GameTestRunner({
+            domain: DiceThroneDomain,
+            systems: diceThroneSystemsForTest,
+            playerIds: ['0', '1'],
+            random: queuedRandom,
+            setup: (playerIds, random) => createVolleyCopyState(playerIds, random),
+            silent: true,
+        });
+
+        const result = runner.run({
+            name: 'Volley copy source no-op should keep bonus',
+            commands: [
+                cmd('PLAY_CARD', '0', { cardId: 'volley' }),
+                cmd('PLAY_CARD', '0', { cardId: 'card-me-too' }),
+                cmd('MODIFY_DIE', '0', { dieId: 4, newValue: 5 }),
+            ],
+        });
+
+        expect(result.assertionErrors).toEqual([]);
+        expect(result.finalState.core.pendingAttack?.sourceAbilityId).toBe('longbow-4-2');
+        expect(result.finalState.core.pendingAttack?.bonusDamage).toBe(3);
+        expect(result.finalState.core.pendingAttack?.attackModifierBonusDamage).toBe(3);
+        expect(result.finalState.core.players['0'].pendingBonusDamage).toBeUndefined();
+        expect((result.finalState.sys.interaction?.current?.data as any)?.completedDieIds).toEqual([4]);
     });
 });

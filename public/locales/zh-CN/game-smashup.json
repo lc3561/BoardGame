@@ -225,6 +225,7 @@
     "tempPowerAdded": "临时力量+{{amount}}：",
     "ongoingCounterChanged": "持续战术计数器{{delta}}：",
     "breakpointModified": "{{base}} 爆分线{{delta}}",
+    "breakpointReducedToZero": "{{base}} 爆分线降至0（{{delta}}）",
     "baseDeckShuffled": "基地牌库洗牌",
     "specialLimitUsed": "{{playerId}} 使用特殊{{limitType}}额度",
     "abilityTriggered": "触发能力（{{triggerType}}）：",

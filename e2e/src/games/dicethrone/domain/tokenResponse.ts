@@ -32,6 +32,45 @@ import { TOKEN_IDS } from './ids';
 // Token 可用性检查
 // ============================================================================
 
+export function getUsableTokenAmountForTiming(
+    state: DiceThroneCore,
+    playerId: PlayerId,
+    tokenId: string,
+    timing: 'beforeDamageDealt' | 'beforeDamageReceived',
+    options?: { damageScope?: 'attack' | 'direct' }
+): number {
+    const player = state.players[playerId];
+    if (!player) return 0;
+
+    const tokenDef = (state.tokenDefinitions ?? []).find(def => def.id === tokenId);
+    if (!tokenDef?.activeUse?.timing?.includes(timing)) return 0;
+
+    const damageScope = options?.damageScope ?? 'attack';
+    const hasAttackContext = !!state.pendingAttack;
+    if (tokenDef.activeUse.requiresAttackDamage) {
+        if (!hasAttackContext) return 0;
+        if (damageScope !== 'attack') return 0;
+    }
+
+    let availableAmount = player.tokens[tokenDef.id] ?? 0;
+    if (availableAmount <= 0) return 0;
+
+    // 规则：本回合获得的太极不可用于本回合增强伤害（beforeDamageDealt）。
+    if (tokenDef.id === TOKEN_IDS.TAIJI && timing === 'beforeDamageDealt') {
+        const gainedThisTurn = state.taijiGainedThisTurn?.[playerId] ?? 0;
+        availableAmount = Math.max(0, availableAmount - gainedThisTurn);
+    }
+
+    const maxWindowUsage = getMaxTokenUseAmount(tokenDef);
+    const usedInWindow = state.pendingDamage?.tokenUsageTotals?.[tokenDef.id] ?? 0;
+    const hasExplicitWindowCap = (tokenDef.activeUse.allowedConsumeAmounts?.length ?? 0) > 0;
+    const remainingWindowUsage = hasExplicitWindowCap
+        ? Math.max(0, maxWindowUsage - usedInWindow)
+        : availableAmount;
+
+    return Math.max(0, Math.min(availableAmount, remainingWindowUsage));
+}
+
 /**
  * 获取玩家在指定时机下实际可用的 Token 列表（已过滤 category、timing、持有量）
  * 这是 Token 响应窗口的唯一数据源——有可用 token 才弹窗，窗口直接渲染此列表
@@ -44,30 +83,9 @@ export function getUsableTokensForTiming(
 ): TokenDef[] {
     const player = state.players[playerId];
     if (!player) return [];
-    const damageScope = options?.damageScope ?? 'attack';
-    const hasAttackContext = !!state.pendingAttack;
 
     return (state.tokenDefinitions ?? []).filter(def => {
-        if (!def.activeUse?.timing?.includes(timing)) return false;
-        const amount = player.tokens[def.id] ?? 0;
-        if (amount <= 0) return false;
-
-        // 规则：本回合获得的太极不可用于本回合增强伤害（beforeDamageDealt）
-        if (def.id === TOKEN_IDS.TAIJI && timing === 'beforeDamageDealt') {
-            const gainedThisTurn = state.taijiGainedThisTurn?.[playerId] ?? 0;
-            if (amount - gainedThisTurn <= 0) return false;
-        }
-
-        const maxWindowUsage = getMaxTokenUseAmount(def);
-        const usedInWindow = state.pendingDamage?.tokenUsageTotals?.[def.id] ?? 0;
-        if (usedInWindow >= maxWindowUsage) return false;
-
-        if (def.activeUse?.requiresAttackDamage) {
-            if (!hasAttackContext) return false;
-            if (damageScope !== 'attack') return false;
-        }
-
-        return true;
+        return getUsableTokenAmountForTiming(state, playerId, def.id, timing, options) > 0;
     });
 }
 

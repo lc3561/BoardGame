@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { GameTransportServer, type GameEngineConfig } from '../server';
-import { buildAiProgressMarker, resolveForceEndTurnForStalledAi } from '../onlineAiRecovery';
+import { buildAiProgressMarker, resolveCurrentPlayerId, resolveForceEndTurnForStalledAi } from '../onlineAiRecovery';
 import { createInteractionSystem, createSimpleChoice, INTERACTION_COMMANDS } from '../../systems/InteractionSystem';
 import { createSimpleChoiceSystem } from '../../systems/SimpleChoiceSystem';
 import { createResponseWindowSystem, RESPONSE_WINDOW_EVENTS } from '../../systems/ResponseWindowSystem';
@@ -697,6 +697,23 @@ describe('buildAiProgressMarker（响应窗口语义指纹）', () => {
 
         expect(buildAiProgressMarker(baseState as any))
             .toBe(buildAiProgressMarker(reopenedState as any));
+    });
+});
+
+describe('resolveCurrentPlayerId（防御阶段操作者）', () => {
+    it('defensiveRoll 且存在 pendingAttack.defenderId 时，应返回 defenderId', () => {
+        const state = createOnlineAiRecoveryState({
+            activePlayerId: '1',
+            phase: 'defensiveRoll',
+        }).G as any;
+
+        state.core.pendingAttack = {
+            attackerId: '1',
+            defenderId: '0',
+            isDefendable: true,
+        };
+
+        expect(resolveCurrentPlayerId(state)).toBe('0');
     });
 });
 

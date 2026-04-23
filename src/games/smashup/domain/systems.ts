@@ -267,6 +267,18 @@ function isSameDeferredEvent(
         && (typeof emittedEvent.timestamp === 'number' ? emittedEvent.timestamp : 0) === deferredEvent.timestamp;
 }
 
+function isSameInteractionDataSnapshot(
+    currentData: unknown,
+    payloadData: unknown,
+): boolean {
+    if (currentData === payloadData) return true;
+    try {
+        return JSON.stringify(currentData) === JSON.stringify(payloadData);
+    } catch {
+        return false;
+    }
+}
+
 /**
  * 创建 SmashUp 事件处理系统
  * 
@@ -414,10 +426,9 @@ export function createSmashUpEventSystem(): EngineSystem<SmashUpCore> {
                             );
 
                             if (result) {
-                                // 【关键修复】检查交互处理器是否创建了新交互
-                                // 如果没有创建新交互（如返回 ABILITY_FEEDBACK），则解决当前交互
-                                const hadInteractionBefore = !!newState.sys.interaction?.current;
-                                const hasInteractionAfter = !!result.state.sys.interaction?.current || (result.state.sys.interaction?.queue?.length ?? 0) > (newState.sys.interaction?.queue?.length ?? 0);
+                                // 记录 handler 前的交互快照，用于判断“当前交互是否需要弹出”
+                                const currentInteractionIdBefore = newState.sys.interaction?.current?.id;
+                                const currentInteractionDataBefore = newState.sys.interaction?.current?.data;
 
                                 let emittedEvents = [...result.events] as SmashUpEvent[];
 
@@ -426,9 +437,16 @@ export function createSmashUpEventSystem(): EngineSystem<SmashUpCore> {
                                     newState,
                                     getDeferredPostScoringEvents(newState, payload.interactionData),
                                 );
-                                
-                                // 如果 handler 没有创建新交互，则解决当前交互
-                                if (hadInteractionBefore && !hasInteractionAfter) {
+
+                                const currentInteractionIdAfter = newState.sys.interaction?.current?.id;
+                                const shouldResolveCurrentInteraction = Boolean(currentInteractionIdBefore)
+                                    && payload.interactionId === currentInteractionIdBefore
+                                    && isSameInteractionDataSnapshot(currentInteractionDataBefore, payload.interactionData)
+                                    && currentInteractionIdAfter === currentInteractionIdBefore;
+
+                                // 当一次响应已被接收并产出后续链路时，需弹出当前交互，
+                                // 否则会出现“新交互入队但界面仍停留在旧交互”的卡死现象。
+                                if (shouldResolveCurrentInteraction) {
                                     newState = resolveInteraction(newState);
                                 }
 

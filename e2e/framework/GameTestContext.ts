@@ -1157,6 +1157,15 @@ export class GameTestContext {
             await this.page.click(`[data-minion-uid="${options.targetMinionUid}"]`);
             await this.page.waitForTimeout(300);
         }
+
+        // 5. 无目标卡牌在新版 SmashUp UI 中默认是“首击选中，次击确认打出”。
+        // 兼容该交互：若首击后卡牌仍在手牌里，则补一次点击完成打出。
+        if (options?.targetBaseIndex === undefined && !options?.targetMinionUid) {
+            if (await isCardStillInHand()) {
+                await this.page.click(`[data-card-uid="${cardUid}"]`);
+                await this.page.waitForTimeout(300);
+            }
+        }
     }
 
     /**

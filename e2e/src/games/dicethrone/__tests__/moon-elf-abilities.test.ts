@@ -20,7 +20,7 @@ import {
 import { MOON_ELF_TOKENS, MOON_ELF_INITIAL_TOKENS } from '../heroes/moon_elf/tokens';
 import { moonElfDiceDefinition } from '../heroes/moon_elf/diceConfig';
 import { moonElfResourceDefinitions } from '../heroes/moon_elf/resourceConfig';
-import { CHARACTER_DATA_MAP } from '../domain/characters';
+import { CHARACTER_DATA_MAP, initHeroState } from '../domain/characters';
 import { DiceThroneDomain } from '../domain';
 import { TOKEN_IDS, STATUS_IDS, MOON_ELF_DICE_FACE_IDS, DICETHRONE_CARD_ATLAS_IDS } from '../domain/ids';
 import { RESOURCE_IDS } from '../domain/resources';
@@ -48,7 +48,7 @@ const testSystems = diceThroneSystemsForTest as unknown as EngineSystem<DiceThro
 
 const moonElfSetupCommands = [
     { type: 'SELECT_CHARACTER', playerId: '0', payload: { characterId: 'moon_elf' } },
-    { type: 'SELECT_CHARACTER', playerId: '1', payload: { characterId: 'moon_elf' } },
+    { type: 'SELECT_CHARACTER', playerId: '1', payload: { characterId: 'monk' } },
     { type: 'PLAYER_READY', playerId: '1', payload: {} },
     { type: 'HOST_START_GAME', playerId: '0', payload: {} },
 ];
@@ -63,6 +63,10 @@ function createMoonElfState(playerIds: PlayerId[], random: RandomFn): MatchState
         const result = executePipeline(pipelineConfig, state, command, random, playerIds);
         if (result.success) state = result.state as MatchState<DiceThroneCore>;
     }
+    // 现行规则禁止 setup 阶段双方直选同一英雄；旧覆盖测试需要镜像对战时，
+    // 在 setup 完成后覆写玩家 1 为月精灵，保留原测试语义。
+    state.core.selectedCharacters['1'] = 'moon_elf';
+    state.core.players['1'] = initHeroState('1', 'moon_elf', random);
     return state;
 }
 

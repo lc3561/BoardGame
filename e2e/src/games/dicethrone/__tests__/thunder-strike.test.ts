@@ -15,11 +15,12 @@ import { createQueuedRandom } from './test-utils';
 import { createInitialSystemState, executePipeline } from '../../../engine/pipeline';
 import type { MatchState, PlayerId, RandomFn } from '../../../engine/types';
 import type { DiceThroneCore, DiceThroneCommand } from '../domain/types';
+import { initHeroState } from '../domain/characters';
 import { TOKEN_IDS, DICE_FACE_IDS } from '../domain/ids';
 
 const monkSetupCommands = [
     { type: 'SELECT_CHARACTER', playerId: '0', payload: { characterId: 'monk' } },
-    { type: 'SELECT_CHARACTER', playerId: '1', payload: { characterId: 'monk' } },
+    { type: 'SELECT_CHARACTER', playerId: '1', payload: { characterId: 'barbarian' } },
     { type: 'PLAYER_READY', playerId: '1', payload: {} },
     { type: 'HOST_START_GAME', playerId: '0', payload: {} },
 ];
@@ -34,6 +35,8 @@ function createMonkState(playerIds: PlayerId[], random: RandomFn): MatchState<Di
         const result = executePipeline(pipelineConfig, state, command, random, playerIds);
         if (result.success) state = result.state as MatchState<DiceThroneCore>;
     }
+    state.core.selectedCharacters['1'] = 'monk';
+    state.core.players['1'] = initHeroState('1', 'monk', random);
     return state;
 }
 
