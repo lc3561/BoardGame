@@ -324,3 +324,24 @@
 - **[2026-04-22 23:06] Action**: 运行回归并落证据文档。
   - Result: `eslint` 通过；`StatusEffectsIcons.test.tsx` 15/15 通过；`androidCompatSmoke.test.ts` 5/5 通过；新增证据文档 `evidence/dicethrone/dicethrone-feedback-69c3c83e-69cba605-followup-2026-04-22.md`。
   - Next: 汇总给用户并等待是否继续回写线上状态。
+
+## Session: 2026-04-24 SmashUp 三派系持续审计复核
+
+### Phase: 审计与证据口径同步
+**Status**: Complete
+
+- **[2026-04-24 09:02:00] Action**: 复跑三派系主能力回归
+  - Result: `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/newFactionAbilities.test.ts --configLoader native --maxWorkers 1` 通过，结果 `168 passed / 1 skipped`。
+  - Next: 继续复跑四项审计套件并确认无回归。
+
+- **[2026-04-24 09:06:00] Action**: 复跑四项审计套件 + i18n 门禁
+  - Result: `interactionTargetTypeAudit(7 passed)`、`interactionDefIdAudit(2 passed)`、`abilityBehaviorAudit(22 passed)`、`interactionCompletenessAudit(5 passed)`、`npm run i18n:check` 全部通过。
+  - Next: 复跑 SmashUp 大厅整文件 E2E，核对统一“实施中”横幅证据。
+
+- **[2026-04-24 09:08:00] Action**: 复跑 `smashup.e2e.ts` 并核图
+  - Result: `npm run test:e2e:ci -- e2e/smashup/smashup.e2e.ts` 全量 `3 passed`；三派系统一斜向横幅截图更新为 `2026-04-24 09:08`。
+  - Next: 回写 `evidence/smashup/smashup-10th-anniversary-factions-audit-20260419.md`、`evidence/smashup/smashup-10th-anniversary-factions-selection-e2e-test.md`、`task_plan.md/findings.md`，统一最新计数与时间口径。
+
+- **[2026-04-24 09:20:00] Action**: 完成证据与规划文档口径同步
+  - Result: 已把 `168 passed / 1 skipped`、`smashup.e2e.ts = 3 passed`、截图时间 `2026-04-24 09:08` 回写到 `evidence/smashup/smashup-10th-anniversary-factions-audit-20260419.md`、`evidence/smashup/smashup-10th-anniversary-factions-selection-e2e-test.md`、`task_plan.md`、`findings.md`。
+  - Next: 继续三派系后续审计/实施批次，不中途收口，等待你最后统一验收时再做总汇报。

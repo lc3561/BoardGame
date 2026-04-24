@@ -919,6 +919,13 @@ export class GameTransportServer {
             return null;
         }
 
+        const currentPhase = typeof match.state.sys?.phase === 'string' ? match.state.sys.phase : '';
+        // DiceThrone 只允许在 defensiveRoll 进入 off-turn legal-only 代打。
+        // 避免真人 main2 被 watchdog 代 AI 执行推进，产生“回合被跳过”的体感。
+        if (match.gameId === 'dicethrone' && currentPhase !== 'defensiveRoll') {
+            return null;
+        }
+
         const currentInteraction = match.state.sys?.interaction as { current?: unknown; isBlocked?: unknown } | undefined;
         if (currentInteraction?.current || currentInteraction?.isBlocked === true) {
             return null;

@@ -4,7 +4,7 @@ import { mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { buildUgcServerGames } from '../ugcRegistration';
 import { getUgcPackageModel } from '../models/UgcPackage';
-import { MONGO_TEST_HOOK_TIMEOUT_MS, createSharedMongoMemoryServer } from '../testUtils/mongoMemory';
+import { MONGO_TEST_HOOK_TIMEOUT_MS, resolvePreferredTestMongoUri } from '../testUtils/mongoMemory';
 import type { MongoMemoryServer } from 'mongodb-memory-server';
 
 const ORIGINAL_ENV = { ...process.env };
@@ -38,9 +38,9 @@ describe('UGC 动态注册集成', () => {
         process.env.MONGO_URI = '';
         process.env.UGC_LOCAL_PATH = uploadDir;
         process.env.UGC_PUBLIC_URL_BASE = '/assets';
-        mongo = await createSharedMongoMemoryServer();
-        const uri = mongo.getUri();
-        await mongoose.connect(uri);
+        const resolved = await resolvePreferredTestMongoUri();
+        mongo = resolved.mongo;
+        await mongoose.connect(resolved.mongoUri);
         mkdirSync(join(uploadDir, 'ugc', 'user-1', 'pkg-1'), { recursive: true });
         writeFileSync(join(uploadDir, 'ugc', 'user-1', 'pkg-1', 'domain.js'), buildDomainCode(), 'utf-8');
     }, MONGO_TEST_HOOK_TIMEOUT_MS);

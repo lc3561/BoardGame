@@ -415,3 +415,15 @@
 ## 2026-04-23 Workflow 升级补记（派系实施流程）
 - 已在 `docs/games/smashup/workflows/smashup-faction-implementation.md` 增补强制门禁：凡新增 `targetType: 'generic'` 的 `sourceId`，必须同步更新 `interactionTargetTypeAudit` 的 `REQUIRED_SOURCE_CONFIGS` 与 `APPROVED_GENERIC_SOURCE_REASONS`。
 - 这次补记把“审计规则”前置到 workflow，避免后续新增派系时再次踩到“实现对了但审计登记漏了”的回归坑。
+
+## 2026-04-24 SmashUp 三派系持续审计 Findings
+- 已复跑三派系主回归与四项审计门禁，最新结果为：
+  - `newFactionAbilities`: `168 passed / 1 skipped`
+  - `interactionTargetTypeAudit`: `7 passed`
+  - `interactionDefIdAudit`: `2 passed`
+  - `abilityBehaviorAudit`: `22 passed`
+  - `interactionCompletenessAudit`: `5 passed`
+  - `npm run i18n:check`: 通过
+- 已复跑 `npm run test:e2e:ci -- e2e/smashup/smashup.e2e.ts`，整文件 `3 passed`（含三派系统一斜向“实施中”横幅用例）。
+- 横幅证据截图已更新到最新时间 `2026-04-24 09:08`（`test-results/evidence-screenshots/_shared/smashup-10th-factions-*.png`）。
+- 历史“20 条缺口”已在 2026-04-23 收敛为 `0 / 0 / 0`，2026-04-24 再次复核保持不变；当前不存在三派系主回归覆盖缺口。

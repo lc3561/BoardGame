@@ -150,6 +150,45 @@ describe('formatSmashUpActionEntry', () => {
         expect(breakdownSegment?.lines.some(line => line.label === 'actionLog.powerModifier.nonMinion')).toBe(true);
     });
 
+    it('BASE_SCORED 显示有效破坏点与锁定计分提示', () => {
+        const command: Command = {
+            type: SU_COMMANDS.PLAY_ACTION,
+            playerId: '0',
+            payload: { cardUid: 'test-1' },
+            timestamp: 2,
+        };
+        const event: GameEvent = {
+            type: SU_EVENTS.BASE_SCORED,
+            payload: {
+                baseIndex: 0,
+                baseDefId: 'base_haunted_house',
+                rankings: [
+                    { playerId: '0', power: 10, vp: 5 },
+                    { playerId: '1', power: 8, vp: 3 },
+                ],
+                totalPower: 18,
+                baseBreakpoint: 20,
+                effectiveBreakpoint: 18,
+                scoredByLockedEligibility: true,
+            },
+            timestamp: 2,
+        } as GameEvent;
+
+        const result = formatSmashUpActionEntry({
+            command,
+            state: createMatchState(),
+            events: [event],
+        });
+        const entries = normalizeEntries(result);
+        const scoredEntry = entries.find((entry) => entry.kind === SU_EVENTS.BASE_SCORED);
+        expect(scoredEntry).toBeTruthy();
+
+        const textSegments = scoredEntry!.segments.filter(segment => segment.type === 'text') as { text: string }[];
+        const mergedText = textSegments.map(segment => segment.text).join('');
+        expect(mergedText).toContain('[总力量: 18/18（原始破坏点 20）]');
+        expect(mergedText).toContain('[锁定计分：进入计分阶段时已达标]');
+    });
+
     it('MINION_MOVED 生成 fromTo i18n segment', () => {
         const command: Command = {
             type: SU_COMMANDS.USE_TALENT,

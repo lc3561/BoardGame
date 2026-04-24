@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 import type { MatchMetadata, StoredMatchState, CreateMatchData } from '../../../engine/transport/storage';
 import { mongoStorage } from '../MongoStorage';
 import { HybridStorage } from '../HybridStorage';
-import { MONGO_TEST_HOOK_TIMEOUT_MS, createSharedMongoMemoryServer } from '../../testUtils/mongoMemory';
+import { MONGO_TEST_HOOK_TIMEOUT_MS, resolvePreferredTestMongoUri } from '../../testUtils/mongoMemory';
 import type { MongoMemoryServer } from 'mongodb-memory-server';
 
 const buildState = (setupData: Record<string, unknown>): StoredMatchState => ({
@@ -40,12 +40,13 @@ const buildCreateData = (setupOverrides?: Record<string, unknown>): CreateMatchD
 // MongoDB 内存服务器在某些环境下启动很慢（>60s），暂时跳过测试
 // 如需运行这些测试，请移除下面的 .skip
 describe('HybridStorage 行为', () => {
-    let mongo: MongoMemoryServer;
+    let mongo: MongoMemoryServer | null = null;
     let hybrid: HybridStorage;
 
     beforeAll(async () => {
-        mongo = await createSharedMongoMemoryServer();
-        await mongoose.connect(mongo.getUri(), { dbName: 'boardgame-test' });
+        const resolved = await resolvePreferredTestMongoUri();
+        mongo = resolved.mongo;
+        await mongoose.connect(resolved.mongoUri, { dbName: 'boardgame-test' });
         await mongoStorage.connect();
     }, MONGO_TEST_HOOK_TIMEOUT_MS);
 

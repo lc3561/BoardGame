@@ -257,4 +257,104 @@ describe('架构测试：防止重复处理', () => {
         );
         expect(allIgorInteractions.length).toBe(1);
     });
+
+    it('D42: ONGOING_ATTACHED 重新附着同一 uid 时应先清理旧挂载位置', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0', {
+                    hand: [makeCard('sleep-1', 'trickster_sleep_spores', 'action', '0')],
+                }),
+                '1': makePlayer('1'),
+            },
+            bases: [
+                makeBase({
+                    defId: 'base_a',
+                    minions: [],
+                    ongoingActions: [{ uid: 'sleep-1', defId: 'trickster_sleep_spores', ownerId: '0', talentUsed: false }],
+                }),
+                makeBase('base_b'),
+            ],
+        });
+
+        const next = applyEvents(core, [{
+            type: SU_EVENTS.ONGOING_ATTACHED,
+            payload: {
+                cardUid: 'sleep-1',
+                defId: 'trickster_sleep_spores',
+                ownerId: '0',
+                targetType: 'base',
+                targetBaseIndex: 1,
+            },
+            timestamp: 1,
+        } as any]);
+
+        expect(next.bases[0].ongoingActions.some(card => card.uid === 'sleep-1')).toBe(false);
+        expect(next.bases[1].ongoingActions.filter(card => card.uid === 'sleep-1')).toHaveLength(1);
+        expect(next.players['0'].hand.some(card => card.uid === 'sleep-1')).toBe(false);
+        expect(next.players['0'].discard.some(card => card.uid === 'sleep-1')).toBe(false);
+    });
+
+    it('D42: MINION_MOVED 应清理同 uid 的历史残留，避免跨基地重复', () => {
+        const duplicated = makeMinion('dup-minion', 'alien_invader', '0', 3);
+        const core = makeState({
+            players: {
+                '0': makePlayer('0'),
+                '1': makePlayer('1'),
+            },
+            bases: [
+                makeBase('base_a', [duplicated]),
+                makeBase('base_b', [{ ...duplicated }]),
+            ],
+        });
+
+        const next = applyEvents(core, [{
+            type: SU_EVENTS.MINION_MOVED,
+            payload: {
+                minionUid: 'dup-minion',
+                minionDefId: 'alien_invader',
+                fromBaseIndex: 0,
+                toBaseIndex: 1,
+                reason: 'regression-test',
+            },
+            timestamp: 2,
+        } as any]);
+
+        expect(next.bases[0].minions.some(minion => minion.uid === 'dup-minion')).toBe(false);
+        expect(next.bases[1].minions.filter(minion => minion.uid === 'dup-minion')).toHaveLength(1);
+    });
+
+    it('D42: CARD_TO_DECK_TOP 把附着行动卡回牌库时应移除随从附着引用', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0'),
+                '1': makePlayer('1'),
+            },
+            bases: [
+                makeBase({
+                    defId: 'base_a',
+                    minions: [
+                        makeMinion('host-1', 'alien_invader', '0', 3, {
+                            owner: '0',
+                            attachedActions: [{ uid: 'attach-1', defId: 'trickster_sleep_spores', ownerId: '0' }],
+                        }),
+                    ],
+                    ongoingActions: [],
+                }),
+            ],
+        });
+
+        const next = applyEvents(core, [{
+            type: SU_EVENTS.CARD_TO_DECK_TOP,
+            payload: {
+                cardUid: 'attach-1',
+                defId: 'trickster_sleep_spores',
+                ownerId: '0',
+            },
+            timestamp: 3,
+        } as any]);
+
+        const host = next.bases[0].minions.find(minion => minion.uid === 'host-1');
+        expect(host?.attachedActions.some(card => card.uid === 'attach-1')).toBe(false);
+        expect(next.players['0'].deck[0]?.uid).toBe('attach-1');
+    });
 });

@@ -140,8 +140,11 @@ describe('Admin Module (e2e)', () => {
     let ugcAssetModel: Model<UgcAssetDocument>;
     let cacheManager: Cache;
     let authService: AuthService;
+    const originalGameServerProxyTarget = process.env.GAME_SERVER_PROXY_TARGET;
 
     beforeAll(async () => {
+        // e2e 仅验证当前测试库数据，避免被外部 game-server 实时房间污染断言。
+        process.env.GAME_SERVER_PROXY_TARGET = 'http://127.0.0.1:1';
         const externalMongoUri = process.env.MONGO_URI;
         mongo = externalMongoUri ? null : await MongoMemoryServer.create();
         const mongoUri = externalMongoUri ?? mongo?.getUri();
@@ -208,6 +211,11 @@ describe('Admin Module (e2e)', () => {
         }
         if (mongo) {
             await mongo.stop();
+        }
+        if (originalGameServerProxyTarget === undefined) {
+            delete process.env.GAME_SERVER_PROXY_TARGET;
+        } else {
+            process.env.GAME_SERVER_PROXY_TARGET = originalGameServerProxyTarget;
         }
     });
 

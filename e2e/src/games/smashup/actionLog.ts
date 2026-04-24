@@ -307,6 +307,10 @@ export function formatSmashUpActionEntry({
                     baseDefId: string;
                     rankings: { playerId: PlayerId; power: number; vp: number }[];
                     minionBreakdowns?: Record<PlayerId, MinionPowerBreakdown[]>;
+                    totalPower?: number;
+                    baseBreakpoint?: number;
+                    effectiveBreakpoint?: number;
+                    scoredByLockedEligibility?: boolean;
                 };
                 const segments: ActionLogSegment[] = [i18nSeg('actionLog.baseScored')];
                 const baseSegment = buildCardSegment(payload.baseDefId);
@@ -359,6 +363,24 @@ export function formatSmashUpActionEntry({
                         }));
                     }
                 });
+
+                if (typeof payload.totalPower === 'number' && typeof payload.effectiveBreakpoint === 'number') {
+                    if (
+                        typeof payload.baseBreakpoint === 'number'
+                        && payload.baseBreakpoint !== payload.effectiveBreakpoint
+                    ) {
+                        segments.push(
+                            textSegment(
+                                ` [总力量: ${payload.totalPower}/${payload.effectiveBreakpoint}（原始破坏点 ${payload.baseBreakpoint}）]`,
+                            ),
+                        );
+                    } else {
+                        segments.push(textSegment(` [总力量: ${payload.totalPower}/${payload.effectiveBreakpoint}]`));
+                    }
+                    if (payload.scoredByLockedEligibility) {
+                        segments.push(textSegment(' [锁定计分：进入计分阶段时已达标]'));
+                    }
+                }
                 
                 // 添加 VP 快照（用于审计和 bug 追溯）
                 const vpSnapshot = Object.entries(core.players)

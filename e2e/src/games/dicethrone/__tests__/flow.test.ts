@@ -3114,6 +3114,82 @@ describe('王权骰铸流程测试', () => {
             expect(result.assertionErrors).toEqual([]);
         });
 
+        it('displayOnly 结算仍只允许攻击方确认', () => {
+            const diceValues = [3, 3, 3, 1, 1, 1, 1, 1, 1, 2, 3, 4, 1, 1];
+            const random = createQueuedRandom(diceValues);
+
+            const runner = new GameTestRunner({
+                domain: DiceThroneDomain,
+                systems: testSystems,
+                playerIds: ['0', '1'],
+                random,
+                setup: createThunderStrikeSetup({ taiji: 0 }),
+                assertFn: assertState,
+                silent: true,
+            });
+            const result = runner.run({
+                name: 'displayOnly 由防御方确认应失败',
+                commands: [
+                    ...advanceTo('offensiveRoll'),
+                    cmd('ROLL_DICE', '0'),
+                    cmd('CONFIRM_ROLL', '0'),
+                    cmd('SELECT_ABILITY', '0', { abilityId: 'thunder-strike' }),
+                    cmd('ADVANCE_PHASE', '0'), // -> defensiveRoll
+                    cmd('ROLL_DICE', '1'),
+                    cmd('CONFIRM_ROLL', '1'),
+                    cmd('SELECT_ABILITY', '1', { abilityId: 'meditation' }),
+                    cmd('ADVANCE_PHASE', '1'), // -> 结算攻击，displayOnly 奖励骰展示暂停
+                    cmd('SKIP_BONUS_DICE_REROLL', '1'),
+                ],
+                expect: {
+                    expectError: { command: 'SKIP_BONUS_DICE_REROLL', error: 'player_mismatch' },
+                    pendingBonusDiceSettlement: {
+                        sourceAbilityId: 'thunder-strike',
+                        attackerId: '0',
+                    },
+                },
+            });
+            expect(result.assertionErrors).toEqual([]);
+        });
+
+        it('非 displayOnly 结算仍只允许攻击方确认', () => {
+            const diceValues = [3, 3, 3, 1, 1, 1, 1, 1, 1, 2, 3, 4, 1, 1];
+            const random = createQueuedRandom(diceValues);
+
+            const runner = new GameTestRunner({
+                domain: DiceThroneDomain,
+                systems: testSystems,
+                playerIds: ['0', '1'],
+                random,
+                setup: createThunderStrikeSetup({ taiji: 2 }),
+                assertFn: assertState,
+                silent: true,
+            });
+            const result = runner.run({
+                name: '非 displayOnly 由防御方确认应失败',
+                commands: [
+                    ...advanceTo('offensiveRoll'),
+                    cmd('ROLL_DICE', '0'),
+                    cmd('CONFIRM_ROLL', '0'),
+                    cmd('SELECT_ABILITY', '0', { abilityId: 'thunder-strike' }),
+                    cmd('ADVANCE_PHASE', '0'), // -> defensiveRoll
+                    cmd('ROLL_DICE', '1'),
+                    cmd('CONFIRM_ROLL', '1'),
+                    cmd('SELECT_ABILITY', '1', { abilityId: 'meditation' }),
+                    cmd('ADVANCE_PHASE', '1'), // -> 结算，进入可重掷交互（非 displayOnly）
+                    cmd('SKIP_BONUS_DICE_REROLL', '1'),
+                ],
+                expect: {
+                    expectError: { command: 'SKIP_BONUS_DICE_REROLL', error: 'player_mismatch' },
+                    pendingBonusDiceSettlement: {
+                        sourceAbilityId: 'thunder-strike',
+                        attackerId: '0',
+                    },
+                },
+            });
+            expect(result.assertionErrors).toEqual([]);
+        });
+
         it('太极不足(1)时直接结算伤害', () => {
             const diceValues = [3, 3, 3, 1, 1, 1, 1, 1, 1, 2, 3, 4, 1, 1];
             const random = createQueuedRandom(diceValues);

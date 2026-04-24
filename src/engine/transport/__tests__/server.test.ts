@@ -3425,6 +3425,98 @@ describe('GameTransportServer（离座与重连）', () => {
         }
     });
 
+    it('dicethrone: human active main2 时 watchdog 不应触发 seat-legal-only 代打推进', async () => {
+        const io = new MockIO();
+        const storage = new InMemoryStorage();
+        const feedbackReporter = vi.fn(async () => undefined);
+        const gameId = 'dicethrone';
+        const resolveDispatchSpy = vi.spyOn(aiModule, 'resolveNextAiDispatch').mockResolvedValue({
+            kind: 'action',
+            resolution: {
+                playerId: '1',
+                source: 'local-ai',
+                action: {
+                    actionId: 'ai-main2-advance',
+                    kind: 'advance-phase',
+                    label: 'AI 主阶段推进',
+                    commands: [{ type: 'ADVANCE_PHASE', payload: {} }],
+                },
+            },
+        } as any);
+
+        await storage.createMatch('match-watchdog-dicethrone-human-main2-no-legal-only', {
+            initialState: {
+                G: {
+                    core: {
+                        activePlayerId: '0',
+                        currentPlayerIndex: 0,
+                        turnOrder: ['0', '1'],
+                    },
+                    sys: {
+                        phase: 'main2',
+                        turnNumber: 5,
+                        eventStream: { nextId: 1 },
+                        interaction: {
+                            current: undefined,
+                            queue: [],
+                            isBlocked: false,
+                        },
+                        responseWindow: {
+                            current: undefined,
+                        },
+                    },
+                },
+                _stateID: 0,
+                randomSeed: 'seed',
+                randomCursor: 0,
+            },
+            metadata: createOnlineAiRecoveryMetadata({
+                gameName: gameId,
+                seatControllers: {
+                    '0': { type: 'human' },
+                    '1': { type: 'local-ai' },
+                },
+            }),
+        });
+
+        const server = new GameTransportServer({
+            io: io as unknown as any,
+            storage,
+            games: [createEngineConfigWithId(gameId)],
+            onlineAiRecoveryTickMs: 0,
+            onlineAiRecoveryTimeoutMs: 0,
+            onlineAiFeedbackReporter: feedbackReporter,
+        });
+
+        const serverInternal = server as unknown as {
+            loadMatch: (matchID: string) => Promise<any>;
+            runOnlineAiRecoveryTick: () => Promise<void>;
+            executeCommandInternal: (
+                match: any,
+                playerID: string,
+                commandType: string,
+                payload: unknown,
+                options?: { suppressBroadcast?: boolean },
+            ) => Promise<boolean>;
+        };
+
+        await serverInternal.loadMatch('match-watchdog-dicethrone-human-main2-no-legal-only');
+        const executeSpy = vi.spyOn(serverInternal, 'executeCommandInternal');
+
+        try {
+            await serverInternal.runOnlineAiRecoveryTick();
+            await serverInternal.runOnlineAiRecoveryTick();
+            await nextTick();
+            await nextTick();
+
+            expect(resolveDispatchSpy).not.toHaveBeenCalled();
+            expect(executeSpy).not.toHaveBeenCalled();
+            expect(feedbackReporter).not.toHaveBeenCalled();
+        } finally {
+            resolveDispatchSpy.mockRestore();
+        }
+    });
+
     it('online AI watchdog 在 defensiveRoll 实际由 human 防御方行动时，不应误对 AI 攻击方执行 force-end-turn', async () => {
         const io = new MockIO();
         const storage = new InMemoryStorage();

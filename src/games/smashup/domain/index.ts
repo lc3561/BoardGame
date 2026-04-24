@@ -516,6 +516,9 @@ export function scoreOneBase(
     }
 
     const scoringBase = updatedCore.bases[baseIndex] ?? updatedBase;
+    const totalPower = getTotalEffectivePowerOnBase(updatedCore, scoringBase, baseIndex);
+    const effectiveBreakpoint = getEffectiveBreakpoint(updatedCore, scoringBase, baseIndex);
+    const scoredByLockedEligibility = totalPower < effectiveBreakpoint;
     const finalPlayerPowers = collectQualifiedPlayerPowers(updatedCore, scoringBase, baseIndex);
     const rankings = buildBaseRankings(baseDef, finalPlayerPowers);
 
@@ -537,7 +540,16 @@ export function scoreOneBase(
 
     const scoreEvt: BaseScoredEvent = {
         type: SU_EVENTS.BASE_SCORED,
-        payload: { baseIndex, baseDefId: scoringBase.defId, rankings, minionBreakdowns },
+        payload: {
+            baseIndex,
+            baseDefId: scoringBase.defId,
+            rankings,
+            minionBreakdowns,
+            totalPower,
+            baseBreakpoint: baseDef.breakpoint,
+            effectiveBreakpoint,
+            scoredByLockedEligibility,
+        },
         timestamp: now,
     };
     events.push(scoreEvt);

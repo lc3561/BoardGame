@@ -19,6 +19,7 @@ import { resolveBonusDieText } from './bonusDieTranslation';
 
 const bonusDieOverlayLogger = createScopedLogger('DT_BONUS_DIE_OVERLAY');
 const BONUS_DIE_CLOSE_CLICK_GUARD_MS = 300;
+const DISPLAY_ONLY_AUTO_CLOSE_DELAY_MS = 3000;
 
 interface BonusDieOverlayProps {
     /** 单颗骰子值 (1-6)，用于普通特写模式 */
@@ -106,10 +107,11 @@ export const BonusDieOverlay: React.FC<BonusDieOverlayProps> = ({
         return resolveBonusDieText(summaryEffectKey, { t, i18n }, summaryEffectParams);
     }, [summaryEffectKey, summaryEffectParams, i18n, t]);
     const hasForceAutoClose = typeof forceAutoCloseDelay === 'number' && forceAutoCloseDelay > 0;
-    const isManualCloseOnly = manualCloseOnly === true && !hasForceAutoClose;
+    // displayOnly 展示态始终允许自动关闭，避免多人房间中被手动关闭策略卡住
+    const isManualCloseOnly = manualCloseOnly === true && !hasForceAutoClose && !displayOnly;
     const resolvedAutoCloseDelay = hasForceAutoClose
         ? forceAutoCloseDelay
-        : (displayOnly ? 8000 : autoCloseDelay);
+        : (displayOnly ? DISPLAY_ONLY_AUTO_CLOSE_DELAY_MS : autoCloseDelay);
 
     // 调试日志：组件渲染
     React.useEffect(() => {

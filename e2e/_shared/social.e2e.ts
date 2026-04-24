@@ -175,12 +175,15 @@ test.describe('社交中心 E2E', () => {
         await expect(page.locator('.whitespace-pre-wrap', { hasText: '来一局吗？' })).toBeVisible();
 
         // 8. Send a message and verify it appears
-        const chatInput = page.getByPlaceholder('输入消息...');
-        await expect(chatInput).toBeVisible();
-        await chatInput.fill('稍后再玩！');
+        const sourceChatInput = page
+            .getByTestId('friends-chat-modal-content')
+            .locator('input[placeholder="输入消息..."]')
+            .first();
+        await expect(sourceChatInput).toBeVisible();
+        await sourceChatInput.fill('稍后再玩！');
         const [sendResponse] = await Promise.all([
             page.waitForResponse('**/auth/messages/send'),
-            chatInput.press('Enter')
+            sourceChatInput.press('Enter')
         ]);
         expect(sendResponse.ok()).toBeTruthy();
         await expect(page.locator('.whitespace-pre-wrap', { hasText: '稍后再玩！' })).toBeVisible();
@@ -201,8 +204,11 @@ test.describe('社交中心 E2E', () => {
         await expect(page.getByText('好友甲')).toBeVisible();
         await page.getByRole('button', { name: /好友甲/i }).click();
 
-        const chatInput = page.getByPlaceholder('输入消息...');
-        await expect(chatInput).toBeVisible();
+        const sourceChatInput = page
+            .getByTestId('friends-chat-modal-content')
+            .locator('input[placeholder="输入消息..."]')
+            .first();
+        await expect(sourceChatInput).toBeVisible();
 
         await page.evaluate(() => {
             const root = document.documentElement;
@@ -211,11 +217,23 @@ test.describe('社交中心 E2E', () => {
             root.dataset.keyboardVisible = 'true';
         });
 
-        await chatInput.click();
-        await chatInput.fill('移动端社交聊天输入可见性校验');
-        await expect(chatInput).toHaveValue('移动端社交聊天输入可见性校验');
+        await sourceChatInput.click();
+        const mobileProxyInput = page.getByTestId('mobile-text-entry-proxy-input').last();
+        let activeChatInput = sourceChatInput;
 
-        const metrics = await chatInput.evaluate((node) => {
+        const sourceEditable = await sourceChatInput.isEditable().catch(() => false);
+        if (!sourceEditable) {
+            await mobileProxyInput.waitFor({ state: 'visible', timeout: 3000 }).catch(() => undefined);
+            const proxyEditable = await mobileProxyInput.isEditable().catch(() => false);
+            if (proxyEditable) {
+                activeChatInput = mobileProxyInput;
+            }
+        }
+
+        await activeChatInput.fill('移动端社交聊天输入可见性校验');
+        await expect(activeChatInput).toHaveValue('移动端社交聊天输入可见性校验');
+
+        const metrics = await activeChatInput.evaluate((node) => {
             const rect = node.getBoundingClientRect();
             const fontSize = Number.parseFloat(window.getComputedStyle(node).fontSize || '0');
             const runtimeViewportHeight = Number.parseFloat(

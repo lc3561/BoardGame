@@ -134,8 +134,8 @@ test.describe('大杀四方大厅 E2E', () => {
       test.skip(true, 'Game server unavailable for online tests.');
     }
 
-    await openSmashUpModal(hostPage);
-    await hostPage.getByRole('button', { name: /创建房间|Create Room/i }).click();
+    const createRoomButton = await openSmashUpModal(hostPage);
+    await createRoomButton.click();
     const createHeading = hostPage.getByRole('heading', { name: /创建房间|Create Room/i });
     await expect(createHeading).toBeVisible({ timeout: 10000 });
     const createModal = createHeading.locator('..').locator('..');
@@ -217,8 +217,8 @@ test.describe('大杀四方大厅 E2E', () => {
       test.skip(true, 'Game server unavailable for online tests.');
     }
 
-    await openSmashUpModal(hostPage);
-    await hostPage.getByRole('button', { name: /创建房间|Create Room/i }).click();
+    const createRoomButton = await openSmashUpModal(hostPage);
+    await createRoomButton.click();
     const createHeading = hostPage.getByRole('heading', { name: /创建房间|Create Room/i });
     await expect(createHeading).toBeVisible({ timeout: 10000 });
     const createModal = createHeading.locator('..').locator('..');
@@ -265,8 +265,7 @@ test.describe('大杀四方大厅 E2E', () => {
       test.skip(true, 'Game server unavailable for online tests.');
     }
 
-    await openSmashUpModal(hostPage);
-    const createRoomButton = hostPage.getByRole('button', { name: /创建房间|Create Room/i });
+    const createRoomButton = await openSmashUpModal(hostPage);
     await expect(createRoomButton).toBeVisible({ timeout: 120000 });
     await createRoomButton.click({ timeout: 120000 });
     const createHeading = hostPage.getByRole('heading', { name: /创建房间|Create Room/i });

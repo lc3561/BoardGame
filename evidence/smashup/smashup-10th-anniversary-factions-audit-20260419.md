@@ -230,3 +230,38 @@
      - `5 passed`
   6. `npm run i18n:check`
      - 通过（`no missing keys detected`）
+
+### 复审记录（2026-04-24）
+
+> 本轮目标：确认三派系审计在最新代码基线上持续全绿，并将计数、E2E 与截图时间统一到最新事实。
+
+本轮复审命令与结果：
+1. `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/newFactionAbilities.test.ts --configLoader native --maxWorkers 1`
+   - 结果：`168 passed / 1 skipped`
+2. `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/interactionTargetTypeAudit.test.ts --config vitest.config.audit.ts --configLoader native --maxWorkers 1`
+   - 结果：`7 passed`
+3. `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/interactionDefIdAudit.test.ts --config vitest.config.audit.ts --configLoader native --maxWorkers 1`
+   - 结果：`2 passed`
+4. `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/abilityBehaviorAudit.test.ts --config vitest.config.audit.ts --configLoader native --maxWorkers 1`
+   - 结果：`22 passed`
+5. `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/interactionCompletenessAudit.test.ts --config vitest.config.audit.ts --configLoader native --maxWorkers 1`
+   - 结果：`5 passed`
+6. `npm run i18n:check`
+   - 结果：通过（`no missing keys detected`）
+7. `npm run test:e2e:ci -- e2e/smashup/smashup.e2e.ts`
+   - 结果：`3 passed`
+
+静态覆盖结论（持续有效）：
+- Mermaids：`0` 缺口
+- Skeletons：`0` 缺口
+- World Champs：`0` 缺口
+
+本轮关键截图（绝对路径，最新时间 2026-04-24 09:08）：
+- `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-selection.png`
+- `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-mermaids-banner.png`
+- `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-skeletons-banner.png`
+- `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-world-champs-banner.png`
+
+结论：
+- 三派系（Mermaids / Skeletons / World Champs）在 2026-04-24 基线上继续保持“能力回归 + 4 审计套件 + E2E + i18n”全绿。
+- 旧记录中的 `166 passed / 1 skipped` 属于 2026-04-23 历史快照，当前最新口径为 `168 passed / 1 skipped`。

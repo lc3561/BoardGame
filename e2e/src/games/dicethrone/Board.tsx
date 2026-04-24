@@ -1528,24 +1528,23 @@ export const DiceThroneBoard: React.FC<DiceThroneBoardProps> = ({ G: rawG, dispa
                     // 额外骰子
                     bonusDie={bonusDie}
                     onBonusDieClose={() => {
-                        console.log('[onBonusDieClose] 被调用', {
-                            hasPendingSettlement: !!G.pendingBonusDiceSettlement,
-                            settlementAttackerId: G.pendingBonusDiceSettlement?.attackerId,
-                            rootPid,
-                            isAttacker: G.pendingBonusDiceSettlement?.attackerId === rootPid,
-                        });
-                        
+                        const settlement = G.pendingBonusDiceSettlement;
                         handleBonusDieClose();
-                        
-                        // 如果有 pendingBonusDiceSettlement，需要发送 SKIP 命令清除
-                        if (G.pendingBonusDiceSettlement) {
-                            console.log('[onBonusDieClose] 发送 SKIP_BONUS_DICE_REROLL');
+
+                        if (!settlement) {
+                            return;
+                        }
+
+                        // 只有 attacker 关闭时才触发奖励骰结算推进；
+                        // 防御方/观察者关闭只影响本地特写展示，不触发结算命令。
+                        const canSettleFromCurrentView = settlement.attackerId === rootPid;
+                        if (canSettleFromCurrentView) {
                             engineMoves.skipBonusDiceReroll();
                         }
-                        
+
                         // 防御方/观察者关闭 displayOnly 面板时，记录已关闭的 settlement id
-                        if (G.pendingBonusDiceSettlement && G.pendingBonusDiceSettlement.attackerId !== rootPid) {
-                            setDismissedBonusDiceId(G.pendingBonusDiceSettlement.id);
+                        if (settlement.attackerId !== rootPid) {
+                            setDismissedBonusDiceId(settlement.id);
                         }
                     }}
 

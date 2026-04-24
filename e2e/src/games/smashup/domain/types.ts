@@ -1133,6 +1133,17 @@ export interface BaseScoredEvent extends GameEvent<'su:base_scored'> {
         rankings: { playerId: PlayerId; power: number; vp: number }[];
         /** 每位玩家的随从力量 breakdown（可选，用于 ActionLog 展示） */
         minionBreakdowns?: Record<PlayerId, MinionPowerBreakdown[]>;
+        /** 计分当下的总力量（含非随从来源的力量） */
+        totalPower?: number;
+        /** 基地原始破坏点（卡面值） */
+        baseBreakpoint?: number;
+        /** 计分当下有效破坏点（含持续/临时修正） */
+        effectiveBreakpoint?: number;
+        /**
+         * 是否属于“锁定计分”：
+         * 进入 scoreBases 阶段时已达标，后续窗口中被移走/减力后仍按规则计分。
+         */
+        scoredByLockedEligibility?: boolean;
     };
 }
 

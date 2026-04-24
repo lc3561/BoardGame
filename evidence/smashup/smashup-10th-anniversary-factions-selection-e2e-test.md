@@ -1,4 +1,4 @@
-# Smash Up 10 周年三派系选择页 E2E 证据（更新于 2026-04-22）
+# Smash Up 10 周年三派系选择页 E2E 证据（更新于 2026-04-24）
 
 ## 验证范围
 
@@ -74,6 +74,23 @@ node scripts/infra/run-e2e-command.mjs isolated e2e/smashup/smashup.e2e.ts --gre
   - `npm run test:e2e:ci -- e2e/smashup/smashup.e2e.ts`
 - 结果：单用例 `1 passed`；整文件 `3 passed`（含三派系统一斜向“实施中”横幅用例）。
 - 关键截图（绝对路径）：
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-selection.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-mermaids-banner.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-skeletons-banner.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-world-champs-banner.png`
+
+## 复测记录（2026-04-24）
+
+- 触发原因：继续收敛长期任务审计口径，确认最新主线下整文件 E2E 仍稳定通过。
+- 复测命令：
+  - `npm run test:e2e:ci -- e2e/smashup/smashup.e2e.ts`
+- 复测结果：
+  - 整文件 `3 passed`（含三派系统一斜向“实施中”横幅用例）。
+- 肉眼核图结论：
+  - 三派系卡面在同页可见，横幅样式一致且未出现第二套“实施中”样式；
+  - 横幅文案仍为单一“实施中 / Implementation in Progress”，无“分批实施/持续完善”长文案回流；
+  - 派系页主布局与横幅层级稳定，无新增遮挡或错位。
+- 本次复测截图（绝对路径，最新时间 2026-04-24 09:08）：
   - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-selection.png`
   - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-mermaids-banner.png`
   - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-skeletons-banner.png`
