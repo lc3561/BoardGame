@@ -892,6 +892,56 @@ describe('smashup', () => {
         expect(finalCore.bases[0].buriedCards?.some(card => card.uid === 'sphinx-hand-card')).toBe(true);
     });
 
+    it('狮身人面像天赋同回合只能使用一次', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0', {
+                    hand: [{ uid: 'sphinx-limit-card', defId: 'robot_warbot', type: 'minion', owner: '0' }],
+                }),
+                '1': makePlayer('1'),
+            },
+            bases: [makeBase()],
+            titans: [{
+                uid: 't-sphinx-limit',
+                defId: 'sphinx',
+                faction: SMASHUP_FACTION_IDS.ANCIENT_EGYPTIANS,
+                ownerId: '0',
+                controllerId: '0',
+                powerCounters: 0,
+                talentUsed: false,
+                location: { zone: 'base', baseIndex: 0, enteredAt: 1 },
+            } satisfies TitanState],
+        });
+
+        const state = makeMatchState(core);
+        const command: SmashUpCommand = {
+            type: SU_COMMANDS.USE_TALENT,
+            playerId: '0',
+            payload: { titanUid: 't-sphinx-limit', baseIndex: 0 },
+            timestamp: 90,
+        };
+
+        const firstValidation = SmashUpDomain.validate(state, command);
+        expect(firstValidation.valid).toBe(true);
+
+        const firstEvents = SmashUpDomain.execute(state, command, FIXED_RANDOM);
+        expect(firstEvents.map(event => event.type)).toContain(SU_EVENTS.TALENT_USED);
+
+        const coreAfterFirstUse = firstEvents.reduce(
+            (acc, event) => SmashUpDomain.reduce(acc, event),
+            core,
+        );
+
+        const secondValidation = SmashUpDomain.validate(
+            { ...state, core: coreAfterFirstUse },
+            command,
+        );
+        expect(secondValidation).toEqual({
+            valid: false,
+            error: '本回合天赋已使用',
+        });
+    });
+
     it('翻开埋葬的远古诅咒在仅有一个跨基地合法目标时会自动附着，并进入远古诅咒确认交互', () => {
         const core = makeState({
             players: {
