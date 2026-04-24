@@ -247,7 +247,7 @@ const AppContent = () => {
                       <Route
                         path="feedback"
                         element={(
-                          <AdminGuard allowedRoles={['admin', 'developer']} fallbackPath="/admin/changelogs">
+                          <AdminGuard allowedRoles={['admin', 'developer', 'user']} allowGuest fallbackPath="/admin">
                             <FeedbackPage />
                           </AdminGuard>
                         )}

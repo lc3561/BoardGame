@@ -326,7 +326,11 @@ export const handleAttackInitiated: EventHandler<Extract<DiceThroneEvent, { type
     event
 ) => {
     const { attackerId, defenderId, sourceAbilityId, isDefendable, isUltimate } = event.payload;
-    const attackFaceCounts = getFaceCounts(getActiveDice(state));
+    const activeAttackDice = getActiveDice(state);
+    const attackFaceCounts = getFaceCounts(activeAttackDice);
+    const attackDiceValues = activeAttackDice
+        .map((die) => die.value)
+        .filter((value): value is number => Number.isInteger(value) && value >= 1 && value <= 6);
     const attacker = state.players[attackerId];
     const queuedAttackModifierBonusDamage = attacker?.pendingBonusDamage ?? 0;
     const players = attacker?.pendingBonusDamage !== undefined
@@ -351,6 +355,7 @@ export const handleAttackInitiated: EventHandler<Extract<DiceThroneEvent, { type
             damageResolved: false,
             resolvedDamage: 0,
             attackDiceFaceCounts: attackFaceCounts,
+            attackDiceValues,
             bonusDamage: queuedAttackModifierBonusDamage,
             attackModifierBonusDamage: queuedAttackModifierBonusDamage,
         },

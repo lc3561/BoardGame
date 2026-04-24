@@ -241,7 +241,74 @@ describe('CustomAction categories 与 handler 输出一致性审计', () => {
         expect(violations).toEqual([]);
     });
 
-    it('gunslinger-revolver-2-four-kind 应按骰面 symbol 判断四同样，不按数值 value', () => {
+    it('gunslinger-revolver-2-four-kind 仅在四个相同数字时触发', () => {
+        const handler = getCustomActionHandler('gunslinger-revolver-2-four-kind');
+        expect(handler).toBeDefined();
+
+        const gunslingerData = CHARACTER_DATA_MAP.gunslinger;
+        const monkData = CHARACTER_DATA_MAP.monk;
+        const state = {
+            players: {
+                '0': {
+                    characterId: 'gunslinger',
+                    resources: { [RESOURCE_IDS.HP]: 50, [RESOURCE_IDS.CP]: 5 },
+                    tokens: {},
+                    tokenStackLimits: {},
+                    statusEffects: {},
+                    abilities: gunslingerData.abilities,
+                    hand: [],
+                    deck: [],
+                    discard: [],
+                    abilityLevels: {},
+                    dice: gunslingerData.diceDefinition,
+                },
+                '1': {
+                    characterId: 'monk',
+                    resources: { [RESOURCE_IDS.HP]: 50, [RESOURCE_IDS.CP]: 5 },
+                    tokens: {},
+                    tokenStackLimits: {},
+                    statusEffects: {},
+                    abilities: monkData.abilities,
+                    hand: [],
+                    deck: [],
+                    discard: [],
+                    abilityLevels: {},
+                    dice: monkData.diceDefinition,
+                },
+            },
+            activePlayerId: '0',
+            rollDiceCount: 5,
+            tokenDefinitions: ALL_TOKEN_DEFINITIONS,
+            pendingAttack: {
+                attackerId: '0',
+                defenderId: '1',
+                abilityId: 'revolver',
+                bonusDamage: 0,
+            },
+            dice: [
+                { id: 'die-0', value: 1, locked: false, symbol: 'bullet', definitionId: gunslingerData.diceDefinition?.[0]?.id ?? 'gunslinger-die' },
+                { id: 'die-1', value: 1, locked: false, symbol: 'bullet', definitionId: gunslingerData.diceDefinition?.[0]?.id ?? 'gunslinger-die' },
+                { id: 'die-2', value: 1, locked: false, symbol: 'bullet', definitionId: gunslingerData.diceDefinition?.[0]?.id ?? 'gunslinger-die' },
+                { id: 'die-3', value: 1, locked: false, symbol: 'bullet', definitionId: gunslingerData.diceDefinition?.[0]?.id ?? 'gunslinger-die' },
+                { id: 'die-4', value: 5, locked: false, symbol: 'dash', definitionId: gunslingerData.diceDefinition?.[0]?.id ?? 'gunslinger-die' },
+            ],
+        };
+
+        const ctx = createMockContext('gunslinger-revolver-2-four-kind', state);
+        const events = handler!(ctx);
+
+        expect(events).toHaveLength(1);
+        expect(events[0]).toMatchObject({
+            type: 'STATUS_APPLIED',
+            payload: {
+                targetId: '1',
+                statusId: 'knockdown',
+                stacks: 1,
+            },
+        });
+    });
+
+    it('gunslinger-revolver-2-four-kind 在同符号但不足四个相同数字时不应触发', () => {
         const handler = getCustomActionHandler('gunslinger-revolver-2-four-kind');
         expect(handler).toBeDefined();
 
@@ -295,77 +362,10 @@ describe('CustomAction categories 与 handler 输出一致性审计', () => {
         };
 
         const ctx = createMockContext('gunslinger-revolver-2-four-kind', state);
-        const events = handler!(ctx);
-
-        expect(events).toHaveLength(1);
-        expect(events[0]).toMatchObject({
-            type: 'STATUS_APPLIED',
-            payload: {
-                targetId: '1',
-                statusId: 'knockdown',
-                stacks: 1,
-            },
-        });
-    });
-
-    it('gunslinger-revolver-2-four-kind 在不足四个相同骰面时不应触发', () => {
-        const handler = getCustomActionHandler('gunslinger-revolver-2-four-kind');
-        expect(handler).toBeDefined();
-
-        const gunslingerData = CHARACTER_DATA_MAP.gunslinger;
-        const monkData = CHARACTER_DATA_MAP.monk;
-        const state = {
-            players: {
-                '0': {
-                    characterId: 'gunslinger',
-                    resources: { [RESOURCE_IDS.HP]: 50, [RESOURCE_IDS.CP]: 5 },
-                    tokens: {},
-                    tokenStackLimits: {},
-                    statusEffects: {},
-                    abilities: gunslingerData.abilities,
-                    hand: [],
-                    deck: [],
-                    discard: [],
-                    abilityLevels: {},
-                    dice: gunslingerData.diceDefinition,
-                },
-                '1': {
-                    characterId: 'monk',
-                    resources: { [RESOURCE_IDS.HP]: 50, [RESOURCE_IDS.CP]: 5 },
-                    tokens: {},
-                    tokenStackLimits: {},
-                    statusEffects: {},
-                    abilities: monkData.abilities,
-                    hand: [],
-                    deck: [],
-                    discard: [],
-                    abilityLevels: {},
-                    dice: monkData.diceDefinition,
-                },
-            },
-            activePlayerId: '0',
-            rollDiceCount: 5,
-            tokenDefinitions: ALL_TOKEN_DEFINITIONS,
-            pendingAttack: {
-                attackerId: '0',
-                defenderId: '1',
-                abilityId: 'revolver',
-                bonusDamage: 0,
-            },
-            dice: [
-                { id: 'die-0', value: 1, locked: false, symbol: 'bullet', definitionId: gunslingerData.diceDefinition?.[0]?.id ?? 'gunslinger-die' },
-                { id: 'die-1', value: 2, locked: false, symbol: 'bullet', definitionId: gunslingerData.diceDefinition?.[0]?.id ?? 'gunslinger-die' },
-                { id: 'die-2', value: 3, locked: false, symbol: 'bullet', definitionId: gunslingerData.diceDefinition?.[0]?.id ?? 'gunslinger-die' },
-                { id: 'die-3', value: 4, locked: false, symbol: 'dash', definitionId: gunslingerData.diceDefinition?.[0]?.id ?? 'gunslinger-die' },
-                { id: 'die-4', value: 5, locked: false, symbol: 'dash', definitionId: gunslingerData.diceDefinition?.[0]?.id ?? 'gunslinger-die' },
-            ],
-        };
-
-        const ctx = createMockContext('gunslinger-revolver-2-four-kind', state);
         expect(handler!(ctx)).toEqual([]);
     });
 
-    it('samurai-katana-slice-threshold-4 应按骰面 symbol 判断四同样（1/2/3/1 也应触发）', () => {
+    it('samurai-katana-slice-threshold-4 仅在四个相同数字时触发', () => {
         const handler = getCustomActionHandler('samurai-katana-slice-threshold-4');
         expect(handler).toBeDefined();
 
@@ -411,8 +411,8 @@ describe('CustomAction categories 与 handler 输出一致性审计', () => {
             },
             dice: [
                 { id: 'die-0', value: 1, locked: false, symbol: 'katana', definitionId: samuraiData.diceDefinition?.[0]?.id ?? 'samurai-die' },
-                { id: 'die-1', value: 2, locked: false, symbol: 'katana', definitionId: samuraiData.diceDefinition?.[0]?.id ?? 'samurai-die' },
-                { id: 'die-2', value: 3, locked: false, symbol: 'katana', definitionId: samuraiData.diceDefinition?.[0]?.id ?? 'samurai-die' },
+                { id: 'die-1', value: 1, locked: false, symbol: 'katana', definitionId: samuraiData.diceDefinition?.[0]?.id ?? 'samurai-die' },
+                { id: 'die-2', value: 1, locked: false, symbol: 'katana', definitionId: samuraiData.diceDefinition?.[0]?.id ?? 'samurai-die' },
                 { id: 'die-3', value: 1, locked: false, symbol: 'katana', definitionId: samuraiData.diceDefinition?.[0]?.id ?? 'samurai-die' },
                 { id: 'die-4', value: 6, locked: false, symbol: 'rising_sun', definitionId: samuraiData.diceDefinition?.[0]?.id ?? 'samurai-die' },
             ],
@@ -432,7 +432,7 @@ describe('CustomAction categories 与 handler 输出一致性审计', () => {
         });
     });
 
-    it('samurai-katana-slice-threshold-3 应按骰面 symbol 判断三同样（1/2/3 也应触发）', () => {
+    it('samurai-katana-slice-threshold-3 仅在三个相同数字时触发', () => {
         const handler = getCustomActionHandler('samurai-katana-slice-threshold-3');
         expect(handler).toBeDefined();
 
@@ -478,8 +478,8 @@ describe('CustomAction categories 与 handler 输出一致性审计', () => {
             },
             dice: [
                 { id: 'die-0', value: 1, locked: false, symbol: 'katana', definitionId: samuraiData.diceDefinition?.[0]?.id ?? 'samurai-die' },
-                { id: 'die-1', value: 2, locked: false, symbol: 'katana', definitionId: samuraiData.diceDefinition?.[0]?.id ?? 'samurai-die' },
-                { id: 'die-2', value: 3, locked: false, symbol: 'katana', definitionId: samuraiData.diceDefinition?.[0]?.id ?? 'samurai-die' },
+                { id: 'die-1', value: 1, locked: false, symbol: 'katana', definitionId: samuraiData.diceDefinition?.[0]?.id ?? 'samurai-die' },
+                { id: 'die-2', value: 1, locked: false, symbol: 'katana', definitionId: samuraiData.diceDefinition?.[0]?.id ?? 'samurai-die' },
                 { id: 'die-3', value: 4, locked: false, symbol: 'helm', definitionId: samuraiData.diceDefinition?.[0]?.id ?? 'samurai-die' },
                 { id: 'die-4', value: 6, locked: false, symbol: 'rising_sun', definitionId: samuraiData.diceDefinition?.[0]?.id ?? 'samurai-die' },
             ],

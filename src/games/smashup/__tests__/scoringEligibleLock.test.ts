@@ -176,6 +176,20 @@ describe('计分阶段 eligible 基地锁定', () => {
             const result = getScoringEligibleBaseIndices(core);
             expect(result).toEqual([0]);
         });
+
+        it('锁定列表包含重复索引时应保序去重，避免重复计分/重复交互选项', () => {
+            const core = makeMinimalCore({
+                bases: [
+                    makeBase(BASE_JUNGLE),
+                    makeBase(BASE_TAR_PITS),
+                    makeBase(BASE_NINJA_DOJO),
+                ],
+                scoringEligibleBaseIndices: [2, 2, 0, 2, 0],
+            });
+
+            const result = getScoringEligibleBaseIndices(core);
+            expect(result).toEqual([2, 0]);
+        });
     });
 
     describe('SCORING_ELIGIBLE_BASES_LOCKED 事件 reduce', () => {
@@ -189,6 +203,18 @@ describe('计分阶段 eligible 基地锁定', () => {
                 timestamp: 1,
             } as any);
             expect(updated.scoringEligibleBaseIndices).toEqual([0, 2]);
+        });
+
+        it('写入锁定列表时应去重，避免后续重复消费同一基地', () => {
+            const core = makeMinimalCore({ bases: [makeBase(BASE_JUNGLE), makeBase(BASE_TAR_PITS)] });
+
+            const updated = reduce(core, {
+                type: SU_EVENT_TYPES.SCORING_ELIGIBLE_BASES_LOCKED,
+                payload: { baseIndices: [1, 1, 0, 1] },
+                timestamp: 1,
+            } as any);
+
+            expect(updated.scoringEligibleBaseIndices).toEqual([1, 0]);
         });
     });
 

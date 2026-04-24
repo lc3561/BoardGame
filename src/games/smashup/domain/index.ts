@@ -182,7 +182,7 @@ function buildBaseRankings(
 }
 
 function getLockedScoringBaseIndices(core: SmashUpCore): number[] {
-    return core.scoringEligibleBaseIndices ?? getScoringEligibleBaseIndices(core);
+    return getScoringEligibleBaseIndices(core);
 }
 
 function ensureScoreBasesSession(state: MatchState<SmashUpCore>): MatchState<SmashUpCore> {

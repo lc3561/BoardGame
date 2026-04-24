@@ -8,7 +8,7 @@
  * - 琛屽姩鍗￠€昏緫 (Moon Shadow Strike / Volley / Watch Out)
  */
 
-import { getActiveDice, getFaceCounts, getPlayerDieFace } from '../rules';
+import { getActiveDice, getFaceCounts, getMaxDuplicateValueCountFromValues, getPlayerDieFace } from '../rules';
 import { STATUS_IDS, MOON_ELF_DICE_FACE_IDS } from '../ids';
 import { RESOURCE_IDS } from '../resources';
 import type {
@@ -169,9 +169,9 @@ function handleLongbowBonusCheck4(context: CustomActionContext): DiceThroneEvent
         console.warn('[moon_elf] handleLongbowBonusCheck4: No defenderId in context');
         return [];
     }
-    const faceCounts = state.pendingAttack?.attackDiceFaceCounts;
-    if (!faceCounts) return [];
-    const hasMatch = Object.values(faceCounts).some(count => count >= 4);
+    const attackDiceValues = state.pendingAttack?.attackDiceValues
+        ?? getActiveDice(state).map((die) => die.value);
+    const hasMatch = getMaxDuplicateValueCountFromValues(attackDiceValues) >= 4;
     if (!hasMatch) return [];
     return [applyStatus(opponentId, STATUS_IDS.ENTANGLE, 1, sourceAbilityId, state, timestamp)];
 }
@@ -187,9 +187,9 @@ function handleLongbowBonusCheck3(context: CustomActionContext): DiceThroneEvent
         console.warn('[moon_elf] handleLongbowBonusCheck3: No defenderId in context');
         return [];
     }
-    const faceCounts = state.pendingAttack?.attackDiceFaceCounts;
-    if (!faceCounts) return [];
-    const hasMatch = Object.values(faceCounts).some(count => count >= 3);
+    const attackDiceValues = state.pendingAttack?.attackDiceValues
+        ?? getActiveDice(state).map((die) => die.value);
+    const hasMatch = getMaxDuplicateValueCountFromValues(attackDiceValues) >= 3;
     if (!hasMatch) return [];
     return [applyStatus(opponentId, STATUS_IDS.ENTANGLE, 1, sourceAbilityId, state, timestamp)];
 }

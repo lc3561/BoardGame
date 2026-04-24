@@ -8,7 +8,7 @@ import { AdminGuard } from '../admin/guards/admin.guard';
 import { InternalFeedbackGuard } from '../../shared/guards/internal-feedback.guard';
 
 type FeedbackAdminRequest = {
-    user: {
+    user?: {
         userId: string;
     };
 };
@@ -47,43 +47,46 @@ export class FeedbackInternalController {
     }
 }
 
-@UseGuards(JwtAuthGuard, AdminGuard)
-@Roles('admin', 'developer')
 @Controller('admin/feedback')
 export class FeedbackAdminController {
     constructor(@Inject(FeedbackService) private readonly feedbackService: FeedbackService) { }
 
+    @UseGuards(OptionalJwtAuthGuard)
     @Get()
     async findAll(@Request() req: FeedbackAdminRequest, @Query() query: QueryFeedbackDto) {
-        return this.feedbackService.findAll(req.user.userId, query);
+        return this.feedbackService.findAll(req.user?.userId ?? null, query);
     }
 
-    @Roles('admin', 'developer')
+    @UseGuards(JwtAuthGuard, AdminGuard)
+    @Roles('admin', 'developer', 'user')
     @Patch(':id/status')
     async updateStatus(@Request() req: FeedbackAdminRequest, @Param('id') id: string, @Body() dto: UpdateFeedbackStatusDto) {
-        const updated = await this.feedbackService.updateStatus(req.user.userId, id, dto.status);
+        const updated = await this.feedbackService.updateStatus(req.user!.userId, id, dto.status);
         if (!updated) {
             throw new NotFoundException('feedback not found');
         }
         return updated;
     }
 
-    @Roles('admin', 'developer')
+    @UseGuards(JwtAuthGuard, AdminGuard)
+    @Roles('admin', 'developer', 'user')
     @Delete(':id')
     async deleteOne(@Request() req: FeedbackAdminRequest, @Param('id') id: string) {
-        const ok = await this.feedbackService.deleteOne(req.user.userId, id);
+        const ok = await this.feedbackService.deleteOne(req.user!.userId, id);
         return { ok };
     }
 
-    @Roles('admin', 'developer')
+    @UseGuards(JwtAuthGuard, AdminGuard)
+    @Roles('admin', 'developer', 'user')
     @Post('bulk-delete')
     async bulkDelete(@Request() req: FeedbackAdminRequest, @Body() body: BulkFeedbackIdsDto) {
-        return this.feedbackService.bulkDeleteByIds(req.user.userId, body.ids || []);
+        return this.feedbackService.bulkDeleteByIds(req.user!.userId, body.ids || []);
     }
 
-    @Roles('admin', 'developer')
+    @UseGuards(JwtAuthGuard, AdminGuard)
+    @Roles('admin', 'developer', 'user')
     @Post('bulk-delete-by-filter')
     async bulkDeleteByFilter(@Request() req: FeedbackAdminRequest, @Body() body: FeedbackFilterDto) {
-        return this.feedbackService.bulkDeleteByFilter(req.user.userId, body);
+        return this.feedbackService.bulkDeleteByFilter(req.user!.userId, body);
     }
 }

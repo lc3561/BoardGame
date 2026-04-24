@@ -689,7 +689,7 @@ export function getEffectiveBreakpoint(
  */
 export function getScoringEligibleBaseIndices(state: SmashUpCore): number[] {
     if (state.scoringEligibleBaseIndices !== undefined) {
-        return state.scoringEligibleBaseIndices;
+        return normalizeScoringEligibleBaseIndices(state.scoringEligibleBaseIndices);
     }
     // 回退：实时计算
     const indices: number[] = [];
@@ -702,5 +702,17 @@ export function getScoringEligibleBaseIndices(state: SmashUpCore): number[] {
             indices.push(i);
         }
     }
-    return indices;
+    return normalizeScoringEligibleBaseIndices(indices);
+}
+
+export function normalizeScoringEligibleBaseIndices(indices: readonly number[]): number[] {
+    const seen = new Set<number>();
+    const normalized: number[] = [];
+    for (const index of indices) {
+        if (!Number.isInteger(index) || index < 0) continue;
+        if (seen.has(index)) continue;
+        seen.add(index);
+        normalized.push(index);
+    }
+    return normalized;
 }

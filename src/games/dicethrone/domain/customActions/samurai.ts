@@ -9,7 +9,7 @@ import type {
     TokenGrantedEvent,
 } from '../events';
 import { SAMURAI_DICE_FACE_IDS, TOKEN_IDS } from '../ids';
-import { getActiveDice, getFaceCounts, getOpponents, getPlayerDieFace, getTokenStackLimit } from '../rules';
+import { getActiveDice, getFaceCounts, getMaxDuplicateValueCount, getOpponents, getPlayerDieFace, getTokenStackLimit } from '../rules';
 import { createDamageCalculation } from '../../../../engine/primitives/damageCalculation';
 import type { PendingInteraction } from '../core-types';
 
@@ -75,18 +75,6 @@ function createSingleOpponentInteraction(
         sourceCommandType: 'ABILITY_EFFECT',
         timestamp,
     } as InteractionRequestedEvent;
-}
-
-function getMaxDuplicateFaceCount(state: CustomActionContext['state']): number {
-    const counts = new Map<string, number>();
-    for (const die of getActiveDice(state)) {
-        const face = typeof die.symbol === 'string' && die.symbol.length > 0
-            ? die.symbol
-            : (Array.isArray(die.symbols) && typeof die.symbols[0] === 'string' ? die.symbols[0] : null);
-        if (!face) continue;
-        counts.set(face, (counts.get(face) ?? 0) + 1);
-    }
-    return Math.max(0, ...counts.values());
 }
 
 function handleBackStrikeUse({ ctx, state, random, timestamp }: CustomActionContext): DiceThroneEvent[] {
@@ -191,7 +179,7 @@ function handleKatanaSliceThreshold(
 ): DiceThroneEvent[] {
     const defenderId = ctx.defenderId;
     if (!defenderId) return [];
-    if (getMaxDuplicateFaceCount(state) < threshold) return [];
+    if (getMaxDuplicateValueCount(getActiveDice(state)) < threshold) return [];
 
     const shameEvent = createGrantTokenEvent(state, defenderId, TOKEN_IDS.SHAME, 1, sourceAbilityId, timestamp);
     return shameEvent ? [shameEvent] : [];

@@ -298,6 +298,29 @@ describe('AI legal actions', () => {
         )).toBe(false);
     });
 
+    it('displayOnly 奖励骰结算不应给 AI 生成重掷/确认动作', () => {
+        const state = createInitializedState(['0', '1'], fixedRandom);
+        state.core.activePlayerId = '0';
+        state.sys.phase = 'main2';
+        (state.core as any).pendingBonusDiceSettlement = {
+            id: 'display-only-bonus',
+            attackerId: '0',
+            targetId: '1',
+            dice: [{ index: 0, value: 2 }],
+            rerollCount: 0,
+            displayOnly: true,
+        };
+
+        const actions = buildDiceThroneAiLegalActions({
+            playerId: '0',
+            state,
+        });
+
+        expect(actions.some((action) =>
+            action.kind === 'bonus-die-reroll' || action.kind === 'skip-bonus-dice-reroll'
+        )).toBe(false);
+    });
+
     it('dt:card-interaction 的 selectPlayer 交互应生成 RESOLVE_INTERACTION 动作', () => {
         const state = createInitializedState(['0', '1', '2', '3'], fixedRandom);
         const interaction: InteractionDescriptor = {
@@ -1481,6 +1504,156 @@ describe('AI legal actions', () => {
 
         expect(executedKinds).toEqual(['roll-dice', 'confirm-roll', 'advance-phase']);
         expect(state.sys.phase).toBe('main2');
+    });
+
+    it('本地 AI 在 displayOnly 奖励骰结算伴随响应与交互链时，应沿真实链路收口且不误生成 bonus-die 动作', async () => {
+        const random = createQueuedRandom([1, 1, 1, 1]);
+        let state = createHeroMatchup('monk', 'shadow_thief')(['0', '1'], random);
+        state.core.activePlayerId = '0';
+        state.sys.phase = 'defensiveRoll';
+        state.core.players['1'].tokens[TOKEN_IDS.TAIJI] = 1;
+        state.core.rollCount = 1;
+        state.core.rollLimit = 1;
+        state.core.rollDiceCount = 0;
+        state.core.rollConfirmed = true;
+        state.core.pendingAttack = {
+            attackerId: '0',
+            defenderId: '1',
+            isDefendable: true,
+            sourceAbilityId: 'fist-technique-5',
+            defenseAbilityId: 'meditation',
+        };
+        (state.core as typeof state.core & { pendingBonusDiceSettlement?: unknown }).pendingBonusDiceSettlement = {
+            id: 'display-only-bonus-hybrid',
+            attackerId: '0',
+            defenderId: '1',
+            dice: [{ index: 0, value: 2 }],
+            rerollCount: 0,
+            displayOnly: true,
+        };
+        state.core.pendingDamage = {
+            id: 'dmg-displayonly-hybrid',
+            sourcePlayerId: '0',
+            targetPlayerId: '1',
+            originalDamage: 4,
+            currentDamage: 4,
+            responseType: 'beforeDamageReceived',
+            responderId: '1',
+            isFullyEvaded: false,
+        };
+        state.sys.responseWindow = {
+            current: {
+                id: 'rw-displayonly-hybrid',
+                windowType: 'afterAttackResolved',
+                responderQueue: ['1'],
+                currentResponderIndex: 0,
+                passedPlayers: [],
+            },
+        };
+
+        const executedKinds: string[] = [];
+        const assertNoBonusDieActions = () => {
+            const actions = buildDiceThroneAiLegalActions({
+                playerId: '1',
+                state,
+            });
+            expect(actions.some((action) =>
+                action.kind === 'bonus-die-reroll' || action.kind === 'skip-bonus-dice-reroll'
+            )).toBe(false);
+        };
+
+        assertNoBonusDieActions();
+
+        const first = await resolveNextLocalAiAction({
+            engineConfig,
+            state,
+            matchId: 'local:test-displayonly-hybrid',
+            seatControllers: {
+                '1': { type: 'local-ai' },
+            },
+        });
+        expect(first?.playerId).toBe('1');
+        expect(first?.action.kind).toBe('token-response');
+        executedKinds.push(first!.action.kind);
+        for (const command of first!.action.commands) {
+            state = execCmd(
+                state,
+                cmd(command.type as CommandInput['type'], first!.playerId, command.payload ?? {}),
+                random,
+            );
+        }
+
+        assertNoBonusDieActions();
+
+        const second = await resolveNextLocalAiAction({
+            engineConfig,
+            state,
+            matchId: 'local:test-displayonly-hybrid',
+            seatControllers: {
+                '1': { type: 'local-ai' },
+            },
+        });
+        expect(second?.playerId).toBe('1');
+        expect(second?.action.kind).toBe('skip-token-response');
+        executedKinds.push(second!.action.kind);
+        for (const command of second!.action.commands) {
+            state = execCmd(
+                state,
+                cmd(command.type as CommandInput['type'], second!.playerId, command.payload ?? {}),
+                random,
+            );
+        }
+
+        expect(state.core.pendingDamage).toBeUndefined();
+        expect(state.sys.responseWindow?.current).toBeUndefined();
+
+        injectPendingInteraction(state, {
+            id: 'displayonly-chain-select-player',
+            playerId: '1',
+            sourceCardId: 'card-give-hand',
+            type: 'selectPlayer',
+            titleKey: 'interaction.selectPlayer',
+            selectCount: 1,
+            selected: [],
+            targetPlayerIds: ['0'],
+        });
+
+        assertNoBonusDieActions();
+
+        const third = await resolveNextLocalAiAction({
+            engineConfig,
+            state,
+            matchId: 'local:test-displayonly-hybrid',
+            seatControllers: {
+                '1': { type: 'local-ai' },
+            },
+        });
+        expect(third?.playerId).toBe('1');
+        expect(third?.action.kind).toBe('interaction-select-player');
+        executedKinds.push(third!.action.kind);
+        for (const command of third!.action.commands) {
+            state = execCmd(
+                state,
+                cmd(command.type as CommandInput['type'], third!.playerId, command.payload ?? {}),
+                random,
+            );
+        }
+
+        // injectPendingInteraction 是测试注入态；AI 应生成真实的 RESOLVE_INTERACTION，
+        // 但 pipeline 不会像真实运行时那样帮我们把这段测试注入的交互自动清掉。
+        state.sys.interaction = {
+            ...state.sys.interaction,
+            current: undefined,
+        };
+        assertNoBonusDieActions();
+
+        expect(executedKinds).toEqual([
+            'token-response',
+            'skip-token-response',
+            'interaction-select-player',
+        ]);
+        expect((state.core as typeof state.core & { pendingBonusDiceSettlement?: { id?: string; displayOnly?: boolean } }).pendingBonusDiceSettlement)
+            .toMatchObject({ id: 'display-only-bonus-hybrid', displayOnly: true });
     });
 
     it('本地 AI 在 offensiveRoll 且 pendingAttack 已创建时不应重复选择技能或重复确认骰面', async () => {

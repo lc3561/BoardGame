@@ -3,7 +3,20 @@ const parseCssPixelValue = (value: string | null | undefined): number => {
     return Number.isFinite(parsed) ? parsed : 0;
 };
 
-const dispatchSyntheticTextInput = (candidate: HTMLInputElement | HTMLTextAreaElement, value: string) => {
+const MOBILE_TEXT_ENTRY_PROXY_SOURCE_ATTR = 'data-mobile-text-entry-proxy-source';
+
+const isFrozenProxySource = (candidate: Element | null): candidate is HTMLElement => {
+    return candidate instanceof HTMLElement
+        && candidate.getAttribute(MOBILE_TEXT_ENTRY_PROXY_SOURCE_ATTR) === 'true';
+};
+
+const syncReactValueTracker = (candidate: HTMLInputElement | HTMLTextAreaElement, previousValue: string) => {
+    const tracker = (candidate as HTMLInputElement & { _valueTracker?: { setValue: (value: string) => void } })._valueTracker;
+    tracker?.setValue(previousValue);
+};
+
+const dispatchSyntheticTextInput = (candidate: HTMLInputElement | HTMLTextAreaElement, value: string, previousValue: string) => {
+    syncReactValueTracker(candidate, previousValue);
     const inputEvent = typeof InputEvent === 'function'
         ? new InputEvent('input', {
             bubbles: true,
@@ -143,7 +156,8 @@ export const isTextEntryProxyEligible = (candidate: Element | null): candidate i
 };
 
 export const readTextEntryValue = (candidate: Element | null): string => {
-    if (!isTextEntryElement(candidate)) {
+    const isProxySource = isFrozenProxySource(candidate);
+    if (!isTextEntryElement(candidate) && !isProxySource) {
         return '';
     }
 
@@ -155,18 +169,26 @@ export const readTextEntryValue = (candidate: Element | null): string => {
 };
 
 export const syncProxyValueToTextEntry = (candidate: Element | null, value: string) => {
-    if (!isTextEntryElement(candidate)) {
+    const isProxySource = isFrozenProxySource(candidate);
+    if (!isTextEntryElement(candidate) && !isProxySource) {
         return false;
     }
 
     if (candidate instanceof HTMLInputElement) {
+        if (candidate.disabled) {
+            return false;
+        }
         const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
         const previousReadOnly = candidate.readOnly;
+        const previousValue = candidate.value;
+        const previousActive = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         if (previousReadOnly) {
             candidate.readOnly = false;
         }
+        candidate.focus({ preventScroll: true });
         setter?.call(candidate, value);
-        dispatchSyntheticTextInput(candidate, value);
+        dispatchSyntheticTextInput(candidate, value, previousValue);
+        previousActive?.focus?.({ preventScroll: true });
         if (previousReadOnly) {
             candidate.readOnly = true;
         }
@@ -174,13 +196,20 @@ export const syncProxyValueToTextEntry = (candidate: Element | null, value: stri
     }
 
     if (candidate instanceof HTMLTextAreaElement) {
+        if (candidate.disabled) {
+            return false;
+        }
         const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
         const previousReadOnly = candidate.readOnly;
+        const previousValue = candidate.value;
+        const previousActive = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         if (previousReadOnly) {
             candidate.readOnly = false;
         }
+        candidate.focus({ preventScroll: true });
         setter?.call(candidate, value);
-        dispatchSyntheticTextInput(candidate, value);
+        dispatchSyntheticTextInput(candidate, value, previousValue);
+        previousActive?.focus?.({ preventScroll: true });
         if (previousReadOnly) {
             candidate.readOnly = true;
         }
@@ -193,6 +222,7 @@ export const syncProxyValueToTextEntry = (candidate: Element | null, value: stri
         || contentEditableAttr === ''
         || contentEditableAttr === 'true'
         || contentEditableAttr === 'plaintext-only'
+        || (isProxySource && contentEditableAttr === 'false')
     ) {
         candidate.textContent = value;
         candidate.dispatchEvent(new Event('input', { bubbles: true }));

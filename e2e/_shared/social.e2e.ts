@@ -221,19 +221,59 @@ test.describe('社交中心 E2E', () => {
         const mobileProxyInput = page.getByTestId('mobile-text-entry-proxy-input').last();
         let activeChatInput = sourceChatInput;
 
-        const sourceEditable = await sourceChatInput.isEditable().catch(() => false);
-        if (!sourceEditable) {
-            await mobileProxyInput.waitFor({ state: 'visible', timeout: 3000 }).catch(() => undefined);
-            const proxyEditable = await mobileProxyInput.isEditable().catch(() => false);
-            if (proxyEditable) {
-                activeChatInput = mobileProxyInput;
-            }
+        await mobileProxyInput.waitFor({ state: 'visible', timeout: 3000 }).catch(() => undefined);
+        const proxyEditable = await mobileProxyInput.isEditable().catch(() => false);
+        if (proxyEditable) {
+            activeChatInput = mobileProxyInput;
+        } else {
+            await expect(sourceChatInput).toBeEditable();
         }
 
         await activeChatInput.fill('移动端社交聊天输入可见性校验');
         await expect(activeChatInput).toHaveValue('移动端社交聊天输入可见性校验');
 
-        const metrics = await activeChatInput.evaluate((node) => {
+        const runtimeState = await page.evaluate(() => {
+            const source = document.querySelector('[data-testid="friends-chat-modal-content"] input[placeholder="输入消息..."]') as HTMLInputElement | null;
+            const proxy = document.querySelector('[data-testid="mobile-text-entry-proxy-input"]') as HTMLInputElement | null;
+            const sendButton = source?.form?.querySelector('button[type="submit"], button') as HTMLButtonElement | null;
+            return {
+                sourceValue: source?.value ?? null,
+                sourceReadOnly: source?.readOnly ?? null,
+                proxyValue: proxy?.value ?? null,
+                activeTag: document.activeElement?.tagName ?? null,
+                sendDisabled: sendButton?.disabled ?? null,
+            };
+        });
+        console.log('[social-mobile-debug]', JSON.stringify(runtimeState));
+
+        const sendButton = page
+            .getByTestId('friends-chat-modal-content')
+            .locator('button[type="submit"]')
+            .first();
+        await sourceChatInput.focus();
+
+        let sendResponse: Awaited<ReturnType<typeof page.waitForResponse>>;
+        let sentByEnter = true;
+        try {
+            [sendResponse] = await Promise.all([
+                page.waitForResponse('**/auth/messages/send', { timeout: 6000 }),
+                sourceChatInput.press('Enter'),
+            ]);
+        } catch {
+            sentByEnter = false;
+            [sendResponse] = await Promise.all([
+                page.waitForResponse('**/auth/messages/send', { timeout: 6000 }),
+                sendButton.click(),
+            ]);
+        }
+        console.log('[social-mobile-send-path]', sentByEnter ? 'enter' : 'button-fallback');
+        expect(sendResponse.ok()).toBeTruthy();
+        await expect(page.locator('.whitespace-pre-wrap', { hasText: '移动端社交聊天输入可见性校验' })).toBeVisible();
+
+        const metricsInput = await mobileProxyInput.isVisible().catch(() => false)
+            ? mobileProxyInput
+            : sourceChatInput;
+        const metrics = await metricsInput.evaluate((node) => {
             const rect = node.getBoundingClientRect();
             const fontSize = Number.parseFloat(window.getComputedStyle(node).fontSize || '0');
             const runtimeViewportHeight = Number.parseFloat(

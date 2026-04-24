@@ -1,3 +1,15 @@
+## Session: 2026-04-24 Feedback cleanup audit
+- **Status:** in_progress
+- Actions taken:
+  - 已实修反馈 `69a440ea1eb921c6091f1231`（DiceThrone 教程把弃牌堆写成左侧）：
+    - 修复 `public/locales/en/game-dicethrone.json` 的 `sellCardIntro / undoSellIntro`，统一为 `on the right`。
+    - 运行 `npm run i18n:check`，结果 `no missing keys detected`。
+    - 证据文档：`evidence/dicethrone/dicethrone-feedback-69a440ea-tutorial-discard-side-fix-2026-04-24.md`。
+  - 已对当前线上 `open` / `in_progress` 反馈做首轮清洗，避免把历史脏单直接当作真实待修列表。
+  - 汇总清单已写入 `temp/feedback-cleanup-audit-2026-04-24.md`。
+  - 已区分两类：`已修未关`、`需复核是否回归`。
+  - 当前收敛出的 4 条存疑项：DiceThrone 黑屏、DiceThrone 获得 3cp 后伤害不对、DiceThrone 波纹造成伤害但没有掉血、SummonerWars 撤回特别慢 / 放大镜功能没了。
+
 ## Session: 2026-04-07 Android 本地素材包图片加载故障
 - **Status:** in_progress
 - Actions taken:
@@ -345,3 +357,44 @@
 - **[2026-04-24 09:20:00] Action**: 完成证据与规划文档口径同步
   - Result: 已把 `168 passed / 1 skipped`、`smashup.e2e.ts = 3 passed`、截图时间 `2026-04-24 09:08` 回写到 `evidence/smashup/smashup-10th-anniversary-factions-audit-20260419.md`、`evidence/smashup/smashup-10th-anniversary-factions-selection-e2e-test.md`、`task_plan.md`、`findings.md`。
   - Next: 继续三派系后续审计/实施批次，不中途收口，等待你最后统一验收时再做总汇报。
+
+- **[2026-04-24 22:03:00] Action**: 追加三派系静态覆盖复核
+  - Result: 已执行 `registerAbility('<id>')` 与 `newFactionAbilities.test.ts` 的静态比对，结果 `Mermaids 10/0、Skeletons 13/0、World Champs 17/0、总计 40/0`；已回写到审计 evidence 与 findings。
+  - Next: 继续按“三派系审计 + workflow 完整性”推进，不中断收口。
+
+- **[2026-04-24 22:10:00] Action**: 复跑 OpenSpec 校验与 R2 远端回查
+  - Result: `npx openspec validate add-smashup-oops-faction-gameplay --strict --no-interactive` 通过；`wangling.webp / wangling_base.webp` 的 HEAD 均为 `200`。
+  - Next: 回写审计文档中的最新门禁与资源状态，保证证据链完整。
+
+- **[2026-04-24 22:16:00] Action**: 强化通用数据录入与 SmashUp 实施 workflow
+  - Result: 已更新 `.windsurf/skills/data-entry-workflow/SKILL.md` 与 `docs/games/smashup/workflows/smashup-faction-implementation.md`，新增“长期任务连续执行”强制规则（S0→S4 持续推进，continue 默认推进下一批执行）。
+  - Next: 继续执行三派系审计/实施批次，保持“不中途收口”节奏。
+
+- **[2026-04-24 22:24:00] Action**: 回写两条 SmashUp 反馈审计文档的当日复核补记
+  - Result: 已在 `smashup-feedback-69db57c-faction-select-stall-2026-04-22.md` 与 `smashup-feedback-69daa51e-auto-skip-turn-2026-04-22.md` 增补 `2026-04-24` 复核段，统一引用当前主线 E2E（`smashup.e2e.ts = 3 passed`）维持结论有效。
+  - Next: 继续三派系实施与审计批次，不中途收口。
+
+- **[2026-04-24 23:06:00] Action**: 同步 Android 内置 locale 与资源回查
+  - Result: 已在 `android/app/src/main/assets/public/locales/zh-CN/game-smashup.json` 删除 `faction_implementation_in_progress_hint`，避免 App 壳残留旧“分批实施”文案；`npm run assets:upload` 复跑为 `上传 0，跳过 530（未变更），失败 0`；`npm run i18n:check` 通过。
+  - Next: 继续推进三派系审计与 workflow 收敛，不中途收口。
+
+- **[2026-04-24 23:12:00] Action**: 尝试补跑两条 watchdog 定向 E2E
+  - Result: 被 `heavy-task-guard` 拦截（同机已有并发 `e2e-run` 在执行 `social.e2e.ts`）；未中断主流程，继续采用已通过的主线 `smashup.e2e.ts (3 passed)` 与 `factionSelection.test.ts (40 passed)` 维持当日复核证据链。
+  - Next: 待共享重任务释放后再补定向复跑；当前先继续三派系实施与审计推进。
+
+## Session: 2026-04-24 Online Feedback 69eb3924（SmashUp watchdog recover-interaction）
+
+### Phase: 实施与状态回写
+**Status**: Complete
+
+- **[2026-04-24 23:01:00] Action**: 拉取 open 反馈并定位唯一未收口项 `69eb392453c8e640a4475d6b`
+  - Result: 远端快照确认报错为 `force-end-turn-failed visible-interaction:recover-interaction:blocker_persisted`，交互内出现重复 `activate_special:titan:*` 选项。
+  - Next: 修复 scoreBases 锁定基地索引重复导致的交互重复选项。
+
+- **[2026-04-24 23:04:00] Action**: 完成去重修复并补回归测试
+  - Result: 已改 `ongoingModifiers.ts` / `reduce.ts` / `index.ts`，统一规范化 `scoringEligibleBaseIndices`；`scoringEligibleLock.test.ts` 新增 2 条回归。
+  - Next: 运行单文件回归验证并落证据。
+
+- **[2026-04-24 23:07:00] Action**: 执行验证与状态回写
+  - Result: `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/scoringEligibleLock.test.ts --configLoader native --pool threads --maxWorkers 1 --no-file-parallelism` 通过（`1 file / 12 passed`）；远端 `69eb392453c8e640a4475d6b` 已 `open -> resolved`（`matched=1, modified=1`）；`status-board.json` 校验通过。
+  - Next: 继续按线上 `open/in_progress` 清单推进下一批反馈。

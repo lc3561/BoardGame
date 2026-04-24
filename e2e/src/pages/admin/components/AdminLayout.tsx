@@ -36,6 +36,7 @@ const DEVELOPER_NAV_ITEMS: NavItem[] = [
 const VIEWER_NAV_ITEMS: NavItem[] = [
     { icon: LayoutDashboard, label: '概览', path: '/admin' },
     { icon: Gamepad2, label: '对局记录', path: '/admin/matches' },
+    { icon: MessageSquareWarning, label: '反馈管理', path: '/admin/feedback' },
 ];
 
 const ADMIN_NAV_ITEMS: NavItem[] = [

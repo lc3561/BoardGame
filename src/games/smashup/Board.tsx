@@ -67,7 +67,7 @@ import { validate } from './domain/commands';
 import { SMASHUP_AUDIO_CONFIG } from './audio.config';
 import { useTutorialBridge, useTutorial } from '../../contexts/TutorialContext';
 import { UndoProvider } from '../../contexts/UndoContext';
-import { MobileBattlefieldViewport, TutorialSelectionGate } from '../../components/game/framework';
+import { MobileBattlefieldViewport, TutorialSelectionGate, useCardSpotlightQueue, CardSpotlightQueue } from '../../components/game/framework';
 import { LoadingScreen } from '../../components/system/LoadingScreen';
 import { GameDebugPanel } from '../../components/game/framework/widgets/GameDebugPanel';
 import { SmashUpDebugConfig } from './debug-config';
@@ -76,7 +76,6 @@ import { EndgameOverlay } from '../../components/game/framework/widgets/EndgameO
 import { useEndgame } from '../../hooks/game/useEndgame';
 import { SmashUpEndgameContent, SmashUpEndgameActions } from './ui/SmashUpEndgame';
 import type { PlayConstraint } from './domain/types';
-import { useCardSpotlightQueue, CardSpotlightQueue } from '../../components/game/framework';
 import type { SpotlightItem } from '../../components/game/framework';
 import { resolveRuntimeLayoutScaleMetrics } from '../mobileSupport';
 import { getEventStreamEntries } from '../../engine/systems/EventStreamSystem';

@@ -70,6 +70,7 @@ interface FeedbackItem {
         source?: string;
     };
     createdAt: string;
+    canManage?: boolean;
 }
 
 type StatusOption = { value: FeedbackItem['status']; color: string };
@@ -198,17 +199,19 @@ function StatusSelect({
     value,
     onChange,
     options,
+    disabled = false,
 }: {
     value: string;
     onChange: (v: string) => void;
     options: StatusOptionWithLabel[];
+    disabled?: boolean;
 }) {
     const [open, setOpen] = useState(false);
     const ref = useRef<HTMLDivElement>(null);
     const current = options.find((option) => option.value === value) ?? options[0];
 
     useEffect(() => {
-        if (!open) return;
+        if (!open || disabled) return;
         const handler = (event: MouseEvent) => {
             if (ref.current && !ref.current.contains(event.target as Node)) {
                 setOpen(false);
@@ -216,7 +219,13 @@ function StatusSelect({
         };
         document.addEventListener('mousedown', handler);
         return () => document.removeEventListener('mousedown', handler);
-    }, [open]);
+    }, [disabled, open]);
+
+    useEffect(() => {
+        if (disabled) {
+            setOpen(false);
+        }
+    }, [disabled]);
 
     return (
         <div ref={ref} className="relative">
@@ -224,16 +233,19 @@ function StatusSelect({
                 type="button"
                 onClick={(event) => {
                     event.stopPropagation();
+                    if (disabled) return;
                     setOpen((prev) => !prev);
                 }}
+                disabled={disabled}
                 className={cn(
                     'inline-flex h-5 items-center rounded-md border px-1.5 text-[10px] font-medium shadow-sm transition-colors',
-                    current.color
+                    current.color,
+                    disabled && 'cursor-not-allowed opacity-50'
                 )}
             >
                 {current.label}
             </button>
-            {open && (
+            {open && !disabled && (
                 <div className="absolute right-0 z-50 mt-1 min-w-[120px] rounded-lg border border-zinc-200 bg-white py-1 shadow-lg">
                     {options.map((option) => (
                         <button
@@ -316,10 +328,10 @@ export default function AdminFeedbackPage() {
 
     const [feedbacks, setFeedbacks] = useState<FeedbackItem[]>([]);
     const [loading, setLoading] = useState(true);
-    const [statusFilter, setStatusFilter] = useState<string>('open');
+    const [statusFilter, setStatusFilter] = useState<string>('all');
     const [typeFilter, setTypeFilter] = useState<string>('all');
     const [severityFilter, setSeverityFilter] = useState<string>('all');
-    const [reporterTypeFilter, setReporterTypeFilter] = useState<string>('all');
+    const [reporterTypeFilter, setReporterTypeFilter] = useState<string>('user');
     const [sourceFilter, setSourceFilter] = useState<string>('all');
     const [sortFilter, setSortFilter] = useState<string>('newest');
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -351,8 +363,9 @@ export default function AdminFeedbackPage() {
             if (sourceFilter !== 'all') params.set('source', sourceFilter);
             if (sortFilter) params.set('sort', sortFilter);
 
+            const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
             const response = await fetch(`${ADMIN_API_URL}/feedback?${params}`, {
-                headers: { Authorization: `Bearer ${token}` },
+                headers,
             });
             if (!response.ok) throw new Error('fetch_failed');
 
@@ -391,7 +404,7 @@ export default function AdminFeedbackPage() {
         setSelectedIds((prev) => {
             const next = new Set<string>();
             prev.forEach((id) => {
-                if (feedbacks.some((feedback) => feedback._id === id)) {
+                if (feedbacks.some((feedback) => feedback._id === id && feedback.canManage)) {
                     next.add(id);
                 }
             });
@@ -417,17 +430,23 @@ export default function AdminFeedbackPage() {
         }
     }, [activeFeedback]);
 
-    const allSelected = feedbacks.length > 0 && feedbacks.every((feedback) => selectedIds.has(feedback._id));
+    const manageableFeedbacks = useMemo(
+        () => feedbacks.filter((feedback) => feedback.canManage),
+        [feedbacks],
+    );
+    const allSelected = manageableFeedbacks.length > 0 && manageableFeedbacks.every((feedback) => selectedIds.has(feedback._id));
 
     const toggleSelectAll = () => {
         if (allSelected) {
             setSelectedIds(new Set());
             return;
         }
-        setSelectedIds(new Set(feedbacks.map((feedback) => feedback._id)));
+        setSelectedIds(new Set(manageableFeedbacks.map((feedback) => feedback._id)));
     };
 
     const toggleSelect = (id: string) => {
+        const target = feedbacks.find((feedback) => feedback._id === id);
+        if (!target?.canManage) return;
         setSelectedIds((prev) => {
             const next = new Set(prev);
             if (next.has(id)) next.delete(id);
@@ -437,6 +456,11 @@ export default function AdminFeedbackPage() {
     };
 
     const handleStatusUpdate = useCallback(async (id: string, newStatus: string) => {
+        const target = feedbacks.find((feedback) => feedback._id === id);
+        if (!target?.canManage) {
+            error('你没有权限修改该反馈');
+            return;
+        }
         try {
             const response = await fetch(`${ADMIN_API_URL}/feedback/${id}/status`, {
                 method: 'PATCH',
@@ -457,9 +481,14 @@ export default function AdminFeedbackPage() {
         } catch {
             error(t('feedback.messages.updateFailed'));
         }
-    }, [error, statusFilter, success, t, token]);
+    }, [error, feedbacks, statusFilter, success, t, token]);
 
     const handleDelete = async (id: string) => {
+        const target = feedbacks.find((feedback) => feedback._id === id);
+        if (!target?.canManage) {
+            error('你没有权限删除该反馈');
+            return;
+        }
         if (!confirm(t('feedback.confirm.delete'))) return;
 
         try {
@@ -688,6 +717,7 @@ export default function AdminFeedbackPage() {
                                                 type="checkbox"
                                                 checked={allSelected}
                                                 onChange={toggleSelectAll}
+                                                disabled={manageableFeedbacks.length === 0}
                                                 className="rounded border-zinc-300"
                                                 aria-label={t('feedback.table.selectAll')}
                                             />
@@ -804,6 +834,7 @@ function FeedbackRow({
                     type="checkbox"
                     checked={selected}
                     onChange={onToggleSelect}
+                    disabled={!item.canManage}
                     className="rounded border-zinc-300"
                     aria-label={t('feedback.table.selectItem', { id: item._id })}
                 />
@@ -868,7 +899,12 @@ function FeedbackRow({
             </td>
 
             <td className="px-2 py-1.5 align-middle" onClick={(event) => event.stopPropagation()}>
-                <StatusSelect value={item.status} onChange={(value) => onStatusUpdate(item._id, value)} options={statusOptions} />
+                <StatusSelect
+                    value={item.status}
+                    onChange={(value) => onStatusUpdate(item._id, value)}
+                    options={statusOptions}
+                    disabled={!item.canManage}
+                />
             </td>
 
             <td className="px-2 py-1.5 align-middle">
@@ -890,7 +926,11 @@ function FeedbackRow({
                     <button
                         type="button"
                         onClick={() => onStatusUpdate(item._id, item.status === 'resolved' ? 'open' : 'resolved')}
-                        className="rounded p-1 transition-colors hover:bg-zinc-100"
+                        disabled={!item.canManage}
+                        className={cn(
+                            'rounded p-1 transition-colors',
+                            item.canManage ? 'hover:bg-zinc-100' : 'cursor-not-allowed opacity-40',
+                        )}
                         title={item.status === 'resolved' ? t('feedback.actions.reopen') : t('feedback.actions.resolve')}
                     >
                         {item.status === 'resolved'
@@ -900,7 +940,11 @@ function FeedbackRow({
                     <button
                         type="button"
                         onClick={() => onDelete(item._id)}
-                        className="rounded p-1 transition-colors hover:bg-red-50"
+                        disabled={!item.canManage}
+                        className={cn(
+                            'rounded p-1 transition-colors',
+                            item.canManage ? 'hover:bg-red-50' : 'cursor-not-allowed opacity-40',
+                        )}
                         title={t('feedback.actions.delete')}
                     >
                         <Trash2 size={13} className="text-zinc-300 hover:text-red-500" />
@@ -985,11 +1029,20 @@ function FeedbackDetailPanel({
                     </div>
 
                     <div className="flex flex-wrap items-center justify-end gap-1">
-                        <StatusSelect value={item.status} onChange={(value) => onStatusUpdate(item._id, value)} options={statusOptions} />
+                        <StatusSelect
+                            value={item.status}
+                            onChange={(value) => onStatusUpdate(item._id, value)}
+                            options={statusOptions}
+                            disabled={!item.canManage}
+                        />
                         <button
                             type="button"
                             onClick={() => onStatusUpdate(item._id, item.status === 'resolved' ? 'open' : 'resolved')}
-                            className="inline-flex h-5 items-center gap-1 rounded-md border border-zinc-200 px-2 text-[10px] font-medium text-zinc-600 transition-colors hover:bg-zinc-50"
+                            disabled={!item.canManage}
+                            className={cn(
+                                'inline-flex h-5 items-center gap-1 rounded-md border border-zinc-200 px-2 text-[10px] font-medium text-zinc-600 transition-colors',
+                                item.canManage ? 'hover:bg-zinc-50' : 'cursor-not-allowed opacity-40',
+                            )}
                         >
                             {item.status === 'resolved'
                                 ? <Circle size={12} className="text-zinc-400" />
@@ -999,7 +1052,11 @@ function FeedbackDetailPanel({
                         <button
                             type="button"
                             onClick={() => onDelete(item._id)}
-                            className="inline-flex h-5 items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2 text-[10px] font-medium text-red-600 transition-colors hover:bg-red-100"
+                            disabled={!item.canManage}
+                            className={cn(
+                                'inline-flex h-5 items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2 text-[10px] font-medium text-red-600 transition-colors',
+                                item.canManage ? 'hover:bg-red-100' : 'cursor-not-allowed opacity-40',
+                            )}
                         >
                             <Trash2 size={12} />
                             {t('feedback.actions.delete')}

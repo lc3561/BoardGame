@@ -1579,7 +1579,9 @@ const scoreResponseDefenseAction = (
 const buildBonusDiceActions = (state: DiceThroneState, playerId: PlayerId): AiLegalAction[] => {
     const actions: AiLegalAction[] = [];
     const settlement = state.core.pendingBonusDiceSettlement as PendingBonusDiceSettlement | undefined;
-    if (!settlement || settlement.attackerId !== playerId) return actions;
+    // displayOnly 结算只用于向其他人展示结果，不应给 AI 生成任何可执行动作，
+    // 否则会把纯展示特写误当成真实 blocker，导致 watchdog / 本地 AI 继续围绕它“决策”。
+    if (!settlement || settlement.attackerId !== playerId || settlement.displayOnly === true) return actions;
 
     for (const die of settlement.dice) {
         appendAction(actions, state, playerId, {

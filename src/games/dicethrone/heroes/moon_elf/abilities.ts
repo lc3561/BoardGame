@@ -160,9 +160,9 @@ export const LONGBOW_2: AbilityDef = {
     description: abilityText('longbow-2', 'description'),
     sfxKey: MOON_ELF_SFX_SHOT,
     variants: [
-        { id: 'longbow-3-2', trigger: { type: 'diceSet', faces: { [FACE.BOW]: 3 } }, effects: [damage(4, abilityEffectText('longbow-2', 'damage4')), { description: '若投出4个及以上相同符号，施加缠绕', action: { type: 'custom', target: 'opponent', customActionId: 'moon_elf-longbow-bonus-check-4' }, timing: 'postDamage' }], priority: 1 },
-        { id: 'longbow-4-2', trigger: { type: 'diceSet', faces: { [FACE.BOW]: 4 } }, effects: [damage(6, abilityEffectText('longbow-2', 'damage6')), { description: '若投出4个及以上相同符号，施加缠绕', action: { type: 'custom', target: 'opponent', customActionId: 'moon_elf-longbow-bonus-check-4' }, timing: 'postDamage' }], priority: 2 },
-        { id: 'longbow-5-2', trigger: { type: 'diceSet', faces: { [FACE.BOW]: 5 } }, effects: [damage(8, abilityEffectText('longbow-2', 'damage8')), { description: '若投出4个及以上相同符号，施加缠绕', action: { type: 'custom', target: 'opponent', customActionId: 'moon_elf-longbow-bonus-check-4' }, timing: 'postDamage' }], priority: 3 },
+        { id: 'longbow-3-2', trigger: { type: 'diceSet', faces: { [FACE.BOW]: 3 } }, effects: [damage(4, abilityEffectText('longbow-2', 'damage4')), { description: '若投出4个及以上相同数字，施加缠绕', action: { type: 'custom', target: 'opponent', customActionId: 'moon_elf-longbow-bonus-check-4' }, timing: 'postDamage' }], priority: 1 },
+        { id: 'longbow-4-2', trigger: { type: 'diceSet', faces: { [FACE.BOW]: 4 } }, effects: [damage(6, abilityEffectText('longbow-2', 'damage6')), { description: '若投出4个及以上相同数字，施加缠绕', action: { type: 'custom', target: 'opponent', customActionId: 'moon_elf-longbow-bonus-check-4' }, timing: 'postDamage' }], priority: 2 },
+        { id: 'longbow-5-2', trigger: { type: 'diceSet', faces: { [FACE.BOW]: 5 } }, effects: [damage(8, abilityEffectText('longbow-2', 'damage8')), { description: '若投出4个及以上相同数字，施加缠绕', action: { type: 'custom', target: 'opponent', customActionId: 'moon_elf-longbow-bonus-check-4' }, timing: 'postDamage' }], priority: 3 },
     ],
 };
 
@@ -173,9 +173,9 @@ export const LONGBOW_3: AbilityDef = {
     description: abilityText('longbow-3', 'description'),
     sfxKey: MOON_ELF_SFX_SHOT,
     variants: [
-        { id: 'longbow-3-3', trigger: { type: 'diceSet', faces: { [FACE.BOW]: 3 } }, effects: [damage(5, abilityEffectText('longbow-3', 'damage5')), { description: '若投出3个及以上相同符号，施加缠绕', action: { type: 'custom', target: 'opponent', customActionId: 'moon_elf-longbow-bonus-check-3' }, timing: 'postDamage' }], priority: 1 },
-        { id: 'longbow-4-3', trigger: { type: 'diceSet', faces: { [FACE.BOW]: 4 } }, effects: [damage(7, abilityEffectText('longbow-3', 'damage7')), { description: '若投出3个及以上相同符号，施加缠绕', action: { type: 'custom', target: 'opponent', customActionId: 'moon_elf-longbow-bonus-check-3' }, timing: 'postDamage' }], priority: 2 },
-        { id: 'longbow-5-3', trigger: { type: 'diceSet', faces: { [FACE.BOW]: 5 } }, effects: [damage(9, abilityEffectText('longbow-3', 'damage9')), { description: '若投出3个及以上相同符号，施加缠绕', action: { type: 'custom', target: 'opponent', customActionId: 'moon_elf-longbow-bonus-check-3' }, timing: 'postDamage' }], priority: 3 },
+        { id: 'longbow-3-3', trigger: { type: 'diceSet', faces: { [FACE.BOW]: 3 } }, effects: [damage(5, abilityEffectText('longbow-3', 'damage5')), { description: '若投出3个及以上相同数字，施加缠绕', action: { type: 'custom', target: 'opponent', customActionId: 'moon_elf-longbow-bonus-check-3' }, timing: 'postDamage' }], priority: 1 },
+        { id: 'longbow-4-3', trigger: { type: 'diceSet', faces: { [FACE.BOW]: 4 } }, effects: [damage(7, abilityEffectText('longbow-3', 'damage7')), { description: '若投出3个及以上相同数字，施加缠绕', action: { type: 'custom', target: 'opponent', customActionId: 'moon_elf-longbow-bonus-check-3' }, timing: 'postDamage' }], priority: 2 },
+        { id: 'longbow-5-3', trigger: { type: 'diceSet', faces: { [FACE.BOW]: 5 } }, effects: [damage(9, abilityEffectText('longbow-3', 'damage9')), { description: '若投出3个及以上相同数字，施加缠绕', action: { type: 'custom', target: 'opponent', customActionId: 'moon_elf-longbow-bonus-check-3' }, timing: 'postDamage' }], priority: 3 },
     ],
 };
 

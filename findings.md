@@ -1,5 +1,14 @@
 # Findings & Resources
 
+## Addendum（2026-04-24）：线上反馈 69a440ea（DiceThrone 教程弃牌堆方向）
+- 反馈 `69a440ea1eb921c6091f1231` 指向“教程把右侧弃牌堆写成左侧”。
+- 复核结论：中文文案已正确，英文教程仍残留旧方向描述（`on the left`）。
+- 已修复 `public/locales/en/game-dicethrone.json`：
+  - `tutorial.steps.sellCardIntro` 改为 `on the right`
+  - `tutorial.steps.undoSellIntro` 改为 `on the right`
+- 校验：`npm run i18n:check` 通过。
+- 证据：`evidence/dicethrone/dicethrone-feedback-69a440ea-tutorial-discard-side-fix-2026-04-24.md`。
+
 ## Addendum（2026-04-07）：Android 本地素材包图片加载故障
 - 原生安装链路本身正常：`GamePackageForegroundRuntime`/`GamePackagePlugin` 会把游戏包解压到 `.../files/game-packages/<gameId>/current/assets`，并通过 `assetRootPath` 回传前端。
 - 启动期丢本地素材的首个根因在 `src/features/mobile-packages/packageManagerService.ts`：
@@ -427,3 +436,38 @@
 - 已复跑 `npm run test:e2e:ci -- e2e/smashup/smashup.e2e.ts`，整文件 `3 passed`（含三派系统一斜向“实施中”横幅用例）。
 - 横幅证据截图已更新到最新时间 `2026-04-24 09:08`（`test-results/evidence-screenshots/_shared/smashup-10th-factions-*.png`）。
 - 历史“20 条缺口”已在 2026-04-23 收敛为 `0 / 0 / 0`，2026-04-24 再次复核保持不变；当前不存在三派系主回归覆盖缺口。
+- 追加静态覆盖复核（扫描 `registerAbility` vs `newFactionAbilities.test.ts`）：
+  - 总计能力：`40`
+  - 未覆盖：`0`
+  - Mermaids：`10/0`，Skeletons：`13/0`，World Champs：`17/0`
+- `npx openspec validate add-smashup-oops-faction-gameplay --strict --no-interactive` 已复跑通过。
+- R2 远端资源回查保持 `200`：
+  - `https://assets.easyboardgame.top/official/i18n/zh-CN/smashup/cards/compressed/wangling.webp`
+  - `https://assets.easyboardgame.top/official/i18n/zh-CN/smashup/base/compressed/wangling_base.webp`
+
+## 2026-04-24 Workflow 强化补记（通用 + SmashUp）
+- 已更新 `.windsurf/skills/data-entry-workflow/SKILL.md`：
+  - 新增“长期任务连续执行模式”强制门禁（S0→S4 连续推进，不得中间收口）；
+  - 明确 `continue` 的默认语义是“推进下一批执行”，不是重复汇报。
+- 已更新 `docs/games/smashup/workflows/smashup-faction-implementation.md`：
+  - 新增“长期任务连续执行（强制）”章节；
+  - 约束在无硬阻塞时持续执行，且每次推进必须回填可复查证据与 planning 文件。
+- 已同步 Android 内置 locale：
+  - `android/app/src/main/assets/public/locales/zh-CN/game-smashup.json` 删除 `faction_implementation_in_progress_hint`，避免 App 壳继续出现旧长文案。
+- `npm run assets:upload` 复跑结果：`上传 0，跳过 530（未变更），失败 0`。
+
+## 2026-04-24 反馈审计文档复核补记
+- 已在以下证据文档追加“2026-04-24 复核补记”，与当前主线 E2E 结果对齐：
+  - `evidence/smashup/smashup-feedback-69db57c-faction-select-stall-2026-04-22.md`
+  - `evidence/smashup/smashup-feedback-69daa51e-auto-skip-turn-2026-04-22.md`
+- 统一复核命令：`npm run test:e2e:ci -- e2e/smashup/smashup.e2e.ts`，结果 `3 passed`。
+
+## 2026-04-24 线上反馈 69eb3924（SmashUp recover-interaction 卡住）
+- 线上 watchdog 快照显示 `smashup_reaction_choose` 出现重复 `optionId`（同一 `activate_special:titan:*` 重复两次），并触发 `visible-interaction:recover-interaction:blocker_persisted`。
+- 根因：`scoringEligibleBaseIndices` 在锁定/读取链路缺少统一去重，重复基地索引在 scoreBases 响应窗口放大为重复交互选项。
+- 修复：
+  - `ongoingModifiers.getScoringEligibleBaseIndices` 统一走 `normalizeScoringEligibleBaseIndices`（保序去重）；
+  - `reduce` 的 `SCORING_ELIGIBLE_BASES_LOCKED` 写入前去重；
+  - `index.getLockedScoringBaseIndices` 统一走 getter，避免绕过规范化。
+- 回归：`src/games/smashup/__tests__/scoringEligibleLock.test.ts` 新增 2 条去重用例并通过（`12 passed`）。
+- 远端状态：`69eb392453c8e640a4475d6b` 已回写为 `resolved`（`matched=1, modified=1`）。

@@ -250,6 +250,16 @@
    - 结果：通过（`no missing keys detected`）
 7. `npm run test:e2e:ci -- e2e/smashup/smashup.e2e.ts`
    - 结果：`3 passed`
+8. `npx openspec validate add-smashup-oops-faction-gameplay --strict --no-interactive`
+   - 结果：通过（`Change 'add-smashup-oops-faction-gameplay' is valid`）
+9. 远端资源 HEAD 回查
+   - `https://assets.easyboardgame.top/official/i18n/zh-CN/smashup/cards/compressed/wangling.webp` → `200`
+   - `https://assets.easyboardgame.top/official/i18n/zh-CN/smashup/base/compressed/wangling_base.webp` → `200`
+10. `npm run assets:upload`
+    - 结果：`上传 0，跳过 530（未变更），失败 0`
+11. Android 内置 locale 同步
+    - 文件：`android/app/src/main/assets/public/locales/zh-CN/game-smashup.json`
+    - 变更：移除 `faction_implementation_in_progress_hint`，确保内置包与主线 locale 同口径（只保留“实施中”）。
 
 静态覆盖结论（持续有效）：
 - Mermaids：`0` 缺口
@@ -265,3 +275,18 @@
 结论：
 - 三派系（Mermaids / Skeletons / World Champs）在 2026-04-24 基线上继续保持“能力回归 + 4 审计套件 + E2E + i18n”全绿。
 - 旧记录中的 `166 passed / 1 skipped` 属于 2026-04-23 历史快照，当前最新口径为 `168 passed / 1 skipped`。
+
+### 静态覆盖复核（2026-04-24）
+
+- 命令（Node 脚本）：
+  - 扫描 `src/games/smashup/abilities/*.ts` 中 `registerAbility('<id>')`
+  - 仅统计前缀为 `mermaids_ / skeletons_ / world_champs_` 的能力
+  - 对照 `src/games/smashup/__tests__/newFactionAbilities.test.ts` 是否包含对应 id 文本
+- 结果：
+  - 总计：`40`
+  - 未覆盖：`0`
+  - 分派系：
+    - Mermaids：`10 / 0`
+    - Skeletons：`13 / 0`
+    - World Champs：`17 / 0`
+- 结论：三派系主能力在 `newFactionAbilities.test.ts` 的直点覆盖保持 `0` 缺口。

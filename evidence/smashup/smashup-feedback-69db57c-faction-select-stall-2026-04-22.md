@@ -89,3 +89,19 @@
 | D47 E2E 覆盖完整 | ✅ 命中 | 指向性回归用例通过并含阶段前后证据。 |
 | D48 UI 交互渲染模式 | ⭕ 不适用 | 未改卡面/按钮渲染策略。 |
 | D49 abilityTags 一致性 | ⭕ 不适用 | 未改 abilityTags。 |
+
+## 2026-04-24 复核补记
+
+- 复核命令（关联主线门禁）：`npm run test:e2e:ci -- e2e/smashup/smashup.e2e.ts`
+- 结果：整文件 `3 passed`，其中派系选择链路与横幅链路均继续通过。
+- 结论：本条“第二个 AI 选派系卡死”相关链路在最新基线仍未复现，审计结论维持有效。
+
+## 2026-04-25 定向复测补记
+
+- 复测命令：`npm run test:e2e:ci:file -- e2e/smashup/smashup-phase-transition-simple.e2e.ts "回归：在线 AI 在 factionSelect 阶段 seat state 延迟就绪时，不得被 watchdog 跳过到空牌对局"`
+- 结果：`1 passed`
+- 最新关键截图（绝对路径）：
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\smashup\smashup-phase-transition-simple.e2e\回归：在线-AI-在-factionSelect-阶段-seat-state-延迟就绪时，不得被-watchdog-跳过到空牌对局\回归：在线-AI-在-factionSelect-阶段-seat-state-延迟就绪时，不得被-watchdog-跳过到空牌对局-online-ai-faction-select-host-picked-first.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\smashup\smashup-phase-transition-simple.e2e\回归：在线-AI-在-factionSelect-阶段-seat-state-延迟就绪时，不得被-watchdog-跳过到空牌对局\回归：在线-AI-在-factionSelect-阶段-seat-state-延迟就绪时，不得被-watchdog-跳过到空牌对局-online-ai-faction-select-still-waiting-after-watchdog.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\smashup\smashup-phase-transition-simple.e2e\回归：在线-AI-在-factionSelect-阶段-seat-state-延迟就绪时，不得被-watchdog-跳过到空牌对局\回归：在线-AI-在-factionSelect-阶段-seat-state-延迟就绪时，不得被-watchdog-跳过到空牌对局-online-ai-faction-select-final-playcards.png`
+- 结论：在 2026-04-25 的定向复测中，`factionSelect` 延迟场景仍可稳定收口到 `playCards`，无“第二个 AI 卡死”回归。

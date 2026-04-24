@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ChangeEvent, type HTMLAttributes } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent, type HTMLAttributes, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import {
     isTextEntryElement,
@@ -317,6 +317,65 @@ export const MobileTextEntryProxyLayer = () => {
             const nextValue = event.target.value;
             setProxyState((current) => (current ? { ...current, value: nextValue } : current));
             syncProxyValueToTextEntry(proxyState.target, nextValue);
+        },
+        onKeyDown: (event: ReactKeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+            if (
+                event.key === 'Enter'
+                && !proxyState.multiline
+                && !event.shiftKey
+                && !event.nativeEvent.isComposing
+            ) {
+                event.preventDefault();
+                const form = proxyState.target.form;
+                if (form) {
+                    const submitter = form.querySelector('button[type="submit"]:not(:disabled), input[type="submit"]:not(:disabled)');
+                    if (submitter instanceof HTMLButtonElement || submitter instanceof HTMLInputElement) {
+                        submitter.click();
+                        return;
+                    }
+                    if (typeof form.requestSubmit === 'function') {
+                        form.requestSubmit();
+                        return;
+                    }
+                    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+                    return;
+                }
+            }
+
+            const forwardedEvent = new KeyboardEvent('keydown', {
+                key: event.key,
+                code: event.code,
+                location: event.location,
+                repeat: event.repeat,
+                isComposing: event.nativeEvent.isComposing,
+                ctrlKey: event.ctrlKey,
+                shiftKey: event.shiftKey,
+                altKey: event.altKey,
+                metaKey: event.metaKey,
+                bubbles: true,
+                cancelable: true,
+            });
+            const notCancelled = proxyState.target.dispatchEvent(forwardedEvent);
+            if (!notCancelled || forwardedEvent.defaultPrevented) {
+                event.preventDefault();
+                return;
+            }
+        },
+        onKeyUp: (event: ReactKeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+            const forwardedEvent = new KeyboardEvent('keyup', {
+                key: event.key,
+                code: event.code,
+                location: event.location,
+                repeat: event.repeat,
+                isComposing: event.nativeEvent.isComposing,
+                ctrlKey: event.ctrlKey,
+                shiftKey: event.shiftKey,
+                altKey: event.altKey,
+                metaKey: event.metaKey,
+                bubbles: true,
+                cancelable: true,
+            });
+            proxyState.target.dispatchEvent(forwardedEvent);
         },
         onBlur: () => {
             if (blurCleanupTimerRef.current != null) {

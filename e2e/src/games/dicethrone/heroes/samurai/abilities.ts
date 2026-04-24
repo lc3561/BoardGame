@@ -81,7 +81,7 @@ export const KATANA_SLICE_2: AbilityDef = {
             id: 'katana-slice-2-3',
             trigger: { type: 'diceSet', faces: { [FACE.KATANA]: 3 } },
             effects: [
-                custom('samurai-katana-slice-threshold-4', '若至少有 4 颗骰子的骰面相同，则对手获得 1 层耻辱。', 'preDefense'),
+                custom('samurai-katana-slice-threshold-4', '若至少有 4 颗骰子数字相同，则对手获得 1 层耻辱。', 'preDefense'),
                 damage(6, '造成 6 点伤害。'),
             ],
             priority: 1,
@@ -90,7 +90,7 @@ export const KATANA_SLICE_2: AbilityDef = {
             id: 'katana-slice-2-4',
             trigger: { type: 'diceSet', faces: { [FACE.KATANA]: 4 } },
             effects: [
-                custom('samurai-katana-slice-threshold-4', '若至少有 4 颗骰子的骰面相同，则对手获得 1 层耻辱。', 'preDefense'),
+                custom('samurai-katana-slice-threshold-4', '若至少有 4 颗骰子数字相同，则对手获得 1 层耻辱。', 'preDefense'),
                 damage(7, '造成 7 点伤害。'),
             ],
             priority: 2,
@@ -99,7 +99,7 @@ export const KATANA_SLICE_2: AbilityDef = {
             id: 'katana-slice-2-5',
             trigger: { type: 'diceSet', faces: { [FACE.KATANA]: 5 } },
             effects: [
-                custom('samurai-katana-slice-threshold-4', '若至少有 4 颗骰子的骰面相同，则对手获得 1 层耻辱。', 'preDefense'),
+                custom('samurai-katana-slice-threshold-4', '若至少有 4 颗骰子数字相同，则对手获得 1 层耻辱。', 'preDefense'),
                 damage(8, '造成 8 点伤害。'),
             ],
             priority: 3,
@@ -118,7 +118,7 @@ export const KATANA_SLICE_3: AbilityDef = {
             id: 'katana-slice-3-3',
             trigger: { type: 'diceSet', faces: { [FACE.KATANA]: 3 } },
             effects: [
-                custom('samurai-katana-slice-threshold-3', '若至少有 3 颗骰子的骰面相同，则对手获得 1 层耻辱。', 'preDefense'),
+                custom('samurai-katana-slice-threshold-3', '若至少有 3 颗骰子数字相同，则对手获得 1 层耻辱。', 'preDefense'),
                 damage(6, '造成 6 点伤害。'),
             ],
             priority: 1,
@@ -127,7 +127,7 @@ export const KATANA_SLICE_3: AbilityDef = {
             id: 'katana-slice-3-4',
             trigger: { type: 'diceSet', faces: { [FACE.KATANA]: 4 } },
             effects: [
-                custom('samurai-katana-slice-threshold-3', '若至少有 3 颗骰子的骰面相同，则对手获得 1 层耻辱。', 'preDefense'),
+                custom('samurai-katana-slice-threshold-3', '若至少有 3 颗骰子数字相同，则对手获得 1 层耻辱。', 'preDefense'),
                 damage(7, '造成 7 点伤害。'),
             ],
             priority: 2,
@@ -136,7 +136,7 @@ export const KATANA_SLICE_3: AbilityDef = {
             id: 'katana-slice-3-5',
             trigger: { type: 'diceSet', faces: { [FACE.KATANA]: 5 } },
             effects: [
-                custom('samurai-katana-slice-threshold-3', '若至少有 3 颗骰子的骰面相同，则对手获得 1 层耻辱。', 'preDefense'),
+                custom('samurai-katana-slice-threshold-3', '若至少有 3 颗骰子数字相同，则对手获得 1 层耻辱。', 'preDefense'),
                 damage(8, '造成 8 点伤害。'),
             ],
             priority: 3,

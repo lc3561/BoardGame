@@ -103,6 +103,25 @@ export const getActiveDice = (state: DiceThroneCore): Die[] => {
 };
 
 /**
+ * 计算给定骰子点数数组里的最大重复次数（用于 N-of-a-kind 的“相同数字”判定）
+ */
+export const getMaxDuplicateValueCountFromValues = (values: number[]): number => {
+    const counts = new Map<number, number>();
+    for (const value of values) {
+        if (!Number.isInteger(value) || value < 1 || value > 6) continue;
+        counts.set(value, (counts.get(value) ?? 0) + 1);
+    }
+    return counts.size > 0 ? Math.max(...counts.values()) : 0;
+};
+
+/**
+ * 计算当前骰子里的最大同数字重复次数
+ */
+export const getMaxDuplicateValueCount = (dice: Die[]): number => {
+    return getMaxDuplicateValueCountFromValues(dice.map((die) => die.value));
+};
+
+/**
  * 获取玩家某个 Token 的堆叠上限（支持技能永久提高上限，如莲花掌）
  * - player.tokenStackLimits 优先
  * - 回退到 tokenDefinitions.stackLimit

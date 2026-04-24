@@ -920,9 +920,9 @@ export class GameTransportServer {
         }
 
         const currentPhase = typeof match.state.sys?.phase === 'string' ? match.state.sys.phase : '';
-        // DiceThrone 只允许在 defensiveRoll 进入 off-turn legal-only 代打。
-        // 避免真人 main2 被 watchdog 代 AI 执行推进，产生“回合被跳过”的体感。
-        if (match.gameId === 'dicethrone' && currentPhase !== 'defensiveRoll') {
+        // 通用保护：当真人是当前操作者时，seat-legal-only 仅允许在 defensiveRoll 触发。
+        // 其它阶段一律不代 AI 执行合法动作，避免“真人回合被 watchdog 代推进”。
+        if (currentPhase !== 'defensiveRoll') {
             return null;
         }
 

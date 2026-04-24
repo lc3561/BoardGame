@@ -1,6 +1,6 @@
 import { ConflictException, ForbiddenException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { normalizeDeveloperGameIds } from '../auth/schemas/developer-game-access';
 import { User, type UserDocument } from '../auth/schemas/user.schema';
 import type { UserRole } from '../auth/schemas/user-role';
@@ -8,7 +8,9 @@ import { Feedback, FeedbackDocument, FeedbackReporterType, FeedbackStatus } from
 import { CreateFeedbackDto, CreateSystemFeedbackDto, FeedbackFilterDto, QueryFeedbackDto } from './dto';
 
 type FeedbackManagerScope = {
-    role: Extract<UserRole, 'developer' | 'admin'>;
+    actorUserId: string;
+    actorUserObjectId: Types.ObjectId | null;
+    role: UserRole;
     developerGameIds: string[] | null;
 };
 
@@ -63,12 +65,12 @@ export class FeedbackService {
         });
     }
 
-    async findAll(actorUserId: string, query: QueryFeedbackDto) {
-        const manager = await this.assertActorCanManage(actorUserId);
+    async findAll(actorUserId: string | null, query: QueryFeedbackDto) {
+        const manager = actorUserId ? await this.assertActorCanManage(actorUserId) : null;
         const page = Math.max(1, Number(query.page) || 1);
         const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
         const { status, type, severity, sort, reporterType, source } = query;
-        const filter = this.buildScopedFilter(manager);
+        const filter: Record<string, unknown> = {};
         if (status) filter.status = status;
         if (type) filter.type = type;
         if (severity) filter.severity = severity;
@@ -79,16 +81,55 @@ export class FeedbackService {
         const createdAtSort = sort === 'oldest' ? 1 : -1;
 
         const total = await this.feedbackModel.countDocuments(filter);
-        const items = await this.feedbackModel
-            .find(filter)
-            .sort({ createdAt: createdAtSort })
-            .skip((page - 1) * limit)
-            .limit(limit)
-            .populate('userId', 'username avatar email')
-            .exec();
+        const skip = (page - 1) * limit;
+        let items: Array<FeedbackDocument | Feedback> = [];
+
+        if (manager?.actorUserObjectId) {
+            const aggregatedItems = await this.feedbackModel.aggregate<Array<Feedback & { __isMine?: number }>>([
+                { $match: filter },
+                {
+                    $addFields: {
+                        __isMine: {
+                            $cond: [{ $eq: [{ $toString: '$userId' }, manager.actorUserId] }, 1, 0],
+                        },
+                    },
+                },
+                {
+                    $sort: {
+                        __isMine: -1,
+                        createdAt: createdAtSort,
+                    },
+                },
+                { $skip: skip },
+                { $limit: limit },
+            ]).exec();
+
+            const populated = await this.feedbackModel.populate(
+                aggregatedItems,
+                { path: 'userId', select: 'username avatar email' },
+            ) as Array<Feedback & { __isMine?: number }>;
+            items = populated.map((item) => {
+                const { __isMine: _unusedIsMine, ...rest } = item;
+                return rest as Feedback;
+            });
+        } else {
+            items = await this.feedbackModel
+                .find(filter)
+                .sort({ createdAt: createdAtSort })
+                .skip(skip)
+                .limit(limit)
+                .populate('userId', 'username avatar email')
+                .exec();
+        }
 
         return {
-            items: items.map((item) => this.decorateLegacyOrigin(item)),
+            items: items.map((item) => {
+                const decorated = this.decorateLegacyOrigin(item);
+                return {
+                    ...decorated,
+                    canManage: manager ? this.canActorManageFeedbackItem(manager, decorated) : false,
+                };
+            }),
             total,
             page,
             limit,
@@ -97,7 +138,7 @@ export class FeedbackService {
 
     async updateStatus(actorUserId: string, id: string, status: FeedbackStatus): Promise<Feedback | null> {
         const manager = await this.assertActorCanManage(actorUserId);
-        const scopeFilter = this.buildScopedFilter(manager);
+        const scopeFilter = this.buildMutationScopeFilter(manager);
         if (status === FeedbackStatus.CLOSED) {
             return this.feedbackModel.findOneAndUpdate(
                 { _id: id, ...scopeFilter },
@@ -158,7 +199,7 @@ export class FeedbackService {
 
     async deleteOne(actorUserId: string, id: string): Promise<boolean> {
         const manager = await this.assertActorCanManage(actorUserId);
-        const scopeFilter = this.buildScopedFilter(manager);
+        const scopeFilter = this.buildMutationScopeFilter(manager);
         const result = await this.feedbackModel.deleteOne({ _id: id, ...scopeFilter });
         return (result.deletedCount ?? 0) > 0;
     }
@@ -169,14 +210,14 @@ export class FeedbackService {
         if (!uniqueIds.length) {
             return { requested: 0, deleted: 0 };
         }
-        const scopeFilter = this.buildScopedFilter(manager);
+        const scopeFilter = this.buildMutationScopeFilter(manager);
         const result = await this.feedbackModel.deleteMany({ _id: { $in: uniqueIds }, ...scopeFilter });
         return { requested: uniqueIds.length, deleted: result.deletedCount ?? 0 };
     }
 
     async bulkDeleteByFilter(actorUserId: string, filterDto: FeedbackFilterDto) {
         const manager = await this.assertActorCanManage(actorUserId);
-        const filter = this.buildScopedFilter(manager);
+        const filter = this.buildMutationScopeFilter(manager);
         if (filterDto.status) filter.status = filterDto.status;
         if (filterDto.type) filter.type = filterDto.type;
         if (filterDto.severity) filter.severity = filterDto.severity;
@@ -565,8 +606,8 @@ export class FeedbackService {
         };
     }
 
-    private decorateLegacyOrigin(item: FeedbackDocument): Feedback {
-        const raw = item.toObject() as Feedback;
+    private decorateLegacyOrigin(item: FeedbackDocument | Feedback): Feedback {
+        const raw = this.toFeedbackObject(item);
         const isLegacyWatchdog = raw.contactInfo === 'system:online-ai-watchdog'
             || raw.errorContext?.source === LEGACY_WATCHDOG_SOURCE
             || /^\[system\]\[online-ai-watchdog\]\s+/.test(raw.content);
@@ -584,28 +625,96 @@ export class FeedbackService {
         };
     }
 
-    private buildScopedFilter(
-        manager: FeedbackManagerScope,
-        extra: Record<string, unknown> = {}
-    ): Record<string, unknown> {
-        const filter: Record<string, unknown> = { ...extra };
+    private toFeedbackObject(item: FeedbackDocument | Feedback): Feedback {
+        if (item && typeof (item as FeedbackDocument).toObject === 'function') {
+            return (item as FeedbackDocument).toObject() as Feedback;
+        }
+        return item as Feedback;
+    }
 
+    private canActorManageFeedbackItem(manager: FeedbackManagerScope, item: Feedback): boolean {
         if (manager.role === 'admin' || manager.developerGameIds === null) {
-            return filter;
+            return true;
         }
 
-        if (manager.developerGameIds.length === 0) {
-            filter._id = { $exists: false };
-            return filter;
+        const feedbackUserId = this.extractFeedbackUserId(item.userId);
+        const ownFeedback = Boolean(
+            manager.actorUserObjectId
+            && feedbackUserId
+            && feedbackUserId === String(manager.actorUserObjectId),
+        );
+        if (ownFeedback) {
+            return true;
         }
 
-        filter.$or = [
-            { gameId: { $in: manager.developerGameIds } },
-            { 'clientContext.gameId': { $in: manager.developerGameIds } },
-            { gameName: { $in: manager.developerGameIds } },
-        ];
+        if (manager.role !== 'developer' || manager.developerGameIds.length === 0) {
+            return false;
+        }
 
-        return filter;
+        const feedbackGameId = this.normalizeFeedbackGameIdCandidates(
+            item.gameId,
+            item.clientContext?.gameId,
+            item.gameName,
+        );
+        return Boolean(feedbackGameId && manager.developerGameIds.includes(feedbackGameId));
+    }
+
+    private extractFeedbackUserId(value: unknown): string | null {
+        if (!value) {
+            return null;
+        }
+
+        if (typeof value === 'string') {
+            return value;
+        }
+
+        if (value instanceof Types.ObjectId) {
+            return value.toString();
+        }
+
+        if (typeof value === 'object') {
+            const maybeId = (value as { _id?: unknown })._id;
+            if (typeof maybeId === 'string') {
+                return maybeId;
+            }
+            if (maybeId instanceof Types.ObjectId) {
+                return maybeId.toString();
+            }
+        }
+
+        return null;
+    }
+
+    private buildMutationScopeFilter(manager: FeedbackManagerScope): Record<string, unknown> {
+        if (manager.role === 'admin' || manager.developerGameIds === null) {
+            return {};
+        }
+
+        const ownScope = manager.actorUserObjectId
+            ? [{ userId: manager.actorUserObjectId }, { userId: manager.actorUserId }]
+            : [{ userId: manager.actorUserId }];
+
+        if (manager.role === 'user') {
+            if (ownScope.length === 0) {
+                return { _id: { $exists: false } };
+            }
+            return ownScope.length === 1 ? ownScope[0] : { $or: ownScope };
+        }
+
+        const gameScopes = manager.developerGameIds.length > 0
+            ? [
+                { gameId: { $in: manager.developerGameIds } },
+                { 'clientContext.gameId': { $in: manager.developerGameIds } },
+                { gameName: { $in: manager.developerGameIds } },
+            ]
+            : [];
+
+        const combinedScopes = [...ownScope, ...gameScopes];
+        if (combinedScopes.length === 0) {
+            return { _id: { $exists: false } };
+        }
+
+        return { $or: combinedScopes };
     }
 
     private async assertActorCanManage(actorUserId: string): Promise<FeedbackManagerScope> {
@@ -614,20 +723,24 @@ export class FeedbackService {
             developerGameIds?: string[];
         } | null>();
 
-        if (!actor || (actor.role !== 'admin' && actor.role !== 'developer')) {
+        if (!actor || (actor.role !== 'admin' && actor.role !== 'developer' && actor.role !== 'user')) {
             throw new ForbiddenException('无权管理反馈');
         }
 
         if (actor.role === 'admin') {
             return {
+                actorUserId,
+                actorUserObjectId: Types.ObjectId.isValid(actorUserId) ? new Types.ObjectId(actorUserId) : null,
                 role: actor.role,
                 developerGameIds: null,
             };
         }
 
         return {
+            actorUserId,
+            actorUserObjectId: Types.ObjectId.isValid(actorUserId) ? new Types.ObjectId(actorUserId) : null,
             role: actor.role,
-            developerGameIds: normalizeDeveloperGameIds(actor.developerGameIds),
+            developerGameIds: actor.role === 'developer' ? normalizeDeveloperGameIds(actor.developerGameIds) : [],
         };
     }
 }

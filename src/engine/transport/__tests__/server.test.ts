@@ -3425,6 +3425,472 @@ describe('GameTransportServer（离座与重连）', () => {
         }
     });
 
+    it('dicethrone: defensiveRoll 存在 displayOnly pendingBonusDiceSettlement 时，watchdog 仍应按防御合法动作推进，而不是误打 bonus-die 命令', async () => {
+        const io = new MockIO();
+        const storage = new InMemoryStorage();
+        const feedbackReporter = vi.fn(async () => undefined);
+        const gameId = 'dicethrone';
+
+        await storage.createMatch('match-watchdog-dicethrone-displayonly-bonus-settlement', {
+            initialState: {
+                G: {
+                    core: {
+                        activePlayerId: '0',
+                        currentPlayerIndex: 0,
+                        turnOrder: ['0', '1'],
+                        players: {
+                            '0': { hp: 50, maxHp: 50, combatPoints: 0, statusEffects: {}, tokens: {}, hand: [], deck: [], discardPile: [] },
+                            '1': { hp: 50, maxHp: 50, combatPoints: 0, statusEffects: {}, tokens: {}, hand: [], deck: [], discardPile: [] },
+                        },
+                        selectedCharacters: {
+                            '0': 'monk',
+                            '1': 'shadow_thief',
+                        },
+                        rollCount: 0,
+                        rollLimit: 1,
+                        rollDiceCount: 0,
+                        rollConfirmed: false,
+                        pendingAttack: {
+                            attackerId: '0',
+                            defenderId: '1',
+                            isDefendable: true,
+                            sourceAbilityId: 'fist-technique-5',
+                            defenseAbilityId: 'shadow-defense',
+                        },
+                        pendingBonusDiceSettlement: {
+                            id: 'display-only-bonus-1',
+                            attackerId: '1',
+                            displayOnly: true,
+                            dice: [{ index: 0, value: 4, originalValue: 4, rerolled: false }],
+                        },
+                    },
+                    sys: {
+                        phase: 'defensiveRoll',
+                        turnNumber: 4,
+                        eventStream: { nextId: 1 },
+                        interaction: {
+                            current: undefined,
+                            queue: [],
+                            isBlocked: false,
+                        },
+                        responseWindow: {
+                            current: undefined,
+                        },
+                    },
+                },
+                _stateID: 0,
+                randomSeed: 'seed',
+                randomCursor: 0,
+            },
+            metadata: createOnlineAiRecoveryMetadata({
+                gameName: gameId,
+                seatControllers: {
+                    '0': { type: 'human' },
+                    '1': { type: 'local-ai' },
+                },
+            }),
+        });
+
+        const server = new GameTransportServer({
+            io: io as unknown as any,
+            storage,
+            games: [createEngineConfigWithId(gameId)],
+            onlineAiRecoveryTickMs: 0,
+            onlineAiRecoveryTimeoutMs: 0,
+            onlineAiFeedbackReporter: feedbackReporter,
+        });
+
+        const serverInternal = server as unknown as {
+            loadMatch: (matchID: string) => Promise<any>;
+            runOnlineAiRecoveryTick: () => Promise<void>;
+            executeCommandInternal: (
+                match: any,
+                playerID: string,
+                commandType: string,
+                payload: unknown,
+                options?: { suppressBroadcast?: boolean },
+            ) => Promise<boolean>;
+        };
+
+        const match = await serverInternal.loadMatch('match-watchdog-dicethrone-displayonly-bonus-settlement');
+        const executeSpy = vi.spyOn(serverInternal, 'executeCommandInternal').mockImplementation(async (
+            activeMatch,
+            playerID,
+            commandType,
+        ) => {
+            expect(playerID).toBe('1');
+
+            if (commandType === 'ROLL_DICE') {
+                activeMatch.state = {
+                    ...activeMatch.state,
+                    core: {
+                        ...activeMatch.state.core,
+                        rollCount: 1,
+                        rollDiceCount: 4,
+                        dice: [
+                            { id: 0, value: 1 },
+                            { id: 1, value: 2 },
+                            { id: 2, value: 3 },
+                            { id: 3, value: 4 },
+                        ],
+                        rollConfirmed: false,
+                    },
+                    sys: {
+                        ...activeMatch.state.sys,
+                        eventStream: { nextId: 2 },
+                    },
+                };
+                return true;
+            }
+
+            if (commandType === 'CONFIRM_ROLL') {
+                activeMatch.state = {
+                    ...activeMatch.state,
+                    core: {
+                        ...activeMatch.state.core,
+                        rollConfirmed: true,
+                    },
+                    sys: {
+                        ...activeMatch.state.sys,
+                        eventStream: { nextId: 3 },
+                    },
+                };
+                return true;
+            }
+
+            if (commandType === 'ADVANCE_PHASE') {
+                activeMatch.state = {
+                    ...activeMatch.state,
+                    sys: {
+                        ...activeMatch.state.sys,
+                        phase: 'main2',
+                        eventStream: { nextId: 4 },
+                    },
+                };
+                return true;
+            }
+
+            return true;
+        });
+
+        try {
+            await serverInternal.runOnlineAiRecoveryTick();
+            await serverInternal.runOnlineAiRecoveryTick();
+            await nextTick();
+            await nextTick();
+
+            const executed = executeSpy.mock.calls.map(([, , commandType]) => commandType);
+            expect(executed).toContain('ADVANCE_PHASE');
+            expect(executed).not.toContain('REROLL_BONUS_DIE');
+            expect(executed).not.toContain('SKIP_BONUS_DICE_REROLL');
+            expect(match.state.sys.phase).toBe('main2');
+            expect(feedbackReporter).toHaveBeenCalledWith(expect.objectContaining({
+                matchId: 'match-watchdog-dicethrone-displayonly-bonus-settlement',
+                gameId,
+                playerId: '1',
+                status: 'resolved',
+            }));
+        } finally {
+            executeSpy.mockRestore();
+        }
+    });
+
+    it('dicethrone: displayOnly pendingBonusDiceSettlement 遇到响应窗口 + 交互链时，watchdog 应持续收口且不误打 bonus-die 命令', async () => {
+        const io = new MockIO();
+        const storage = new InMemoryStorage();
+        const feedbackReporter = vi.fn(async () => undefined);
+        const gameId = 'dicethrone';
+
+        await storage.createMatch('match-watchdog-dicethrone-displayonly-response-chain', {
+            initialState: {
+                G: {
+                    core: {
+                        activePlayerId: '0',
+                        currentPlayerIndex: 0,
+                        turnOrder: ['0', '1'],
+                        players: {
+                            '0': { hp: 50, maxHp: 50, combatPoints: 0, statusEffects: {}, tokens: {}, hand: [], deck: [], discardPile: [] },
+                            '1': { hp: 50, maxHp: 50, combatPoints: 0, statusEffects: {}, tokens: {}, hand: [], deck: [], discardPile: [] },
+                        },
+                        selectedCharacters: {
+                            '0': 'monk',
+                            '1': 'shadow_thief',
+                        },
+                        pendingAttack: {
+                            attackerId: '0',
+                            defenderId: '1',
+                            isDefendable: true,
+                            sourceAbilityId: 'fist-technique-5',
+                            defenseAbilityId: 'shadow-defense',
+                        },
+                        pendingBonusDiceSettlement: {
+                            id: 'display-only-bonus-chain-1',
+                            attackerId: '1',
+                            displayOnly: true,
+                            dice: [{ index: 0, value: 4, originalValue: 4, rerolled: false }],
+                        },
+                    },
+                    sys: {
+                        phase: 'defensiveRoll',
+                        turnNumber: 4,
+                        eventStream: { nextId: 1 },
+                        interaction: {
+                            current: createSimpleChoice(
+                                'dt-response-choice-1',
+                                '1',
+                                '处理展示态后的响应',
+                                [{
+                                    id: 'pass',
+                                    label: 'Pass',
+                                    value: { kind: 'pass' },
+                                }],
+                                {
+                                    sourceId: 'dt_displayonly_chain',
+                                    targetType: 'button',
+                                },
+                            ),
+                            queue: [],
+                            isBlocked: false,
+                        },
+                        responseWindow: {
+                            current: {
+                                id: 'dt-response-window-1',
+                                windowType: 'afterRollConfirmed',
+                                sourceId: 'card-give-hand',
+                                responderQueue: ['0', '1'],
+                                currentResponderIndex: 1,
+                                passedPlayers: [],
+                            },
+                        },
+                    },
+                },
+                _stateID: 0,
+                randomSeed: 'seed',
+                randomCursor: 0,
+            },
+            metadata: createOnlineAiRecoveryMetadata({
+                gameName: gameId,
+                seatControllers: {
+                    '0': { type: 'human' },
+                    '1': { type: 'local-ai' },
+                },
+            }),
+        });
+
+        const resolutionSpy = vi.spyOn(aiModule, 'resolveNextAiDispatch');
+        resolutionSpy
+            .mockResolvedValueOnce({
+                kind: 'action',
+                resolution: {
+                    playerId: '1',
+                    attemptKey: 'dt-displayonly-response-chain-step-1',
+                    source: 'local-ai',
+                    action: {
+                        actionId: 'interaction:dt-response-choice-1:pass',
+                        kind: 'interaction-choice',
+                        label: 'Pass',
+                        commands: [{
+                            type: INTERACTION_COMMANDS.RESPOND,
+                            payload: { optionId: 'pass' },
+                        }],
+                    },
+                },
+            })
+            .mockResolvedValueOnce({
+                kind: 'action',
+                resolution: {
+                    playerId: '1',
+                    attemptKey: 'dt-displayonly-response-chain-step-2',
+                    source: 'local-ai',
+                    action: {
+                        actionId: 'interaction:dt-card:select-player',
+                        kind: 'interaction-select-player',
+                        label: '选择目标',
+                        commands: [{
+                            type: 'RESOLVE_INTERACTION',
+                            payload: { selectedPlayerIds: ['0'] },
+                        }],
+                    },
+                },
+            })
+            .mockResolvedValueOnce({
+                kind: 'action',
+                resolution: {
+                    playerId: '1',
+                    attemptKey: 'dt-displayonly-response-chain-step-3',
+                    source: 'local-ai',
+                    action: {
+                        actionId: 'interaction:dt-response-choice-2:pass',
+                        kind: 'interaction-choice',
+                        label: 'Pass again',
+                        commands: [{
+                            type: INTERACTION_COMMANDS.RESPOND,
+                            payload: { optionId: 'pass' },
+                        }],
+                    },
+                },
+            })
+            .mockResolvedValue({
+                kind: 'idle' as const,
+                idleReason: 'no-action',
+            });
+
+        const server = new GameTransportServer({
+            io: io as unknown as any,
+            storage,
+            games: [createEngineConfigWithId(gameId)],
+            onlineAiRecoveryTickMs: 0,
+            onlineAiRecoveryTimeoutMs: 0,
+            onlineAiFeedbackReporter: feedbackReporter,
+        });
+
+        const serverInternal = server as unknown as {
+            loadMatch: (matchID: string) => Promise<any>;
+            runOnlineAiRecoveryTick: () => Promise<void>;
+            executeCommandInternal: (
+                match: any,
+                playerID: string,
+                commandType: string,
+                payload: unknown,
+                options?: { suppressBroadcast?: boolean },
+            ) => Promise<boolean>;
+        };
+
+        const match = await serverInternal.loadMatch('match-watchdog-dicethrone-displayonly-response-chain');
+        const executeSpy = vi.spyOn(serverInternal, 'executeCommandInternal').mockImplementation(async (
+            activeMatch,
+            playerID,
+            commandType,
+            payload,
+        ) => {
+            expect(playerID).toBe('1');
+
+            if (commandType === 'SYS_INTERACTION_RESPOND') {
+                const currentInteractionId = (activeMatch.state.sys?.interaction?.current as { id?: string } | undefined)?.id;
+                if (currentInteractionId === 'dt-response-choice-1') {
+                    expect(payload).toEqual({ optionId: 'pass' });
+                    activeMatch.state = {
+                        ...activeMatch.state,
+                        sys: {
+                            ...activeMatch.state.sys,
+                            eventStream: { nextId: 2 },
+                            interaction: {
+                                current: {
+                                    id: 'dt-card-interaction-1',
+                                    playerId: '1',
+                                    sourceCardId: 'card-give-hand',
+                                    type: 'selectPlayer',
+                                    titleKey: 'interaction.selectPlayer',
+                                    selectCount: 1,
+                                    selected: [],
+                                    targetPlayerIds: ['0'],
+                                },
+                                queue: [],
+                                isBlocked: false,
+                            },
+                        },
+                    };
+                    return true;
+                }
+
+                if (currentInteractionId === 'dt-response-choice-2') {
+                    expect(payload).toEqual({ optionId: 'pass' });
+                    activeMatch.state = {
+                        ...activeMatch.state,
+                        sys: {
+                            ...activeMatch.state.sys,
+                            phase: 'main2',
+                            eventStream: { nextId: 4 },
+                            interaction: {
+                                current: undefined,
+                                queue: [],
+                                isBlocked: false,
+                            },
+                            responseWindow: {
+                                current: undefined,
+                            },
+                        },
+                    };
+                    return true;
+                }
+            }
+
+            if (commandType === 'RESOLVE_INTERACTION') {
+                expect(payload).toEqual({ selectedPlayerIds: ['0'] });
+                activeMatch.state = {
+                    ...activeMatch.state,
+                    sys: {
+                        ...activeMatch.state.sys,
+                        eventStream: { nextId: 3 },
+                        interaction: {
+                            current: createSimpleChoice(
+                                'dt-response-choice-2',
+                                '1',
+                                '交互后续响应',
+                                [{
+                                    id: 'pass',
+                                    label: 'Pass',
+                                    value: { kind: 'pass' },
+                                }],
+                                {
+                                    sourceId: 'dt_displayonly_chain_followup',
+                                    targetType: 'button',
+                                },
+                            ),
+                            queue: [],
+                            isBlocked: false,
+                        },
+                        responseWindow: {
+                            current: {
+                                id: 'dt-response-window-2',
+                                windowType: 'afterCardPlayed',
+                                sourceId: 'card-give-hand',
+                                responderQueue: ['1'],
+                                currentResponderIndex: 0,
+                                passedPlayers: [],
+                            },
+                        },
+                    },
+                };
+                return true;
+            }
+
+            throw new Error(`Unexpected command: ${String(commandType)}`);
+        });
+
+        try {
+            await serverInternal.runOnlineAiRecoveryTick();
+            await serverInternal.runOnlineAiRecoveryTick();
+            for (let i = 0; i < 10; i++) { await nextTick(); }
+
+            const executed = executeSpy.mock.calls.map(([, , commandType]) => commandType);
+            expect(executed).toEqual([
+                'SYS_INTERACTION_RESPOND',
+                'RESOLVE_INTERACTION',
+                'SYS_INTERACTION_RESPOND',
+            ]);
+            expect(executed).not.toContain('REROLL_BONUS_DIE');
+            expect(executed).not.toContain('SKIP_BONUS_DICE_REROLL');
+            expect(match.state.sys.phase).toBe('main2');
+            expect(match.state.sys.responseWindow?.current).toBeUndefined();
+            expect(match.state.sys.interaction?.current).toBeUndefined();
+            expect(match.state.core.pendingBonusDiceSettlement).toMatchObject({
+                id: 'display-only-bonus-chain-1',
+                displayOnly: true,
+            });
+            expect(resolutionSpy.mock.calls.length).toBeGreaterThanOrEqual(3);
+            expect(feedbackReporter).toHaveBeenCalledWith(expect.objectContaining({
+                matchId: 'match-watchdog-dicethrone-displayonly-response-chain',
+                gameId,
+                playerId: '1',
+                status: 'resolved',
+            }));
+        } finally {
+            executeSpy.mockRestore();
+            resolutionSpy.mockRestore();
+        }
+    });
+
     it('dicethrone: human active main2 时 watchdog 不应触发 seat-legal-only 代打推进', async () => {
         const io = new MockIO();
         const storage = new InMemoryStorage();
@@ -3501,6 +3967,98 @@ describe('GameTransportServer（离座与重连）', () => {
         };
 
         await serverInternal.loadMatch('match-watchdog-dicethrone-human-main2-no-legal-only');
+        const executeSpy = vi.spyOn(serverInternal, 'executeCommandInternal');
+
+        try {
+            await serverInternal.runOnlineAiRecoveryTick();
+            await serverInternal.runOnlineAiRecoveryTick();
+            await nextTick();
+            await nextTick();
+
+            expect(resolveDispatchSpy).not.toHaveBeenCalled();
+            expect(executeSpy).not.toHaveBeenCalled();
+            expect(feedbackReporter).not.toHaveBeenCalled();
+        } finally {
+            resolveDispatchSpy.mockRestore();
+        }
+    });
+
+    it('通用: human active 且非 defensiveRoll 阶段时，watchdog 不应尝试 seat-legal-only 代打', async () => {
+        const io = new MockIO();
+        const storage = new InMemoryStorage();
+        const feedbackReporter = vi.fn(async () => undefined);
+        const gameId = 'smashup';
+        const resolveDispatchSpy = vi.spyOn(aiModule, 'resolveNextAiDispatch').mockResolvedValue({
+            kind: 'action',
+            resolution: {
+                playerId: '1',
+                source: 'local-ai',
+                action: {
+                    actionId: 'ai-playcards-advance',
+                    kind: 'advance-phase',
+                    label: 'AI 推进阶段',
+                    commands: [{ type: 'ADVANCE_PHASE', payload: {} }],
+                },
+            },
+        } as any);
+
+        await storage.createMatch('match-watchdog-generic-human-active-no-legal-only', {
+            initialState: {
+                G: {
+                    core: {
+                        activePlayerId: '0',
+                        currentPlayerIndex: 0,
+                        turnOrder: ['0', '1'],
+                    },
+                    sys: {
+                        phase: 'playCards',
+                        turnNumber: 5,
+                        eventStream: { nextId: 1 },
+                        interaction: {
+                            current: undefined,
+                            queue: [],
+                            isBlocked: false,
+                        },
+                        responseWindow: {
+                            current: undefined,
+                        },
+                    },
+                },
+                _stateID: 0,
+                randomSeed: 'seed',
+                randomCursor: 0,
+            },
+            metadata: createOnlineAiRecoveryMetadata({
+                gameName: gameId,
+                seatControllers: {
+                    '0': { type: 'human' },
+                    '1': { type: 'local-ai' },
+                },
+            }),
+        });
+
+        const server = new GameTransportServer({
+            io: io as unknown as any,
+            storage,
+            games: [createEngineConfigWithId(gameId)],
+            onlineAiRecoveryTickMs: 0,
+            onlineAiRecoveryTimeoutMs: 0,
+            onlineAiFeedbackReporter: feedbackReporter,
+        });
+
+        const serverInternal = server as unknown as {
+            loadMatch: (matchID: string) => Promise<any>;
+            runOnlineAiRecoveryTick: () => Promise<void>;
+            executeCommandInternal: (
+                match: any,
+                playerID: string,
+                commandType: string,
+                payload: unknown,
+                options?: { suppressBroadcast?: boolean },
+            ) => Promise<boolean>;
+        };
+
+        await serverInternal.loadMatch('match-watchdog-generic-human-active-no-legal-only');
         const executeSpy = vi.spyOn(serverInternal, 'executeCommandInternal');
 
         try {

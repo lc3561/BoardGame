@@ -181,4 +181,64 @@ describe('MobileTextEntryProxyLayer', () => {
         expect(syncProxyValueToTextEntry(input, '代理同步值')).toBe(true);
         expect(input.value).toBe('代理同步值');
     });
+
+    it('会把代理输入同步回被代理层冻结为只读的源 input', () => {
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = '';
+        input.readOnly = true;
+        input.setAttribute('data-mobile-text-entry-proxy-source', 'true');
+        document.body.appendChild(input);
+
+        expect(syncProxyValueToTextEntry(input, '冻结输入同步值')).toBe(true);
+        expect(input.value).toBe('冻结输入同步值');
+        expect(input.readOnly).toBe(true);
+    });
+
+    it('会把代理输入同步回被代理层冻结为 contenteditable=false 的源节点', () => {
+        const editable = document.createElement('div');
+        editable.setAttribute('contenteditable', 'false');
+        editable.setAttribute('data-mobile-text-entry-proxy-source', 'true');
+        editable.textContent = 'before';
+        document.body.appendChild(editable);
+
+        expect(syncProxyValueToTextEntry(editable, 'after')).toBe(true);
+        expect(editable.textContent).toBe('after');
+    });
+
+    it('单行代理输入按 Enter 时会提交源表单', async () => {
+        const modalRoot = document.getElementById('modal-root');
+        if (!modalRoot) throw new Error('missing modal root');
+
+        const form = document.createElement('form');
+        const sourceInput = document.createElement('input');
+        sourceInput.type = 'text';
+        sourceInput.placeholder = 'feedback';
+        const submitButton = document.createElement('button');
+        submitButton.type = 'submit';
+        submitButton.textContent = 'send';
+        const onSubmit = vi.fn((event: Event) => event.preventDefault());
+        form.addEventListener('submit', onSubmit);
+        form.appendChild(sourceInput);
+        form.appendChild(submitButton);
+        modalRoot.appendChild(form);
+
+        render(<MobileTextEntryProxyLayer />);
+
+        await act(async () => {
+            sourceInput.focus();
+            fireEvent.focusIn(sourceInput);
+            await vi.advanceTimersByTimeAsync(60);
+        });
+
+        const proxyInput = screen.getByTestId('mobile-text-entry-proxy-input');
+
+        await act(async () => {
+            fireEvent.change(proxyInput, { target: { value: 'hello from proxy' } });
+            fireEvent.keyDown(proxyInput, { key: 'Enter', code: 'Enter' });
+            await vi.advanceTimersByTimeAsync(20);
+        });
+
+        expect(onSubmit).toHaveBeenCalledTimes(1);
+    });
 });

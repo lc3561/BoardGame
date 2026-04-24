@@ -167,6 +167,26 @@ describe('Feedback Module (e2e)', () => {
         expect(res.body.userId).toBeUndefined();
     });
 
+    it('未登录可以匿名读取反馈列表（只读）', async () => {
+        await request(app.getHttpServer())
+            .post('/feedback')
+            .send({
+                content: '匿名可读列表样本',
+                type: 'bug',
+                severity: 'low',
+                gameName: 'tictactoe',
+            })
+            .expect(201);
+
+        const listRes = await request(app.getHttpServer())
+            .get('/admin/feedback?limit=20')
+            .expect(200);
+
+        expect(listRes.body.items).toHaveLength(1);
+        expect(listRes.body.items[0].content).toBe('匿名可读列表样本');
+        expect(listRes.body.items[0].canManage).toBe(false);
+    });
+
     it('internal feedback 需要 token 且可创建系统反馈', async () => {
         const payload = {
             content: 'system feedback',
@@ -1206,7 +1226,67 @@ describe('Feedback Module (e2e)', () => {
         expect(updateRes.body.status).toBe('resolved');
     });
 
-    it('developer 可以查看反馈并更新状态', async () => {
+    it('普通用户可查看全部反馈且仅能修改自己的反馈（并优先显示自己的）', async () => {
+        const { userToken } = await seedUsers();
+        const { token: otherUserToken } = await registerUser({
+            username: 'player-feedback-2',
+            email: 'player-feedback-2@example.com',
+            code: '778899',
+        });
+
+        const ownFeedbackRes = await request(app.getHttpServer())
+            .post('/feedback')
+            .set('Authorization', `Bearer ${userToken}`)
+            .send({
+                content: 'user own feedback',
+                type: 'bug',
+                severity: 'medium',
+                gameName: 'smashup',
+                clientContext: { gameId: 'smashup' },
+            })
+            .expect(201);
+
+        const otherFeedbackRes = await request(app.getHttpServer())
+            .post('/feedback')
+            .set('Authorization', `Bearer ${otherUserToken}`)
+            .send({
+                content: 'other user feedback',
+                type: 'bug',
+                severity: 'medium',
+                gameName: 'tictactoe',
+                clientContext: { gameId: 'tictactoe' },
+            })
+            .expect(201);
+
+        await feedbackModel.findByIdAndUpdate(ownFeedbackRes.body._id, { createdAt: new Date('2026-03-14T10:00:00.000Z') });
+        await feedbackModel.findByIdAndUpdate(otherFeedbackRes.body._id, { createdAt: new Date('2026-03-14T11:00:00.000Z') });
+
+        const listRes = await request(app.getHttpServer())
+            .get('/admin/feedback?limit=20')
+            .set('Authorization', `Bearer ${userToken}`)
+            .expect(200);
+
+        expect(listRes.body.items).toHaveLength(2);
+        expect(listRes.body.items[0]._id).toBe(ownFeedbackRes.body._id);
+        const ownRow = listRes.body.items.find((item: { _id: string }) => item._id === ownFeedbackRes.body._id);
+        const otherRow = listRes.body.items.find((item: { _id: string }) => item._id === otherFeedbackRes.body._id);
+        expect(ownRow?.canManage).toBe(true);
+        expect(otherRow?.canManage).toBe(false);
+
+        await request(app.getHttpServer())
+            .patch(`/admin/feedback/${ownFeedbackRes.body._id as string}/status`)
+            .set('Authorization', `Bearer ${userToken}`)
+            .send({ status: 'resolved' })
+            .expect(200);
+
+        await request(app.getHttpServer())
+            .patch(`/admin/feedback/${otherFeedbackRes.body._id as string}/status`)
+            .set('Authorization', `Bearer ${userToken}`)
+            .send({ status: 'resolved' })
+            .expect(404);
+    });
+
+    it('developer 可查看全部反馈并更新负责游戏的反馈', async () => {
         const { adminToken, developerToken, userToken } = await seedUsers();
 
         const ownFeedbackRes = await request(app.getHttpServer())
@@ -1247,8 +1327,14 @@ describe('Feedback Module (e2e)', () => {
             .set('Authorization', `Bearer ${developerToken}`)
             .expect(200);
 
-        expect(listRes.body.items).toHaveLength(1);
-        expect(listRes.body.items[0]._id).toBe(ownFeedbackId);
+        expect(listRes.body.items).toHaveLength(2);
+        const visibleIds = listRes.body.items.map((item: { _id: string }) => item._id);
+        expect(visibleIds).toContain(ownFeedbackId);
+        expect(visibleIds).toContain(otherFeedbackId);
+        const ownRow = listRes.body.items.find((item: { _id: string }) => item._id === ownFeedbackId);
+        const otherRow = listRes.body.items.find((item: { _id: string }) => item._id === otherFeedbackId);
+        expect(ownRow?.canManage).toBe(true);
+        expect(otherRow?.canManage).toBe(false);
 
         const updateRes = await request(app.getHttpServer())
             .patch(`/admin/feedback/${ownFeedbackId}/status`)

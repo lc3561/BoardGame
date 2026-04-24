@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { isBackofficeRole, useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../contexts/AuthContext';
 import { useModalStack } from '../../contexts/ModalStackContext';
 import { useTranslation } from 'react-i18next';
 import { LayoutDashboard, LogOut, History, MessageSquare, MousePointer2, Settings } from 'lucide-react';
@@ -52,7 +52,6 @@ export const UserMenu = ({ onLogout }: UserMenuProps) => {
 
     // 铃铛红点 = 系统通知 OR 好友请求 OR 未读消息
     const hasBellBadge = hasNewNotification || requests.length > 0 || unreadTotal > 0;
-    const canAccessAdmin = isBackofficeRole(user?.role);
 
     // 检查是否有新通知（对比 localStorage 记录的上次查看时间）
     useEffect(() => {
@@ -299,15 +298,13 @@ export const UserMenu = ({ onLogout }: UserMenuProps) => {
                         {t('auth:menu.setCursor')}
                     </button>
 
-                    {canAccessAdmin && (
-                        <button
-                            onClick={handleOpenAdmin}
-                            className="w-full px-4 py-2.5 text-left cursor-pointer text-parchment-base-text font-bold text-xs hover:bg-parchment-base-bg rounded flex items-center gap-3 transition-colors"
-                        >
-                            <LayoutDashboard size={16} />
-                            {t('auth:menu.adminDashboard')}
-                        </button>
-                    )}
+                    <button
+                        onClick={handleOpenAdmin}
+                        className="w-full px-4 py-2.5 text-left cursor-pointer text-parchment-base-text font-bold text-xs hover:bg-parchment-base-bg rounded flex items-center gap-3 transition-colors"
+                    >
+                        <LayoutDashboard size={16} />
+                        {t('auth:menu.adminDashboard')}
+                    </button>
 
                     {/* 退出登录 */}
                     <button

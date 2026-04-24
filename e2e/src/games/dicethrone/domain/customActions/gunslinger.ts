@@ -1,7 +1,7 @@
 import { createBonusDiceWithReroll, createDisplayOnlySettlement, registerCustomActionHandler, resolveEffectsToEvents, type CustomActionContext } from '../effects';
 import { registerChoiceResolvedEventHandler } from '../choiceResolvedEvents';
 import { GUNSLINGER_DICE_FACE_IDS, STATUS_IDS, TOKEN_IDS } from '../ids';
-import { getActiveDice, getOpponents, getPlayerDieFace, getSeatingOrder, getTokenStackLimit } from '../rules';
+import { getActiveDice, getMaxDuplicateValueCount, getOpponents, getPlayerDieFace, getSeatingOrder, getTokenStackLimit } from '../rules';
 import { RESOURCE_IDS } from '../resources';
 import { CP_MAX } from '../types';
 import type { PendingInteraction } from '../core-types';
@@ -484,19 +484,7 @@ function getHighNoonTargetPlayerIds(state: CustomActionContext['state'], attacke
 }
 
 function hasFourOfAKind(state: CustomActionContext['state']): boolean {
-    const activeDice = getActiveDice(state);
-    const counts = new Map<string, number>();
-    for (const die of activeDice) {
-        const symbol = typeof die.symbol === 'string' && die.symbol.length > 0
-            ? die.symbol
-            : (Array.isArray(die.symbols) && typeof die.symbols[0] === 'string' ? die.symbols[0] : null);
-        if (!symbol) continue;
-        counts.set(symbol, (counts.get(symbol) ?? 0) + 1);
-    }
-    for (const count of counts.values()) {
-        if (count >= 4) return true;
-    }
-    return false;
+    return getMaxDuplicateValueCount(getActiveDice(state)) >= 4;
 }
 
 function createUnblockableDamageEvent(

@@ -16,22 +16,23 @@
 - 结论: 不是 `defensiveRoll` 直接跳过 `main2`，而是进入 `main2` 后立即推进到 `discard`。
 
 ## 根因
-- 在线 AI watchdog 的 `seat-legal-only` 代打路径在 DiceThrone 中对“human active + main2”缺少阶段门禁。
-- 这会引入“真人主阶段被代推进”的风险，形成“被跳过”的主观体感。
+- 在线 AI watchdog 的 `seat-legal-only` 代打路径在“真人当前回合”场景过宽，非防御阶段也可能尝试代 AI 执行动作。
+- 这会引入“真人主阶段被代推进”的风险，形成“被跳过”的主观体感（不只王权，跨游戏均可能出现）。
 
 ## 修复
 - 文件: `src/engine/transport/server.ts`
-- 变更: `resolveOnlineAiLegalActionOnlyCandidate` 增加 DiceThrone 阶段保护。
-- 规则: 当 `match.gameId === 'dicethrone'` 且当前阶段不是 `defensiveRoll` 时，直接返回 `null`，不触发 `seat-legal-only` 代打。
+- 变更: `resolveOnlineAiLegalActionOnlyCandidate` 增加**通用阶段门禁**。
+- 规则: 当真人是当前操作者时，`seat-legal-only` 仅允许 `defensiveRoll` 阶段触发；其它阶段（各游戏主阶段）统一返回 `null`，不触发代打。
 
 ## 回归测试
 - 新增用例: `src/engine/transport/__tests__/server.test.ts`
   - `dicethrone: human active main2 时 watchdog 不应触发 seat-legal-only 代打推进`
+  - `通用: human active 且非 defensiveRoll 阶段时，watchdog 不应尝试 seat-legal-only 代打`
 - 定向执行（通过）:
-  - `node scripts/infra/vitest-cli-safe.mjs run src/engine/transport/__tests__/server.test.ts --config vitest.config.ts --pool threads --no-file-parallelism --maxWorkers 1 -t "online AI watchdog 在 human active 的 off-turn 防御阶段也应代 AI 执行合法动作，避免 defensiveRoll 卡死|dicethrone: human active main2 时 watchdog 不应触发 seat-legal-only 代打推进|online AI watchdog 在 defensiveRoll 实际由 human 防御方行动时，不应误对 AI 攻击方执行 force-end-turn"`
+  - `node scripts/infra/vitest-cli-safe.mjs run src/engine/transport/__tests__/server.test.ts --config vitest.config.ts --pool threads --no-file-parallelism --maxWorkers 1 -t "online AI watchdog 在 human active 的 off-turn 防御阶段也应代 AI 执行合法动作，避免 defensiveRoll 卡死|dicethrone: human active main2 时 watchdog 不应触发 seat-legal-only 代打推进|通用: human active 且非 defensiveRoll 阶段时，watchdog 不应尝试 seat-legal-only 代打|online AI watchdog 在 defensiveRoll 实际由 human 防御方行动时，不应误对 AI 攻击方执行 force-end-turn"`
 - 静态检查（通过）:
   - `node node_modules/eslint/bin/eslint.js src/engine/transport/server.ts src/engine/transport/__tests__/server.test.ts`
 
 ## 收口结论
-- 已加防误推进门禁并补回归测试。
+- 已加通用防误推进门禁并补回归测试。
 - 该反馈按“已修复并防回归”关闭。
