@@ -1132,6 +1132,108 @@ describe('scoreBases 阶段自动推进', () => {
         expect((resolution?.action.commands[0]?.payload as { optionId?: string } | undefined)?.optionId).toBe('skip');
     });
 
+    it('smashup_reaction_choose 同时存在触发与高收益 afterScoring 响应牌时，AI 应优先打响应牌而不是盲选 trigger', async () => {
+        registerGameAiRuntime(smashUpAiRuntime);
+
+        const state: MatchState<SmashUpCore> = {
+            core: makeMinimalCore({
+                players: {
+                    '0': {
+                        ...makeMinimalCore().players['0'],
+                        factionIds: ['giant_ants', 'aliens'] as any,
+                        hand: [{
+                            uid: 'c1',
+                            defId: 'giant_ant_we_are_the_champions',
+                            type: 'action',
+                            owner: '0',
+                        }] as any,
+                    },
+                    '1': {
+                        ...makeMinimalCore().players['1'],
+                        factionIds: ['ninja', 'robots'] as any,
+                    },
+                } as any,
+                bases: [makeBase('base_the_jungle', [
+                    {
+                        ...makeMinion('0', 'alien_invader', 3),
+                        uid: 'm1',
+                        powerCounters: 7,
+                    },
+                    {
+                        ...makeMinion('1', 'ninja_shinobi', 2),
+                        uid: 'm2',
+                        powerCounters: 2,
+                    },
+                ])],
+                scoringEligibleBaseIndices: [0],
+            }),
+            sys: {
+                phase: 'scoreBases',
+                turnNumber: 1,
+                interaction: {
+                    current: {
+                        id: 'reaction-choice-mixed-priority',
+                        playerId: '0',
+                        kind: 'simple-choice',
+                        data: {
+                            sourceId: 'smashup_reaction_choose',
+                            options: [
+                                {
+                                    id: 'trigger-a',
+                                    label: '先结算基地触发',
+                                    displayMode: 'button',
+                                    value: { kind: 'trigger', triggerId: 'afterScoring:base_tortuga:0:0' },
+                                },
+                                {
+                                    id: 'play_action:c1:0',
+                                    label: '我们乃最强 -> 基地 1',
+                                    displayMode: 'button',
+                                    value: {
+                                        kind: 'play_action',
+                                        playerId: '0',
+                                        cardUid: 'c1',
+                                        targetBaseIndex: 0,
+                                    },
+                                },
+                                {
+                                    id: 'pass',
+                                    label: 'Pass',
+                                    displayMode: 'button',
+                                    value: { kind: 'pass' },
+                                },
+                            ],
+                        },
+                    },
+                    queue: [],
+                },
+                responseWindow: {
+                    current: {
+                        id: 'afterscoring-window-mixed-priority',
+                        windowType: 'afterScoring',
+                        sourceId: 'smashup_reaction_choose',
+                        responderQueue: ['0', '1'],
+                        currentResponderIndex: 0,
+                        passedPlayers: [],
+                    },
+                    history: [],
+                },
+                eventStream: { nextId: 1 },
+            } as any,
+        };
+
+        const resolution = await resolveNextLocalAiAction({
+            engineConfig: smashUpAiEngineConfig,
+            state,
+            matchId: 'smashup-reaction-choose-prefers-card-response',
+            seatControllers: { '0': { type: 'local-ai' } },
+        });
+
+        expect(resolution?.playerId).toBe('0');
+        expect(resolution?.action.kind).toBe('interaction-choice');
+        expect((resolution?.action.commands[0]?.payload as { optionId?: string } | undefined)?.optionId)
+            .toBe('play_action:c1:0');
+    });
+
     it('AI 在计分阶段仅存在可激活的泰坦 special 时也不应暴露 advance-phase', () => {
         const state: MatchState<SmashUpCore> = {
             core: makeMinimalCore({
