@@ -146,11 +146,44 @@ export function buildAiProgressMarker(state: MatchState<unknown>): string {
     const eventStreamNextId = typeof state.sys?.eventStream?.nextId === 'number'
         ? state.sys.eventStream.nextId
         : '';
-    const interactionId = typeof state.sys?.interaction?.current?.id === 'string'
-        ? state.sys.interaction.current.id
+    const currentInteraction = state.sys?.interaction?.current as {
+        id?: unknown;
+        sourceId?: unknown;
+        data?: {
+            sourceId?: unknown;
+            options?: Array<{ id?: unknown; disabled?: unknown }>;
+        };
+    } | undefined;
+    const interactionId = typeof currentInteraction?.id === 'string'
+        ? currentInteraction.id
         : '';
-    const responderIndex = typeof state.sys?.responseWindow?.current?.currentResponderIndex === 'number'
-        ? state.sys.responseWindow.current.currentResponderIndex
+    const interactionSourceId = typeof currentInteraction?.sourceId === 'string'
+        ? currentInteraction.sourceId
+        : typeof currentInteraction?.data?.sourceId === 'string'
+            ? currentInteraction.data.sourceId
+            : '';
+    const interactionOptionSignature = Array.isArray(currentInteraction?.data?.options)
+        ? currentInteraction.data.options
+            .map((option) => {
+                const optionId = typeof option?.id === 'string' ? option.id : '';
+                const disabledFlag = option?.disabled === true ? '1' : '0';
+                return `${optionId}:${disabledFlag}`;
+            })
+            .join(',')
+        : '';
+    const currentResponseWindow = state.sys?.responseWindow?.current as {
+        windowType?: unknown;
+        sourceId?: unknown;
+        currentResponderIndex?: unknown;
+    } | undefined;
+    const responseWindowType = typeof currentResponseWindow?.windowType === 'string'
+        ? currentResponseWindow.windowType
+        : '';
+    const responseWindowSourceId = typeof currentResponseWindow?.sourceId === 'string'
+        ? currentResponseWindow.sourceId
+        : '';
+    const responderIndex = typeof currentResponseWindow?.currentResponderIndex === 'number'
+        ? currentResponseWindow.currentResponderIndex
         : '';
     const currentPlayerId = resolveCurrentPlayerId(state) ?? '';
 
@@ -159,6 +192,10 @@ export function buildAiProgressMarker(state: MatchState<unknown>): string {
         phase,
         eventStreamNextId,
         interactionId,
+        interactionSourceId,
+        interactionOptionSignature,
+        responseWindowType,
+        responseWindowSourceId,
         responderIndex,
         currentPlayerId,
     ].join('|');
@@ -336,6 +373,10 @@ function buildForceSkipPayloadFromSeatState(
         ? data.options.filter((option): option is HiddenSimpleChoiceOption & { id: string } =>
             Boolean(option) && option.disabled !== true && typeof option.id === 'string')
         : [];
+    const sourceId = typeof data?.sourceId === 'string' ? data.sourceId : undefined;
+    const title = typeof data?.title === 'string' ? data.title : undefined;
+    const minCount = typeof data?.multi?.min === 'number' ? data.multi.min : 1;
+    const maxCount = typeof data?.multi?.max === 'number' ? data.multi.max : minCount;
 
     const skipOption = enabledOptions.find((option) =>
         option.id === 'skip'
@@ -349,8 +390,8 @@ function buildForceSkipPayloadFromSeatState(
         return {
             interactionId: current.id,
             payload: { optionId: skipOption.id },
-            sourceId: typeof data?.sourceId === 'string' ? data.sourceId : undefined,
-            title: typeof data?.title === 'string' ? data.title : undefined,
+            sourceId,
+            title,
         };
     }
 
@@ -361,18 +402,17 @@ function buildForceSkipPayloadFromSeatState(
         return {
             interactionId: current.id,
             payload: { optionId: cancelOption.id },
-            sourceId: typeof data?.sourceId === 'string' ? data.sourceId : undefined,
-            title: typeof data?.title === 'string' ? data.title : undefined,
+            sourceId,
+            title,
         };
     }
 
-    const minCount = typeof data?.multi?.min === 'number' ? data.multi.min : 1;
     if (minCount === 0) {
         return {
             interactionId: current.id,
             payload: { optionIds: [] },
-            sourceId: typeof data?.sourceId === 'string' ? data.sourceId : undefined,
-            title: typeof data?.title === 'string' ? data.title : undefined,
+            sourceId,
+            title,
         };
     }
 
@@ -383,8 +423,24 @@ function buildForceSkipPayloadFromSeatState(
         return {
             interactionId: current.id,
             payload: { optionId: doneOption.id },
-            sourceId: typeof data?.sourceId === 'string' ? data.sourceId : undefined,
-            title: typeof data?.title === 'string' ? data.title : undefined,
+            sourceId,
+            title,
+        };
+    }
+
+    const enabledTriggerOptions = enabledOptions.filter((option) =>
+        !isControlChoiceOption(option) && option.value?.kind === 'trigger',
+    );
+    if (sourceId === 'smashup_reaction_choose'
+        && minCount === 1
+        && maxCount === 1
+        && enabledTriggerOptions.length > 0
+        && enabledTriggerOptions.length === enabledOptions.length) {
+        return {
+            interactionId: current.id,
+            payload: { optionId: enabledTriggerOptions[0].id },
+            sourceId,
+            title,
         };
     }
 

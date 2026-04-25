@@ -681,7 +681,6 @@ describe('buildAiProgressMarker（响应窗口语义指纹）', () => {
                 ...baseState.G,
                 sys: {
                     ...baseState.G.sys,
-                    eventStream: { nextId: 99 },
                     responseWindow: {
                         current: {
                             id: 'rw-2',
@@ -695,8 +694,67 @@ describe('buildAiProgressMarker（响应窗口语义指纹）', () => {
             },
         };
 
-        expect(buildAiProgressMarker(baseState as any))
-            .toBe(buildAiProgressMarker(reopenedState as any));
+        expect(buildAiProgressMarker(baseState.G as any))
+            .toBe(buildAiProgressMarker(reopenedState.G as any));
+    });
+
+    it('同一 interaction id 下如果选项签名变化，应被视为进展', () => {
+        const baseState = createOnlineAiRecoveryState({
+            interaction: {
+                current: {
+                    id: 'reaction-choice-1',
+                    kind: 'simple-choice',
+                    playerId: '1',
+                    data: {
+                        sourceId: 'smashup_reaction_choose',
+                        options: [
+                            { id: 'trigger-a', label: 'A', value: { kind: 'trigger', triggerId: 'a' } },
+                            { id: 'pass', label: 'Pass', value: { kind: 'pass' } },
+                        ],
+                    },
+                },
+                queue: [],
+                isBlocked: false,
+            },
+            responseWindow: {
+                current: {
+                    id: 'reaction-window-1',
+                    windowType: 'afterScoring',
+                    sourceId: 'smashup_reaction_choose',
+                    responderQueue: ['1'],
+                    currentResponderIndex: 0,
+                    passedPlayers: [],
+                },
+            },
+        });
+        const progressedState = {
+            ...baseState,
+            G: {
+                ...baseState.G,
+                sys: {
+                    ...baseState.G.sys,
+                    interaction: {
+                        current: {
+                            id: 'reaction-choice-1',
+                            kind: 'simple-choice',
+                            playerId: '1',
+                            data: {
+                                sourceId: 'smashup_reaction_choose',
+                                options: [
+                                    { id: 'trigger-b', label: 'B', value: { kind: 'trigger', triggerId: 'b' } },
+                                    { id: 'pass', label: 'Pass', value: { kind: 'pass' } },
+                                ],
+                            },
+                        },
+                        queue: [],
+                        isBlocked: false,
+                    },
+                },
+            },
+        };
+
+        expect(buildAiProgressMarker(baseState.G as any))
+            .not.toBe(buildAiProgressMarker(progressedState.G as any));
     });
 });
 
@@ -795,6 +853,54 @@ describe('resolveForceEndTurnForStalledAi（action-loop）', () => {
         expect(candidate?.resolution.action.commands[0]).toEqual({
             type: 'SYS_INTERACTION_RESPOND',
             payload: { optionId: 'pass' },
+        });
+    });
+
+    it('smashup mandatory reaction ordering falls back to first trigger instead of cancel', () => {
+        const sharedState = createOnlineAiRecoveryState({
+            activePlayerId: '1',
+            phase: 'scoreBases',
+            interaction: {
+                current: {
+                    id: 'mandatory-reaction-order-choice',
+                    kind: 'simple-choice',
+                    playerId: '1',
+                    data: {
+                        sourceId: 'smashup_reaction_choose',
+                        title: '??????????',
+                        options: [
+                            {
+                                id: 'trigger-base-arena',
+                                label: '???',
+                                value: { kind: 'trigger', triggerId: 'trigger:onMinionPlayed:base_arena:1777092533686:0' },
+                            },
+                            {
+                                id: 'trigger-wizard-archmage',
+                                label: '???',
+                                value: { kind: 'trigger', triggerId: 'trigger:onMinionPlayed:wizard_archmage:1777092533686:0' },
+                            },
+                        ],
+                    },
+                },
+                queue: [],
+                isBlocked: false,
+            },
+        }).G as any;
+
+        const candidate = resolveForceEndTurnForStalledAi({
+            sharedState,
+            seatControllers: {
+                '0': { type: 'human' },
+                '1': { type: 'local-ai' },
+            },
+            seatStates: {},
+        });
+
+        expect(candidate?.reason).toBe('visible-interaction');
+        expect(candidate?.requiresConfirmedAdvancePhase).toBe(true);
+        expect(candidate?.resolution.action.commands[0]).toEqual({
+            type: 'SYS_INTERACTION_RESPOND',
+            payload: { optionId: 'trigger-base-arena' },
         });
     });
 });
@@ -2891,20 +2997,41 @@ describe('GameTransportServer（离座与重连）', () => {
         const storage = new InMemoryStorage();
         const feedbackReporter = vi.fn(async () => undefined);
 
-        await storage.createMatch('match-watchdog-response-window-private-overlay-stale-emergency-view', {
-            initialState: createOnlineAiRecoveryState({
-                activePlayerId: '0',
-                phase: 'defensiveRoll',
-                responseWindow: {
-                    current: {
-                        id: 'response-window-stale-emergency-view-1',
-                        windowType: 'afterAttackResolved',
-                        sourceId: 'attack-1',
-                        responderQueue: ['1'],
-                        currentResponderIndex: 0,
-                    },
+        const initialState = createOnlineAiRecoveryState({
+            activePlayerId: '0',
+            phase: 'defensiveRoll',
+            responseWindow: {
+                current: {
+                    id: 'response-window-stale-emergency-view-1',
+                    windowType: 'afterAttackResolved',
+                    sourceId: 'attack-1',
+                    responderQueue: ['1'],
+                    currentResponderIndex: 0,
                 },
-            }),
+            },
+        });
+        initialState.G.sys.actionLog = {
+            entries: [
+                {
+                    text: '玩家 1 进入防御响应窗口',
+                    event: { type: 'dt:response-window-opened' },
+                },
+            ],
+        } as any;
+        initialState.G.sys.eventStream = {
+            ...(initialState.G.sys.eventStream ?? {}),
+            nextId: 2,
+            entries: [
+                {
+                    type: 'dt:response-window-opened',
+                    timestamp: 123,
+                    payload: { sourceId: 'attack-1' },
+                },
+            ],
+        } as any;
+
+        await storage.createMatch('match-watchdog-response-window-private-overlay-stale-emergency-view', {
+            initialState,
             metadata: createOnlineAiRecoveryMetadata(),
         });
 
@@ -3012,6 +3139,32 @@ describe('GameTransportServer（离座与重连）', () => {
                 playerId: '1',
                 incidentKind: 'legal-action-recovered',
                 status: 'resolved',
+            }));
+            const payload = feedbackReporter.mock.calls[0]?.[0] as {
+                stateSnapshot?: string;
+                actionLog?: string;
+            } | undefined;
+            const snapshot = JSON.parse(payload?.stateSnapshot ?? '{}');
+            expect(snapshot.blockerFingerprint).toContain('attack-1');
+            expect(snapshot.trackerKey).toContain('attack-1');
+            expect(snapshot.recentActionLogTail).toContainEqual(expect.objectContaining({
+                text: '玩家 1 进入防御响应窗口',
+                type: 'dt:response-window-opened',
+            }));
+            expect(snapshot.recentEventStreamTail).toContainEqual(expect.objectContaining({
+                type: 'dt:response-window-opened',
+                payload: expect.objectContaining({ sourceId: 'attack-1' }),
+            }));
+
+            const actionLog = JSON.parse(payload?.actionLog ?? '{}');
+            expect(actionLog).toMatchObject({
+                kind: 'online-ai-feedback-diagnostic',
+                reason: 'response-window',
+            });
+            expect(actionLog.blockerFingerprint).toContain('attack-1');
+            expect(actionLog.trackerKey).toContain('attack-1');
+            expect(actionLog.actionLogTail).toContainEqual(expect.objectContaining({
+                text: '玩家 1 进入防御响应窗口',
             }));
         } finally {
             resolutionSpy.mockRestore();
@@ -3187,6 +3340,114 @@ describe('GameTransportServer（离座与重连）', () => {
                 incidentKind: 'legal-action-recovered',
                 status: 'resolved',
             }));
+        } finally {
+            resolutionSpy.mockRestore();
+        }
+    });
+
+
+    it('watchdog falls back to first trigger respond for smashup mandatory reaction ordering', async () => {
+        const io = new MockIO();
+        const storage = new InMemoryStorage();
+        const feedbackReporter = vi.fn(async () => undefined);
+
+        await storage.createMatch('match-watchdog-visible-interaction-mandatory-order-fallback', {
+            initialState: createOnlineAiRecoveryState({
+                phase: 'scoreBases',
+                interaction: {
+                    current: createSimpleChoice(
+                        'reaction-choice-mandatory-order',
+                        '1',
+                        '??????????',
+                        [
+                            {
+                                id: 'trigger-base-arena',
+                                label: '???',
+                                value: { kind: 'trigger', triggerId: 'trigger:onMinionPlayed:base_arena:1777092533686:0' },
+                            },
+                            {
+                                id: 'trigger-wizard-archmage',
+                                label: '???',
+                                value: { kind: 'trigger', triggerId: 'trigger:onMinionPlayed:wizard_archmage:1777092533686:0' },
+                            },
+                        ],
+                        {
+                            sourceId: 'smashup_reaction_choose',
+                            targetType: 'button',
+                        },
+                    ),
+                    queue: [],
+                    isBlocked: false,
+                },
+            }),
+            metadata: createOnlineAiRecoveryMetadata(),
+        });
+
+        const resolutionSpy = vi.spyOn(aiModule, 'resolveNextAiDispatch').mockResolvedValue({
+            kind: 'blocked',
+            playerId: '1',
+            blockedReason: 'stale-private-overlay',
+            visibility: 'private-required',
+            blockedKey: '1:private-required:stale-private-overlay',
+            diagnostics: null,
+        } as any);
+
+        try {
+            const server = new GameTransportServer({
+                io: io as unknown as any,
+                storage,
+                games: [createInteractiveEngineConfig()],
+                onlineAiRecoveryTickMs: 0,
+                onlineAiRecoveryTimeoutMs: 0,
+                onlineAiRecoveryFailureReportThreshold: 1,
+                onlineAiFeedbackReporter: feedbackReporter,
+            });
+
+            const serverInternal = server as unknown as {
+                loadMatch: (matchID: string) => Promise<any>;
+                runOnlineAiRecoveryTick: () => Promise<void>;
+                executeCommandInternal: (
+                    match: any,
+                    playerID: string,
+                    commandType: string,
+                    payload: unknown,
+                ) => Promise<boolean>;
+            };
+
+            const executed: Array<{ commandType: string; payload: unknown }> = [];
+            vi.spyOn(serverInternal, 'executeCommandInternal').mockImplementation(async (match, _playerID, commandType, payload) => {
+                executed.push({ commandType, payload });
+                if (commandType === INTERACTION_COMMANDS.RESPOND) {
+                    match.state = {
+                        ...match.state,
+                        sys: {
+                            ...match.state.sys,
+                            eventStream: {
+                                ...(match.state.sys?.eventStream ?? {}),
+                                nextId: (match.state.sys?.eventStream?.nextId ?? 1) + 1,
+                            },
+                            interaction: {
+                                ...(match.state.sys?.interaction ?? {}),
+                                current: undefined,
+                            },
+                        },
+                    };
+                }
+                return true;
+            });
+
+            const match = await serverInternal.loadMatch('match-watchdog-visible-interaction-mandatory-order-fallback');
+            await serverInternal.runOnlineAiRecoveryTick();
+            await serverInternal.runOnlineAiRecoveryTick();
+            await nextTick();
+            await nextTick();
+
+            expect(resolutionSpy).toHaveBeenCalled();
+            expect(executed[0]).toEqual({
+                commandType: INTERACTION_COMMANDS.RESPOND,
+                payload: { optionId: 'trigger-base-arena' },
+            });
+            expect(match.state.sys.interaction?.current).toBeUndefined();
         } finally {
             resolutionSpy.mockRestore();
         }
@@ -4555,7 +4816,7 @@ describe('GameTransportServer（离座与重连）', () => {
 
             expect(executeSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
             expect(resolutionSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
-            expect(buildAiProgressMarker(match.state)).toBe('4|draw|1|||0');
+            expect(buildAiProgressMarker(match.state)).toBe('4|draw|1|||||||0');
             expect(match.state.sys.interaction?.current).toBeUndefined();
             expect(feedbackReporter).toHaveBeenCalledWith(expect.objectContaining({
                 matchId: 'match-watchdog-visible-interaction-chain',
@@ -4918,6 +5179,7 @@ describe('GameTransportServer（离座与重连）', () => {
             disabledOptionIds: ['option-disabled'],
             enabledOptionIds: ['option-manual'],
         });
+        expect(snapshot.blockerFingerprint).toContain('dt-test-visible-choice');
     });
 
     it('online AI watchdog 自动反馈应携带 AI 决策预览', async () => {
@@ -5645,9 +5907,18 @@ describe('GameTransportServer（离座与重连）', () => {
             reason: 'all-options-disabled',
         }));
 
-        const payload = feedbackReporter.mock.calls[0]?.[0] as { stateSnapshot?: string } | undefined;
+        const payload = feedbackReporter.mock.calls[0]?.[0] as {
+            stateSnapshot?: string;
+            actionLog?: string;
+        } | undefined;
         const snapshot = JSON.parse(payload?.stateSnapshot ?? '{}');
         expect(snapshot.interaction?.seatSelectability).toMatchObject({
+            totalOptions: 2,
+            enabledOptions: 1,
+            disabledOptions: 1,
+            selectionState: 'recoverable-option-available',
+        });
+        expect(snapshot.interaction?.sharedSelectability).toMatchObject({
             totalOptions: 2,
             enabledOptions: 1,
             disabledOptions: 1,
@@ -5659,10 +5930,43 @@ describe('GameTransportServer（离座与重连）', () => {
             truncated: false,
         });
         expect(snapshot.aiDecisionPreview).toBeNull();
+        expect(snapshot.recentActionLogTail).toEqual([]);
+        expect(snapshot.recentEventStreamTail).toEqual([]);
+        expect(snapshot.blockerFingerprint).toBe('main2:all-options-disabled:interaction:simple-choice:test-unsat-choice');
+        expect(snapshot.interaction?.shared?.sourceId).toBe('test-unsat-choice');
         expect(snapshot.interaction?.seatUnsatisfiableReason).toBe('all-options-disabled');
         expect(snapshot.interaction?.seat?.options).toContainEqual(expect.objectContaining({
             id: '__emergency_skip__',
         }));
+        expect(snapshot.interaction?.seat?.options).toContainEqual(expect.objectContaining({
+            id: 'only-disabled',
+            disabledReason: '目标已失效',
+        }));
+
+        const actionLog = JSON.parse(payload?.actionLog ?? '{}');
+        expect(actionLog).toMatchObject({
+            kind: 'online-ai-feedback-diagnostic',
+            commandType: INTERACTION_COMMANDS.RESPOND,
+            reason: 'all-options-disabled',
+            blockerFingerprint: 'main2:all-options-disabled:interaction:simple-choice:test-unsat-choice',
+        });
+        expect(actionLog.interaction).toMatchObject({
+            shared: {
+                id: 'unsat-choice',
+                kind: 'simple-choice',
+                sourceId: 'test-unsat-choice',
+            },
+            seat: {
+                id: 'unsat-choice',
+                kind: 'simple-choice',
+                sourceId: 'test-unsat-choice',
+            },
+        });
+        expect(actionLog.interaction?.seat?.options).toContainEqual(expect.objectContaining({
+            id: 'only-disabled',
+            disabledReason: '目标已失效',
+        }));
     });
 });
+
 

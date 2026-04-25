@@ -16,7 +16,7 @@ import type { MatchState } from '../../../core/types';
 import type { SmashUpCore, PlayerState, BaseInPlay, MinionOnBase } from '../types';
 import { defaultTestRandom, runCommand } from './testRunner';
 import { SU_COMMANDS } from '../domain/types';
-import { SU_EVENTS } from '../domain/events';
+import { SU_EVENT_TYPES } from '../domain/events';
 import { initAllAbilities } from '../abilities';
 import { buildMinionTargetOptions, buildPlayerTargetOptions } from '../domain/abilityHelpers';
 
@@ -269,6 +269,81 @@ describe('scoreBases 阶段自动推进', () => {
         expect(result?.playerId).toBe('0');
     });
 
+    it('反馈 69beb069：基地已达 breakpoint 且当前玩家仍有额外随从额度时，ADVANCE_PHASE 仍应触发基地计分', () => {
+        const initialState: MatchState<SmashUpCore> = {
+            core: makeMinimalCore({
+                currentPlayerIndex: 1,
+                players: {
+                    '0': {
+                        ...makeMinimalCore().players['0'],
+                        hand: [],
+                        deck: [],
+                        discard: [],
+                        minionsPlayed: 4,
+                        minionLimit: 4,
+                        actionsPlayed: 1,
+                        actionLimit: 1,
+                        factionIds: ['innsmouth_pod', 'dinosaurs_pod'] as any,
+                    } as any,
+                    '1': {
+                        ...makeMinimalCore().players['1'],
+                        hand: [
+                            { uid: 'warbot-in-hand', defId: 'robot_warbot', type: 'minion', owner: '1' },
+                            { uid: 'scout-in-hand', defId: 'alien_scout', type: 'minion', owner: '1' },
+                        ] as any,
+                        deck: [],
+                        discard: [],
+                        minionsPlayed: 1,
+                        minionLimit: 2,
+                        actionsPlayed: 1,
+                        actionLimit: 1,
+                        factionIds: ['robot', 'alien'] as any,
+                    } as any,
+                } as any,
+                bases: [
+                    makeBase('base_the_homeworld', [
+                        { ...makeMinion('1', 'robot_hoverbot', 3), uid: 'p1-hoverbot-a' },
+                        { ...makeMinion('1', 'alien_invader', 3), uid: 'p1-invader' },
+                        { ...makeMinion('1', 'alien_collector', 2), uid: 'p1-collector' },
+                        { ...makeMinion('1', 'robot_zapbot', 2), uid: 'p1-zapbot' },
+                        { ...makeMinion('1', 'robot_microbot_reclaimer', 1), uid: 'p1-reclaimer' },
+                        { ...makeMinion('1', 'robot_hoverbot', 3), uid: 'p1-hoverbot-b' },
+                        { ...makeMinion('0', 'dino_armor_stego_pod', 3), uid: 'p0-stego' },
+                        { ...makeMinion('0', 'innsmouth_the_locals_pod', 2), uid: 'p0-local-a' },
+                        { ...makeMinion('0', 'innsmouth_the_locals_pod', 2), uid: 'p0-local-b' },
+                        { ...makeMinion('0', 'innsmouth_the_locals_pod', 2), uid: 'p0-local-c' },
+                    ]),
+                    makeBase('base_the_jungle'),
+                ],
+                baseDeck: ['base_haunted_house'],
+            }),
+            sys: {
+                phase: 'playCards',
+                turnNumber: 8,
+                interaction: { current: null, queue: [] },
+                responseWindow: { current: null, history: [] },
+            } as any,
+        };
+
+        const legalActions = buildSmashUpAiLegalActions({
+            playerId: '1',
+            state: initialState as any,
+        });
+        expect(legalActions.some(action => action.kind === 'advance-phase')).toBe(true);
+
+        const advanced = runCommand(initialState as any, {
+            type: 'ADVANCE_PHASE',
+            playerId: '1',
+            payload: {},
+            timestamp: 1,
+        } as any);
+
+        expect(advanced.success, advanced.error).toBe(true);
+        expect(advanced.events.map(event => event.type)).toContain(SU_EVENT_TYPES.BASE_SCORED);
+        expect(advanced.events.map(event => event.type)).toContain(SU_EVENT_TYPES.BASE_CLEARED);
+        expect(advanced.finalState.core.bases[0]?.defId).toBe('base_haunted_house');
+    });
+
     it('达标基地上只有触发式侏儒 POD beforeScoring 时仍应自动推进', () => {
         const core = makeMinimalCore({
             bases: [makeBase('base_pirate_cove', [
@@ -469,10 +544,10 @@ describe('scoreBases 阶段自动推进', () => {
                 responseWindow: { current: undefined },
                 actionLog: {
                     entries: [
-                        { actorId: '0', kind: SU_EVENTS['su:cards_discarded'].type },
-                        { actorId: '0', kind: SU_EVENTS['su:card_recovered_from_discard'].type },
-                        { actorId: '0', kind: SU_EVENTS['su:cards_discarded'].type },
-                        { actorId: '0', kind: SU_EVENTS['su:card_recovered_from_discard'].type },
+                        { actorId: '0', kind: SU_EVENT_TYPES.CARDS_DISCARDED },
+                        { actorId: '0', kind: SU_EVENT_TYPES.CARD_RECOVERED_FROM_DISCARD },
+                        { actorId: '0', kind: SU_EVENT_TYPES.CARDS_DISCARDED },
+                        { actorId: '0', kind: SU_EVENT_TYPES.CARD_RECOVERED_FROM_DISCARD },
                     ],
                 },
             } as any,
@@ -1130,6 +1205,108 @@ describe('scoreBases 阶段自动推进', () => {
         expect(resolution?.playerId).toBe('0');
         expect(resolution?.action.kind).toBe('interaction-choice');
         expect((resolution?.action.commands[0]?.payload as { optionId?: string } | undefined)?.optionId).toBe('skip');
+    });
+
+    it('smashup_reaction_choose 同时存在触发与高收益 afterScoring 响应牌时，AI 应优先打响应牌而不是盲选 trigger', async () => {
+        registerGameAiRuntime(smashUpAiRuntime);
+
+        const state: MatchState<SmashUpCore> = {
+            core: makeMinimalCore({
+                players: {
+                    '0': {
+                        ...makeMinimalCore().players['0'],
+                        factionIds: ['giant_ants', 'aliens'] as any,
+                        hand: [{
+                            uid: 'c1',
+                            defId: 'giant_ant_we_are_the_champions',
+                            type: 'action',
+                            owner: '0',
+                        }] as any,
+                    },
+                    '1': {
+                        ...makeMinimalCore().players['1'],
+                        factionIds: ['ninja', 'robots'] as any,
+                    },
+                } as any,
+                bases: [makeBase('base_the_jungle', [
+                    {
+                        ...makeMinion('0', 'alien_invader', 3),
+                        uid: 'm1',
+                        powerCounters: 7,
+                    },
+                    {
+                        ...makeMinion('1', 'ninja_shinobi', 2),
+                        uid: 'm2',
+                        powerCounters: 2,
+                    },
+                ])],
+                scoringEligibleBaseIndices: [0],
+            }),
+            sys: {
+                phase: 'scoreBases',
+                turnNumber: 1,
+                interaction: {
+                    current: {
+                        id: 'reaction-choice-mixed-priority',
+                        playerId: '0',
+                        kind: 'simple-choice',
+                        data: {
+                            sourceId: 'smashup_reaction_choose',
+                            options: [
+                                {
+                                    id: 'trigger-a',
+                                    label: '先结算基地触发',
+                                    displayMode: 'button',
+                                    value: { kind: 'trigger', triggerId: 'afterScoring:base_tortuga:0:0' },
+                                },
+                                {
+                                    id: 'play_action:c1:0',
+                                    label: '我们乃最强 -> 基地 1',
+                                    displayMode: 'button',
+                                    value: {
+                                        kind: 'play_action',
+                                        playerId: '0',
+                                        cardUid: 'c1',
+                                        targetBaseIndex: 0,
+                                    },
+                                },
+                                {
+                                    id: 'pass',
+                                    label: 'Pass',
+                                    displayMode: 'button',
+                                    value: { kind: 'pass' },
+                                },
+                            ],
+                        },
+                    },
+                    queue: [],
+                },
+                responseWindow: {
+                    current: {
+                        id: 'afterscoring-window-mixed-priority',
+                        windowType: 'afterScoring',
+                        sourceId: 'smashup_reaction_choose',
+                        responderQueue: ['0', '1'],
+                        currentResponderIndex: 0,
+                        passedPlayers: [],
+                    },
+                    history: [],
+                },
+                eventStream: { nextId: 1 },
+            } as any,
+        };
+
+        const resolution = await resolveNextLocalAiAction({
+            engineConfig: smashUpAiEngineConfig,
+            state,
+            matchId: 'smashup-reaction-choose-prefers-card-response',
+            seatControllers: { '0': { type: 'local-ai' } },
+        });
+
+        expect(resolution?.playerId).toBe('0');
+        expect(resolution?.action.kind).toBe('interaction-choice');
+        expect((resolution?.action.commands[0]?.payload as { optionId?: string } | undefined)?.optionId)
+            .toBe('play_action:c1:0');
     });
 
     it('AI 在计分阶段仅存在可激活的泰坦 special 时也不应暴露 advance-phase', () => {
