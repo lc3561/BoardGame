@@ -60,6 +60,7 @@ export const ONLINE_AI_LEGAL_ACTION_ONLY_REASONS = [
 ] as const satisfies ReadonlyArray<ForceEndTurnStalledAiReason>;
 
 export const ONLINE_AI_EMERGENCY_OVERLAY_FALLBACK_REASONS = [
+    'response-window',
     'active-turn',
     'active-turn-legal-only',
     'seat-legal-only',

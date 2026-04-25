@@ -2886,6 +2886,138 @@ describe('GameTransportServer（离座与重连）', () => {
         }
     });
 
+    it('online AI watchdog 在 response window 遇到 private overlay stale 时，也应使用 emergency playerView 重试响应动作', async () => {
+        const io = new MockIO();
+        const storage = new InMemoryStorage();
+        const feedbackReporter = vi.fn(async () => undefined);
+
+        await storage.createMatch('match-watchdog-response-window-private-overlay-stale-emergency-view', {
+            initialState: createOnlineAiRecoveryState({
+                activePlayerId: '0',
+                phase: 'defensiveRoll',
+                responseWindow: {
+                    current: {
+                        id: 'response-window-stale-emergency-view-1',
+                        windowType: 'afterAttackResolved',
+                        sourceId: 'attack-1',
+                        responderQueue: ['1'],
+                        currentResponderIndex: 0,
+                    },
+                },
+            }),
+            metadata: createOnlineAiRecoveryMetadata(),
+        });
+
+        const resolutionSpy = vi.spyOn(aiModule, 'resolveNextAiDispatch')
+            .mockResolvedValueOnce({
+                kind: 'blocked',
+                playerId: '1',
+                blockedReason: 'stale-private-overlay',
+                visibility: 'private-required',
+                blockedKey: '1:private-required:stale-private-overlay',
+                diagnostics: {
+                    sharedPhase: 'defensiveRoll',
+                    privatePhase: 'defensiveRoll',
+                    sharedTurnNumber: 4,
+                    privateTurnNumber: 4,
+                    sharedCurrentPlayerId: '1',
+                    privateCurrentPlayerId: '1',
+                    sharedEventStreamNextId: 1,
+                    privateEventStreamNextId: 0,
+                },
+            })
+            .mockResolvedValueOnce({
+                kind: 'action',
+                resolution: {
+                    playerId: '1',
+                    action: {
+                        actionId: 'response-play-card:card-next-time',
+                        kind: 'response-play-card',
+                        label: '打出下次不算',
+                        commands: [{
+                            type: 'PLAY_CARD',
+                            payload: { cardId: 'card-next-time' },
+                        }],
+                    },
+                    attemptKey: 'watchdog-response-window-emergency-player-view',
+                    source: 'local-ai',
+                },
+            });
+
+        try {
+            const server = new GameTransportServer({
+                io: io as unknown as any,
+                storage,
+                games: [createEngineConfig()],
+                onlineAiRecoveryTickMs: 0,
+                onlineAiRecoveryTimeoutMs: 0,
+                onlineAiFeedbackReporter: feedbackReporter,
+            });
+
+            const serverInternal = server as unknown as {
+                loadMatch: (matchID: string) => Promise<any>;
+                runOnlineAiRecoveryTick: () => Promise<void>;
+                executeCommandInternal: (
+                    match: any,
+                    playerID: string,
+                    commandType: string,
+                    payload: unknown,
+                ) => Promise<boolean>;
+            };
+
+            const match = await serverInternal.loadMatch('match-watchdog-response-window-private-overlay-stale-emergency-view');
+            const executed: Array<{ commandType: string; payload: unknown }> = [];
+            vi.spyOn(serverInternal, 'executeCommandInternal').mockImplementation(async (activeMatch, playerID, commandType, payload) => {
+                executed.push({ commandType, payload });
+                expect(playerID).toBe('1');
+
+                if (commandType !== 'PLAY_CARD') {
+                    throw new Error(`Unexpected command: ${commandType}`);
+                }
+
+                activeMatch.state = {
+                    ...activeMatch.state,
+                    core: {
+                        ...activeMatch.state.core,
+                        activePlayerId: '0',
+                        currentPlayerIndex: 0,
+                    },
+                    sys: {
+                        ...activeMatch.state.sys,
+                        eventStream: {
+                            ...(activeMatch.state.sys?.eventStream ?? {}),
+                            nextId: (activeMatch.state.sys?.eventStream?.nextId ?? 1) + 1,
+                        },
+                        responseWindow: {
+                            ...(activeMatch.state.sys?.responseWindow ?? {}),
+                            current: undefined,
+                        },
+                    },
+                };
+                return true;
+            });
+
+            await serverInternal.runOnlineAiRecoveryTick();
+            await serverInternal.runOnlineAiRecoveryTick();
+            await nextTick();
+
+            expect(resolutionSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
+            expect(executed).toEqual([{
+                commandType: 'PLAY_CARD',
+                payload: { cardId: 'card-next-time' },
+            }]);
+            expect(match.state.sys.responseWindow?.current).toBeUndefined();
+            expect(feedbackReporter).toHaveBeenCalledWith(expect.objectContaining({
+                matchId: 'match-watchdog-response-window-private-overlay-stale-emergency-view',
+                playerId: '1',
+                incidentKind: 'legal-action-recovered',
+                status: 'resolved',
+            }));
+        } finally {
+            resolutionSpy.mockRestore();
+        }
+    });
+
     it('online AI watchdog 触发 overlay resync 后应按冷却去重，避免连续广播风暴', async () => {
         const io = new MockIO();
         const storage = new InMemoryStorage();

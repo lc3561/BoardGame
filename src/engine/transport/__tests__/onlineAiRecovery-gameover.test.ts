@@ -24,6 +24,7 @@ describe('onlineAiRecovery - 游戏结束检查', () => {
             (reason) => !shouldUseOnlineAiEmergencyOverlayFallback(reason),
         );
         expect(uncovered).toEqual([]);
+        expect(ONLINE_AI_EMERGENCY_OVERLAY_FALLBACK_REASONS).toContain('response-window');
         expect(ONLINE_AI_EMERGENCY_OVERLAY_FALLBACK_REASONS).toContain('active-turn-legal-only');
         expect(ONLINE_AI_EMERGENCY_OVERLAY_FALLBACK_REASONS).toContain('seat-legal-only');
     });
