@@ -102,6 +102,7 @@ export const MERMAIDS_ACTIONS: ActionCardDef[] = [
         nameEn: 'Toll Bay',
         faction: SMASHUP_FACTION_IDS.MERMAIDS,
         abilityTags: ['onPlay'],
+        playNeedsBase: true,
         count: 1,
         previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.CARDS7, index: 4 },
     },

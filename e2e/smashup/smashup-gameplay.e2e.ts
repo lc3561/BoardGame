@@ -390,6 +390,68 @@ test.describe('SmashUp - 核心流程与交互稳定性', () => {
         await game.screenshot('werewolf-standing-stones-after-second-talent', testInfo);
     });
 
+    test('PC 端 hover 随从时，附着行动卡应至少放大到宿主随从宽度的一半', async ({ page, game }, testInfo) => {
+        test.setTimeout(90000);
+
+        await game.openTestGame('smashup', WEREWOLF_STANDING_STONES_QUERY, 45000);
+
+        await game.setupScene({
+            gameId: 'smashup',
+            player0: {
+                factions: ['werewolves', 'ghosts'],
+                minionsPlayed: 0,
+                minionLimit: 1,
+                actionsPlayed: 0,
+                actionLimit: 1,
+            },
+            player1: {
+                factions: ['aliens', 'pirates'],
+                minionsPlayed: 0,
+                minionLimit: 1,
+                actionsPlayed: 0,
+                actionLimit: 1,
+            },
+            bases: [
+                {
+                    defId: 'base_standing_stones',
+                    minions: [
+                        {
+                            uid: 'wolf-host-preview',
+                            defId: 'werewolf_pack_alpha',
+                            owner: '0',
+                            controller: '0',
+                            attachedActions: [
+                                { uid: 'oa-preview', defId: 'werewolf_leader_of_the_pack', ownerId: '0', talentUsed: true },
+                            ],
+                        },
+                    ],
+                    ongoingActions: [],
+                },
+                { defId: 'base_the_mothership', minions: [], ongoingActions: [] },
+            ],
+            currentPlayer: '0',
+            phase: 'playCards',
+        });
+
+        const hostMinion = page.locator('[data-minion-uid="wolf-host-preview"]');
+        const attachedAction = page.locator('[data-attached-action-uid="oa-preview"]');
+
+        await expect(hostMinion).toBeVisible({ timeout: 10000 });
+        await hostMinion.hover();
+        await expect(attachedAction).toBeVisible({ timeout: 5000 });
+
+        const hostMinionBox = await hostMinion.boundingBox();
+        const attachedActionBox = await attachedAction.boundingBox();
+        expect(hostMinionBox, 'PC 端宿主随从应提供尺寸').not.toBeNull();
+        expect(attachedActionBox, 'PC 端附着行动卡应提供尺寸').not.toBeNull();
+        expect(
+            attachedActionBox!.width,
+            'PC 端附着行动卡宽度应至少达到宿主随从宽度的一半，避免过小',
+        ).toBeGreaterThan((hostMinionBox?.width ?? 0) * 0.45);
+
+        await game.screenshot('smashup-pc-attached-action-size', testInfo);
+    });
+
     test('主动基地能力徽记应保持底部居中，不再向右偏', async ({ page, game }, testInfo) => {
         test.setTimeout(90000);
 

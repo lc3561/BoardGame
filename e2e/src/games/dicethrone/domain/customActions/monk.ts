@@ -2,7 +2,7 @@
  * 僧侣 (Monk) 专属 Custom Action 处理器
  */
 
-import { getActiveDice, getFaceCounts, getPlayerDieFace, getTokenStackLimit } from '../rules';
+import { getActiveDice, getFaceCounts, getMaxDuplicateValueCount, getPlayerDieFace, getTokenStackLimit } from '../rules';
 import { RESOURCE_IDS } from '../resources';
 import { TOKEN_IDS, DICE_FACE_IDS } from '../ids';
 import type {
@@ -174,6 +174,23 @@ function handleLotusPalmTaijiCapUpAndGrant6({ targetId, sourceAbilityId, state, 
     return events;
 }
 
+/** 拳术 III：若攻击骰至少 4 个相同数字，则施加倒地 */
+function handleFistTechnique3KnockdownIfFourKind({ targetId, sourceAbilityId, state, timestamp }: CustomActionContext): DiceThroneEvent[] {
+    if (getMaxDuplicateValueCount(getActiveDice(state)) < 4) return [];
+    const target = state.players[targetId];
+    if (!target) return [];
+    const currentStacks = target.statusEffects[STATUS_IDS.KNOCKDOWN] ?? 0;
+    const def = state.tokenDefinitions.find(e => e.id === STATUS_IDS.KNOCKDOWN);
+    const maxStacks = def?.stackLimit || 99;
+    const newTotal = Math.min(currentStacks + 1, maxStacks);
+    return [{
+        type: 'STATUS_APPLIED',
+        payload: { targetId, statusId: STATUS_IDS.KNOCKDOWN, stacks: 1, newTotal, sourceAbilityId },
+        sourceCommandType: 'ABILITY_EFFECT',
+        timestamp,
+    } as StatusAppliedEvent];
+}
+
 type ThunderStrikeBonusConfig = {
     diceCount: number;
     rerollCostTokenId: string;
@@ -320,6 +337,9 @@ export function registerMonkCustomActions(): void {
     });
     registerCustomActionHandler('lotus-palm-2-taiji-cap-up-and-grant6', handleLotusPalmTaijiCapUpAndGrant6, {
         categories: ['resource'],
+    });
+    registerCustomActionHandler('monk-fist-technique-3-knockdown-if-four-kind', handleFistTechnique3KnockdownIfFourKind, {
+        categories: ['status'],
     });
     registerCustomActionHandler('thunder-strike-roll-damage', handleThunderStrikeRollDamage, {
         categories: ['dice', 'damage'],

@@ -95,3 +95,20 @@ node scripts/infra/run-e2e-command.mjs isolated e2e/smashup/smashup.e2e.ts --gre
   - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-mermaids-banner.png`
   - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-skeletons-banner.png`
   - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-world-champs-banner.png`
+
+## 复测记录（2026-04-25）
+
+- 触发原因：`mermaids_toll_bay` 回归修复后，按长期任务口径重新跑整文件 E2E，确认派系页横幅链路未被带坏。
+- 复测命令：
+  - `npm run test:e2e:ci -- e2e/smashup/smashup.e2e.ts`
+- 复测结果：
+  - 整文件 `3 passed`（包含“派系选择页应显示 10 周年三派系与统一斜向实施中横幅”）。
+- 肉眼核图结论：
+  - 三派系仍保持同一套斜向“实施中”横幅样式；
+  - 页面未出现“分批实施/持续完善”长文案回流；
+  - 选派系总览与三张局部横幅截图可直接复查。
+- 本次复测截图（绝对路径）：
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-selection.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-mermaids-banner.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-skeletons-banner.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-world-champs-banner.png`

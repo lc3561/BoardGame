@@ -913,9 +913,19 @@ export const DiceThroneBoard: React.FC<DiceThroneBoardProps> = ({ G: rawG, dispa
 
     const getAbilityStartPos = React.useCallback((abilityId?: string) => {
         if (!abilityId) return getElementCenter(opponentHeaderRef.current);
-        // 对于变体 ID，先获取基础技能 ID
-        const match = findPlayerAbility(G, G.activePlayerId, abilityId);
-        const baseAbilityId = match?.ability.id ?? abilityId;
+
+        // 防御阶段的 activePlayerId 仍是进攻方，不能只按 activePlayerId 查技能归属；
+        // 否则防御技能（如 stand-tall / elusive-step / holy-defense / fearless-riposte）
+        // 产生伤害时会找不到自己的技能槽位，退回到 opponentHeader。
+        let baseAbilityId = abilityId;
+        for (const pid of Object.keys(G.players)) {
+            const match = findPlayerAbility(G, pid, abilityId);
+            if (match) {
+                baseAbilityId = match.ability.id;
+                break;
+            }
+        }
+
         const slotId = getAbilitySlotId(baseAbilityId);
         if (!slotId) return getElementCenter(opponentHeaderRef.current);
         const element = document.querySelector(`[data-ability-slot="${slotId}"]`) as HTMLElement | null;
@@ -1111,7 +1121,7 @@ export const DiceThroneBoard: React.FC<DiceThroneBoardProps> = ({ G: rawG, dispa
                 {!isSpectator && (
                     <GameDebugPanel G={rawG} dispatch={dispatch} playerID={playerID}>
                         {/* DiceThrone 专属作弊工具 */}
-                        <DiceThroneDebugConfig G={rawG} dispatch={dispatch} />
+                        <DiceThroneDebugConfig G={rawG} dispatch={dispatch} playerNames={playerNames} />
 
                         {/* 测试工具 */}
                         <div className="pt-4 border-t border-gray-200 mt-4 space-y-3">

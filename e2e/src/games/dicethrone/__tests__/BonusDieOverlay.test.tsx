@@ -20,7 +20,22 @@ import { getDiceThroneCardPreviewRef } from '../ui/cardPreviewHelper';
 
 const bonusDieEffectTranslations = {
     'watchOut.bow': '弓🏹：伤害+2',
+    'watchOut.none': '未触发额外效果',
     'volley.result': '{{bowCount}}个弓面：伤害+{{bonusDamage}}',
+    'volley.bowContribution': '弓🏹：本次伤害 +1',
+    'volley.otherContribution': '未命中弓面：本次伤害不增加',
+    'luckyRoll.heartContribution': '心：最终治疗 +2',
+    'luckyRoll.otherContribution': '非心面：最终治疗不增加',
+    'morePleaseRoll.swordContribution': '剑：最终伤害 +1',
+    'morePleaseRoll.otherContribution': '非剑面：最终伤害不增加',
+    'gunslingerEatMyLead.bulletContribution': '子弹：本次攻击伤害 +1',
+    'gunslingerEatMyLead.otherContribution': '非子弹面：本次攻击伤害不增加',
+    'totalDamageContribution': '本骰点数 {{value}} 计入最终伤害',
+    'totalDamageContributionThreshold': '本骰点数 {{value}} 计入最终伤害；总和达阈值会触发额外效果',
+    fire: '烈焰: 伤害 +3',
+    magma: '熔岩: 施加灼烧',
+    fiery_soul: '焚魂: 获得 2 烈焰精通',
+    meteor: '陨石: 施加击倒',
 };
 
 vi.mock('react-i18next', () => ({
@@ -269,6 +284,29 @@ describe('BonusDieOverlay', () => {
 
         expect(html).toContain('2个弓面：伤害+2');
         expect(html).not.toContain('bonusDie.effect.volley.result');
+    });
+
+    it('通用卡牌掷骰 key 应解析为最终结果而不是卡面说明', () => {
+        const context = {
+            t: (key: string) => key,
+            i18n: {
+                resolvedLanguage: 'zh-CN',
+                language: 'zh-CN',
+                exists: () => false,
+                getResource: (_language: string, _namespace: string, key: string) => (
+                    key === 'bonusDie.effect' ? bonusDieEffectTranslations : undefined
+                ),
+            },
+        };
+
+        expect(resolveBonusDieText('bonusDie.effect.watchOut', context, { value: 2 })).toBe('未触发额外效果');
+        expect(resolveBonusDieText('bonusDie.effect.volley', context, { value: 1 }, 'bow')).toBe('弓🏹：本次伤害 +1');
+        expect(resolveBonusDieText('bonusDie.effect.luckyRoll', context, { value: 3 }, 'heart')).toBe('心：最终治疗 +2');
+        expect(resolveBonusDieText('bonusDie.effect.morePleaseRoll', context, { value: 6 }, 'sword')).toBe('剑：最终伤害 +1');
+        expect(resolveBonusDieText('bonusDie.effect.gunslingerEatMyLeadDie', context, { value: 4 }, 'bullet')).toBe('子弹：本次攻击伤害 +1');
+        expect(resolveBonusDieText('bonusDie.effect.thunderStrikeDie', context, { value: 4 })).toBe('本骰点数 4 计入最终伤害');
+        expect(resolveBonusDieText('bonusDie.effect.barbarianSuppress', context, { value: 5 })).toBe('本骰点数 5 计入最终伤害；总和达阈值会触发额外效果');
+        expect(resolveBonusDieText('bonusDie.effect.pyroBlast2Die', context, { value: 6 }, 'meteor')).toBe('陨石: 施加击倒');
     });
 
     it('同批卡牌与额外骰事件会把骰子绑定到卡牌特写，而不是直接丢失', async () => {

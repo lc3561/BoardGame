@@ -3436,7 +3436,7 @@
     },
     "mermaids_toll_bay": {
       "name": "Toll Bay",
-      "effectText": "This turn, whenever another player moves a minion to a base where you have a minion, you may draw a card."
+      "effectText": "Choose a base. Draw a card for each minion another player has there."
     },
     "mermaids_shipwreck_cove": {
       "name": "Shipwreck Cove",

@@ -1732,6 +1732,13 @@ test.describe('DiceThrone hand card preview regression', () => {
     await expect(advanceButton).toBeVisible({ timeout: 5000 });
     await expect(advanceButton).toBeEnabled({ timeout: 10000 });
     await advanceButton.click();
+    for (let frame = 1; frame <= 6; frame += 1) {
+      await page.waitForTimeout(120);
+      await page.screenshot({
+        path: join(evidenceDir, `samurai-stand-tall-2-damage-fx-frame-${frame}.png`),
+        fullPage: true,
+      });
+    }
 
     await expect.poll(async () => {
       const state = await readState(game);

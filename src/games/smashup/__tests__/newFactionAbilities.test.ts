@@ -6724,48 +6724,73 @@ describe('Mermaids abilities', () => {
         expect(target?.tempPowerModifier).toBe(-2);
     });
 
-    it('mermaids_toll_bay 在对手随从移入且己方同基地有随从时触发抽牌', () => {
+    it('mermaids_toll_bay 打出后按目标基地对手随从数立即抽牌', () => {
         const core = makeState({
             players: {
                 '0': makePlayer('0', {
+                    hand: [makeCard('toll-1', 'mermaids_toll_bay', 'action', '0')],
+                    deck: [
+                        makeCard('draw-1', 'robot_microbot_alpha', 'minion', '0'),
+                        makeCard('draw-2', 'robot_microbot_beta', 'minion', '0'),
+                    ],
+                }),
+                '1': makePlayer('1'),
+            },
+            bases: [
+                {
+                    defId: 'base_a',
+                    minions: [
+                        makeMinion('ally-1', 'robot_microbot_beta', '0', 2, { powerModifier: 0 }),
+                        makeMinion('enemy-1', 'robot_microbot_alpha', '1', 1, { powerModifier: 0 }),
+                        makeMinion('enemy-2', 'robot_microbot_gamma', '1', 1, { powerModifier: 0 }),
+                    ],
+                    ongoingActions: [],
+                },
+            ],
+        });
+
+        const played = runCommand(
+            makeMatchState(core),
+            { type: SU_COMMANDS.PLAY_ACTION, playerId: '0', payload: { cardUid: 'toll-1', targetBaseIndex: 0 } },
+            defaultTestRandom,
+        );
+        expect(played.success).toBe(true);
+        const drawEvent = played.events.find(event => event.type === SU_EVENTS.CARDS_DRAWN) as any;
+        expect(drawEvent?.payload?.playerId).toBe('0');
+        expect(drawEvent?.payload?.count).toBe(2);
+        expect(played.finalState.core.players['0'].hand.map(card => card.uid)).toEqual(
+            expect.arrayContaining(['draw-1', 'draw-2']),
+        );
+    });
+
+    it('mermaids_toll_bay 目标基地没有对手随从时不抽牌', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0', {
+                    hand: [makeCard('toll-1', 'mermaids_toll_bay', 'action', '0')],
                     deck: [makeCard('draw-1', 'robot_microbot_alpha', 'minion', '0')],
                 }),
                 '1': makePlayer('1'),
             },
-            bases: [{
-                defId: 'base_a',
-                minions: [
-                    makeMinion('ally-1', 'robot_microbot_beta', '0', 2, { powerModifier: 0 }),
-                    makeMinion('enemy-moved', 'robot_microbot_alpha', '1', 1, { powerModifier: 0 }),
-                ],
-                ongoingActions: [
-                    {
-                        uid: 'toll-1',
-                        defId: 'mermaids_toll_bay',
-                        ownerId: '0',
-                        targetType: 'base',
-                        targetBaseIndex: 0,
-                    } as any,
-                ],
-            }],
+            bases: [
+                {
+                    defId: 'base_a',
+                    minions: [
+                        makeMinion('ally-1', 'robot_microbot_beta', '0', 2, { powerModifier: 0 }),
+                    ],
+                    ongoingActions: [],
+                },
+                { defId: 'base_b', minions: [], ongoingActions: [] },
+            ],
         });
 
-        const triggered = fireTriggers(core, 'onMinionMoved', {
-            state: core,
-            matchState: makeMatchState(core),
-            playerId: '0',
-            baseIndex: 0,
-            moveToBaseIndex: 0,
-            sourceCardUid: 'toll-1',
-            sourceBaseIndex: 0,
-            sourceControllerId: '0',
-            triggerMinionUid: 'enemy-moved',
-            triggerMinionDefId: 'robot_microbot_alpha',
-            triggerMinion: core.bases[0].minions.find(minion => minion.uid === 'enemy-moved'),
-            random: defaultTestRandom,
-            now: 3800,
-        });
-        expect(triggered.events.some(event => event.type === SU_EVENTS.CARDS_DRAWN)).toBe(true);
+        const played = runCommand(
+            makeMatchState(core),
+            { type: SU_COMMANDS.PLAY_ACTION, playerId: '0', payload: { cardUid: 'toll-1', targetBaseIndex: 0 } },
+            defaultTestRandom,
+        );
+        expect(played.events.filter(event => event.type === SU_EVENTS.CARDS_DRAWN)).toHaveLength(0);
+        expect(played.finalState.core.players['0'].hand.some(card => card.uid === 'draw-1')).toBe(false);
     });
 
     it('mermaids_shipwreck_cove 在计分后触发额外随从额度', () => {
@@ -6801,6 +6826,70 @@ describe('Mermaids abilities', () => {
         });
         const extraMinion = triggered.events.find(event => event.type === SU_EVENTS.LIMIT_MODIFIED) as any;
         expect(extraMinion?.payload?.limitType).toBe('minion');
+    });
+});
+
+describe('Titans abilities', () => {
+    it('ninjas_invisible_ninja 在自己消灭对手随从时应给泰坦控制者创建抽牌交互', () => {
+        const core = makeState({
+            turnOrder: ['0', '1'],
+            currentPlayerIndex: 0,
+            turnNumber: 7,
+            players: {
+                '0': makePlayer('0', {
+                    deck: [
+                        makeCard('peek-1', 'robot_microbot_alpha', 'minion', '0'),
+                        makeCard('peek-2', 'robot_microbot_beta', 'minion', '0'),
+                    ],
+                }),
+                '1': makePlayer('1'),
+            },
+            bases: [{
+                defId: 'base_a',
+                minions: [makeMinion('ally-1', 'robot_microbot_alpha', '0', 2, { powerModifier: 0 })],
+                ongoingActions: [],
+            }],
+            titans: [{
+                uid: 'ninja-titan-1',
+                defId: 'ninjas_invisible_ninja',
+                faction: 'ninjas',
+                ownerId: '0',
+                controllerId: '0',
+                powerCounters: 0,
+                talentUsed: false,
+                location: { zone: 'base', baseIndex: 0 },
+            } as any],
+        });
+
+        const destroyedEnemyLki = makeMinion('enemy-destroyed', 'robot_microbot_beta', '1', 2, { powerModifier: 0 });
+        const triggered = fireTriggers(core, 'onMinionDestroyed', {
+            state: core,
+            matchState: makeMatchState(core),
+            playerId: '1',
+            baseIndex: 0,
+            sourceBaseIndex: 0,
+            triggerMinionUid: 'enemy-destroyed',
+            triggerMinionDefId: 'robot_microbot_beta',
+            triggerMinion: destroyedEnemyLki,
+            destroyerId: '0',
+            reason: 'test_destroy',
+            random: defaultTestRandom,
+            now: 3900,
+        });
+
+        const prompt = getInteractionsFromMS(triggered.matchState ?? makeMatchState(core))[0] as any;
+        expect(prompt?.data?.sourceId).toBe('titan_ninjas_invisible_ninja_ongoing');
+        expect(prompt?.playerId).toBe('0');
+
+        const option = prompt?.data?.options?.[0];
+        expect(option?.id).toBeDefined();
+
+        const resolved = runCommand(
+            triggered.matchState ?? makeMatchState(core),
+            { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: option.id } } as any,
+            defaultTestRandom,
+        );
+        expect(resolved.events.some(event => event.type === SU_EVENTS.CARDS_DRAWN)).toBe(true);
     });
 });
 

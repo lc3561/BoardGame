@@ -290,3 +290,31 @@
     - Skeletons：`13 / 0`
     - World Champs：`17 / 0`
 - 结论：三派系主能力在 `newFactionAbilities.test.ts` 的直点覆盖保持 `0` 缺口。
+
+### 复审记录（2026-04-25）
+
+> 本轮目标：修复 `newFactionAbilities` 新增失败点 `mermaids_toll_bay`，并再次闭环“三派系能力回归 + 4 审计套件 + i18n + SmashUp 大厅 E2E”。
+
+#### 本轮修复
+- 根因：`mermaids_toll_bay` 的“本回合触发窗口”此前通过 `onPlay` 返回 `matchState.core` 写入；但执行链路只会透传 `matchState.sys`，不会把能力阶段对 `core` 的直接写入带出，导致字段未落地。
+- 修复：在 `SU_EVENTS.ACTION_PLAYED` 的 reducer 分支中，针对 `defId === 'mermaids_toll_bay'` 显式写入：
+  - `mermaidsTollBayActiveTurnByPlayer[playerId] = turnNumber`
+- 文件：
+  - `src/games/smashup/domain/reduce.ts`
+  - `e2e/src/games/smashup/domain/reduce.ts`
+
+#### 本轮复跑结果
+1. `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/newFactionAbilities.test.ts --configLoader native --maxWorkers 1`
+   - 结果：`170 passed / 1 skipped`
+2. `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/interactionTargetTypeAudit.test.ts src/games/smashup/__tests__/interactionDefIdAudit.test.ts src/games/smashup/__tests__/abilityBehaviorAudit.test.ts src/games/smashup/__tests__/interactionCompletenessAudit.test.ts --config vitest.config.audit.ts --configLoader native --maxWorkers 1`
+   - 结果：4 文件全通过（`36 passed`）
+3. `npm run i18n:check`
+   - 结果：通过（`no missing keys detected`）
+4. `npm run test:e2e:ci -- e2e/smashup/smashup.e2e.ts`
+   - 结果：`3 passed`
+
+#### 本轮关键截图（绝对路径）
+- `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-selection.png`
+- `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-mermaids-banner.png`
+- `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-skeletons-banner.png`
+- `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-world-champs-banner.png`

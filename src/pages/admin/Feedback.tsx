@@ -6,6 +6,8 @@ import {
     AlertTriangle,
     Check,
     CheckCircle,
+    ChevronLeft,
+    ChevronRight,
     Circle,
     Contact,
     Copy,
@@ -116,6 +118,7 @@ const SEVERITY_STYLES: Record<FeedbackItem['severity'], { dot: string; tone: str
 };
 
 const POLL_INTERVAL = 30_000;
+const PAGE_LIMIT = 20;
 
 const buildStatusOptions = (t: TFunction<'admin'>): StatusOptionWithLabel[] => (
     STATUS_OPTIONS.map((option) => ({
@@ -328,7 +331,7 @@ export default function AdminFeedbackPage() {
 
     const [feedbacks, setFeedbacks] = useState<FeedbackItem[]>([]);
     const [loading, setLoading] = useState(true);
-    const [statusFilter, setStatusFilter] = useState<string>('all');
+    const [statusFilter, setStatusFilter] = useState<string>('open');
     const [typeFilter, setTypeFilter] = useState<string>('all');
     const [severityFilter, setSeverityFilter] = useState<string>('all');
     const [reporterTypeFilter, setReporterTypeFilter] = useState<string>('user');
@@ -338,6 +341,9 @@ export default function AdminFeedbackPage() {
     const [activeId, setActiveId] = useState<string | null>(null);
     const [isPolling, setIsPolling] = useState(false);
     const [previewImage, setPreviewImage] = useState<string | null>(null);
+    const [page, setPage] = useState(1);
+    const [total, setTotal] = useState(0);
+    const [limit, setLimit] = useState(PAGE_LIMIT);
 
     const requestIdRef = useRef(0);
     const isMountedRef = useRef(true);
@@ -355,7 +361,10 @@ export default function AdminFeedbackPage() {
         if (silent) setIsPolling(true);
 
         try {
-            const params = new URLSearchParams({ limit: '100' });
+            const params = new URLSearchParams({
+                limit: String(PAGE_LIMIT),
+                page: String(page),
+            });
             if (statusFilter !== 'all') params.set('status', statusFilter);
             if (typeFilter !== 'all') params.set('type', typeFilter);
             if (severityFilter !== 'all') params.set('severity', severityFilter);
@@ -372,6 +381,9 @@ export default function AdminFeedbackPage() {
             const data = await response.json();
             if (isMountedRef.current && requestId === requestIdRef.current) {
                 setFeedbacks(data.items);
+                setTotal(Math.max(0, Number(data.total) || 0));
+                setLimit(Math.max(1, Number(data.limit) || PAGE_LIMIT));
+                setPage(Math.max(1, Number(data.page) || 1));
             }
         } catch {
             if (!silent) error(t('feedback.messages.fetchFailed'));
@@ -381,11 +393,15 @@ export default function AdminFeedbackPage() {
                 setIsPolling(false);
             }
         }
-    }, [error, reporterTypeFilter, severityFilter, sortFilter, sourceFilter, statusFilter, t, token, typeFilter]);
+    }, [error, page, reporterTypeFilter, severityFilter, sortFilter, sourceFilter, statusFilter, t, token, typeFilter]);
 
     useEffect(() => {
         fetchFeedbacks();
     }, [fetchFeedbacks]);
+
+    useEffect(() => {
+        setPage(1);
+    }, [statusFilter, typeFilter, severityFilter, reporterTypeFilter, sourceFilter, sortFilter]);
 
     useEffect(() => {
         if (reporterTypeFilter !== 'system' && sourceFilter !== 'all') {
@@ -419,6 +435,13 @@ export default function AdminFeedbackPage() {
         });
     }, [feedbacks]);
 
+    useEffect(() => {
+        const maxPage = Math.max(1, Math.ceil(total / limit));
+        if (page > maxPage) {
+            setPage(maxPage);
+        }
+    }, [limit, page, total]);
+
     const activeFeedback = useMemo(
         () => feedbacks.find((feedback) => feedback._id === activeId) ?? null,
         [activeId, feedbacks]
@@ -435,6 +458,9 @@ export default function AdminFeedbackPage() {
         [feedbacks],
     );
     const allSelected = manageableFeedbacks.length > 0 && manageableFeedbacks.every((feedback) => selectedIds.has(feedback._id));
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+    const pageStart = total === 0 ? 0 : (page - 1) * limit + 1;
+    const pageEnd = total === 0 ? 0 : Math.min(total, (page - 1) * limit + feedbacks.length);
 
     const toggleSelectAll = () => {
         if (allSelected) {
@@ -545,7 +571,7 @@ export default function AdminFeedbackPage() {
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     <h1 className="text-sm font-semibold text-zinc-900">{t('feedback.title')}</h1>
                     <span className="rounded-md bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600">
-                        {t('feedback.count', { count: feedbacks.length })}
+                        {t('feedback.count', { count: total })}
                     </span>
                     {selectedIds.size > 0 && (
                         <span className="rounded-md bg-zinc-900 px-2 py-0.5 text-[10px] font-medium text-white">
@@ -558,6 +584,9 @@ export default function AdminFeedbackPage() {
                             {t('feedback.polling')}
                         </span>
                     )}
+                    <span className="rounded-md bg-zinc-50 px-2 py-0.5 text-[10px] font-medium text-zinc-500">
+                        {pageStart}-{pageEnd} / {total}
+                    </span>
                     <div className="ml-auto flex flex-wrap items-center gap-1">
                         <button
                             type="button"
@@ -772,6 +801,32 @@ export default function AdminFeedbackPage() {
                     onDelete={handleDelete}
                     onImageClick={setPreviewImage}
                 />
+            </div>
+
+            <div className="flex flex-none items-center justify-between rounded-lg border border-zinc-200 bg-white px-3 py-2 shadow-sm">
+                <div className="text-[11px] text-zinc-500">
+                    第 {page} / {totalPages} 页
+                </div>
+                <div className="flex items-center gap-2">
+                    <button
+                        type="button"
+                        onClick={() => setPage((current) => Math.max(1, current - 1))}
+                        disabled={page <= 1 || loading}
+                        className="inline-flex h-7 items-center gap-1 rounded-md border border-zinc-200 px-2 text-[11px] font-medium text-zinc-600 transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                        <ChevronLeft size={14} />
+                        {t('feedback.pagination.prev')}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                        disabled={page >= totalPages || loading}
+                        className="inline-flex h-7 items-center gap-1 rounded-md border border-zinc-200 px-2 text-[11px] font-medium text-zinc-600 transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                        {t('feedback.pagination.next')}
+                        <ChevronRight size={14} />
+                    </button>
+                </div>
             </div>
 
             <ImageLightbox src={previewImage} onClose={() => setPreviewImage(null)} />

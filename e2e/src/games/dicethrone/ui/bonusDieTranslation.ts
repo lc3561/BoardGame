@@ -1,4 +1,5 @@
 import type { TFunction } from 'i18next';
+import type { DieFace } from '../types';
 
 type I18nLike = {
     resolvedLanguage?: string;
@@ -23,16 +24,18 @@ export const resolveBonusDieText = (
     key: string,
     context: { t: TFunction; i18n: I18nLike },
     params?: Record<string, string | number>,
+    face?: DieFace,
 ): string => {
     const { t, i18n } = context;
     const language = i18n.resolvedLanguage ?? i18n.language ?? 'zh-CN';
+    const resolvedKey = resolveDerivedEffectKey(key, face);
 
-    if (i18n.exists?.(key, { ns: 'game-dicethrone' })) {
-        return t(key, params);
+    if (i18n.exists?.(resolvedKey, { ns: 'game-dicethrone' })) {
+        return t(resolvedKey, params);
     }
 
-    if (key.startsWith('bonusDie.effect.')) {
-        const suffix = key.slice('bonusDie.effect.'.length);
+    if (resolvedKey.startsWith('bonusDie.effect.')) {
+        const suffix = resolvedKey.slice('bonusDie.effect.'.length);
         const effectMap = i18n.getResource?.(language, 'game-dicethrone', 'bonusDie.effect') as Record<string, string> | undefined;
         const template = effectMap?.[suffix];
         if (typeof template === 'string') {
@@ -44,6 +47,42 @@ export const resolveBonusDieText = (
         }
     }
 
-    return params ? t(key, params) : key;
+    return params ? t(resolvedKey, params) : resolvedKey;
+};
+
+const resolveDerivedEffectKey = (key: string, face?: DieFace): string => {
+    switch (key) {
+        case 'bonusDie.effect.watchOut':
+            return 'bonusDie.effect.watchOut.none';
+        case 'bonusDie.effect.volley':
+            return face === 'bow'
+                ? 'bonusDie.effect.volley.bowContribution'
+                : 'bonusDie.effect.volley.otherContribution';
+        case 'bonusDie.effect.luckyRoll':
+            return face === 'heart'
+                ? 'bonusDie.effect.luckyRoll.heartContribution'
+                : 'bonusDie.effect.luckyRoll.otherContribution';
+        case 'bonusDie.effect.morePleaseRoll':
+            return face === 'sword'
+                ? 'bonusDie.effect.morePleaseRoll.swordContribution'
+                : 'bonusDie.effect.morePleaseRoll.otherContribution';
+        case 'bonusDie.effect.gunslingerEatMyLeadDie':
+            return face === 'bullet'
+                ? 'bonusDie.effect.gunslingerEatMyLead.bulletContribution'
+                : 'bonusDie.effect.gunslingerEatMyLead.otherContribution';
+        case 'bonusDie.effect.thunderStrikeDie':
+            return 'bonusDie.effect.totalDamageContribution';
+        case 'bonusDie.effect.thunderStrike2Die':
+        case 'bonusDie.effect.barbarianSuppress':
+            return 'bonusDie.effect.totalDamageContributionThreshold';
+        case 'bonusDie.effect.pyroBlast2Die':
+        case 'bonusDie.effect.pyroBlast3Die':
+            if (face === 'fire' || face === 'magma' || face === 'fiery_soul' || face === 'meteor') {
+                return `bonusDie.effect.${face}`;
+            }
+            return 'bonusDie.effect.default';
+        default:
+            return key;
+    }
 };
 

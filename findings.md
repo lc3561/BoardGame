@@ -462,6 +462,14 @@
   - `evidence/smashup/smashup-feedback-69daa51e-auto-skip-turn-2026-04-22.md`
 - 统一复核命令：`npm run test:e2e:ci -- e2e/smashup/smashup.e2e.ts`，结果 `3 passed`。
 
+## 2026-04-25 两条 watchdog 反馈定向复测 Findings
+- `69db57c` 定向用例复测通过：
+  - `npm run test:e2e:ci:file -- e2e/smashup/smashup-phase-transition-simple.e2e.ts "回归：在线 AI 在 factionSelect 阶段 seat state 延迟就绪时，不得被 watchdog 跳过到空牌对局"` → `1 passed`
+- `69daa51e` 两条定向用例复测通过：
+  - `在线 AI 连续 8 秒没有任何实际进展时，应自动强制结束当前回合` → `1 passed`
+  - `在线 AI 结束回合切回我方时不应出现整板重挂载或 loading 闪屏` → `1 passed`
+- 关键截图时间已更新到 `2026-04-25 00:13`，对应证据文档已追加“2026-04-25 定向复测补记”。
+
 ## 2026-04-24 线上反馈 69eb3924（SmashUp recover-interaction 卡住）
 - 线上 watchdog 快照显示 `smashup_reaction_choose` 出现重复 `optionId`（同一 `activate_special:titan:*` 重复两次），并触发 `visible-interaction:recover-interaction:blocker_persisted`。
 - 根因：`scoringEligibleBaseIndices` 在锁定/读取链路缺少统一去重，重复基地索引在 scoreBases 响应窗口放大为重复交互选项。
@@ -471,3 +479,16 @@
   - `index.getLockedScoringBaseIndices` 统一走 getter，避免绕过规范化。
 - 回归：`src/games/smashup/__tests__/scoringEligibleLock.test.ts` 新增 2 条去重用例并通过（`12 passed`）。
 - 远端状态：`69eb392453c8e640a4475d6b` 已回写为 `resolved`（`matched=1, modified=1`）。
+
+## 2026-04-25 SmashUp 三派系复审补记（Toll Bay 回归修复）
+- `newFactionAbilities` 新出现失败点是 `mermaids_toll_bay 打出后会标记本回合触发窗口`，根因不是能力缺失，而是写入路径错误：
+  - 能力里通过 `result.matchState.core` 直接改 core；
+  - 但执行链路仅透传 `updatedState.sys`，不会把该 core 写回，导致字段落地失败。
+- 已把“触发窗口标记”收敛到 reducer 的权威写入路径：
+  - 在 `SU_EVENTS.ACTION_PLAYED` 中，`defId === 'mermaids_toll_bay'` 时写入 `mermaidsTollBayActiveTurnByPlayer[playerId] = turnNumber`。
+- 修复后复跑结果：
+  - `newFactionAbilities`: `170 passed / 1 skipped`
+  - `interactionTargetTypeAudit + interactionDefIdAudit + abilityBehaviorAudit + interactionCompletenessAudit`: `36 passed`
+  - `npm run i18n:check`: 通过
+  - `npm run test:e2e:ci -- e2e/smashup/smashup.e2e.ts`: `3 passed`
+- 补充稳定性复核：`smashup.smoke.test.ts` 复跑 `121 passed`，确认本轮修复未破坏 SmashUp 主流程烟测。

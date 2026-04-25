@@ -539,7 +539,7 @@
       "gainCp": "获得 {{cp}} CP",
       "enlightenmentLotus": "莲花！获得 2太极 + 闪避 + 净化",
       "enlightenmentOther": "抽 1 张牌",
-      "thunderStrikeDie": "雷击投掷：{{value}}（总和伤害）",
+      "thunderStrikeDie": "本骰点数 {{value}} 计入最终伤害",
       "thunderStrikeReroll": "重掷：{{value}}（计入总和伤害）",
       "thunderStrike2Die": "雷击投掷：{{value}}（总和伤害；总和≥12 施加倒地）",
       "thunderStrike2Reroll": "重掷：{{value}}（总和≥12 施加倒地）",
@@ -548,16 +548,22 @@
       "gunslingerHighNoonBullet": "子弹：造成 2 点不可防御伤害",
       "gunslingerHighNoonDash": "靴刺：使目标获得击倒",
       "gunslingerHighNoonBullseye": "准心：使目标获得 1 个赏金",
-      "gunslingerEatMyLeadDie": "吃我的铅弹！投掷：{{value}}",
+      "gunslingerEatMyLeadDie": "本骰结果计入最终加伤",
+      "gunslingerEatMyLead.bulletContribution": "子弹：本次攻击伤害 +1",
+      "gunslingerEatMyLead.otherContribution": "非子弹面：本次攻击伤害不增加",
       "gunslingerEatMyLead.result": "{{bulletCount}} 个子弹面：本次攻击伤害 +{{bonusDamage}}",
       "gunslingerEatMyLead.resultKnockdown": "{{bulletCount}} 个子弹面：本次攻击伤害 +{{bonusDamage}}，并施加击倒",
-      "barbarianSuppress": "压制投掷：{{value}}（3骰总和伤害；总和超阈值施加脑震荡）",
+      "barbarianSuppress": "本骰点数 {{value}} 计入最终伤害；总和达阈值会施加脑震荡",
       "energeticStrength": "星！治疗 2 并施加脑震荡",
       "energeticOther": "抽 1 张牌",
-      "luckyRoll": "幸运投掷：{{value}}",
+      "luckyRoll": "本骰结果计入最终治疗",
       "luckyRoll.result": "{{heartCount}}个心面：治疗{{healAmount}}",
-      "morePleaseRoll": "再来投掷：{{value}}",
+      "luckyRoll.heartContribution": "心：最终治疗 +2",
+      "luckyRoll.otherContribution": "非心面：最终治疗不增加",
+      "morePleaseRoll": "本骰结果计入最终伤害",
       "morePleaseRoll.result": "{{swordCount}}个剑面：伤害+{{damage}}，并施加脑震荡",
+      "morePleaseRoll.swordContribution": "剑：最终伤害 +1",
+      "morePleaseRoll.otherContribution": "非剑面：最终伤害不增加",
       "holyLight": "圣光术",
       "holyDefense": "神圣防御",
       "godsGrace": "神佑",
@@ -581,9 +587,9 @@
       "infernalEmbrace.4": "抽 1 张牌",
       "infernalEmbrace.5": "抽 1 张牌",
       "infernalEmbrace.6": "烈焰精通满额!",
-      "pyroBlast2Die": "炎爆术：{{value}}（烈焰=3伤害 / 熔岩=灼烧 / 焚魂=+2烈焰精通 / 流星=击倒）",
+      "pyroBlast2Die": "按本骰面结算实际效果",
       "pyroBlast2Reroll": "重投：{{value}}（烈焰=3伤害 / 熔岩=灼烧 / 焚魂=+2烈焰精通 / 流星=击倒）",
-      "pyroBlast3Die": "炎爆术：{{value}}（烈焰=3伤害 / 熔岩=灼烧 / 焚魂=+2烈焰精通 / 流星=击倒）",
+      "pyroBlast3Die": "按本骰面结算实际效果",
       "pyroBlast3Reroll": "重投：{{value}}（烈焰=3伤害 / 熔岩=灼烧 / 焚魂=+2烈焰精通 / 流星=击倒）",
       "shadowDamage": "暗影之舞：{{value}} → 造成{{damage}}伤害",
       "default": "额外投掷",
@@ -594,15 +600,18 @@
       "moonShadowStrike": "月影袭人投掷：{{value}}",
       "moonShadowStrike.moon": "月🌙：施加致盲、缠绕、锁定",
       "moonShadowStrike.other": "抽1张牌",
-      "volley": "万箭齐发投掷：{{value}}",
+      "volley": "本骰结果计入最终加伤",
       "volley.result": "{{bowCount}}个弓面：伤害+{{bonusDamage}}，并施加缠绕",
+      "volley.bowContribution": "弓🏹：本次伤害 +1",
+      "volley.otherContribution": "未命中弓面：本次伤害不增加",
       "explodingArrow.result": "{{bowCount}}弓 {{footCount}}足 {{moonCount}}月：3 + 2×{{bowCount}} + 1×{{footCount}} = {{damage}}伤害；对手失去{{moonCount}}CP；施加致盲",
       "explodingArrow2.result": "{{bowCount}}弓 {{footCount}}足 {{moonCount}}月：3 + 1×{{bowCount}} + 2×{{footCount}} = {{damage}}伤害；对手失去{{moonCount}}CP；施加致盲",
       "explodingArrow3.result": "{{bowCount}}弓 {{footCount}}足 {{moonCount}}月：3 + 1×{{bowCount}} + 2×{{footCount}} = {{damage}}伤害；对手失去{{moonCount}}CP；施加致盲与缠绕",
-      "watchOut": "看箭投掷：{{value}}",
+      "watchOut": "未触发额外效果",
       "watchOut.bow": "弓🏹：伤害+2",
       "watchOut.foot": "足🦶：施加缠绕",
       "watchOut.moon": "月🌙：施加致盲",
+      "watchOut.none": "未触发额外效果",
       "blinded": "致盲判定",
       "blinded.miss": "攻击失败！",
       "blinded.hit": "攻击成功",
@@ -633,7 +642,9 @@
       "samuraiRighteousnessHelm": "头盔：使对手获得 2 层耻辱",
       "samuraiRighteousnessRisingSun": "旭日：获得 1 个反击指示物",
       "samuraiMasamune.result": "{{katanaCount}} 个武士刀：+{{katanaCount}} 伤害；{{shameCount}} 个头盔：施加 {{shameCount}} 层耻辱；{{retributionCount}} 个旭日：获得 {{retributionCount}} 个反击（若已达堆叠上限则多余部分无效）",
-      "godsGrace.other": "抽 1 张牌"
+      "godsGrace.other": "抽 1 张牌",
+      "totalDamageContribution": "本骰点数 {{value}} 计入最终伤害",
+      "totalDamageContributionThreshold": "本骰点数 {{value}} 计入最终伤害；总和达阈值会触发额外效果"
     },
     "selectToReroll": "点击骰子花费{{cost}}{{token}}重掷",
     "noTokenToReroll": "没有{{token}}标记可用于重掷",
@@ -900,9 +911,10 @@
     },
     "fist-technique-3": {
       "name": "拳术 III",
-      "description": "3/4/5拳触发：造成7/8/9伤害，4个及以上拳施加击倒",
+      "description": "3/4/5拳触发：造成7/8/9伤害，若至少有4个相同数字则施加击倒",
       "effects": {
-        "damage4": "造成4点伤害"
+        "damage4": "造成4点伤害",
+        "knockdownIfFourKind": "若至少有4个相同数字，则施加击倒"
       }
     },
     "fist-technique-4": {
@@ -1334,20 +1346,22 @@
     },
     "slap-2": {
       "name": "重击 II",
-      "description": "3/4/5剑触发：造成5/7/9伤害，其中4/5剑造成不可防御伤害",
+      "description": "3/4/5剑触发：造成5/7/9伤害。若至少有4个相同数字，本次攻击改为不可防御",
       "effects": {
         "damage5": "造成5点伤害",
-        "damage7Unblockable": "造成7点不可防御伤害",
-        "damage9Unblockable": "造成9点不可防御伤害"
+        "damage7Unblockable": "造成7点伤害",
+        "damage9Unblockable": "造成9点伤害",
+        "unblockableIfFourKind": "若至少有4个相同数字，本次攻击不可防御"
       }
     },
     "slap-3": {
       "name": "重击 III",
-      "description": "3/4/5剑触发：造成6/8/10伤害，其中4/5剑造成不可防御伤害",
+      "description": "3/4/5剑触发：造成6/8/10伤害。若至少有4个相同数字，本次攻击改为不可防御",
       "effects": {
         "damage6": "造成6点伤害",
-        "damage8Unblockable": "造成8点不可防御伤害",
-        "damage10Unblockable": "造成10点不可防御伤害"
+        "damage8Unblockable": "造成8点伤害",
+        "damage10Unblockable": "造成10点伤害",
+        "unblockableIfFourKind": "若至少有4个相同数字，本次攻击不可防御"
       }
     },
     "all-out-strike-2": {
@@ -2242,7 +2256,7 @@
     },
     "card-thrust-punch-3": {
       "name": "冲拳 III",
-      "description": "3/4/5拳触发：造成7/8/9伤害，4个及以上拳施加击倒。"
+      "description": "3/4/5拳触发：造成7/8/9伤害，若至少有4个相同数字则施加击倒。"
     },
     "card-contemplation-2": {
       "name": "冥想 II",

@@ -161,15 +161,27 @@ export const SLAP_2: AbilityDef = {
         {
             id: 'slap-2-4',
             trigger: { type: 'diceSet', faces: { [BARBARIAN_DICE_FACE_IDS.SWORD]: 4 } },
-            effects: [damage(7, abilityEffectText('slap-2', 'damage7Unblockable'))],
-            tags: ['unblockable'], // 变体支持 tags
+            effects: [
+                damage(7, abilityEffectText('slap-2', 'damage7Unblockable')),
+                {
+                    description: abilityEffectText('slap-2', 'unblockableIfFourKind'),
+                    action: { type: 'custom', target: 'opponent', customActionId: 'barbarian-slap-unblockable-if-four-kind' },
+                    timing: 'preDefense',
+                },
+            ],
             priority: 2
         },
         {
             id: 'slap-2-5',
             trigger: { type: 'diceSet', faces: { [BARBARIAN_DICE_FACE_IDS.SWORD]: 5 } },
-            effects: [damage(9, abilityEffectText('slap-2', 'damage9Unblockable'))],
-            tags: ['unblockable'],
+            effects: [
+                damage(9, abilityEffectText('slap-2', 'damage9Unblockable')),
+                {
+                    description: abilityEffectText('slap-2', 'unblockableIfFourKind'),
+                    action: { type: 'custom', target: 'opponent', customActionId: 'barbarian-slap-unblockable-if-four-kind' },
+                    timing: 'preDefense',
+                },
+            ],
             priority: 3
         },
     ],
@@ -312,15 +324,27 @@ export const SLAP_3: AbilityDef = {
         {
             id: 'slap-3-4',
             trigger: { type: 'diceSet', faces: { [BARBARIAN_DICE_FACE_IDS.SWORD]: 4 } },
-            effects: [damage(8, abilityEffectText('slap-3', 'damage8Unblockable'))],
-            tags: ['unblockable'],
+            effects: [
+                damage(8, abilityEffectText('slap-3', 'damage8Unblockable')),
+                {
+                    description: abilityEffectText('slap-3', 'unblockableIfFourKind'),
+                    action: { type: 'custom', target: 'opponent', customActionId: 'barbarian-slap-unblockable-if-four-kind' },
+                    timing: 'preDefense',
+                },
+            ],
             priority: 2
         },
         {
             id: 'slap-3-5',
             trigger: { type: 'diceSet', faces: { [BARBARIAN_DICE_FACE_IDS.SWORD]: 5 } },
-            effects: [damage(10, abilityEffectText('slap-3', 'damage10Unblockable'))],
-            tags: ['unblockable'],
+            effects: [
+                damage(10, abilityEffectText('slap-3', 'damage10Unblockable')),
+                {
+                    description: abilityEffectText('slap-3', 'unblockableIfFourKind'),
+                    action: { type: 'custom', target: 'opponent', customActionId: 'barbarian-slap-unblockable-if-four-kind' },
+                    timing: 'preDefense',
+                },
+            ],
             priority: 3
         },
     ],

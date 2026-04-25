@@ -1488,6 +1488,8 @@ export function processReturnToHandTriggers(
                 state: core,
                 matchState: ms ?? state,
                 playerId: payload.toPlayerId,
+                triggerMinionUid: payload.minionUid,
+                triggerMinionDefId: payload.minionDefId,
                 reason: payload.reason,
                 random,
                 now,

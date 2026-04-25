@@ -62,6 +62,7 @@ import { appendMatchLoadTrace } from '../lib/matchLoadTrace';
 import { logMobileRuntimeCritical } from '../lib/mobile/mobileRuntimeDebug';
 import { isNativeAndroidRuntime } from '../lib/mobile/androidRuntime';
 import { onAppVisible } from '../lib/mobile/appVisibility';
+import { createScopedLogger } from '../lib/logger';
 import { isUiHintOnlyError, resolveCommandError } from '../engine/transport/errorI18n';
 import { GameCursorProvider } from '../core/cursor';
 import { useGameNamespaceReady } from '../hooks/useGameNamespaceReady';
@@ -174,6 +175,14 @@ const FAST_AI_COMMAND_TYPES = new Set([
     'REROLL_BONUS_DIE',
     'SKIP_BONUS_DICE_REROLL',
 ]);
+const onlineAiPerfLogger = createScopedLogger('ONLINE_AI_PERF');
+function emitOnlineAiPerf(stage: string, payload: Record<string, unknown>): void {
+    console.log('[ONLINE_AI_PERF]', { stage, ...payload });
+}
+const aiRuntimeTruthLogger = createScopedLogger('AI_RUNTIME_TRUTH');
+function emitAiRuntimeTruth(stage: string, payload: Record<string, unknown>): void {
+    console.log('[AI_RUNTIME_TRUTH]', { stage, ...payload });
+}
 
 function shouldUseFastAiDelay(action: { kind?: string; commands?: Array<{ type?: string }> }): boolean {
     if (action.kind === 'advance-phase' || action.kind === 'response-pass') {
@@ -183,6 +192,14 @@ function shouldUseFastAiDelay(action: { kind?: string; commands?: Array<{ type?:
         return false;
     }
     return action.commands.every((command) => typeof command.type === 'string' && FAST_AI_COMMAND_TYPES.has(command.type));
+}
+
+function summarizeSeatControllerTypes(seatControllers: Record<string, AiSeatController>): Record<string, string> {
+    return Object.fromEntries(
+        Object.entries(seatControllers)
+            .sort(([leftId], [rightId]) => leftId.localeCompare(rightId))
+            .map(([playerId, controller]) => [playerId, controller.type]),
+    );
 }
 
 function resolveLatestStateEventTimestamp(state: MatchState<unknown>): number | null {
@@ -258,6 +275,8 @@ const OnlineAiSeatBridge = ({
         key: string;
         lastRecoveryAt: number;
     } | null>(null);
+    const aiActivePhaseRef = useRef<{ key: string; startedAt: number } | null>(null);
+    const aiRuntimeTruthKeyRef = useRef<string | null>(null);
     const latestSharedStateRef = useRef<MatchState<unknown> | null>(null);
     const pendingRecoveryCheckTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
     const aiSeatStateOverridesRef = useRef<Record<string, MatchState<unknown> | null>>({});
@@ -267,6 +286,82 @@ const OnlineAiSeatBridge = ({
             ? state as MatchState<unknown>
             : null;
     }, [state]);
+
+    useEffect(() => {
+        if (!state || typeof state !== 'object') {
+            aiActivePhaseRef.current = null;
+            return;
+        }
+        const sharedState = state as MatchState<unknown>;
+        const currentPlayerId = resolveCurrentPlayerId(sharedState);
+        if (!currentPlayerId || seatControllers[currentPlayerId]?.type === 'human') {
+            aiActivePhaseRef.current = null;
+            return;
+        }
+        const phase = sharedState.sys?.phase ?? 'unknown';
+        const turnNumber = sharedState.sys?.turnNumber ?? 'no-turn';
+        const nextId = sharedState.sys?.eventStream?.nextId ?? 'no-event';
+        const key = `${currentPlayerId}:${turnNumber}:${phase}:${nextId}`;
+        if (aiActivePhaseRef.current?.key !== key) {
+            aiActivePhaseRef.current = { key, startedAt: Date.now() };
+        }
+    }, [seatControllers, state]);
+
+    useEffect(() => {
+        const sharedState = state && typeof state === 'object'
+            ? state as MatchState<unknown>
+            : null;
+        const seatControllerTypes = summarizeSeatControllerTypes(seatControllers);
+        const hasAiSeat = Object.values(seatControllerTypes).some((type) => type !== 'human');
+        const currentPlayerId = sharedState ? resolveCurrentPlayerId(sharedState) : null;
+        const currentControllerType = currentPlayerId
+            ? (seatControllerTypes[currentPlayerId] ?? 'human')
+            : null;
+        const aiClientStates = Object.fromEntries(
+            Object.entries(seatControllerTypes)
+                .filter(([, type]) => type !== 'human')
+                .map(([playerId]) => {
+                    const client = clientsRef.current[playerId];
+                    return [playerId, {
+                        connected: Boolean(client?.isConnected),
+                        hasCredential: Boolean(seatCredentials[playerId]),
+                        hasSeatState: Boolean(client?.latestState),
+                    }];
+                }),
+        );
+        const payload = {
+            mode: 'online',
+            source: 'OnlineAiSeatBridge',
+            gameId: engineConfig.gameId,
+            matchId,
+            hasAiSeat,
+            currentPlayerId,
+            currentControllerType,
+            phase: sharedState?.sys?.phase ?? null,
+            turnNumber: sharedState?.sys?.turnNumber ?? null,
+            seatControllerTypes,
+            aiClientStates,
+        };
+        const nextKey = JSON.stringify(payload);
+        if (aiRuntimeTruthKeyRef.current === nextKey) {
+            return;
+        }
+        aiRuntimeTruthKeyRef.current = nextKey;
+        aiRuntimeTruthLogger.info('online-seat-bridge-state', payload);
+        emitAiRuntimeTruth('online-seat-bridge-state', payload);
+        if (!hasAiSeat) {
+            const disabledPayload = {
+                mode: 'online',
+                source: 'OnlineAiSeatBridge',
+                gameId: engineConfig.gameId,
+                matchId,
+                reason: 'all-human-seats',
+                seatControllerTypes,
+            };
+            aiRuntimeTruthLogger.warn('online-ai-disabled', disabledPayload);
+            emitAiRuntimeTruth('online-ai-disabled', disabledPayload);
+        }
+    }, [connectionVersion, engineConfig.gameId, matchId, seatControllers, seatCredentials, state]);
 
     useEffect(() => {
         if (typeof window === 'undefined' || !import.meta.env.DEV) {
@@ -421,10 +516,28 @@ const OnlineAiSeatBridge = ({
                     return decisionView;
                 },
             });
+            const decisionResolvedAt = Date.now();
+            const decisionElapsedMs = decisionResolvedAt - startedAt;
 
             if (cancelled) return;
 
             if (aiDispatchResult.kind === 'blocked') {
+                onlineAiPerfLogger.debug('blocked', {
+                    gameId: engineConfig.gameId,
+                    matchId,
+                    playerId: aiDispatchResult.playerId,
+                    blockedReason: aiDispatchResult.blockedReason,
+                    visibility: aiDispatchResult.visibility,
+                    decisionElapsedMs,
+                });
+                emitOnlineAiPerf('blocked', {
+                    gameId: engineConfig.gameId,
+                    matchId,
+                    playerId: aiDispatchResult.playerId,
+                    blockedReason: aiDispatchResult.blockedReason,
+                    visibility: aiDispatchResult.visibility,
+                    decisionElapsedMs,
+                });
                 // 已有 in-flight 尝试时，禁止并发恢复链触发重复派发。
                 if (lastAiAttemptKeyRef.current) {
                     return;
@@ -489,6 +602,18 @@ const OnlineAiSeatBridge = ({
             }
 
             if (aiDispatchResult.kind === 'idle') {
+                onlineAiPerfLogger.debug('idle', {
+                    gameId: engineConfig.gameId,
+                    matchId,
+                    idleReason: aiDispatchResult.idleReason,
+                    decisionElapsedMs,
+                });
+                emitOnlineAiPerf('idle', {
+                    gameId: engineConfig.gameId,
+                    matchId,
+                    idleReason: aiDispatchResult.idleReason,
+                    decisionElapsedMs,
+                });
                 // 已有 in-flight 尝试时，等待确认回调释放锁，不并发拉起恢复链。
                 if (lastAiAttemptKeyRef.current) {
                     return;
@@ -547,12 +672,46 @@ const OnlineAiSeatBridge = ({
             const now = Date.now();
             const fastTrackActionDelay = shouldUseFastAiDelay(resolution.action);
             const minimumDelayMs = fastTrackActionDelay ? 0 : resolveAiMinimumActionDelayMs(controller);
-            const decisionElapsedMs = now - startedAt;
+            const preScheduleElapsedMs = now - startedAt;
             const observedStateAgeMs = resolveObservedStateAgeMs(state as MatchState<unknown>, now);
             const remainingDelayMs = Math.max(
                 0,
-                minimumDelayMs - Math.max(decisionElapsedMs, observedStateAgeMs),
+                minimumDelayMs - Math.max(preScheduleElapsedMs, observedStateAgeMs),
             );
+            const commandTypes = resolution.action.commands.map((command) => command.type);
+            const activePhaseElapsedMs = aiActivePhaseRef.current
+                ? decisionResolvedAt - aiActivePhaseRef.current.startedAt
+                : null;
+            onlineAiPerfLogger.info('scheduled', {
+                gameId: engineConfig.gameId,
+                matchId,
+                playerId: resolution.playerId,
+                controllerType: controller.type,
+                source: resolution.source,
+                actionKind: resolution.action.kind,
+                commandTypes,
+                decisionElapsedMs,
+                activePhaseElapsedMs,
+                observedStateAgeMs,
+                minimumDelayMs,
+                remainingDelayMs,
+                clientConnected: client.isConnected,
+            });
+            emitOnlineAiPerf('scheduled', {
+                gameId: engineConfig.gameId,
+                matchId,
+                playerId: resolution.playerId,
+                controllerType: controller.type,
+                source: resolution.source,
+                actionKind: resolution.action.kind,
+                commandTypes,
+                decisionElapsedMs,
+                activePhaseElapsedMs,
+                observedStateAgeMs,
+                minimumDelayMs,
+                remainingDelayMs,
+                clientConnected: client.isConnected,
+            });
 
             if (remainingDelayMs > 0) {
                 await new Promise<void>((resolve) => {
@@ -568,6 +727,69 @@ const OnlineAiSeatBridge = ({
                 return;
             }
 
+            const submittedAt = Date.now();
+            const submitElapsedMs = submittedAt - startedAt;
+            onlineAiPerfLogger.info('submitted', {
+                gameId: engineConfig.gameId,
+                matchId,
+                playerId: resolution.playerId,
+                source: resolution.source,
+                actionKind: resolution.action.kind,
+                commandTypes,
+                decisionElapsedMs,
+                activePhaseElapsedMs: aiActivePhaseRef.current
+                    ? submittedAt - aiActivePhaseRef.current.startedAt
+                    : null,
+                submitElapsedMs,
+            });
+            emitOnlineAiPerf('submitted', {
+                gameId: engineConfig.gameId,
+                matchId,
+                playerId: resolution.playerId,
+                source: resolution.source,
+                actionKind: resolution.action.kind,
+                commandTypes,
+                decisionElapsedMs,
+                activePhaseElapsedMs: aiActivePhaseRef.current
+                    ? submittedAt - aiActivePhaseRef.current.startedAt
+                    : null,
+                submitElapsedMs,
+            });
+            if (submitElapsedMs >= 1200) {
+                onlineAiPerfLogger.warn('slow-step', {
+                    gameId: engineConfig.gameId,
+                    matchId,
+                    playerId: resolution.playerId,
+                    source: resolution.source,
+                    actionKind: resolution.action.kind,
+                    commandTypes,
+                    decisionElapsedMs,
+                    activePhaseElapsedMs: aiActivePhaseRef.current
+                        ? submittedAt - aiActivePhaseRef.current.startedAt
+                        : null,
+                    observedStateAgeMs,
+                    minimumDelayMs,
+                    remainingDelayMs,
+                    submitElapsedMs,
+                });
+                emitOnlineAiPerf('slow-step', {
+                    gameId: engineConfig.gameId,
+                    matchId,
+                    playerId: resolution.playerId,
+                    source: resolution.source,
+                    actionKind: resolution.action.kind,
+                    commandTypes,
+                    decisionElapsedMs,
+                    activePhaseElapsedMs: aiActivePhaseRef.current
+                        ? submittedAt - aiActivePhaseRef.current.startedAt
+                        : null,
+                    observedStateAgeMs,
+                    minimumDelayMs,
+                    remainingDelayMs,
+                    submitElapsedMs,
+                });
+            }
+
             submitOnlineAiResolution({
                 client,
                 resolution,
@@ -576,12 +798,52 @@ const OnlineAiSeatBridge = ({
                     setAiRetryVersion((version) => version + 1);
                 },
                 onConfirmed: () => {
+                    onlineAiPerfLogger.info('confirmed', {
+                        gameId: engineConfig.gameId,
+                        matchId,
+                        playerId: resolution.playerId,
+                        source: resolution.source,
+                        actionKind: resolution.action.kind,
+                        commandTypes,
+                        confirmElapsedMs: Date.now() - submittedAt,
+                    });
+                    emitOnlineAiPerf('confirmed', {
+                        gameId: engineConfig.gameId,
+                        matchId,
+                        playerId: resolution.playerId,
+                        source: resolution.source,
+                        actionKind: resolution.action.kind,
+                        commandTypes,
+                        confirmElapsedMs: Date.now() - submittedAt,
+                    });
                     finalizeOnlineAiResolutionConfirmation({
                         lastAiAttemptKeyRef,
                         resolutionAttemptKey: resolution.attemptKey,
                         scheduleRetry: () => {
                             setAiRetryVersion((version) => version + 1);
                         },
+                    });
+                },
+                onRejected: (reason) => {
+                    onlineAiPerfLogger.warn('rejected', {
+                        gameId: engineConfig.gameId,
+                        matchId,
+                        playerId: resolution.playerId,
+                        source: resolution.source,
+                        actionKind: resolution.action.kind,
+                        commandTypes,
+                        rejectReason: reason,
+                        rejectElapsedMs: Date.now() - submittedAt,
+                    });
+                    emitOnlineAiPerf('rejected', {
+                        gameId: engineConfig.gameId,
+                        matchId,
+                        playerId: resolution.playerId,
+                        source: resolution.source,
+                        actionKind: resolution.action.kind,
+                        commandTypes,
+                        rejectReason: reason,
+                        rejectElapsedMs: Date.now() - submittedAt,
                     });
                 },
             });
@@ -1587,6 +1849,7 @@ export const MatchRoom = () => {
         () => Object.values(onlineAiSeatControllers).some((controller) => controller.type !== 'human'),
         [onlineAiSeatControllers],
     );
+    const aiRuntimeTruthKeyRef = useRef<string | null>(null);
     const handleForceEndAiPhaseReady = useCallback((handler: (() => Promise<boolean>) | null) => {
         setForceEndAiPhaseHandler(() => handler);
     }, []);
@@ -1805,6 +2068,63 @@ export const MatchRoom = () => {
     const statusPlayerID = isTutorialRoute
         ? (urlPlayerID ?? debugPlayerID ?? null)
         : (urlPlayerID ?? storedPlayerID ?? null);
+
+    useEffect(() => {
+        const seatControllerTypes = summarizeSeatControllerTypes(onlineAiSeatControllers);
+        const aiSeatIds = Object.entries(seatControllerTypes)
+            .filter(([, type]) => type !== 'human')
+            .map(([playerId]) => playerId)
+            .sort((leftId, rightId) => leftId.localeCompare(rightId));
+        const aiCredentialSeatIds = Object.keys(onlineAiSeatCredentials)
+            .sort((leftId, rightId) => leftId.localeCompare(rightId));
+        const payload = {
+            mode: isTutorialRoute ? 'tutorial-local' : 'online',
+            source: 'MatchRoom',
+            gameId: gameId ?? null,
+            matchId: matchId ?? null,
+            hasOnlineAiSeat,
+            aiSeatIds,
+            aiCredentialSeatIds,
+            effectivePlayerID: effectivePlayerID ?? null,
+            statusPlayerID: statusPlayerID ?? null,
+            route: {
+                isTutorialRoute,
+                isSpectatorRoute,
+                shouldAutoJoin,
+            },
+            seatControllerTypes,
+        };
+        const nextKey = JSON.stringify(payload);
+        if (aiRuntimeTruthKeyRef.current === nextKey) {
+            return;
+        }
+        aiRuntimeTruthKeyRef.current = nextKey;
+        aiRuntimeTruthLogger.info('match-room-ai-runtime', payload);
+        emitAiRuntimeTruth('match-room-ai-runtime', payload);
+        if (!isTutorialRoute && !hasOnlineAiSeat) {
+            const disabledPayload = {
+                mode: 'online',
+                source: 'MatchRoom',
+                gameId: gameId ?? null,
+                matchId: matchId ?? null,
+                reason: 'all-human-seats-or-ai-seat-not-configured',
+                seatControllerTypes,
+            };
+            aiRuntimeTruthLogger.warn('online-ai-not-enabled', disabledPayload);
+            emitAiRuntimeTruth('online-ai-not-enabled', disabledPayload);
+        }
+    }, [
+        effectivePlayerID,
+        gameId,
+        hasOnlineAiSeat,
+        isSpectatorRoute,
+        isTutorialRoute,
+        matchId,
+        onlineAiSeatControllers,
+        onlineAiSeatCredentials,
+        shouldAutoJoin,
+        statusPlayerID,
+    ]);
 
     useEffect(() => {
         const handleStorage = () => setLocalStorageTick((t) => t + 1);

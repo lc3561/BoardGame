@@ -1248,6 +1248,15 @@ test.describe('大杀四方四人局三基地同时计分', () => {
         await expect(talentMinion).toHaveAttribute('data-expanded', 'true');
         await expect(talentMinion).toHaveAttribute('data-attached-actions-visible', 'true');
         await expect(talentMinion).toHaveAttribute('data-activation-armed', 'true');
+        await expect(attachedActionCard).toBeVisible({ timeout: 5000 });
+        const mobileTalentMinionBox = await talentMinion.boundingBox();
+        const mobileAttachedActionBox = await attachedActionCard.boundingBox();
+        expect(mobileTalentMinionBox, '移动端宿主随从应提供尺寸').not.toBeNull();
+        expect(mobileAttachedActionBox, '移动端附着行动卡应提供尺寸').not.toBeNull();
+        expect(
+            mobileAttachedActionBox!.width,
+            '移动端附着行动卡宽度应至少达到宿主随从宽度的一半，避免过小',
+        ).toBeGreaterThan((mobileTalentMinionBox?.width ?? 0) * 0.45);
         await expect.poll(async () => {
             const state = await game.getState();
             return state.core.bases[0].minions.find((minion: any) => minion.uid === 'p0-b0-armor-stego')?.talentUsed ?? false;

@@ -247,8 +247,15 @@ function buildDesertIslandReturnEvents(
     return events;
 }
 
-function mermaidsTollBayOnPlay(): AbilityResult {
-    return { events: [] };
+function mermaidsTollBayOnPlay(ctx: AbilityContext): AbilityResult {
+    const targetBase = ctx.state.bases[ctx.baseIndex];
+    if (!targetBase) {
+        return { events: [buildAbilityFeedback(ctx.playerId, 'feedback.no_valid_targets', ctx.now)] };
+    }
+    const opponentMinionCount = targetBase.minions.filter(minion => minion.controller !== ctx.playerId).length;
+    return {
+        events: buildStandardDrawEvents(ctx.state, ctx.playerId, opponentMinionCount, ctx.random, ctx.now),
+    };
 }
 
 function mermaidsShipwreckCoveSpecial(): AbilityResult {
@@ -290,18 +297,6 @@ function mermaidsCharmedOnPlay(ctx: AbilityContext): AbilityResult {
         { sourceId: 'mermaids_charmed', targetType: 'minion' },
     );
     return { events: [], matchState: queueInteraction(ctx.matchState, interaction) };
-}
-
-function mermaidsTollBayMovedTrigger(ctx: TriggerContext): SmashUpEvent[] {
-    if (ctx.sourceControllerId === undefined || ctx.moveToBaseIndex === undefined || !ctx.triggerMinion) {
-        return [];
-    }
-    if (ctx.triggerMinion.controller === ctx.sourceControllerId) return [];
-    const targetBase = ctx.state.bases[ctx.moveToBaseIndex];
-    if (!targetBase) return [];
-    const hasOwnMinion = targetBase.minions.some(minion => minion.controller === ctx.sourceControllerId);
-    if (!hasOwnMinion) return [];
-    return buildStandardDrawEvents(ctx.state, ctx.sourceControllerId, 1, ctx.random, ctx.now);
 }
 
 function mermaidsShipwreckCoveAfterScoring(ctx: TriggerContext): AbilityResult {
@@ -347,7 +342,6 @@ export function registerMermaidsAbilities(): void {
     registerAbility('mermaids_charmed', 'onPlay', mermaidsCharmedOnPlay);
     registerAbility('mermaids_desert_island', 'onPlay', mermaidsDesertIslandOnPlay);
 
-    registerTrigger('mermaids_toll_bay', 'onMinionMoved', mermaidsTollBayMovedTrigger, { perInstance: true });
     registerTrigger('mermaids_shipwreck_cove', 'afterScoring', mermaidsShipwreckCoveAfterScoring, {
         optional: true,
         perInstance: true,

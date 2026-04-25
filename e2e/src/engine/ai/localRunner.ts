@@ -10,9 +10,14 @@ import {
     resolveLocalAiPolicyByPreference,
 } from './registry';
 import type { AiLegalAction, AiResponseWindowSnapshot, AiSeatController } from './types';
+import { createScopedLogger } from '../../lib/logger';
 
 const DEFAULT_REMOTE_AI_TIMEOUT_MS = 3000;
 const FAST_PASS_ACTION_KINDS = new Set(['advance-phase', 'response-pass']);
+const aiRunnerLogger = createScopedLogger('AI_RUNNER_PERF');
+function emitAiRunnerPerf(stage: string, payload: Record<string, unknown>): void {
+    console.log('[AI_RUNNER_PERF]', { stage, ...payload });
+}
 
 export interface AiResolution {
     playerId: string;
@@ -244,6 +249,7 @@ async function resolveRemoteAction(args: {
     );
 
     for (let attempt = 0; attempt <= retryCount; attempt += 1) {
+        const attemptStartedAt = Date.now();
         try {
             const decision = await withTimeout(
                 Promise.resolve(provider.decide(args.context, args.seatController)),
@@ -251,15 +257,88 @@ async function resolveRemoteAction(args: {
             );
             const action = resolveAiActionDecision(args.context, decision);
             if (action) {
+                aiRunnerLogger.info('remote-attempt-succeeded', {
+                    runtimeGameId: args.runtimeGameId,
+                    providerId: args.seatController.providerId,
+                    attempt,
+                    retryCount,
+                    timeoutMs,
+                    elapsedMs: Date.now() - attemptStartedAt,
+                    usedFallback: false,
+                    actionKind: action.kind,
+                    commandTypes: action.commands.map((command) => command.type),
+                });
+                emitAiRunnerPerf('remote-attempt-succeeded', {
+                    runtimeGameId: args.runtimeGameId,
+                    providerId: args.seatController.providerId,
+                    attempt,
+                    retryCount,
+                    timeoutMs,
+                    elapsedMs: Date.now() - attemptStartedAt,
+                    usedFallback: false,
+                    actionKind: action.kind,
+                    commandTypes: action.commands.map((command) => command.type),
+                });
                 return { action, usedFallback: false };
             }
-        } catch {
-            // 远程 provider 出错或超时都走显式 fallback。
+            aiRunnerLogger.warn('remote-attempt-empty', {
+                runtimeGameId: args.runtimeGameId,
+                providerId: args.seatController.providerId,
+                attempt,
+                retryCount,
+                timeoutMs,
+                elapsedMs: Date.now() - attemptStartedAt,
+            });
+            emitAiRunnerPerf('remote-attempt-empty', {
+                runtimeGameId: args.runtimeGameId,
+                providerId: args.seatController.providerId,
+                attempt,
+                retryCount,
+                timeoutMs,
+                elapsedMs: Date.now() - attemptStartedAt,
+            });
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            aiRunnerLogger.warn('remote-attempt-failed', {
+                runtimeGameId: args.runtimeGameId,
+                providerId: args.seatController.providerId,
+                attempt,
+                retryCount,
+                timeoutMs,
+                elapsedMs: Date.now() - attemptStartedAt,
+                reason: message,
+            });
+            emitAiRunnerPerf('remote-attempt-failed', {
+                runtimeGameId: args.runtimeGameId,
+                providerId: args.seatController.providerId,
+                attempt,
+                retryCount,
+                timeoutMs,
+                elapsedMs: Date.now() - attemptStartedAt,
+                reason: message,
+            });
         }
     }
 
+    const fallbackAction = await resolveRemoteFallbackAction(args);
+    aiRunnerLogger.warn('remote-fallback-used', {
+        runtimeGameId: args.runtimeGameId,
+        providerId: args.seatController.providerId,
+        retryCount,
+        timeoutMs,
+        actionKind: fallbackAction?.kind ?? null,
+        commandTypes: fallbackAction?.commands.map((command) => command.type) ?? [],
+    });
+    emitAiRunnerPerf('remote-fallback-used', {
+        runtimeGameId: args.runtimeGameId,
+        providerId: args.seatController.providerId,
+        retryCount,
+        timeoutMs,
+        actionKind: fallbackAction?.kind ?? null,
+        commandTypes: fallbackAction?.commands.map((command) => command.type) ?? [],
+    });
     return {
-        action: await resolveRemoteFallbackAction(args),
+        action: fallbackAction,
         usedFallback: true,
     };
 }

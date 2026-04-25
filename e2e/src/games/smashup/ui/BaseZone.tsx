@@ -1344,7 +1344,7 @@ const MinionCard: React.FC<{
                                             onViewAction(aa.defId);
                                         }
                                     }}
-                                    className={`w-[1.8vw] aspect-[0.714] bg-white rounded-[0.1vw] shadow-lg cursor-pointer
+                                    className={`w-[3vw] aspect-[0.714] bg-white rounded-[0.1vw] shadow-lg cursor-pointer
                                         hover:scale-[2] ${shouldShowAttachedLeft ? 'hover:-translate-x-[0.8vw]' : 'hover:translate-x-[0.8vw]'} transition-transform duration-150
                                         border-[0.08vw] ${isDimmedAA
                                             ? 'opacity-40 grayscale cursor-not-allowed border-slate-400'

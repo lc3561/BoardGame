@@ -252,22 +252,30 @@ test.describe('社交中心 E2E', () => {
             .first();
         await sourceChatInput.focus();
 
-        let sendResponse: Awaited<ReturnType<typeof page.waitForResponse>>;
+        let sendRequest: Awaited<ReturnType<typeof page.waitForRequest>>;
         let sentByEnter = true;
         try {
-            [sendResponse] = await Promise.all([
-                page.waitForResponse('**/auth/messages/send', { timeout: 6000 }),
+            [sendRequest] = await Promise.all([
+                page.waitForRequest((request) => {
+                    return request.url().includes('/auth/messages/send') && request.method() === 'POST';
+                }, { timeout: 6000 }),
                 sourceChatInput.press('Enter'),
             ]);
         } catch {
             sentByEnter = false;
-            [sendResponse] = await Promise.all([
-                page.waitForResponse('**/auth/messages/send', { timeout: 6000 }),
+            [sendRequest] = await Promise.all([
+                page.waitForRequest((request) => {
+                    return request.url().includes('/auth/messages/send') && request.method() === 'POST';
+                }, { timeout: 6000 }),
                 sendButton.click(),
             ]);
         }
         console.log('[social-mobile-send-path]', sentByEnter ? 'enter' : 'button-fallback');
-        expect(sendResponse.ok()).toBeTruthy();
+        expect(sendRequest.postDataJSON()).toMatchObject({
+            toUserId: 'friend_001',
+            content: '移动端社交聊天输入可见性校验',
+            type: 'text',
+        });
         await expect(page.locator('.whitespace-pre-wrap', { hasText: '移动端社交聊天输入可见性校验' })).toBeVisible();
 
         const metricsInput = await mobileProxyInput.isVisible().catch(() => false)

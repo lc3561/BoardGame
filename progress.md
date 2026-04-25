@@ -382,6 +382,30 @@
   - Result: 被 `heavy-task-guard` 拦截（同机已有并发 `e2e-run` 在执行 `social.e2e.ts`）；未中断主流程，继续采用已通过的主线 `smashup.e2e.ts (3 passed)` 与 `factionSelection.test.ts (40 passed)` 维持当日复核证据链。
   - Next: 待共享重任务释放后再补定向复跑；当前先继续三派系实施与审计推进。
 
+- **[2026-04-25 00:05:00] Action**: 清理陈旧共享 runtime 后补跑 `69db57c` 定向 E2E
+  - Result: `npm run test:e2e:ci:file -- e2e/smashup/smashup-phase-transition-simple.e2e.ts "回归：在线 AI 在 factionSelect 阶段 seat state 延迟就绪时，不得被 watchdog 跳过到空牌对局"` 通过（`1 passed`），关键截图更新时间 `2026-04-25 00:06`。
+  - Next: 继续补跑 `69daa51e` 两条定向用例。
+
+- **[2026-04-25 00:13:00] Action**: 补跑 `69daa51e` 两条定向 E2E
+  - Result: 两条用例均通过（各 `1 passed`）：`在线 AI 连续 8 秒没有任何实际进展时，应自动强制结束当前回合` 与 `在线 AI 结束回合切回我方时不应出现整板重挂载或 loading 闪屏`；关键截图更新时间 `2026-04-25 00:13`。
+  - Next: 回写两条 feedback evidence 与 planning 文件，继续长期任务推进。
+
+- **[2026-04-25 08:17:00] Action**: 修复 `mermaids_toll_bay` 回归并复跑主能力回归
+  - Result: 将触发窗口标记从能力 `matchState.core` 写入改为 reducer 的 `SU_EVENTS.ACTION_PLAYED` 权威写入；`newFactionAbilities.test.ts` 从 `1 failed` 收敛为 `170 passed / 1 skipped`。
+  - Next: 复跑四项审计套件 + i18n + SmashUp 大厅 E2E，闭环三派系当日审计链。
+
+- **[2026-04-25 08:23:00] Action**: 复跑四项审计套件 + i18n + SmashUp 大厅 E2E
+  - Result: `interactionTargetTypeAudit`、`interactionDefIdAudit`、`abilityBehaviorAudit`、`interactionCompletenessAudit` 全通过（`36 passed`）；`npm run i18n:check` 通过；`npm run test:e2e:ci -- e2e/smashup/smashup.e2e.ts` 为 `3 passed`，统一斜向“实施中”横幅截图已更新。
+  - Next: 回写 `evidence/smashup/smashup-10th-anniversary-factions-audit-20260419.md` 与 planning 文件，继续长期任务下一批审计推进（不中途收口）。
+
+- **[2026-04-25 08:58:00] Action**: 补跑 SmashUp smoke 回归
+  - Result: `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/smashup.smoke.test.ts --configLoader native --maxWorkers 1` 通过（`121 passed`），未引入三派系相关新回归。
+  - Next: 继续推进三派系审计补强与剩余 workflow 收口事项。
+
+- **[2026-04-25 09:05:00] Action**: 回写三派系审计/evidence/planning 文档口径
+  - Result: 已更新 `evidence/smashup/smashup-10th-anniversary-factions-audit-20260419.md`、`evidence/smashup/smashup-10th-anniversary-factions-selection-e2e-test.md`、`task_plan.md`、`findings.md`，同步 `170/1 + 4 audit + i18n + e2e(3) + smoke(121)` 最新事实。
+  - Next: 继续三派系审计工作流剩余批次，不中途收口。
+
 ## Session: 2026-04-24 Online Feedback 69eb3924（SmashUp watchdog recover-interaction）
 
 ### Phase: 实施与状态回写

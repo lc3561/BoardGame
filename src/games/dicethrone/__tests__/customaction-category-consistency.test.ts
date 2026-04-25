@@ -499,6 +499,162 @@ describe('CustomAction categories 与 handler 输出一致性审计', () => {
         });
     });
 
+    it('monk-fist-technique-3-knockdown-if-four-kind 仅在四个相同数字时触发', () => {
+        const handler = getCustomActionHandler('monk-fist-technique-3-knockdown-if-four-kind');
+        expect(handler).toBeDefined();
+
+        const monkData = CHARACTER_DATA_MAP.monk;
+        const barbarianData = CHARACTER_DATA_MAP.barbarian;
+        const state = {
+            players: {
+                '0': {
+                    characterId: 'monk',
+                    resources: { [RESOURCE_IDS.HP]: 50, [RESOURCE_IDS.CP]: 5 },
+                    tokens: {},
+                    tokenStackLimits: {},
+                    statusEffects: {},
+                    abilities: monkData.abilities,
+                    hand: [],
+                    deck: [],
+                    discard: [],
+                    abilityLevels: {},
+                    dice: monkData.diceDefinition,
+                },
+                '1': {
+                    characterId: 'barbarian',
+                    resources: { [RESOURCE_IDS.HP]: 50, [RESOURCE_IDS.CP]: 5 },
+                    tokens: {},
+                    tokenStackLimits: {},
+                    statusEffects: {},
+                    abilities: barbarianData.abilities,
+                    hand: [],
+                    deck: [],
+                    discard: [],
+                    abilityLevels: {},
+                    dice: barbarianData.diceDefinition,
+                },
+            },
+            activePlayerId: '0',
+            rollDiceCount: 5,
+            tokenDefinitions: ALL_TOKEN_DEFINITIONS,
+            pendingAttack: {
+                attackerId: '0',
+                defenderId: '1',
+                abilityId: 'fist-technique',
+                bonusDamage: 0,
+            },
+            dice: [
+                { id: 'die-0', value: 2, locked: false, symbol: 'fist', definitionId: monkData.diceDefinition?.[0]?.id ?? 'monk-die' },
+                { id: 'die-1', value: 2, locked: false, symbol: 'fist', definitionId: monkData.diceDefinition?.[0]?.id ?? 'monk-die' },
+                { id: 'die-2', value: 2, locked: false, symbol: 'fist', definitionId: monkData.diceDefinition?.[0]?.id ?? 'monk-die' },
+                { id: 'die-3', value: 2, locked: false, symbol: 'fist', definitionId: monkData.diceDefinition?.[0]?.id ?? 'monk-die' },
+                { id: 'die-4', value: 5, locked: false, symbol: 'fist', definitionId: monkData.diceDefinition?.[0]?.id ?? 'monk-die' },
+            ],
+        };
+
+        const ctx = createMockContext('monk-fist-technique-3-knockdown-if-four-kind', state);
+        const events = handler!(ctx);
+
+        expect(events).toHaveLength(1);
+        expect(events[0]).toMatchObject({
+            type: 'STATUS_APPLIED',
+            payload: {
+                targetId: '1',
+                statusId: 'knockdown',
+                stacks: 1,
+            },
+        });
+
+        const nonTriggerState = {
+            ...state,
+            dice: [
+                { id: 'die-0', value: 1, locked: false, symbol: 'fist', definitionId: monkData.diceDefinition?.[0]?.id ?? 'monk-die' },
+                { id: 'die-1', value: 1, locked: false, symbol: 'fist', definitionId: monkData.diceDefinition?.[0]?.id ?? 'monk-die' },
+                { id: 'die-2', value: 2, locked: false, symbol: 'fist', definitionId: monkData.diceDefinition?.[0]?.id ?? 'monk-die' },
+                { id: 'die-3', value: 3, locked: false, symbol: 'fist', definitionId: monkData.diceDefinition?.[0]?.id ?? 'monk-die' },
+                { id: 'die-4', value: 4, locked: false, symbol: 'fist', definitionId: monkData.diceDefinition?.[0]?.id ?? 'monk-die' },
+            ],
+        };
+        const nonTriggerCtx = createMockContext('monk-fist-technique-3-knockdown-if-four-kind', nonTriggerState);
+        expect(handler!(nonTriggerCtx)).toEqual([]);
+    });
+
+    it('barbarian-slap-unblockable-if-four-kind 仅在四个相同数字时触发不可防御', () => {
+        const handler = getCustomActionHandler('barbarian-slap-unblockable-if-four-kind');
+        expect(handler).toBeDefined();
+
+        const barbarianData = CHARACTER_DATA_MAP.barbarian;
+        const monkData = CHARACTER_DATA_MAP.monk;
+        const state = {
+            players: {
+                '0': {
+                    characterId: 'barbarian',
+                    resources: { [RESOURCE_IDS.HP]: 50, [RESOURCE_IDS.CP]: 5 },
+                    tokens: {},
+                    tokenStackLimits: {},
+                    statusEffects: {},
+                    abilities: barbarianData.abilities,
+                    hand: [],
+                    deck: [],
+                    discard: [],
+                    abilityLevels: {},
+                    dice: barbarianData.diceDefinition,
+                },
+                '1': {
+                    characterId: 'monk',
+                    resources: { [RESOURCE_IDS.HP]: 50, [RESOURCE_IDS.CP]: 5 },
+                    tokens: {},
+                    tokenStackLimits: {},
+                    statusEffects: {},
+                    abilities: monkData.abilities,
+                    hand: [],
+                    deck: [],
+                    discard: [],
+                    abilityLevels: {},
+                    dice: monkData.diceDefinition,
+                },
+            },
+            activePlayerId: '0',
+            rollDiceCount: 5,
+            tokenDefinitions: ALL_TOKEN_DEFINITIONS,
+            pendingAttack: {
+                attackerId: '0',
+                defenderId: '1',
+                abilityId: 'slap',
+                bonusDamage: 0,
+                isDefendable: true,
+            },
+            dice: [
+                { id: 'die-0', value: 3, locked: false, symbol: 'sword', definitionId: barbarianData.diceDefinition?.[0]?.id ?? 'barbarian-die' },
+                { id: 'die-1', value: 3, locked: false, symbol: 'sword', definitionId: barbarianData.diceDefinition?.[0]?.id ?? 'barbarian-die' },
+                { id: 'die-2', value: 3, locked: false, symbol: 'sword', definitionId: barbarianData.diceDefinition?.[0]?.id ?? 'barbarian-die' },
+                { id: 'die-3', value: 3, locked: false, symbol: 'sword', definitionId: barbarianData.diceDefinition?.[0]?.id ?? 'barbarian-die' },
+                { id: 'die-4', value: 5, locked: false, symbol: 'strength', definitionId: barbarianData.diceDefinition?.[0]?.id ?? 'barbarian-die' },
+            ],
+        };
+
+        const ctx = createMockContext('barbarian-slap-unblockable-if-four-kind', state);
+        const events = handler!(ctx);
+        expect(events).toHaveLength(1);
+        expect(events[0]).toMatchObject({
+            type: 'ATTACK_MADE_UNDEFENDABLE',
+            payload: { attackerId: '0' },
+        });
+
+        const nonTriggerState = {
+            ...state,
+            dice: [
+                { id: 'die-0', value: 1, locked: false, symbol: 'sword', definitionId: barbarianData.diceDefinition?.[0]?.id ?? 'barbarian-die' },
+                { id: 'die-1', value: 1, locked: false, symbol: 'sword', definitionId: barbarianData.diceDefinition?.[0]?.id ?? 'barbarian-die' },
+                { id: 'die-2', value: 2, locked: false, symbol: 'sword', definitionId: barbarianData.diceDefinition?.[0]?.id ?? 'barbarian-die' },
+                { id: 'die-3', value: 3, locked: false, symbol: 'sword', definitionId: barbarianData.diceDefinition?.[0]?.id ?? 'barbarian-die' },
+                { id: 'die-4', value: 4, locked: false, symbol: 'strength', definitionId: barbarianData.diceDefinition?.[0]?.id ?? 'barbarian-die' },
+            ],
+        };
+        const nonTriggerCtx = createMockContext('barbarian-slap-unblockable-if-four-kind', nonTriggerState);
+        expect(handler!(nonTriggerCtx)).toEqual([]);
+    });
+
     it('categories 声明 damage 的 handler 应当产生 DAMAGE_DEALT（反向检查）', () => {
         const violations: string[] = [];
 

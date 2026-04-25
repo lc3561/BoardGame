@@ -61,6 +61,7 @@ import { persistLocalMatchSnapshot, readLocalMatchSnapshot } from './localSessio
 import { onAppVisible } from '../../lib/mobile/appVisibility';
 import { buildAiProgressMarker } from './onlineAiRecovery';
 import { resolveSetupPlayerIds } from './setupPlayerOrder';
+import { createScopedLogger } from '../../lib/logger';
 
 import { createCommandBatcher, type CommandBatcher } from './latency/commandBatcher';
 import { EventStreamRollbackContext, type EventStreamRollbackValue } from '../hooks/EventStreamRollbackContext';
@@ -78,6 +79,15 @@ const FAST_AI_COMMAND_TYPES = new Set([
     'SKIP_BONUS_DICE_REROLL',
 ]);
 
+const localAiPerfLogger = createScopedLogger('LOCAL_AI_PERF');
+function emitLocalAiPerf(stage: string, payload: Record<string, unknown>): void {
+    console.log('[LOCAL_AI_PERF]', { stage, ...payload });
+}
+const aiRuntimeTruthLogger = createScopedLogger('AI_RUNTIME_TRUTH');
+function emitAiRuntimeTruth(stage: string, payload: Record<string, unknown>): void {
+    console.log('[AI_RUNTIME_TRUTH]', { stage, ...payload });
+}
+
 function shouldUseFastAiDelay(action: { kind?: string; commands?: Array<{ type?: string }> }): boolean {
     if (action.kind === 'advance-phase' || action.kind === 'response-pass') {
         return true;
@@ -86,6 +96,29 @@ function shouldUseFastAiDelay(action: { kind?: string; commands?: Array<{ type?:
         return false;
     }
     return action.commands.every((command) => typeof command.type === 'string' && FAST_AI_COMMAND_TYPES.has(command.type));
+}
+
+function summarizeSeatControllerTypes(seatControllers: Record<string, AiSeatController>): Record<string, string> {
+    return Object.fromEntries(
+        Object.entries(seatControllers)
+            .sort(([leftId], [rightId]) => leftId.localeCompare(rightId))
+            .map(([playerId, controller]) => [playerId, controller.type]),
+    );
+}
+
+function resolveCoreCurrentPlayerId(core: unknown): string | null {
+    if (!core || typeof core !== 'object') {
+        return null;
+    }
+    const typedCore = core as { currentPlayer?: unknown; turnOrder?: unknown; currentPlayerIndex?: unknown };
+    if (typeof typedCore.currentPlayer === 'string') {
+        return typedCore.currentPlayer;
+    }
+    if (Array.isArray(typedCore.turnOrder) && typeof typedCore.currentPlayerIndex === 'number') {
+        const indexedPlayerId = typedCore.turnOrder[typedCore.currentPlayerIndex];
+        return typeof indexedPlayerId === 'string' ? indexedPlayerId : null;
+    }
+    return null;
 }
 
 // ============================================================================
@@ -718,6 +751,8 @@ export function LocalGameProvider({
     const onCommandRejectedRef = useRef(onCommandRejected);
     const lastAiAttemptKeyRef = useRef<string | null>(null);
     const [aiRetryVersion, setAiRetryVersion] = useState(0);
+    const aiActivePhaseRef = useRef<{ key: string; startedAt: number } | null>(null);
+    const aiRuntimeTruthKeyRef = useRef<string | null>(null);
 
     useEffect(() => {
         onCommandRejectedRef.current = onCommandRejected;
@@ -851,6 +886,26 @@ export function LocalGameProvider({
         stateRef.current = state;
     }, [state]);
 
+    useEffect(() => {
+        const core = state.core as { currentPlayer?: unknown; turnOrder?: unknown; currentPlayerIndex?: unknown };
+        const currentPlayerId = typeof core.currentPlayer === 'string'
+            ? core.currentPlayer
+            : (Array.isArray(core.turnOrder) && typeof core.currentPlayerIndex === 'number'
+                ? (core.turnOrder as string[])[core.currentPlayerIndex]
+                : undefined);
+        if (!currentPlayerId || seatControllers[currentPlayerId]?.type === 'human') {
+            aiActivePhaseRef.current = null;
+            return;
+        }
+        const phase = state.sys?.phase ?? 'unknown';
+        const turnNumber = state.sys?.turnNumber ?? 'no-turn';
+        const nextId = state.sys?.eventStream?.nextId ?? 'no-event';
+        const key = `${currentPlayerId}:${turnNumber}:${phase}:${nextId}`;
+        if (aiActivePhaseRef.current?.key !== key) {
+            aiActivePhaseRef.current = { key, startedAt: Date.now() };
+        }
+    }, [seatControllers, state]);
+
     const localPregameControlledPlayerId = useMemo(
         () => resolveLocalPregameControlledPlayerId({
             gameId: config.gameId,
@@ -860,6 +915,43 @@ export function LocalGameProvider({
         }),
         [config.gameId, localPlayerId, seatControllers, state],
     );
+
+    useEffect(() => {
+        const currentPlayerId = resolveCoreCurrentPlayerId(state.core);
+        const seatControllerTypes = summarizeSeatControllerTypes(seatControllers);
+        const hasAiSeat = Object.values(seatControllerTypes).some((type) => type !== 'human');
+        const currentControllerType = currentPlayerId
+            ? (seatControllerTypes[currentPlayerId] ?? 'human')
+            : null;
+        const payload = {
+            mode: 'local',
+            gameId: config.gameId,
+            hasAiSeat,
+            currentPlayerId,
+            currentControllerType,
+            phase: state.sys?.phase ?? null,
+            turnNumber: state.sys?.turnNumber ?? null,
+            localPregameControlledPlayerId: localPregameControlledPlayerId ?? null,
+            seatControllerTypes,
+        };
+        const nextKey = JSON.stringify(payload);
+        if (aiRuntimeTruthKeyRef.current === nextKey) {
+            return;
+        }
+        aiRuntimeTruthKeyRef.current = nextKey;
+        aiRuntimeTruthLogger.info('local-provider-state', payload);
+        emitAiRuntimeTruth('local-provider-state', payload);
+        if (!hasAiSeat) {
+            const disabledPayload = {
+                mode: 'local',
+                gameId: config.gameId,
+                reason: 'all-human-seats',
+                seatControllerTypes,
+            };
+            aiRuntimeTruthLogger.warn('local-ai-disabled', disabledPayload);
+            emitAiRuntimeTruth('local-ai-disabled', disabledPayload);
+        }
+    }, [config.gameId, localPregameControlledPlayerId, seatControllers, state]);
 
     useEffect(() => {
         return onAppVisible(() => {
@@ -1002,10 +1094,22 @@ export function LocalGameProvider({
                 matchId: `local:${config.gameId}:${seed}`,
                 seatControllers,
             });
+            const decisionResolvedAt = Date.now();
+            const decisionElapsedMs = decisionResolvedAt - startedAt;
 
             if (cancelled) return;
 
             if (!resolution) {
+                localAiPerfLogger.debug('idle', {
+                    gameId: config.gameId,
+                    matchId: `local:${config.gameId}:${seed}`,
+                    decisionElapsedMs,
+                });
+                emitLocalAiPerf('idle', {
+                    gameId: config.gameId,
+                    matchId: `local:${config.gameId}:${seed}`,
+                    decisionElapsedMs,
+                });
                 lastAiAttemptKeyRef.current = null;
                 return;
             }
@@ -1028,6 +1132,39 @@ export function LocalGameProvider({
                 0,
                 actionDelayTargetMs - (Date.now() - startedAt),
             );
+            const commandTypes = resolution.action.commands.map((command) => command.type);
+            const activePhaseElapsedMs = aiActivePhaseRef.current
+                ? decisionResolvedAt - aiActivePhaseRef.current.startedAt
+                : null;
+
+            localAiPerfLogger.info('scheduled', {
+                gameId: config.gameId,
+                matchId: `local:${config.gameId}:${seed}`,
+                playerId: resolution.playerId,
+                controllerType: controller.type,
+                source: resolution.source,
+                actionKind: resolution.action.kind,
+                commandTypes,
+                decisionElapsedMs,
+                activePhaseElapsedMs,
+                fastTrackActionDelay,
+                actionDelayTargetMs,
+                remainingDelayMs,
+            });
+            emitLocalAiPerf('scheduled', {
+                gameId: config.gameId,
+                matchId: `local:${config.gameId}:${seed}`,
+                playerId: resolution.playerId,
+                controllerType: controller.type,
+                source: resolution.source,
+                actionKind: resolution.action.kind,
+                commandTypes,
+                decisionElapsedMs,
+                activePhaseElapsedMs,
+                fastTrackActionDelay,
+                actionDelayTargetMs,
+                remainingDelayMs,
+            });
 
             if (remainingDelayMs > 0) {
                 await new Promise<void>((resolve) => {
@@ -1051,6 +1188,66 @@ export function LocalGameProvider({
                     ...normalizedPayload,
                     __tutorialPlayerId: resolution.playerId,
                     __tutorialAiCommand: true,
+                });
+            }
+
+            const totalElapsedMs = Date.now() - startedAt;
+            localAiPerfLogger.info('dispatched', {
+                gameId: config.gameId,
+                matchId: `local:${config.gameId}:${seed}`,
+                playerId: resolution.playerId,
+                source: resolution.source,
+                actionKind: resolution.action.kind,
+                commandTypes,
+                decisionElapsedMs,
+                activePhaseElapsedMs: aiActivePhaseRef.current
+                    ? Date.now() - aiActivePhaseRef.current.startedAt
+                    : null,
+                totalElapsedMs,
+            });
+            emitLocalAiPerf('dispatched', {
+                gameId: config.gameId,
+                matchId: `local:${config.gameId}:${seed}`,
+                playerId: resolution.playerId,
+                source: resolution.source,
+                actionKind: resolution.action.kind,
+                commandTypes,
+                decisionElapsedMs,
+                activePhaseElapsedMs: aiActivePhaseRef.current
+                    ? Date.now() - aiActivePhaseRef.current.startedAt
+                    : null,
+                totalElapsedMs,
+            });
+            if (totalElapsedMs >= 1200) {
+                localAiPerfLogger.warn('slow-step', {
+                    gameId: config.gameId,
+                    matchId: `local:${config.gameId}:${seed}`,
+                    playerId: resolution.playerId,
+                    source: resolution.source,
+                    actionKind: resolution.action.kind,
+                    commandTypes,
+                    decisionElapsedMs,
+                    activePhaseElapsedMs: aiActivePhaseRef.current
+                        ? Date.now() - aiActivePhaseRef.current.startedAt
+                        : null,
+                    actionDelayTargetMs,
+                    remainingDelayMs,
+                    totalElapsedMs,
+                });
+                emitLocalAiPerf('slow-step', {
+                    gameId: config.gameId,
+                    matchId: `local:${config.gameId}:${seed}`,
+                    playerId: resolution.playerId,
+                    source: resolution.source,
+                    actionKind: resolution.action.kind,
+                    commandTypes,
+                    decisionElapsedMs,
+                    activePhaseElapsedMs: aiActivePhaseRef.current
+                        ? Date.now() - aiActivePhaseRef.current.startedAt
+                        : null,
+                    actionDelayTargetMs,
+                    remainingDelayMs,
+                    totalElapsedMs,
                 });
             }
 

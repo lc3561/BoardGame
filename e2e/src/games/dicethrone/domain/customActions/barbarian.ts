@@ -2,7 +2,7 @@
  * 閲庤洰浜?(Barbarian) 涓撳睘 Custom Action 澶勭悊鍣?
  */
 
-import { getActiveDice, getFaceCounts, getPlayerDieFace } from '../rules';
+import { getActiveDice, getFaceCounts, getMaxDuplicateValueCount, getPlayerDieFace } from '../rules';
 import { RESOURCE_IDS } from '../resources';
 import { STATUS_IDS, BARBARIAN_DICE_FACE_IDS as FACES } from '../ids';
 import type {
@@ -338,6 +338,22 @@ function handleMorePleaseRollDamage({ ctx, attackerId, sourceAbilityId, state, t
     return events;
 }
 
+/**
+ * 重击 II / III：仅当攻击骰至少 4 个相同数字时，本次攻击变为不可防御。
+ */
+function handleBarbarianSlapUnblockableIfFourKind({ attackerId, state, timestamp }: CustomActionContext): DiceThroneEvent[] {
+    if (getMaxDuplicateValueCount(getActiveDice(state)) < 4) {
+        return [];
+    }
+
+    return [{
+        type: 'ATTACK_MADE_UNDEFENDABLE',
+        payload: { attackerId },
+        sourceCommandType: 'ABILITY_EFFECT',
+        timestamp,
+    } as DiceThroneEvent];
+}
+
 // ============================================================================
 // 注册所有野蛮人 Custom Action 处理器
 // ============================================================================
@@ -361,6 +377,9 @@ export function registerBarbarianCustomActions(): void {
     registerCustomActionHandler('more-please-roll-damage', handleMorePleaseRollDamage, {
         categories: ['dice', 'damage', 'status'],
         requiresSelectedDefender: true,
+    });
+    registerCustomActionHandler('barbarian-slap-unblockable-if-four-kind', handleBarbarianSlapUnblockableIfFourKind, {
+        categories: ['defense', 'dice'],
     });
 }
 

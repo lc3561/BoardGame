@@ -31,10 +31,21 @@ const getDeckSectionLabel = (characterId: string | null | undefined, atlasIndex:
 interface DiceThroneDebugConfigProps {
     G: unknown;
     dispatch: (type: string, payload?: unknown) => void;
+    playerNames?: Record<string, string>;
 }
 
-export const DiceThroneDebugConfig: React.FC<DiceThroneDebugConfigProps> = ({ G, dispatch }) => {
+export const DiceThroneDebugConfig: React.FC<DiceThroneDebugConfigProps> = ({ G, dispatch, playerNames = {} }) => {
     const { t } = useTranslation('game-dicethrone');
+    const seatOptions = useMemo(() => {
+        const players = G?.core?.players ?? {};
+        return Object.keys(players)
+            .sort((left, right) => Number(left) - Number(right))
+            .map((playerId) => ({
+                playerId,
+                label: playerNames[playerId]?.trim() || `P${Number(playerId) + 1}`,
+            }));
+    }, [G, playerNames]);
+
     // ========== 资源作弊 ==========
     const [cheatPlayer, setCheatPlayer] = useState<string>('0');
     const [cheatResource, setCheatResource] = useState<string>('cp');
@@ -60,6 +71,10 @@ export const DiceThroneDebugConfig: React.FC<DiceThroneDebugConfigProps> = ({ G,
     const playerCharacterId: string | null = useMemo(
         () => G?.core?.players?.[dealPlayer]?.characterId ?? null,
         [G, dealPlayer],
+    );
+    const dealPlayerLabel = useMemo(
+        () => seatOptions.find((seat) => seat.playerId === dealPlayer)?.label ?? `P${Number(dealPlayer) + 1}`,
+        [dealPlayer, seatOptions],
     );
     const usesReversedCommonAtlas = useMemo(
         () => REVERSED_COMMON_ATLAS_HEROES.has(playerCharacterId ?? ''),
@@ -177,8 +192,9 @@ export const DiceThroneDebugConfig: React.FC<DiceThroneDebugConfigProps> = ({ G,
                                 onChange={(e) => setCheatPlayer(e.target.value)}
                                 className="flex-1 px-2 py-1.5 text-xs border border-yellow-300 rounded bg-white text-gray-900"
                             >
-                                <option value="0">P0</option>
-                                <option value="1">P1</option>
+                                {seatOptions.map((seat) => (
+                                    <option key={`resource-${seat.playerId}`} value={seat.playerId}>{seat.label}</option>
+                                ))}
                             </select>
                             <select
                                 value={cheatResource}
@@ -315,8 +331,9 @@ export const DiceThroneDebugConfig: React.FC<DiceThroneDebugConfigProps> = ({ G,
                                 onChange={(e) => setTokenPlayer(e.target.value)}
                                 className="flex-1 px-2 py-1.5 text-xs border border-purple-300 rounded bg-white text-gray-900"
                             >
-                                <option value="0">P0</option>
-                                <option value="1">P1</option>
+                                {seatOptions.map((seat) => (
+                                    <option key={`token-${seat.playerId}`} value={seat.playerId}>{seat.label}</option>
+                                ))}
                             </select>
                             <select
                                 value={tokenType}
@@ -361,8 +378,9 @@ export const DiceThroneDebugConfig: React.FC<DiceThroneDebugConfigProps> = ({ G,
                                 onChange={(e) => setDealPlayer(e.target.value)}
                                 className="flex-1 px-2 py-1.5 text-xs border border-green-300 rounded bg-white text-gray-900"
                             >
-                                <option value="0">P0</option>
-                                <option value="1">P1</option>
+                                {seatOptions.map((seat) => (
+                                    <option key={`deal-${seat.playerId}`} value={seat.playerId}>{seat.label}</option>
+                                ))}
                             </select>
                             <input
                                 type="number"
@@ -443,7 +461,7 @@ export const DiceThroneDebugConfig: React.FC<DiceThroneDebugConfigProps> = ({ G,
             {/* 卡牌索引速查表 */}
             <div className="bg-amber-50 p-3 rounded-lg border border-amber-200">
                 <h4 className="text-[10px] font-black text-amber-600 uppercase tracking-widest mb-3">
-                    牌库索引速查 (P{dealPlayer})
+                    牌库索引速查 ({dealPlayerLabel})
                 </h4>
                 <div className="max-h-40 overflow-y-auto">
                     {sortedDeckCards.length === 0 ? (
@@ -501,7 +519,7 @@ export const DiceThroneDebugConfig: React.FC<DiceThroneDebugConfigProps> = ({ G,
             {/* 手牌预览 */}
             <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
                 <h4 className="text-[10px] font-black text-slate-600 uppercase tracking-widest mb-3">
-                    手牌预览 (P{dealPlayer})
+                    手牌预览 ({dealPlayerLabel})
                 </h4>
                 <div className="max-h-24 overflow-y-auto">
                     {playerHand.length === 0 ? (

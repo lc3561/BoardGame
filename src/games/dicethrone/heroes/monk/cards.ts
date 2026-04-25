@@ -87,8 +87,32 @@ const FIST_TECHNIQUE_3: AbilityDef = {
     sfxKey: MONK_SFX_PUNCH_1,
     variants: [
         { id: 'fist-technique-3-3', trigger: { type: 'diceSet', faces: { [DICE_FACE_IDS.FIST]: 3 } }, effects: [damage(7, abilityEffectText('fist-technique-3-3', 'damage7'))], priority: 1 },
-        { id: 'fist-technique-3-4', trigger: { type: 'diceSet', faces: { [DICE_FACE_IDS.FIST]: 4 } }, effects: [damage(8, abilityEffectText('fist-technique-3-4', 'damage8')), inflictStatus(STATUS_IDS.KNOCKDOWN, 1, abilityEffectText('fist-technique-3-4', 'inflictKnockdown'))], priority: 2 },
-        { id: 'fist-technique-3-5', trigger: { type: 'diceSet', faces: { [DICE_FACE_IDS.FIST]: 5 } }, effects: [damage(9, abilityEffectText('fist-technique-3-5', 'damage9')), inflictStatus(STATUS_IDS.KNOCKDOWN, 1, abilityEffectText('fist-technique-3-5', 'inflictKnockdown'))], priority: 3 },
+        {
+            id: 'fist-technique-3-4',
+            trigger: { type: 'diceSet', faces: { [DICE_FACE_IDS.FIST]: 4 } },
+            effects: [
+                damage(8, abilityEffectText('fist-technique-3-4', 'damage8')),
+                {
+                    description: abilityEffectText('fist-technique-3', 'knockdownIfFourKind'),
+                    action: { type: 'custom', target: 'opponent', customActionId: 'monk-fist-technique-3-knockdown-if-four-kind' },
+                    timing: 'preDefense',
+                },
+            ],
+            priority: 2,
+        },
+        {
+            id: 'fist-technique-3-5',
+            trigger: { type: 'diceSet', faces: { [DICE_FACE_IDS.FIST]: 5 } },
+            effects: [
+                damage(9, abilityEffectText('fist-technique-3-5', 'damage9')),
+                {
+                    description: abilityEffectText('fist-technique-3', 'knockdownIfFourKind'),
+                    action: { type: 'custom', target: 'opponent', customActionId: 'monk-fist-technique-3-knockdown-if-four-kind' },
+                    timing: 'preDefense',
+                },
+            ],
+            priority: 3,
+        },
     ],
 };
 

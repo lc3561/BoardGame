@@ -149,16 +149,20 @@ describe('狂战士技能定义', () => {
     });
 
     describe('升级技能', () => {
-        it('巴掌 II - 伤害提升，4/5 Sword 不可防御', () => {
+        it('巴掌 II - 伤害提升，4/5 Sword 仅在4个相同数字时不可防御', () => {
             expect(SLAP_2.variants).toHaveLength(3);
             // 3 Sword = 5 伤害（I 级 4）
             expect(SLAP_2.variants![0].effects[0].action.value).toBe(5);
-            // 4 Sword = 7 伤害，不可防御
+            // 4 Sword = 7 伤害 + preDefense 条件不可防御
             expect(SLAP_2.variants![1].effects[0].action.value).toBe(7);
-            expect(SLAP_2.variants![1].tags).toContain('unblockable');
-            // 5 Sword = 9 伤害，不可防御
+            expect(SLAP_2.variants![1].effects[1].action.type).toBe('custom');
+            expect(SLAP_2.variants![1].effects[1].action.customActionId).toBe('barbarian-slap-unblockable-if-four-kind');
+            expect(SLAP_2.variants![1].effects[1].timing).toBe('preDefense');
+            // 5 Sword = 9 伤害 + preDefense 条件不可防御
             expect(SLAP_2.variants![2].effects[0].action.value).toBe(9);
-            expect(SLAP_2.variants![2].tags).toContain('unblockable');
+            expect(SLAP_2.variants![2].effects[1].action.type).toBe('custom');
+            expect(SLAP_2.variants![2].effects[1].action.customActionId).toBe('barbarian-slap-unblockable-if-four-kind');
+            expect(SLAP_2.variants![2].effects[1].timing).toBe('preDefense');
         });
 
         it('巴掌 III - 伤害进一步提升', () => {
@@ -166,6 +170,8 @@ describe('狂战士技能定义', () => {
             expect(SLAP_3.variants![0].effects[0].action.value).toBe(6);
             expect(SLAP_3.variants![1].effects[0].action.value).toBe(8);
             expect(SLAP_3.variants![2].effects[0].action.value).toBe(10);
+            expect(SLAP_3.variants![1].effects[1].action.customActionId).toBe('barbarian-slap-unblockable-if-four-kind');
+            expect(SLAP_3.variants![2].effects[1].action.customActionId).toBe('barbarian-slap-unblockable-if-four-kind');
         });
 
         it('全力一击 II - 伤害提升到 5', () => {

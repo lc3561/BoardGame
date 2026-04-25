@@ -98,3 +98,16 @@
 - 复核命令（关联主线门禁）：`npm run test:e2e:ci -- e2e/smashup/smashup.e2e.ts`
 - 结果：整文件 `3 passed`，回合阶段切换相关链路继续稳定。
 - 结论：本条“自动跳过我方回合”在最新基线仍未复现，watchdog 收口与回合交还判定维持有效。
+
+## 2026-04-25 定向复测补记
+
+- 复测命令：
+  1. `npm run test:e2e:ci:file -- e2e/smashup/smashup-phase-transition-simple.e2e.ts "在线 AI 连续 8 秒没有任何实际进展时，应自动强制结束当前回合"`
+  2. `npm run test:e2e:ci:file -- e2e/smashup/smashup-phase-transition-simple.e2e.ts "在线 AI 结束回合切回我方时不应出现整板重挂载或 loading 闪屏"`
+- 结果：两条用例均 `1 passed`
+- 最新关键截图（绝对路径）：
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\smashup\smashup-phase-transition-simple.e2e\在线-AI-连续-8-秒没有任何实际进展时，应自动强制结束当前回合\在线-AI-连续-8-秒没有任何实际进展时，应自动强制结束当前回合-online-ai-force-end-turn-before-timeout.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\smashup\smashup-phase-transition-simple.e2e\在线-AI-连续-8-秒没有任何实际进展时，应自动强制结束当前回合\在线-AI-连续-8-秒没有任何实际进展时，应自动强制结束当前回合-online-ai-force-end-turn-after-resolve.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\smashup\smashup-phase-transition-simple.e2e\在线-AI-结束回合切回我方时不应出现整板重挂载或-loading-闪屏\在线-AI-结束回合切回我方时不应出现整板重挂载或-loading-闪屏-online-ai-pass-turn-before-host-turn.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\smashup\smashup-phase-transition-simple.e2e\在线-AI-结束回合切回我方时不应出现整板重挂载或-loading-闪屏\在线-AI-结束回合切回我方时不应出现整板重挂载或-loading-闪屏-online-ai-pass-turn-after-host-turn.png`
+- 结论：watchdog 强制收口与“切回我方无闪屏”在 2026-04-25 复测中继续稳定成立。

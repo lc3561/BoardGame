@@ -3411,7 +3411,7 @@
     },
     "mermaids_toll_bay": {
       "name": "过路湾",
-      "effectText": "本回合内，每当另一位玩家将随从移动到你拥有随从的基地，你可抽一张牌。"
+      "effectText": "选择一个基地。其他玩家在那里每有一个随从，你抽一张牌。"
     },
     "mermaids_shipwreck_cove": {
       "name": "沉船湾",

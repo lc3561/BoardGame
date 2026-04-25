@@ -506,7 +506,7 @@
       "gainCp": "Gain {{cp}} CP",
       "enlightenmentLotus": "Lotus! Gain 2 Taiji + Evasive + Purify",
       "enlightenmentOther": "Draw 1 card",
-      "thunderStrikeDie": "Thunder Strike Roll: {{value}} (3-dice total damage)",
+      "thunderStrikeDie": "This die's {{value}} counts toward the final damage",
       "thunderStrikeReroll": "Reroll: {{value}} (counts toward total damage)",
       "thunderStrike2Die": "Thunder Strike Roll: {{value}} (3-dice total damage; total ≥12: Knockdown)",
       "thunderStrike2Reroll": "Reroll: {{value}} (total ≥12: Knockdown)",
@@ -515,16 +515,22 @@
       "gunslingerHighNoonBullet": "Bullet: deal 2 undefendable damage",
       "gunslingerHighNoonDash": "Spur: inflict Knockdown on the target",
       "gunslingerHighNoonBullseye": "Bullseye: give the target 1 Bounty",
-      "gunslingerEatMyLeadDie": "Eat My Lead! Roll: {{value}}",
+      "gunslingerEatMyLeadDie": "This die contributes to the final damage bonus",
+      "gunslingerEatMyLead.bulletContribution": "Bullet: +1 damage this attack",
+      "gunslingerEatMyLead.otherContribution": "Non-bullet face: no extra damage",
       "gunslingerEatMyLead.result": "{{bulletCount}} Bullet: +{{bonusDamage}} damage this attack",
       "gunslingerEatMyLead.resultKnockdown": "{{bulletCount}} Bullet: +{{bonusDamage}} damage this attack and inflict Knockdown",
-      "barbarianSuppress": "Suppress Roll: {{value}} (3-dice total damage; if total exceeds the threshold, apply Concussion)",
+      "barbarianSuppress": "This die's {{value}} counts toward the final damage; reaching the threshold also inflicts Concussion",
       "energeticStrength": "Strength! Heal 2 and inflict Concussion",
       "energeticOther": "Draw 1 card",
-      "luckyRoll": "Lucky Roll: {{value}}",
+      "luckyRoll": "This die contributes to the final heal",
       "luckyRoll.result": "{{heartCount}} Heart: Heal {{healAmount}}",
-      "morePleaseRoll": "More Please Roll: {{value}}",
+      "luckyRoll.heartContribution": "Heart: +2 final heal",
+      "luckyRoll.otherContribution": "Non-heart face: no extra heal",
+      "morePleaseRoll": "This die contributes to the final damage",
       "morePleaseRoll.result": "{{swordCount}} Sword(s): Damage +{{damage}}, apply Concussion",
+      "morePleaseRoll.swordContribution": "Sword: +1 final damage",
+      "morePleaseRoll.otherContribution": "Non-sword face: no extra damage",
       "holyLight": "Holy Light",
       "holyDefense": "Holy Defense",
       "godsGrace": "God's Grace",
@@ -548,9 +554,9 @@
       "infernalEmbrace.4": "Draw 1 Card",
       "infernalEmbrace.5": "Draw 1 Card",
       "infernalEmbrace.6": "Max Fire Mastery!",
-      "pyroBlast2Die": "Pyro Blast: {{value}} (Fire=3 dmg / Magma=Burn / Fiery Soul=+2 Fire Mastery / Meteor=Knockdown)",
+      "pyroBlast2Die": "Resolve the actual effect from this face",
       "pyroBlast2Reroll": "Reroll: {{value}} (Fire=3 dmg / Magma=Burn / Fiery Soul=+2 Fire Mastery / Meteor=Knockdown)",
-      "pyroBlast3Die": "Pyro Blast: {{value}} (Fire=3 dmg / Magma=Burn / Fiery Soul=+2 Fire Mastery / Meteor=Knockdown)",
+      "pyroBlast3Die": "Resolve the actual effect from this face",
       "pyroBlast3Reroll": "Reroll: {{value}} (Fire=3 dmg / Magma=Burn / Fiery Soul=+2 Fire Mastery / Meteor=Knockdown)",
       "shadowDamage": "Shadow Dance: {{value}} → deal {{damage}} damage",
       "default": "Bonus Die",
@@ -561,15 +567,18 @@
       "moonShadowStrike": "Moon Shadow Strike Roll: {{value}}",
       "moonShadowStrike.moon": "Moon🌙: Inflict Blinded, Entangle, Targeted",
       "moonShadowStrike.other": "Draw 1 card",
-      "volley": "Volley Roll: {{value}}",
+      "volley": "This die contributes to the final damage bonus",
       "volley.result": "{{bowCount}} Bow(s): Damage +{{bonusDamage}}, apply Entangle",
+      "volley.bowContribution": "Bow: +1 damage this attack",
+      "volley.otherContribution": "Non-bow face: no extra damage",
       "explodingArrow.result": "{{bowCount}} Bow {{footCount}} Foot {{moonCount}} Moon: 3 + 2×{{bowCount}} + 1×{{footCount}} = {{damage}} damage; Opponent loses {{moonCount}} CP; Apply Blinded",
       "explodingArrow2.result": "{{bowCount}} Bow {{footCount}} Foot {{moonCount}} Moon: 3 + 1×{{bowCount}} + 2×{{footCount}} = {{damage}} damage; Opponent loses {{moonCount}} CP; Apply Blinded",
       "explodingArrow3.result": "{{bowCount}} Bow {{footCount}} Foot {{moonCount}} Moon: 3 + 1×{{bowCount}} + 2×{{footCount}} = {{damage}} damage; Opponent loses {{moonCount}} CP; Apply Blinded and Entangle",
-      "watchOut": "Watch Out Roll: {{value}}",
+      "watchOut": "No extra effect triggered",
       "watchOut.bow": "Bow🏹: +2 Damage",
       "watchOut.foot": "Foot🦶: Inflict Entangle",
       "watchOut.moon": "Moon🌙: Inflict Blinded",
+      "watchOut.none": "No extra effect triggered",
       "blinded": "Blinded Check",
       "blinded.miss": "Attack Failed!",
       "blinded.hit": "Attack Success",
@@ -600,7 +609,9 @@
       "samuraiRighteousnessHelm": "Helm: inflict 2 Shame on your opponent",
       "samuraiRighteousnessRisingSun": "Rising Sun: gain 1 Back Strike",
       "samuraiMasamune.result": "{{katanaCount}} Katana: +{{katanaCount}} damage; {{shameCount}} Helm: inflict {{shameCount}} Shame; {{retributionCount}} Rising Sun: gain {{retributionCount}} Back Strike (extra gains are ignored if you are at the stack limit)",
-      "godsGrace.other": "Draw 1 card"
+      "godsGrace.other": "Draw 1 card",
+      "totalDamageContribution": "This die's {{value}} counts toward the final damage",
+      "totalDamageContributionThreshold": "This die's {{value}} counts toward the final damage; reaching the threshold also triggers the extra effect"
     },
     "selectToReroll": "Click a die to spend {{cost}} {{token}} to reroll",
     "noTokenToReroll": "No {{token}} tokens available to reroll",
@@ -867,9 +878,10 @@
     },
     "fist-technique-3": {
       "name": "Fist Technique III",
-      "description": "3/4/5 Fists: deal 7/8/9 damage. 4+ Fists inflict Knockdown.",
+      "description": "3/4/5 Fists: deal 7/8/9 damage. If there are 4 matching numbers, inflict Knockdown.",
       "effects": {
-        "damage4": "Deal 4 damage"
+        "damage4": "Deal 4 damage",
+        "knockdownIfFourKind": "If there are 4 matching numbers, inflict Knockdown."
       }
     },
     "fist-technique-4": {
@@ -1759,20 +1771,22 @@
     },
     "slap-2": {
       "name": "Slap II",
-      "description": "3/4/5 Swords: deal 5/7/9 damage. 4/5 Swords deal undefendable damage.",
+      "description": "3/4/5 Swords: deal 5/7/9 damage. If there are 4 matching numbers, this attack is undefendable.",
       "effects": {
         "damage5": "Deal 5 damage",
-        "damage7Unblockable": "Deal 7 undefendable damage",
-        "damage9Unblockable": "Deal 9 undefendable damage"
+        "damage7Unblockable": "Deal 7 damage",
+        "damage9Unblockable": "Deal 9 damage",
+        "unblockableIfFourKind": "If there are 4 matching numbers, this attack is undefendable."
       }
     },
     "slap-3": {
       "name": "Slap III",
-      "description": "3/4/5 Swords: deal 6/8/10 damage. 4/5 Swords deal undefendable damage.",
+      "description": "3/4/5 Swords: deal 6/8/10 damage. If there are 4 matching numbers, this attack is undefendable.",
       "effects": {
         "damage6": "Deal 6 damage",
-        "damage8Unblockable": "Deal 8 undefendable damage",
-        "damage10Unblockable": "Deal 10 undefendable damage"
+        "damage8Unblockable": "Deal 8 damage",
+        "damage10Unblockable": "Deal 10 damage",
+        "unblockableIfFourKind": "If there are 4 matching numbers, this attack is undefendable."
       }
     },
     "all-out-strike-2": {
@@ -2166,7 +2180,7 @@
     },
     "card-thrust-punch-3": {
       "name": "Thrust Punch III",
-      "description": "3/4/5 Fists: deal 7/8/9 damage. 4+ Fists inflict Knockdown."
+      "description": "3/4/5 Fists: deal 7/8/9 damage. If there are 4 matching numbers, inflict Knockdown."
     },
     "card-contemplation-2": {
       "name": "Contemplation II",

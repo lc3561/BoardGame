@@ -2892,16 +2892,17 @@ function invisibleNinjaSpecial(ctx: AbilityContext): AbilityResult {
 }
 
 function invisibleNinjaTriggered(ctx: TriggerContext): TriggerResult | SmashUpEvent[] {
-    const titan = getControlledTitanOnBase(ctx.state, 'ninjas_invisible_ninja', ctx.playerId);
+    const controllerId = ctx.sourceControllerId ?? ctx.playerId;
+    const titan = getControlledTitanOnBase(ctx.state, 'ninjas_invisible_ninja', controllerId);
     if (!titan || !ctx.matchState) return [];
     if (Number(titan.metadata?.invisibleNinjaTriggeredTurn ?? -1) === ctx.state.turnNumber) {
         return [];
     }
 
     const destroyAnotherPlayersCard =
-        ctx.destroyerId === ctx.playerId
+        ctx.destroyerId === controllerId
         && !!ctx.triggerMinion
-        && ctx.triggerMinion.owner !== ctx.playerId;
+        && ctx.triggerMinion.owner !== controllerId;
     const returnedOwnMinion = !!ctx.triggerMinionUid;
     if (!destroyAnotherPlayersCard && !returnedOwnMinion) {
         return [];
@@ -2909,7 +2910,7 @@ function invisibleNinjaTriggered(ctx: TriggerContext): TriggerResult | SmashUpEv
 
     const peek = buildInvisibleNinjaPeekResult(
         ctx.state,
-        ctx.playerId,
+        controllerId,
         ctx.random,
         ctx.now,
         'ninjas_invisible_ninja_ongoing',
@@ -2918,7 +2919,7 @@ function invisibleNinjaTriggered(ctx: TriggerContext): TriggerResult | SmashUpEv
 
     const interaction = createSimpleChoice(
         `titan_ninjas_invisible_ninja_ongoing_${ctx.now}`,
-        ctx.playerId,
+        controllerId,
         'Invisible Ninja：选择要抽的牌',
         peek.cards.map(card => ({
             id: `deck-${card.uid}`,
@@ -3384,8 +3385,16 @@ export function registerTitanAbilities(): void {
             : '你只能将其打到有你随从的基地';
     });
     registerTrigger('ninjas_invisible_ninja', 'onTurnStart', invisibleNinjaOnTurnStart, { global: true });
-    registerTrigger('ninjas_invisible_ninja', 'onMinionDestroyed', invisibleNinjaTriggered, { optional: true, baseScoped: false });
-    registerTrigger('ninjas_invisible_ninja', 'onCardReturnedToHand', invisibleNinjaTriggered, { optional: true, baseScoped: false });
+    registerTrigger('ninjas_invisible_ninja', 'onMinionDestroyed', invisibleNinjaTriggered, {
+        optional: true,
+        baseScoped: false,
+        playerContext: 'sourceController',
+    });
+    registerTrigger('ninjas_invisible_ninja', 'onCardReturnedToHand', invisibleNinjaTriggered, {
+        optional: true,
+        baseScoped: false,
+        playerContext: 'sourceController',
+    });
 
     registerAbility('killer_plants_killer_kudzu', 'special', killerKudzuSpecial);
     registerAbility('killer_plants_killer_kudzu', 'talent', {

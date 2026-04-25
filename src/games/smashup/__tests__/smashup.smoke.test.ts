@@ -24,7 +24,7 @@ import { getInteractionHandler } from '../domain/abilityInteractionHandlers';
 import { addPowerCounter, buildPlayerTargetOptions } from '../domain/abilityHelpers';
 import { uncoverBuriedCard } from '../domain/bury';
 import { collectTriggers, fireTriggers, interceptEvent } from '../domain/ongoingEffects';
-import { filterProtectedDestroyEvents, filterProtectedMoveEvents, filterProtectedReturnEvents, processAffectTriggers, processMoveTriggers, processReturnToHandTriggers } from '../domain/reducer';
+import { filterProtectedDestroyEvents, filterProtectedMoveEvents, filterProtectedReturnEvents, processAffectTriggers, processDestroyTriggers, processMoveTriggers, processReturnToHandTriggers } from '../domain/reducer';
 import { maybeResolveReactionQueue } from '../domain/reactionQueue';
 import { initAllAbilities } from '../abilities';
 import { createSmashUpEventSystem } from '../domain/systems';
@@ -3948,6 +3948,96 @@ describe('smashup', () => {
             } as SmashUpEvent,
         ], core, '1');
         expect(baseDestroy.map(event => event.type)).toEqual([SU_EVENTS.MINION_DESTROYED]);
+    });
+
+    it('隐形忍者消灭对手随从后，抽牌反应归属于泰坦控制者并可正常抽牌', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0', {
+                    deck: [
+                        makeCard('ninja-draw-a', 'robot_microbot_alpha', 'minion', '0'),
+                        makeCard('ninja-draw-b', 'ghosts_spectre', 'minion', '0'),
+                    ],
+                }),
+                '1': makePlayer('1'),
+            },
+            bases: [
+                makeBase(),
+                makeBase({
+                    minions: [makeMinion('enemy-victim', 'pirate_first_mate', '1', 2)],
+                }),
+            ],
+            titans: [{
+                uid: 't-invisible-ninja-live',
+                defId: 'ninjas_invisible_ninja',
+                faction: SMASHUP_FACTION_IDS.NINJAS,
+                ownerId: '0',
+                controllerId: '0',
+                powerCounters: 0,
+                talentUsed: false,
+                location: { zone: 'base', baseIndex: 0, enteredAt: 1 },
+            } satisfies TitanState],
+        });
+
+        const matchState = makeMatchState(core, 'playCards', '0');
+        const destroyEvent: SmashUpEvent = {
+            type: SU_EVENTS.MINION_DESTROYED,
+            payload: {
+                minionUid: 'enemy-victim',
+                minionDefId: 'pirate_first_mate',
+                fromBaseIndex: 1,
+                ownerId: '1',
+                destroyerId: '0',
+                reason: 'invisible_ninja_smoke_destroy',
+            },
+            timestamp: 102,
+        };
+
+        const processed = processDestroyTriggers([destroyEvent], matchState, '0', FIXED_RANDOM, 102);
+        let reactionState = processed.matchState ?? matchState;
+        let currentInteraction = getInteractionsFromMS(reactionState)[0] as any;
+
+        if (!currentInteraction) {
+            const reactionResult = maybeResolveReactionQueue(reactionState, FIXED_RANDOM, 102);
+            reactionState = reactionResult?.state ?? reactionState;
+            currentInteraction = getInteractionsFromMS(reactionState)[0] as any;
+        }
+
+        if (currentInteraction?.data?.sourceId === 'smashup_reaction_choose') {
+            const queueById = new Map(reactionState.core.triggerQueue?.map(trigger => [trigger.id, trigger]) ?? []);
+            const ninjaOption = currentInteraction.data.options.find((option: any) => {
+                const trigger = queueById.get(option.value?.triggerId) as any;
+                return trigger?.sourceDefId === 'ninjas_invisible_ninja';
+            }) ?? currentInteraction.data.options[0];
+
+            const afterChooseTrigger = runCommand(
+                reactionState,
+                { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: ninjaOption.id } } as any,
+                FIXED_RANDOM,
+            );
+            reactionState = afterChooseTrigger.finalState;
+            currentInteraction = getInteractionsFromMS(reactionState)[0] as any;
+        }
+
+        expect(currentInteraction?.data?.sourceId).toBe('titan_ninjas_invisible_ninja_ongoing');
+        expect(currentInteraction?.playerId).toBe('0');
+
+        const drawOption = currentInteraction.data.options.find((option: any) => option.value?.cardUid === 'ninja-draw-a')
+            ?? currentInteraction.data.options[0];
+        const afterDraw = runCommand(
+            reactionState,
+            { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: drawOption.id } } as any,
+            FIXED_RANDOM,
+        );
+
+        const drawEvent = afterDraw.events.find(event => event.type === SU_EVENTS.CARDS_DRAWN) as CardsDrawnEvent | undefined;
+        expect(drawEvent?.payload.playerId).toBe('0');
+        expect(drawEvent?.payload.cardUids).toEqual([drawOption.value.cardUid]);
+
+        const finalCore = afterDraw.events
+            .filter(event => typeof event.type === 'string' && event.type.startsWith('su:'))
+            .reduce((acc: SmashUpCore, event: SmashUpEvent) => SmashUpDomain.reduce(acc, event), reactionState.core);
+        expect(finalCore.players['0'].hand.map(card => card.uid)).toContain(drawOption.value.cardUid);
     });
 
     it('移动城堡天赋会先选择目标基地，再选择至多 3 个己方随从一起移动过去', () => {

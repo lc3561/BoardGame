@@ -227,6 +227,26 @@ describe('野蛮人符号计数文案一致性', () => {
     });
 });
 
+describe('枪手 / 武士同点数文案一致性', () => {
+    const zhAbilities = (zhCN as Record<string, unknown>).abilities as Record<string, { description?: string }> ?? {};
+    const enAbilities = (en as Record<string, unknown>).abilities as Record<string, { description?: string }> ?? {};
+    const zhCards = (zhCN as Record<string, unknown>).cards as Record<string, { description?: string }> ?? {};
+    const enCards = (en as Record<string, unknown>).cards as Record<string, { description?: string }> ?? {};
+
+    it('左轮手枪 II / 太刀斩 II-III 应显式描述相同数字阈值', () => {
+        expect(zhCards['upgrade-revolver-2']?.description).toContain('相同');
+        expect(zhCards['upgrade-revolver-2']?.description).toContain('数字');
+        expect(enCards['upgrade-revolver-2']?.description).toContain('same number');
+
+        expect(zhAbilities['katana-slice-2']?.description).toContain('相同');
+        expect(zhAbilities['katana-slice-2']?.description).toContain('数字');
+        expect(zhAbilities['katana-slice-3']?.description).toContain('相同');
+        expect(zhAbilities['katana-slice-3']?.description).toContain('数字');
+        expect(enAbilities['katana-slice-2']?.description).toContain('same number');
+        expect(enAbilities['katana-slice-3']?.description).toContain('same number');
+    });
+});
+
 // ============================================================================
 // 2. grantToken target 合理性
 // ============================================================================
