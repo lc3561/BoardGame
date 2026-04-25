@@ -2272,6 +2272,8 @@ export class GameTransportServer {
         socket.emit('state:sync', matchID, viewState, matchPlayers, {
             seed: match.randomSeed,
             cursor: match.getRandomCursor(),
+        }, {
+            stateID: match.stateID,
         });
 
         // 写入缓存，确保后续走 diff 基准正确

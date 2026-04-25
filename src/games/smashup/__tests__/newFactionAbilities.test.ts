@@ -42,6 +42,12 @@ import {
 import { runCommand, defaultTestRandom } from './testRunner';
 import type { MatchState } from '../../../engine/types';
 import { refreshInteractionOptions } from '../../../engine/systems/InteractionSystem';
+import { SMASHUP_AUDIO_CONFIG } from '../audio.config';
+import { COWBOYS_ACTIONS, COWBOYS_MINIONS } from '../data/factions/cowboys';
+import { COWBOYS_POD_ACTIONS, COWBOYS_POD_MINIONS } from '../data/factions/cowboys_pod';
+import { PIRATE_ACTIONS } from '../data/factions/pirates';
+import { PIRATE_POD_ACTIONS } from '../data/factions/pirates_pod';
+import { ZOMBIE_ACTIONS } from '../data/factions/zombies';
 
 beforeAll(() => {
     clearRegistry();
@@ -78,6 +84,144 @@ function resolveDuelChain(
         throw new Error(`未处理的决斗交互 sourceId: ${sourceId ?? 'unknown'}`);
     });
 }
+
+describe('牛仔音效配置', () => {
+    it('cowboys 关键卡牌应绑定更贴题的西部音效', () => {
+        expect(COWBOYS_MINIONS.find(card => card.id === 'cowboys_gunfighter')?.soundKey)
+            .toBe('combat.guns_sound_fx_pack.38_spl_revolver.gunshots.38_spl_revolver_gunshot_a_001');
+        expect(COWBOYS_ACTIONS.find(card => card.id === 'cowboys_quick_draw')?.soundKey)
+            .toBe('combat.guns_sound_fx_pack.misc_ammo_boxes_holsters_etc.leather_unholster_001');
+        expect(COWBOYS_ACTIONS.find(card => card.id === 'cowboys_high_noon')?.soundKey)
+            .toBe('combat.guns_sound_fx_pack.38_spl_revolver.gunshots.38_spl_revolver_gunshot_a_001');
+        expect(COWBOYS_ACTIONS.find(card => card.id === 'cowboys_dynamite_surprise')?.soundKey)
+            .toBe('combat.explosives_sound_fx_pack.fuse.dynamite_fuse_start_001');
+        expect(COWBOYS_ACTIONS.find(card => card.id === 'cowboys_gold_in_them_thar_hills')?.soundKey)
+            .toBe('coins.decks_and_cards_sound_fx_pack.gold_pouch_handle_001');
+        expect(COWBOYS_ACTIONS.find(card => card.id === 'cowboys_stagecoach')?.soundKey)
+            .toBe('retro.retro_gaming_sound_fx_pack_vol.16_bit.movement.hoof_move_step_001');
+    });
+
+    it('cowboys_pod 复用同一套西部主题音效', () => {
+        expect(COWBOYS_POD_MINIONS.find(card => card.id === 'cowboys_gunfighter_pod')?.soundKey)
+            .toBe('combat.guns_sound_fx_pack.38_spl_revolver.gunshots.38_spl_revolver_gunshot_a_001');
+        expect(COWBOYS_POD_ACTIONS.find(card => card.id === 'cowboys_quick_draw_pod')?.soundKey)
+            .toBe('combat.guns_sound_fx_pack.misc_ammo_boxes_holsters_etc.leather_unholster_001');
+        expect(COWBOYS_POD_ACTIONS.find(card => card.id === 'cowboys_dynamite_surprise_pod')?.soundKey)
+            .toBe('combat.explosives_sound_fx_pack.fuse.dynamite_fuse_start_001');
+    });
+
+    it('反馈解析器应优先返回 cowboy 卡牌级音效', () => {
+        expect(SMASHUP_AUDIO_CONFIG.feedbackResolver({
+            type: SU_EVENTS.MINION_PLAYED,
+            payload: { defId: 'cowboys_gunfighter' },
+        } as any)).toBe('combat.guns_sound_fx_pack.38_spl_revolver.gunshots.38_spl_revolver_gunshot_a_001');
+
+        expect(SMASHUP_AUDIO_CONFIG.feedbackResolver({
+            type: SU_EVENTS.ACTION_PLAYED,
+            payload: { defId: 'cowboys_high_noon' },
+        } as any)).toBe('combat.guns_sound_fx_pack.38_spl_revolver.gunshots.38_spl_revolver_gunshot_a_001');
+
+        expect(SMASHUP_AUDIO_CONFIG.feedbackResolver({
+            type: SU_EVENTS.ACTION_PLAYED,
+            payload: { defId: 'cowboys_dynamite_surprise' },
+        } as any)).toBe('combat.explosives_sound_fx_pack.fuse.dynamite_fuse_start_001');
+    });
+});
+
+describe('海盗 / 丧尸 / 美人鱼音效配置', () => {
+    it('pirates 与 zombies 关键卡牌应绑定更贴题的新素材', () => {
+        expect(PIRATE_ACTIONS.find(card => card.id === 'pirate_dinghy')?.soundKey)
+            .toBe('ambient.water_sound_fx_pack_vol.splashes_and_movement.fast_short_swirl_a');
+        expect(PIRATE_ACTIONS.find(card => card.id === 'pirate_powderkeg')?.soundKey)
+            .toBe('combat.explosives_sound_fx_pack.fuse.dynamite_fuse_start_001');
+        expect(PIRATE_ACTIONS.find(card => card.id === 'pirate_broadside')?.soundKey)
+            .toBe('combat.explosives_sound_fx_pack.realistic.dynamite_close_001');
+        expect(PIRATE_ACTIONS.find(card => card.id === 'pirate_full_sail')?.soundKey)
+            .toBe('ambient.water_sound_fx_pack_vol.splashes_and_movement.big_splash_a');
+        expect(PIRATE_ACTIONS.find(card => card.id === 'pirate_cannon')?.soundKey)
+            .toBe('combat.guns_sound_fx_pack.30_30_lever_action_rifle.gunshots.30_30_lever_action_rifle_gunshot_a_001');
+        expect(PIRATE_ACTIONS.find(card => card.id === 'pirate_sea_dogs')?.soundKey)
+            .toBe('ambient.water_sound_fx_pack_vol.designed.water_ball_spell_big');
+        expect(PIRATE_POD_ACTIONS.find(card => card.id === 'pirate_dinghy_pod')?.soundKey)
+            .toBe('ambient.water_sound_fx_pack_vol.splashes_and_movement.fast_short_swirl_a');
+        expect(PIRATE_POD_ACTIONS.find(card => card.id === 'pirate_powderkeg_pod')?.soundKey)
+            .toBe('combat.explosives_sound_fx_pack.fuse.dynamite_fuse_start_001');
+        expect(PIRATE_POD_ACTIONS.find(card => card.id === 'pirate_broadside_pod')?.soundKey)
+            .toBe('combat.explosives_sound_fx_pack.realistic.dynamite_close_001');
+        expect(PIRATE_POD_ACTIONS.find(card => card.id === 'pirate_full_sail_pod')?.soundKey)
+            .toBe('ambient.water_sound_fx_pack_vol.splashes_and_movement.big_splash_a');
+        expect(PIRATE_POD_ACTIONS.find(card => card.id === 'pirate_cannon_pod')?.soundKey)
+            .toBe('combat.guns_sound_fx_pack.30_30_lever_action_rifle.gunshots.30_30_lever_action_rifle_gunshot_a_001');
+        expect(PIRATE_POD_ACTIONS.find(card => card.id === 'pirate_sea_dogs_pod')?.soundKey)
+            .toBe('ambient.water_sound_fx_pack_vol.designed.water_ball_spell_big');
+        expect(ZOMBIE_ACTIONS.find(card => card.id === 'zombie_not_enough_bullets')?.soundKey)
+            .toBe('combat.guns_sound_fx_pack.38_spl_revolver.foley.38_spl_revolver_dry_trigger_001');
+    });
+
+    it('反馈解析器应优先返回海盗 / 丧尸卡牌级音效，并给美人鱼走水系池', () => {
+        expect(SMASHUP_AUDIO_CONFIG.feedbackResolver({
+            type: SU_EVENTS.ACTION_PLAYED,
+            payload: { defId: 'pirate_dinghy' },
+        } as any)).toBe('ambient.water_sound_fx_pack_vol.splashes_and_movement.fast_short_swirl_a');
+
+        expect(SMASHUP_AUDIO_CONFIG.feedbackResolver({
+            type: SU_EVENTS.ACTION_PLAYED,
+            payload: { defId: 'pirate_cannon' },
+        } as any)).toBe('combat.guns_sound_fx_pack.30_30_lever_action_rifle.gunshots.30_30_lever_action_rifle_gunshot_a_001');
+
+        expect(SMASHUP_AUDIO_CONFIG.feedbackResolver({
+            type: SU_EVENTS.ACTION_PLAYED,
+            payload: { defId: 'pirate_full_sail' },
+        } as any)).toBe('ambient.water_sound_fx_pack_vol.splashes_and_movement.big_splash_a');
+
+        expect(SMASHUP_AUDIO_CONFIG.feedbackResolver({
+            type: SU_EVENTS.ACTION_PLAYED,
+            payload: { defId: 'pirate_sea_dogs' },
+        } as any)).toBe('ambient.water_sound_fx_pack_vol.designed.water_ball_spell_big');
+
+        expect(SMASHUP_AUDIO_CONFIG.feedbackResolver({
+            type: SU_EVENTS.ACTION_PLAYED,
+            payload: { defId: 'zombie_not_enough_bullets' },
+        } as any)).toBe('combat.guns_sound_fx_pack.38_spl_revolver.foley.38_spl_revolver_dry_trigger_001');
+
+        const mermaidMinionKey = SMASHUP_AUDIO_CONFIG.feedbackResolver({
+            type: SU_EVENTS.MINION_PLAYED,
+            payload: { defId: 'mermaids_siren' },
+        } as any);
+        expect([
+            'ambient.water_sound_fx_pack_vol.splashes_and_movement.fast_short_swirl_a',
+            'ambient.water_sound_fx_pack_vol.bubbles.bubbles_short_a',
+        ]).toContain(mermaidMinionKey);
+
+        const mermaidActionKey = SMASHUP_AUDIO_CONFIG.feedbackResolver({
+            type: SU_EVENTS.ACTION_PLAYED,
+            payload: { defId: 'mermaids_siren_song' },
+        } as any);
+        expect([
+            'ambient.water_sound_fx_pack_vol.designed.water_ball_spell_small',
+            'ambient.water_sound_fx_pack_vol.designed.water_ball_spell_big',
+            'ambient.water_sound_fx_pack_vol.splashes_and_movement.big_splash_a',
+        ]).toContain(mermaidActionKey);
+    });
+
+    it('选中 mermaids 后应预热水系派系音效池', () => {
+        const keys = SMASHUP_AUDIO_CONFIG.contextualPreloadKeys?.({
+            G: {
+                players: {
+                    '0': { factions: ['mermaids', 'pirates'] },
+                },
+            },
+            ctx: {},
+            meta: {},
+        } as any) ?? [];
+
+        expect(keys).toContain('ambient.water_sound_fx_pack_vol.splashes_and_movement.fast_short_swirl_a');
+        expect(keys).toContain('ambient.water_sound_fx_pack_vol.bubbles.bubbles_short_a');
+        expect(keys).toContain('ambient.water_sound_fx_pack_vol.designed.water_ball_spell_small');
+        expect(keys).toContain('ambient.water_sound_fx_pack_vol.designed.water_ball_spell_big');
+        expect(keys).toContain('ambient.water_sound_fx_pack_vol.splashes_and_movement.big_splash_a');
+    });
+});
 
 describe('bear cavalry interaction regressions', () => {
     it('bear_cavalry_bear_necessities resolves selected minion target', () => {
@@ -5899,6 +6043,28 @@ describe('World Champs abilities', () => {
         expect(resolved.finalState.core.players['0'].hand.some(card => card.uid === 'draw-2')).toBe(true);
     });
 
+    it('world_champs_samurai_chan 打出时不应触发海龟阿凯式 onPlay 交互', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0', {
+                    hand: [makeCard('chan-1', 'world_champs_samurai_chan', 'minion', '0')],
+                }),
+                '1': makePlayer('1'),
+            },
+            bases: [{ defId: 'base_a', minions: [], ongoingActions: [] }],
+        });
+
+        const played = runCommand(
+            makeMatchState(core),
+            { type: SU_COMMANDS.PLAY_MINION, playerId: '0', payload: { cardUid: 'chan-1', baseIndex: 0 } },
+            defaultTestRandom,
+        );
+
+        const interactions = getInteractionsFromMS(played.finalState);
+        expect(interactions).toHaveLength(0);
+        expect(played.events.some((event: any) => event.type === SU_EVENTS.CARDS_DRAWN && event.payload?.count === 2)).toBe(false);
+    });
+
     it('world_champs_high_speed_chase 天赋可转移行动并移动随从且+3', () => {
         const core = makeState({
             players: {
@@ -6826,6 +6992,7 @@ describe('Mermaids abilities', () => {
         });
         const extraMinion = triggered.events.find(event => event.type === SU_EVENTS.LIMIT_MODIFIED) as any;
         expect(extraMinion?.payload?.limitType).toBe('minion');
+        expect(extraMinion?.payload?.restrictToBase).toBe(0);
     });
 });
 
@@ -7178,6 +7345,30 @@ describe('Skeletons abilities', () => {
 
         expect(resolved.finalState.core.players['0'].hand.some(card => card.uid === 'discard-low')).toBe(true);
         expect(resolved.finalState.core.players['0'].discard.some(card => card.uid === 'discard-low')).toBe(false);
+    });
+
+    it('skeletons_grave_goods 弃牌堆无符合条件随从时返回弃牌堆为空反馈', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0', {
+                    hand: [makeCard('grave-goods-1', 'skeletons_grave_goods', 'action', '0')],
+                    discard: [makeCard('discard-high', 'dinosaur_king_rex', 'minion', '0')],
+                }),
+                '1': makePlayer('1'),
+            },
+            bases: [{ defId: 'base_a', minions: [], ongoingActions: [] }],
+        });
+
+        const played = runCommand(
+            makeMatchState(core),
+            { type: SU_COMMANDS.PLAY_ACTION, playerId: '0', payload: { cardUid: 'grave-goods-1' } },
+            defaultTestRandom,
+        );
+
+        const feedback = played.events.find(event => event.type === SU_EVENTS.ABILITY_FEEDBACK) as any;
+        expect(feedback?.payload?.messageKey).toBe('feedback.discard_empty');
+        expect(getInteractionsFromMS(played.finalState)).toHaveLength(0);
+        expect(played.finalState.core.players['0'].discard.some(card => card.uid === 'discard-high')).toBe(true);
     });
 
     it('skeletons_spooky_scary 可消灭另一位玩家力量 3 或以下随从', () => {

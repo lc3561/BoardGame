@@ -103,6 +103,68 @@ test.describe('Smash Up 牌库检索交互', () => {
         await game.screenshot('hoverbot-played-pirate', testInfo);
     });
 
+    test('Stoneford 打出后应显示牌库行动卡并在选择后加入手牌再洗牌', async ({ page, game }, testInfo) => {
+        test.setTimeout(60000);
+
+        await page.goto('/play/smashup');
+        await page.waitForFunction(
+            () => (window as any).__BG_TEST_HARNESS__?.state?.isRegistered?.() === true,
+            { timeout: 15000 },
+        );
+
+        await game.setupScene({
+            gameId: 'smashup',
+            player0: {
+                hand: ['world_champs_stoneford'],
+                deck: ['robot_microbot_alpha', 'wizard_summon', 'vikings_pillage'],
+                factions: ['world_champs', 'robots'],
+            },
+            player1: {
+                hand: [],
+                deck: [],
+                factions: ['pirates', 'dinosaurs'],
+            },
+            currentPlayer: '0',
+            phase: 'playCards',
+        });
+
+        await game.playCard('world_champs_stoneford', { targetBaseIndex: 0 });
+        await game.waitForInteraction('world_champs_stoneford');
+
+        const interactionMeta = await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const current = harness?.state?.get?.()?.sys?.interaction?.current;
+            return {
+                sourceId: current?.data?.sourceId,
+                title: current?.data?.title,
+                optionIds: (current?.data?.options ?? []).map((option: any) => option.id),
+                optionDefs: (current?.data?.options ?? []).map((option: any) => option.value?.defId ?? null),
+                optionDisplayModes: (current?.data?.options ?? []).map((option: any) => option.displayMode ?? 'implicit'),
+            };
+        });
+
+        expect(interactionMeta.sourceId).toBe('world_champs_stoneford');
+        expect(interactionMeta.optionDefs).toEqual(expect.arrayContaining(['wizard_summon', 'vikings_pillage']));
+        expect(interactionMeta.optionDisplayModes.filter((mode: string) => mode === 'card')).toHaveLength(2);
+
+        const cardOptions = page.locator('[data-testid^="prompt-card-"]');
+        await expect(cardOptions).toHaveCount(2);
+        await expect(page.locator('[data-option-id="action-1"]')).toBeVisible();
+
+        await game.screenshot('stoneford-prompt-visible', testInfo);
+
+        await page.locator('[data-option-id="action-1"]').click();
+        await game.waitForNoInteraction();
+
+        const finalState = await game.getState();
+        expect(finalState.core.players['0'].hand.map((card: any) => card.defId)).toEqual(
+            expect.arrayContaining(['vikings_pillage']),
+        );
+        expect(finalState.core.players['0'].deck.map((card: any) => card.defId)).not.toContain('vikings_pillage');
+
+        await game.screenshot('stoneford-selected-action-added-to-hand', testInfo);
+    });
+
     test('狮身人面像埋葬牌交互应直接在场景内翻正面并高亮可选牌', async ({ page, game }, testInfo) => {
         test.setTimeout(60000);
 

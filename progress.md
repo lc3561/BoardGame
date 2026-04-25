@@ -406,6 +406,46 @@
   - Result: 已更新 `evidence/smashup/smashup-10th-anniversary-factions-audit-20260419.md`、`evidence/smashup/smashup-10th-anniversary-factions-selection-e2e-test.md`、`task_plan.md`、`findings.md`，同步 `170/1 + 4 audit + i18n + e2e(3) + smoke(121)` 最新事实。
   - Next: 继续三派系审计工作流剩余批次，不中途收口。
 
+- **[2026-04-25 09:53:00] Action**: 复跑四项审计套件（audit config）
+  - Result: `interactionTargetTypeAudit + interactionDefIdAudit + abilityBehaviorAudit + interactionCompletenessAudit` 全部通过（`36 passed`）。
+  - Next: 继续复跑 smoke / E2E 与全量 SmashUp 回归，确认没有隐藏回归。
+
+- **[2026-04-25 10:02:00] Action**: 完成 smoke + E2E + 全量 SmashUp 回归复核
+  - Result:
+    - `smashup.smoke.test.ts`：`121 passed`
+    - `test:e2e:ci -- e2e/smashup/smashup.e2e.ts`：`3 passed`
+    - `run src/games/smashup --maxWorkers 1`：`146 files passed / 9 skipped`，`1962 passed / 19 skipped`
+  - Next: 回写审计文档并补“旧结论失效回写”，避免文档与当前实现口径漂移。
+
+- **[2026-04-25 10:30:00] Action**: 回写 Toll Bay 旧结论失效与 R2 复核结果
+  - Result:
+    - 已在 `smashup-10th-anniversary-factions-audit-20260419.md` 新增“修订记录（2026-04-25 10:30）”，明确旧“触发窗口标记”结论失效，现行口径为即时抽牌；
+    - 已在 `smashup-10th-anniversary-factions-selection-e2e-test.md` 新增 `2026-04-25 09:56` 复测记录与截图时间；
+    - `assets:upload` 本轮结果 `上传 1342 / 跳过 530 / 失败 1(socket hang up)`，关键 URL 二次 HEAD 复核均 `200`（含 `wangling.webp` / `wangling_base.webp`）。
+  - Next: 继续按“三派系审计工作”推进下一批实施/核验，不中途收口。
+
+- **[2026-04-25 10:53:00] Action**: 发现并定位 `smashup-gameplay.e2e.ts` 回归失败
+  - Result: 首轮 `npm run test:e2e:ci -- e2e/smashup/smashup-gameplay.e2e.ts` 出现 `1 failed / 6 passed`，失败点为“巨石阵应允许己方随从上的附着天赋第2次发动”。
+  - Next: 修复 `USE_TALENT` 的 `ongoingCardUid` 校验分支，补巨石阵双才能例外。
+
+- **[2026-04-25 11:12:00] Action**: 完成巨石阵附着天赋二次发动修复 + 单测补强
+  - Result:
+    - 修改 `src/e2e/src/games/smashup/domain/commands.ts`：`ongoing.talentUsed` 分支新增“附着宿主 + 巨石阵 + 双才能名额空闲”放行；
+    - 修改 `src/e2e/src/games/smashup/__tests__/talentAbilities.test.ts`：新增 2 条回归用例；
+    - `eslint`（4 文件）0 errors。
+  - Next: 先跑单测，再跑失败 E2E 用例与整文件回归确认收敛。
+
+- **[2026-04-25 11:26:00] Action**: 完成回归验证闭环
+  - Result:
+    - `talentAbilities.test.ts`：`22 passed`
+    - `smashup-gameplay.e2e.ts` 定向失败用例：`1 passed`
+    - `smashup-gameplay.e2e.ts` 整文件：`7 passed`
+    - `smashup.e2e.ts` 整文件：`3 passed`
+    - `newFactionAbilities + smoke`：`174 passed / 1 skipped` + `121 passed`
+    - 四审计套件：`36 passed`
+    - `npm run i18n:check`：通过
+  - Next: 回写 evidence / findings / task_plan，继续三派系审计与实施链路推进（不中途收口）。
+
 ## Session: 2026-04-24 Online Feedback 69eb3924（SmashUp watchdog recover-interaction）
 
 ### Phase: 实施与状态回写
@@ -422,3 +462,29 @@
 - **[2026-04-24 23:07:00] Action**: 执行验证与状态回写
   - Result: `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/scoringEligibleLock.test.ts --configLoader native --pool threads --maxWorkers 1 --no-file-parallelism` 通过（`1 file / 12 passed`）；远端 `69eb392453c8e640a4475d6b` 已 `open -> resolved`（`matched=1, modified=1`）；`status-board.json` 校验通过。
   - Next: 继续按线上 `open/in_progress` 清单推进下一批反馈。
+
+## Session: 2026-04-25 SmashUp 三派系持续审计（去重回归复核）
+
+### Phase: 审计与证据同步
+**Status**: In Progress
+
+- **[2026-04-25 13:12:00] Action**: 去重 `talentAbilities` 重复新增 case（src/e2e 镜像）
+  - Result: `src/games/smashup/__tests__/talentAbilities.test.ts` 与 `e2e/src/games/smashup/__tests__/talentAbilities.test.ts` 已收敛为单组“附着行动卡第2次天赋可用/不可用”断言。
+  - Next: 复跑单测、审计、E2E 与 i18n。
+
+- **[2026-04-25 13:30:00] Action**: 完成去重后的全链路复跑
+  - Result:
+    - `talentAbilities.test.ts`: `20 passed`
+    - `newFactionAbilities + smashup.smoke`: `179 passed / 1 skipped` + `122 passed`
+    - 四审计套件：`36 passed`
+    - `npm run i18n:check`: 通过
+    - `smashup-gameplay.e2e.ts`: `7 passed`
+    - `smashup.e2e.ts`: `3 passed`
+  - Next: 回写 evidence/task_plan/findings 并继续三派系审计批次。
+
+- **[2026-04-25 14:20:00] Action**: 补齐 Wiki 数据录入基操脚本（派系映射 + 名称解析）
+  - Result:
+    - `scrape-wiki-with-descriptions.mjs` 已补 `skeletons / mermaids / world_champs`；
+    - `final-wiki-code-comparison.mjs` 已补单双引号解析、弯直引号归一化、报告“仅校验 name/count”声明；
+    - 复核：`scrape skeletons -> 12/20`，`final compare -> 1 正确/0 问题（仅 name/count）`，`eslint` 0 errors。
+  - Next: 继续推进 Skeletons 整派系语义重录审计批次（不再只做单卡修补）。

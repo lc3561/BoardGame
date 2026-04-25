@@ -63,3 +63,40 @@ npm run test:e2e:ci:file -- e2e/smashup/smashup-phase-transition-simple.e2e.ts "
 - 世界冠军/美人鱼卡牌效果链路：`69e61a97ec9760fc42d2f46e`
 
 结论：以上 14 条与现有实现和本轮验证结果一致，按“已修复并验证”执行闭环回写为 `closed`。
+
+## 失效修订（2026-04-25）
+
+- `69e61a97ec9760fc42d2f46e` 的旧关闭结论失效。
+- 失效原因：
+  - 该条原始反馈是“世界冠军/美人鱼卡牌效果全错”的总括性投诉，但本页只引用了 `world_champs_|mermaids_` 的批量单测过滤结果，没有逐卡、逐症状、逐交互链的对应证据。
+  - 本页列出的两张 E2E 截图与该条反馈无直接对应关系，只覆盖“结束回合”和“AI 选阵营”。
+  - 因此该条最多只能证明“相关测试集合当时通过”，不能证明“用户所指的具体错卡/串效果问题已排除”。
+- 2026-04-25 追加核对：
+  - 引擎层确认 `world_champs_samurai_chan` 仅注册离场抓牌触发，没有 `onPlay`；`world_champs_akye_the_turtle` 才有打出交互。
+  - 已补充回归测试：`world_champs_samurai_chan 打出时不应触发海龟阿凯式 onPlay 交互`，用于证明引擎触发链没有把武士酱直接当成海龟阿凯。
+- 当前口径：
+  - 该反馈如再出现“打出武士酱却出现海龟阿凯效果”之类现象，应优先按“卡面/预览映射与底层 defId 不一致”方向继续排查，不能继续引用本页作为已收口证明。
+
+## 修复补记（2026-04-25 11:55）
+
+- 已定位到具体根因：`src/games/smashup/data/factions/world_champs.ts` 的 `previewRef.index` 整组录错。
+- 图集实核文件：
+  - `D:\gongzuo\webgame\BoardGame\public\assets\i18n\zh-CN\smashup\cards\compressed\wangling.webp`
+- 关键对位：
+  - `武士酱` 卡面实际在 `cards7 index 27`，修复前却绑定给了 `world_champs_akye_the_turtle`
+  - `斯通福德` 卡面实际在 `cards7 index 31`，修复前却绑定给了 `world_champs_mummy`
+- 这正好解释了两类用户症状：
+  - 看起来像打出 `武士酱`，实际底层是 `海龟阿凯`，所以会弹 `海龟阿凯` 的打出交互
+  - 看起来像打出 `斯通福德`，实际底层是 `木乃伊`，所以不会触发 `斯通福德` 的打出检索
+- 本次修复后新增证据：
+  - `evidence/smashup/smashup-feedback-69e61a97-world-champs-card-index-fix-2026-04-25.md`
+- 本次验证：
+  1. `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/smashup.smoke.test.ts --configLoader native --maxWorkers 1`
+     - 结果：`122 passed`
+  2. `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/newFactionAbilities.test.ts --configLoader native --maxWorkers 1 --testNamePattern "world_champs_akye_the_turtle 可交给对手一张手牌并抽两张|world_champs_samurai_chan 打出时不应触发海龟阿凯式 onPlay 交互|world_champs_stoneford 从牌库检索行动卡后加入手牌并洗牌"`
+     - 结果：`3 passed`
+  3. `npm run i18n:check`
+     - 结果：通过
+- 更新后口径：
+  - 这条反馈的真实根因已从“泛化的世界冠军/美人鱼效果全错”收敛为“`世界冠军` 卡面图集索引错位”。
+  - 旧 `closed` 结论无效，但在本次修复与验证后，这条反馈现在具备重新收口依据。

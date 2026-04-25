@@ -492,3 +492,62 @@
   - `npm run i18n:check`: 通过
   - `npm run test:e2e:ci -- e2e/smashup/smashup.e2e.ts`: `3 passed`
 - 补充稳定性复核：`smashup.smoke.test.ts` 复跑 `121 passed`，确认本轮修复未破坏 SmashUp 主流程烟测。
+
+## 2026-04-25 三派系审计修订（旧结论失效回写）
+- 失效结论：上一条“`mermaids_toll_bay` 触发窗口标记回归修复”的描述与当前权威语义不一致，已判定失效。
+- 当前权威语义：`mermaids_toll_bay` 仅执行“选择基地后按对手随从数即时抽牌”，不包含“本回合后续移动再触发”的持续窗口。
+- 证据：
+  - `newFactionAbilities.test.ts` 中该卡仅保留两条即时抽牌断言，当前结果 `170 passed / 1 skipped`；
+  - 全量 SmashUp 回归 `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup --configLoader native --maxWorkers 1` 结果 `146 files passed / 9 skipped`，`1962 passed / 19 skipped`；
+  - 四审计套件复跑 `36 passed`，`smashup.smoke.test.ts` `121 passed`，`smashup.e2e.ts` `3 passed`。
+- 文档修订：
+  - 已在 `evidence/smashup/smashup-10th-anniversary-factions-audit-20260419.md` 新增“修订记录（2026-04-25 10:30）”，显式标注旧结论失效与新口径。
+
+## 2026-04-25 R2 复核补记
+- 执行 `npm run assets:upload`，结果：`上传 1342，跳过 530，失败 1（socket hang up）`。
+- 对关键 URL 二次 HEAD 复核均为 `200`：
+  - `https://assets.easyboardgame.top/official/i18n/zh-CN/smashup/cards/compressed/wangling.webp`
+  - `https://assets.easyboardgame.top/official/i18n/zh-CN/smashup/base/compressed/wangling_base.webp`
+  - `https://assets.easyboardgame.top/official/common/audio/bgm/Villains Music Pack Vol. 1/Maniac (RT 5.161)/compressed/Villains Maniac Main.ogg`
+
+## 2026-04-25 Gameplay 回归 Finding：巨石阵附着天赋二次发动
+- 问题复现：
+  - `npm run test:e2e:ci -- e2e/smashup/smashup-gameplay.e2e.ts` 首轮出现 `1 failed / 6 passed`；
+  - 失败用例：`巨石阵应允许己方随从上的附着天赋第2次发动，并占用基地双才能名额`。
+- 根因：
+  - `src/games/smashup/domain/commands.ts` 的 `USE_TALENT` 在 `ongoingCardUid` 分支对 `ongoing.talentUsed` 直接拒绝；
+  - 缺少“巨石阵 + 附着在己方随从上的持续行动卡 + 双才能名额未占用”的例外判定。
+- 修复：
+  - `src/games/smashup/domain/commands.ts` 与 `e2e/src/games/smashup/domain/commands.ts` 补 `attachedHostMinion` 识别与双才能例外；
+  - `src/games/smashup/__tests__/talentAbilities.test.ts` 与 `e2e/src/games/smashup/__tests__/talentAbilities.test.ts` 新增 2 条回归测试（可用/不可用各 1 条）。
+- 修复后验证：
+  - `talentAbilities.test.ts`: `22 passed`
+  - `smashup-gameplay.e2e.ts`: `7 passed`
+  - `smashup.e2e.ts`: `3 passed`
+  - `newFactionAbilities + smoke`: `174 passed / 1 skipped` + `121 passed`
+  - 四审计套件：`36 passed`
+  - `npm run i18n:check`: 通过
+
+## 2026-04-25 三派系复核补记（去重测试块后重跑）
+- 触发：发现 `src/e2e/src/games/smashup/__tests__/talentAbilities.test.ts` 有重复新增 case。
+- 处理：去重为单组“附着行动卡第2次天赋可用/不可用”回归断言，避免重复测试掩盖真实覆盖率。
+- 去重后复跑结果：
+  - `talentAbilities.test.ts`：`20 passed`
+  - `newFactionAbilities + smashup.smoke`：`179 passed / 1 skipped` + `122 passed`
+  - 四审计套件：`36 passed`
+  - `npm run i18n:check`：通过
+  - `smashup-gameplay.e2e.ts`：`7 passed`
+  - `smashup.e2e.ts`：`3 passed`
+- 结论：计数变化来自重复 case 去重，不是能力回退；去重后三派系主链路仍全绿。
+
+## 2026-04-25 数据录入基操补齐（Wiki 工具链）
+- `scripts/scrape-wiki-with-descriptions.mjs` 已补 `skeletons / mermaids / world_champs` 映射，避免对 10 周年派系漏抓。
+- `scripts/final-wiki-code-comparison.mjs` 已补：
+  - `nameEn` 双引号/单引号统一解析；
+  - 名称归一化（`'`/`’`）避免假缺失；
+  - 报告显式声明“仅校验 name/count，不校验语义”。
+- 现场复核：
+  - `node scripts/scrape-wiki-with-descriptions.mjs skeletons` -> `12 种 / 20 张`
+  - `node scripts/final-wiki-code-comparison.mjs` -> `1 正确 / 0 问题（仅 name/count）`
+  - `npx eslint scripts/scrape-wiki-with-descriptions.mjs scripts/final-wiki-code-comparison.mjs` -> 0 errors
+- 结论：工具链“漏派系 + 引号误判”问题已修复；`Skeletons` 语义错配结论不变，仍需整派系重录与实现。

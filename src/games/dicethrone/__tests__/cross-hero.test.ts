@@ -2422,7 +2422,9 @@ describe('cross hero battles', () => {
             expect(result.finalState.core.pendingBonusDiceSettlement?.summaryEffectParams).toEqual({
                 katanaCount: 2,
                 shameCount: 1,
+                appliedShameCount: 1,
                 retributionCount: 2,
+                grantedRetributionCount: 1,
             });
             expect(result.finalState.core.pendingAttack?.sourceAbilityId).toBe('katana-slice-3');
             expect(result.finalState.core.pendingAttack?.bonusDamage).toBe(2);
@@ -2492,7 +2494,9 @@ describe('cross hero battles', () => {
             expect(result.finalState.core.pendingBonusDiceSettlement?.summaryEffectParams).toMatchObject({
                 katanaCount: expect.any(Number),
                 shameCount: expect.any(Number),
+                appliedShameCount: expect.any(Number),
                 retributionCount: expect.any(Number),
+                grantedRetributionCount: expect.any(Number),
             });
             expect(result.finalState.core.pendingAttack).toBeNull();
             expect(result.finalState.core.players['1'].tokens[TOKEN_IDS.SHAME]).toBe(1);

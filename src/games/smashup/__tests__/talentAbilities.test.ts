@@ -610,6 +610,68 @@ describe('天赋基础设施', () => {
         expect(result.error).toBe('本回合天赋已使用');
     });
 
+    // 巨石阵附着天赋回归：ongoingCardUid 分支
+    it('巨石阵：附着行动卡在名额未占用时可发动第2次天赋（ongoingCardUid）', () => {
+        const core = makeState({
+            standingStonesDoubleTalentMinionUid: undefined,
+            bases: [
+                {
+                    defId: 'base_standing_stones',
+                    minions: [
+                        makeMinion('m1', 'werewolf_pack_alpha', '0', 4, {
+                            attachedActions: [
+                                { uid: 'oa1', defId: 'werewolf_leader_of_the_pack', ownerId: '0', talentUsed: true },
+                            ],
+                        }),
+                    ],
+                    ongoingActions: [],
+                },
+            ],
+            players: {
+                '0': makePlayer('0'),
+                '1': makePlayer('1'),
+            },
+        });
+
+        const result = validate(makeMatchState(core), {
+            type: SU_COMMANDS.USE_TALENT,
+            playerId: '0',
+            payload: { ongoingCardUid: 'oa1', baseIndex: 0 },
+        });
+        expect(result.valid).toBe(true);
+    });
+
+    it('巨石阵：附着行动卡在名额占用后不可发动第2次天赋（ongoingCardUid）', () => {
+        const core = makeState({
+            standingStonesDoubleTalentMinionUid: 'used-minion',
+            bases: [
+                {
+                    defId: 'base_standing_stones',
+                    minions: [
+                        makeMinion('m1', 'werewolf_pack_alpha', '0', 4, {
+                            attachedActions: [
+                                { uid: 'oa1', defId: 'werewolf_leader_of_the_pack', ownerId: '0', talentUsed: true },
+                            ],
+                        }),
+                    ],
+                    ongoingActions: [],
+                },
+            ],
+            players: {
+                '0': makePlayer('0'),
+                '1': makePlayer('1'),
+            },
+        });
+
+        const result = validate(makeMatchState(core), {
+            type: SU_COMMANDS.USE_TALENT,
+            playerId: '0',
+            payload: { ongoingCardUid: 'oa1', baseIndex: 0 },
+        });
+        expect(result.valid).toBe(false);
+        expect(result.error).toBe('本回合天赋已使用');
+    });
+
     it('被压制的随从仍可手动发动天赋（当前压制仅过滤被动/持续来源）', () => {
         const core = makeState({
             suppressedCardsUntilTurnStart: [{

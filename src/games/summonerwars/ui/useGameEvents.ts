@@ -684,74 +684,8 @@ export function useGameEvents({
             });
           }
         }
-        // ================================================================
-        // afterMove 技能触发：移动后自动进入技能选择模式
-        // ================================================================
-        // 祖灵交流：充能自身或转移给3格内友方
-        if (matchId === 'afterMove:spirit_bond') {
-          const unit = core.board[p.sourcePosition?.row]?.[p.sourcePosition?.col]?.unit;
-          if (unit && unit.owner === myPlayerId) {
-            if (activeSwInteractionType === 'after_move_spirit_bond') continue;
-            const captured = { sourceUnitId: p.sourceUnitId };
-            gateRef.current.scheduleInteraction(() => {
-              setAbilityMode({
-                abilityId: 'spirit_bond',
-                step: 'selectUnit',
-                sourceUnitId: captured.sourceUnitId,
-              });
-            });
-          }
-        }
-        // 祖灵羁绊：充能+转移给3格内友方（可选）
-        if (matchId === 'afterMove:ancestral_bond') {
-          const unit = core.board[p.sourcePosition?.row]?.[p.sourcePosition?.col]?.unit;
-          if (unit && unit.owner === myPlayerId) {
-            if (activeSwInteractionType === 'after_move_ancestral_bond') continue;
-            const captured = { sourceUnitId: p.sourceUnitId };
-            gateRef.current.scheduleInteraction(() => {
-              setAbilityMode({
-                abilityId: 'ancestral_bond',
-                step: 'selectUnit',
-                sourceUnitId: captured.sourceUnitId,
-              });
-            });
-          }
-        }
-        // 结构变换：推拉3格内友方建筑（可选）
-        if (matchId === 'afterMove:structure_shift') {
-          const unit = core.board[p.sourcePosition?.row]?.[p.sourcePosition?.col]?.unit;
-          if (unit && unit.owner === myPlayerId) {
-            if (
-              activeSwInteractionType === 'after_move_structure_shift_target'
-              || activeSwInteractionType === 'after_move_structure_shift_direction'
-            ) {
-              continue;
-            }
-            const captured = { sourceUnitId: p.sourceUnitId };
-            gateRef.current.scheduleInteraction(() => {
-              setAbilityMode({
-                abilityId: 'structure_shift',
-                step: 'selectUnit',
-                sourceUnitId: captured.sourceUnitId,
-              });
-            });
-          }
-        }
-        // 冰霜战斧：充能或消耗充能附加（可选）
-        if (matchId === 'afterMove:frost_axe') {
-          const unit = core.board[p.sourcePosition?.row]?.[p.sourcePosition?.col]?.unit;
-          if (unit && unit.owner === myPlayerId) {
-            if (activeSwInteractionType === 'after_move_frost_axe') continue;
-            const captured = { sourceUnitId: p.sourceUnitId };
-            gateRef.current.scheduleInteraction(() => {
-              setAbilityMode({
-                abilityId: 'frost_axe',
-                step: 'selectUnit',
-                sourceUnitId: captured.sourceUnitId,
-              });
-            });
-          }
-        }
+        // afterMove 系列（spirit_bond/ancestral_bond/structure_shift/frost_axe）
+        // 统一由 swInteraction(systemAbilityMode) 驱动，避免与本地 abilityMode 双通道并发导致重复弹窗。
         // 寒冰冲撞：建筑移动/推拉后选择相邻单位
         if (matchId === 'ice_ram_trigger') {
           const iceRamOwner = (event.payload as Record<string, unknown>).iceRamOwner as string;

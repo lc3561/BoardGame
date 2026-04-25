@@ -498,6 +498,19 @@
   "bonusDie": {
     "title": "Bonus Roll",
     "confirm": "Confirm",
+    "summary": {
+      "attackDamageBonus": "+{{amount}} damage this attack",
+      "damage": "Deal {{amount}} damage",
+      "heal": "Heal {{amount}}",
+      "loseCp": "Opponent loses {{amount}} CP",
+      "inflictShame": "Inflict {{count}} Shame",
+      "inflictBlinded": "Inflict Blinded",
+      "inflictEntangle": "Inflict Entangle",
+      "inflictConcussion": "Inflict Concussion",
+      "inflictKnockdown": "Inflict Knockdown",
+      "gainBackStrike": "Gain {{count}} Back Strike",
+      "backStrikeAtLimit": "Back Strike is already at the stack limit"
+    },
     "effect": {
       "fist": "Fist: +2 Damage",
       "palm": "Palm: +3 Damage",

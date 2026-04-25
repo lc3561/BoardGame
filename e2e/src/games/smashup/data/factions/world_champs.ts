@@ -11,7 +11,7 @@ export const WORLD_CHAMPS_MINIONS: MinionCardDef[] = [
         power: 5,
         abilityTags: ['special'],
         count: 1,
-        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.CARDS7, index: 24 },
+        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.CARDS7, index: 33 },
     },
     {
         id: 'world_champs_aramis',
@@ -22,7 +22,7 @@ export const WORLD_CHAMPS_MINIONS: MinionCardDef[] = [
         power: 4,
         abilityTags: ['ongoing'],
         count: 1,
-        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.CARDS7, index: 25 },
+        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.CARDS7, index: 32 },
     },
     {
         id: 'world_champs_stoneford',
@@ -33,7 +33,7 @@ export const WORLD_CHAMPS_MINIONS: MinionCardDef[] = [
         power: 4,
         abilityTags: ['onPlay'],
         count: 1,
-        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.CARDS7, index: 26 },
+        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.CARDS7, index: 31 },
     },
     {
         id: 'world_champs_akye_the_turtle',
@@ -44,7 +44,7 @@ export const WORLD_CHAMPS_MINIONS: MinionCardDef[] = [
         power: 3,
         abilityTags: ['onPlay'],
         count: 1,
-        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.CARDS7, index: 27 },
+        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.CARDS7, index: 29 },
     },
     {
         id: 'world_champs_diva',
@@ -66,7 +66,7 @@ export const WORLD_CHAMPS_MINIONS: MinionCardDef[] = [
         power: 3,
         abilityTags: ['onPlay'],
         count: 1,
-        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.CARDS7, index: 29 },
+        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.CARDS7, index: 30 },
     },
     {
         id: 'world_champs_calicoin',
@@ -77,7 +77,7 @@ export const WORLD_CHAMPS_MINIONS: MinionCardDef[] = [
         power: 2,
         abilityTags: ['onPlay'],
         count: 1,
-        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.CARDS7, index: 30 },
+        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.CARDS7, index: 26 },
     },
     {
         id: 'world_champs_mummy',
@@ -88,7 +88,7 @@ export const WORLD_CHAMPS_MINIONS: MinionCardDef[] = [
         power: 2,
         abilityTags: ['special'],
         count: 1,
-        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.CARDS7, index: 31 },
+        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.CARDS7, index: 25 },
     },
     {
         id: 'world_champs_rainbow_girl',
@@ -99,7 +99,7 @@ export const WORLD_CHAMPS_MINIONS: MinionCardDef[] = [
         power: 2,
         abilityTags: ['onPlay'],
         count: 1,
-        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.CARDS7, index: 32 },
+        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.CARDS7, index: 24 },
     },
     {
         id: 'world_champs_samurai_chan',
@@ -110,7 +110,7 @@ export const WORLD_CHAMPS_MINIONS: MinionCardDef[] = [
         power: 2,
         abilityTags: ['ongoing'],
         count: 1,
-        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.CARDS7, index: 33 },
+        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.CARDS7, index: 27 },
     },
 ];
 
@@ -125,7 +125,7 @@ export const WORLD_CHAMPS_ACTIONS: ActionCardDef[] = [
         abilityTags: ['ongoing'],
         ongoingTarget: 'minion',
         count: 1,
-        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.CARDS7, index: 34 },
+        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.CARDS7, index: 41 },
     },
     {
         id: 'world_champs_eh',
@@ -136,7 +136,7 @@ export const WORLD_CHAMPS_ACTIONS: ActionCardDef[] = [
         faction: SMASHUP_FACTION_IDS.WORLD_CHAMPS,
         abilityTags: ['special'],
         count: 1,
-        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.CARDS7, index: 35 },
+        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.CARDS7, index: 39 },
     },
     {
         id: 'world_champs_fast_as_lightning',
@@ -147,7 +147,7 @@ export const WORLD_CHAMPS_ACTIONS: ActionCardDef[] = [
         faction: SMASHUP_FACTION_IDS.WORLD_CHAMPS,
         abilityTags: ['onPlay'],
         count: 1,
-        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.CARDS7, index: 36 },
+        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.CARDS7, index: 40 },
     },
     {
         id: 'world_champs_fighting_spirit_prize',
@@ -158,7 +158,7 @@ export const WORLD_CHAMPS_ACTIONS: ActionCardDef[] = [
         faction: SMASHUP_FACTION_IDS.WORLD_CHAMPS,
         abilityTags: ['onPlay'],
         count: 1,
-        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.CARDS7, index: 37 },
+        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.CARDS7, index: 34 },
     },
     {
         id: 'world_champs_high_speed_chase',
@@ -170,7 +170,7 @@ export const WORLD_CHAMPS_ACTIONS: ActionCardDef[] = [
         abilityTags: ['ongoing', 'talent'],
         ongoingTarget: 'base',
         count: 1,
-        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.CARDS7, index: 38 },
+        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.CARDS7, index: 43 },
     },
     {
         id: 'world_champs_its_blitzin_time',
@@ -181,7 +181,7 @@ export const WORLD_CHAMPS_ACTIONS: ActionCardDef[] = [
         faction: SMASHUP_FACTION_IDS.WORLD_CHAMPS,
         abilityTags: ['onPlay'],
         count: 1,
-        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.CARDS7, index: 39 },
+        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.CARDS7, index: 37 },
     },
     {
         id: 'world_champs_kaiju_conflict',
@@ -192,7 +192,7 @@ export const WORLD_CHAMPS_ACTIONS: ActionCardDef[] = [
         faction: SMASHUP_FACTION_IDS.WORLD_CHAMPS,
         abilityTags: ['onPlay', 'extra'],
         count: 1,
-        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.CARDS7, index: 40 },
+        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.CARDS7, index: 38 },
     },
     {
         id: 'world_champs_mouse_bird_and_sausage',
@@ -203,7 +203,7 @@ export const WORLD_CHAMPS_ACTIONS: ActionCardDef[] = [
         faction: SMASHUP_FACTION_IDS.WORLD_CHAMPS,
         abilityTags: ['onPlay'],
         count: 1,
-        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.CARDS7, index: 41 },
+        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.CARDS7, index: 42 },
     },
     {
         id: 'world_champs_shark_tattoo',
@@ -215,7 +215,7 @@ export const WORLD_CHAMPS_ACTIONS: ActionCardDef[] = [
         abilityTags: ['onPlay', 'ongoing'],
         ongoingTarget: 'minion',
         count: 1,
-        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.CARDS7, index: 42 },
+        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.CARDS7, index: 36 },
     },
     {
         id: 'world_champs_smart_set_up',
@@ -227,7 +227,7 @@ export const WORLD_CHAMPS_ACTIONS: ActionCardDef[] = [
         abilityTags: ['ongoing'],
         ongoingTarget: 'minion',
         count: 1,
-        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.CARDS7, index: 43 },
+        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.CARDS7, index: 35 },
     },
 ];
 

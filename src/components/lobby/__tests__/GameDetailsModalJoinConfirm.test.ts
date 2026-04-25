@@ -313,7 +313,15 @@ vi.mock('../../../lib/logger', () => ({
         error: vi.fn(),
         warn: vi.fn(),
         debug: vi.fn(),
+        group: vi.fn(),
+        groupEnd: vi.fn(),
     },
+    createScopedLogger: () => ({
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        debug: vi.fn(),
+    }),
 }));
 
 vi.mock('../../../services/lobbySocket', () => ({
@@ -755,7 +763,7 @@ describe('GameDetailsMobilePackageCard', () => {
         expect(screen.getByText('packageManager.progress.pendingPercent')).toBeInTheDocument();
     });
 
-    it('未安装且没有已发布大小时显示下载包未发布', () => {
+    it('未安装且回退到 fallback 清单时显示同步中并保留安装按钮', () => {
         render(createElement(GameDetailsMobilePackageCard, {
             gameName: 'Tic-Tac-Toe',
             state: {
@@ -768,9 +776,10 @@ describe('GameDetailsMobilePackageCard', () => {
             onInstall: vi.fn(),
         }));
 
-        expect(screen.getByText('packageManager.packageUnpublished')).toBeInTheDocument();
+        expect(screen.getByText('packageManager.packageSyncing')).toBeInTheDocument();
         expect(screen.queryByText('packageManager.sizeUnknown')).toBeNull();
-        expect(screen.queryByText('packageManager.installAction')).toBeNull();
+        expect(screen.queryByText('packageManager.packageUnpublished')).toBeNull();
+        expect(screen.getByText('packageManager.installAction')).toBeInTheDocument();
     });
 
     it('未安装且远端清单仍在同步时显示同步中并保留安装按钮', () => {

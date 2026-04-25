@@ -1,6 +1,7 @@
 import type { TokenDef } from '../../domain/tokenTypes';
 import { DICETHRONE_STATUS_ATLAS_IDS, STATUS_IDS, TOKEN_IDS } from '../../domain/ids';
 import { RESOURCE_IDS } from '../../domain/resources';
+import { GUNSLINGER_SFX_BOUNTY, GUNSLINGER_SFX_LOADED } from './abilities';
 
 export const GUNSLINGER_TOKENS: TokenDef[] = [
     {
@@ -53,7 +54,7 @@ export const GUNSLINGER_TOKENS: TokenDef[] = [
             '攻击掷骰阶段结束时可消耗 1 个装填并掷 1 颗骰子。',
             '将骰值的一半向上取整，作为本次攻击的额外伤害。',
         ],
-        sfxKey: 'ui.general.ui_menu_sound_fx_pack_vol.signals.update.update_chime_a',
+        sfxKey: GUNSLINGER_SFX_LOADED,
         stackLimit: 2,
         category: 'consumable',
         activeUse: {
@@ -78,7 +79,7 @@ export const GUNSLINGER_TOKENS: TokenDef[] = [
             '赏金不会自动移除。',
         ],
         iconPath: 'dicethrone/images/gunslinger/icons/赏金',
-        sfxKey: 'ui.general.ui_menu_sound_fx_pack_vol.signals.update.update_chime_a',
+        sfxKey: GUNSLINGER_SFX_BOUNTY,
         stackLimit: 1,
         category: 'debuff',
         passiveTrigger: {

@@ -323,6 +323,7 @@ export const BARBARIC_ABILITIES: AbilityDef[] = [
     description: abilityText('spirit_bond', 'description'),
     sfxKey: 'fantasy.elemental_sword_earthattack_01',
     trigger: 'activated',
+    usesPerTurn: 1,
     effects: [
       { type: 'custom', actionId: 'spirit_bond_action' },
     ],

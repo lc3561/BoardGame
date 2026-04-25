@@ -17,7 +17,7 @@ import { executePipeline } from '../../../engine/pipeline';
 import type { CardsDrawnEvent, SmashUpCore, SmashUpCommand, SmashUpEvent } from '../domain/types';
 import { MADNESS_CARD_DEF_ID, SU_COMMANDS, SU_EVENTS, getCurrentPlayerId } from '../domain/types';
 import { SMASHUP_FACTION_IDS } from '../domain/ids';
-import { getTitanDef } from '../data/cards';
+import { getCardDef, getTitanDef } from '../data/cards';
 import { TITAN_CARD_DEFS } from '../data/titans';
 import { getPlayerEffectivePowerOnBase, getRegisteredModifierIds, getTitanPowerContribution } from '../domain/ongoingModifiers';
 import { getInteractionHandler } from '../domain/abilityInteractionHandlers';
@@ -5979,6 +5979,39 @@ describe('smashup', () => {
         expect(getSmashUpCardPreviewMeta('pecos_bill')).toEqual({
             name: getTitanDef('pecos_bill')?.name,
             previewRef: { type: 'renderer', rendererId: 'smashup-card-renderer', payload: { defId: 'pecos_bill' } },
+        });
+    });
+
+    it('世界冠军 cards7 图集索引应与 wangling 图集中的实际卡面一致', () => {
+        expect(getCardDef('world_champs_rainbow_girl')?.previewRef).toEqual({
+            type: 'atlas',
+            atlasId: 'smashup:cards7',
+            index: 24,
+        });
+        expect(getCardDef('world_champs_samurai_chan')?.previewRef).toEqual({
+            type: 'atlas',
+            atlasId: 'smashup:cards7',
+            index: 27,
+        });
+        expect(getCardDef('world_champs_akye_the_turtle')?.previewRef).toEqual({
+            type: 'atlas',
+            atlasId: 'smashup:cards7',
+            index: 29,
+        });
+        expect(getCardDef('world_champs_stoneford')?.previewRef).toEqual({
+            type: 'atlas',
+            atlasId: 'smashup:cards7',
+            index: 31,
+        });
+        expect(getCardDef('world_champs_sheriff')?.previewRef).toEqual({
+            type: 'atlas',
+            atlasId: 'smashup:cards7',
+            index: 33,
+        });
+        expect(getCardDef('world_champs_high_speed_chase')?.previewRef).toEqual({
+            type: 'atlas',
+            atlasId: 'smashup:cards7',
+            index: 43,
         });
     });
 

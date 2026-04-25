@@ -3,9 +3,12 @@ import { GUNSLINGER_DICE_FACE_IDS, STATUS_IDS, TOKEN_IDS } from '../../domain/id
 
 const FACE = GUNSLINGER_DICE_FACE_IDS;
 
-export const GUNSLINGER_SFX_SHOT = 'combat.general.mini_games_sound_effects_and_music_pack.gun.shoot.sfx_gun_generic_a_shoot_1';
-export const GUNSLINGER_SFX_HEAVY = 'combat.general.mini_games_sound_effects_and_music_pack.gun.shoot.sfx_gun_generic_b_shoot_2';
-export const GUNSLINGER_SFX_ULTIMATE = 'combat.general.mini_games_sound_effects_and_music_pack.gun.shoot.sfx_gun_minigun_shoot_1';
+export const GUNSLINGER_SFX_SHOT = 'combat.guns_sound_fx_pack.38_spl_revolver.gunshots.38_spl_revolver_gunshot_a_001';
+export const GUNSLINGER_SFX_HEAVY = 'combat.guns_sound_fx_pack.30_30_lever_action_rifle.gunshots.30_30_lever_action_rifle_gunshot_a_001';
+export const GUNSLINGER_SFX_ULTIMATE = 'combat.guns_sound_fx_pack.12ga_pump_shotgun.gunshots.12ga_pump_shotgun_gunshot_b_003';
+export const GUNSLINGER_SFX_DRAW = 'combat.guns_sound_fx_pack.misc_ammo_boxes_holsters_etc.leather_unholster_001';
+export const GUNSLINGER_SFX_LOADED = 'combat.guns_sound_fx_pack.misc_ammo_boxes_holsters_etc.ammo_pickup_001';
+export const GUNSLINGER_SFX_BOUNTY = 'coins.decks_and_cards_sound_fx_pack.gold_pouch_handle_001';
 
 const damage = (
     value: number,

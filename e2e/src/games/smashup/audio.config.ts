@@ -99,6 +99,35 @@ const PIRATE_ACTION_KEYS = [
     'combat.general.mini_games_sound_effects_and_music_pack.gun.shoot.sfx_gun_generic_b_shoot_2',
     'combat.general.mini_games_sound_effects_and_music_pack.gun.shoot.sfx_gun_generic_b_shoot_3',
 ];
+const COWBOY_MINION_KEYS = [
+    'combat.guns_sound_fx_pack.misc_ammo_boxes_holsters_etc.leather_unholster_001',
+    'combat.guns_sound_fx_pack.misc_ammo_boxes_holsters_etc.leather_unholster_002',
+    'combat.guns_sound_fx_pack.misc_ammo_boxes_holsters_etc.leather_unholster_003',
+];
+const COWBOY_ACTION_KEYS = [
+    'combat.guns_sound_fx_pack.misc_ammo_boxes_holsters_etc.leather_unholster_001',
+    'combat.guns_sound_fx_pack.30_30_lever_action_rifle.foley.30_30_lever_action_rifle_lever_001',
+    'combat.guns_sound_fx_pack.30_30_lever_action_rifle.foley.30_30_lever_action_rifle_lever_002',
+    'combat.guns_sound_fx_pack.38_spl_revolver.gunshots.38_spl_revolver_gunshot_a_001',
+    'combat.explosives_sound_fx_pack.fuse.dynamite_fuse_start_001',
+    'coins.decks_and_cards_sound_fx_pack.gold_pouch_handle_001',
+    'coins.decks_and_cards_sound_fx_pack.small_reward_001',
+    'retro.retro_gaming_sound_fx_pack_vol.16_bit.movement.hoof_move_step_001',
+];
+const COWBOY_ACTION_FALLBACK_KEYS = [
+    'combat.guns_sound_fx_pack.misc_ammo_boxes_holsters_etc.leather_unholster_001',
+    'combat.guns_sound_fx_pack.30_30_lever_action_rifle.foley.30_30_lever_action_rifle_lever_001',
+    'combat.guns_sound_fx_pack.30_30_lever_action_rifle.foley.30_30_lever_action_rifle_lever_002',
+];
+const MERMAID_MINION_KEYS = [
+    'ambient.water_sound_fx_pack_vol.splashes_and_movement.fast_short_swirl_a',
+    'ambient.water_sound_fx_pack_vol.bubbles.bubbles_short_a',
+];
+const MERMAID_ACTION_KEYS = [
+    'ambient.water_sound_fx_pack_vol.designed.water_ball_spell_small',
+    'ambient.water_sound_fx_pack_vol.designed.water_ball_spell_big',
+    'ambient.water_sound_fx_pack_vol.splashes_and_movement.big_splash_a',
+];
 const NINJA_MINION_KEYS = [
     'combat.general.forged_in_fury_vol_1.katana.double_katana_whoosh.dsgnwhsh_double_katana_whoosh_01_krst',
     'combat.general.forged_in_fury_vol_1.katana.double_katana_whoosh.dsgnwhsh_double_katana_whoosh_02_krst',
@@ -260,6 +289,9 @@ const FACTION_SFX_KEYS: Record<string, string[]> = {
     [SMASHUP_FACTION_IDS.DINOSAURS]: [...DINO_MINION_KEYS, ...DINO_ACTION_KEYS],
     [SMASHUP_FACTION_IDS.ALIENS]: [...ALIEN_MINION_KEYS, ...ALIEN_ACTION_KEYS],
     [SMASHUP_FACTION_IDS.PIRATES]: [...PIRATE_MINION_KEYS, ...PIRATE_ACTION_KEYS],
+    [SMASHUP_FACTION_IDS.COWBOYS]: [...COWBOY_MINION_KEYS, ...COWBOY_ACTION_KEYS],
+    [SMASHUP_FACTION_IDS.COWBOYS_POD]: [...COWBOY_MINION_KEYS, ...COWBOY_ACTION_KEYS],
+    [SMASHUP_FACTION_IDS.MERMAIDS]: [...MERMAID_MINION_KEYS, ...MERMAID_ACTION_KEYS],
     [SMASHUP_FACTION_IDS.NINJAS]: [...NINJA_MINION_KEYS, ...NINJA_ACTION_KEYS],
     [SMASHUP_FACTION_IDS.ROBOTS]: [...ROBOT_MINION_KEYS, ...ROBOT_ACTION_KEYS],
     [SMASHUP_FACTION_IDS.GHOSTS]: [...GHOST_MINION_KEYS, ...GHOST_ACTION_KEYS],
@@ -324,6 +356,14 @@ const resolveFactionSound = (defId: string | undefined, cardType: 'minion' | 'ac
     if (defId.startsWith('pirate_')) {
         const keys = cardType === 'action' ? PIRATE_ACTION_KEYS : PIRATE_MINION_KEYS;
         return pickRandomSoundKey(`smashup.pirate.${cardType}`, keys, { minGap: 1 });
+    }
+    if (defId.startsWith('cowboys_')) {
+        const keys = cardType === 'action' ? COWBOY_ACTION_FALLBACK_KEYS : COWBOY_MINION_KEYS;
+        return pickRandomSoundKey(`smashup.cowboys.${cardType}`, keys, { minGap: 1 });
+    }
+    if (defId.startsWith('mermaids_')) {
+        const keys = cardType === 'action' ? MERMAID_ACTION_KEYS : MERMAID_MINION_KEYS;
+        return pickRandomSoundKey(`smashup.mermaids.${cardType}`, keys, { minGap: 1 });
     }
     if (defId.startsWith('ninja_')) {
         const keys = cardType === 'action' ? NINJA_ACTION_KEYS : NINJA_MINION_KEYS;

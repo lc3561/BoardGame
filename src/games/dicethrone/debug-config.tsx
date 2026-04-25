@@ -92,6 +92,18 @@ export const DiceThroneDebugConfig: React.FC<DiceThroneDebugConfigProps> = ({ G,
             );
     }, [playerDeck, deckIndex]);
 
+    const matchingHandCards = useMemo(() => {
+        const targetIndex = Number(deckIndex);
+        return playerHand.filter((card: any) => getCardSourceAtlasIndex(card) === targetIndex);
+    }, [playerHand, deckIndex]);
+
+    const matchingDiscardCards = useMemo(() => {
+        const targetIndex = Number(deckIndex);
+        return (G?.core?.players?.[dealPlayer]?.discard ?? []).filter(
+            (card: any) => getCardSourceAtlasIndex(card) === targetIndex,
+        );
+    }, [G, dealPlayer, deckIndex]);
+
     const cardInDeck = useMemo(() => {
         return matchingDeckCards[0]?.card;
     }, [matchingDeckCards]);
@@ -420,6 +432,10 @@ export const DiceThroneDebugConfig: React.FC<DiceThroneDebugConfigProps> = ({ G,
                                 <span className="ml-1 text-amber-700">
                                     | 该索引命中 {matchingDeckCards.length} 张牌，请按下方候选卡精确发牌
                                 </span>
+                            ) : matchingHandCards.length > 0 || matchingDiscardCards.length > 0 ? (
+                                <span className="ml-1 text-amber-700">
+                                    | 当前不在牌库：手牌 {matchingHandCards.length} 张，弃牌堆 {matchingDiscardCards.length} 张
+                                </span>
                             ) : (
                                 <span className="ml-1 text-red-400">| 牌库中不存在该索引</span>
                             )}
@@ -479,7 +495,7 @@ export const DiceThroneDebugConfig: React.FC<DiceThroneDebugConfigProps> = ({ G,
                                         </div>
                                     </div>
                                     {group.entries.length === 0 ? (
-                                        <div className="px-2 py-1 text-[9px] text-amber-300">当前牌库没有这一分区的牌</div>
+                                        <div className="px-2 py-1 text-[9px] text-amber-300">当前剩余牌库没有这一分区的牌（不含手牌 / 弃牌堆）</div>
                                     ) : group.entries.map(({ card, deckIndexInDeck }, idx) => {
                                         const atlasIdx = getCardSourceAtlasIndex(card);
                                         const sectionLabel = getDeckSectionLabel(playerCharacterId, atlasIdx);

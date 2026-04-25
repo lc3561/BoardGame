@@ -11,7 +11,7 @@ type SplendorAudioCtx = {
 
 const HOST_STARTED_KEY = 'ui.general.ui_menu_sound_fx_pack_vol.signals.update.update_chime_a';
 const GEM_GAIN_KEY = 'status.general.player_status_sound_fx_pack_vol.positive_buffs_and_cures.charged_a';
-const GOLD_GAIN_KEY = 'coins.decks_and_cards_sound_fx_pack.big_coin_drop_001';
+const GOLD_GAIN_KEY = 'coins.decks_and_cards_sound_fx_pack.small_reward_001';
 const CARD_RESERVE_OPEN_KEY = 'card.handling.decks_and_cards_sound_fx_pack.card_take_001';
 const CARD_RESERVE_DECK_KEY = 'card.fx.decks_and_cards_sound_fx_pack.fx_magic_deck_001';
 const CARD_BUY_KEY = 'ui.general.mini_games_sound_effects_and_music_pack.click.sfx_ui_click_buy';

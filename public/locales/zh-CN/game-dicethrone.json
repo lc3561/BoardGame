@@ -531,6 +531,19 @@
   "bonusDie": {
     "title": "额外投掷",
     "confirm": "确认",
+    "summary": {
+      "attackDamageBonus": "本次伤害 +{{amount}}",
+      "damage": "造成 {{amount}} 伤害",
+      "heal": "治疗 {{amount}}",
+      "loseCp": "对手失去 {{amount}} CP",
+      "inflictShame": "施加 {{count}} 层耻辱",
+      "inflictBlinded": "施加致盲",
+      "inflictEntangle": "施加缠绕",
+      "inflictConcussion": "施加脑震荡",
+      "inflictKnockdown": "施加击倒",
+      "gainBackStrike": "获得 {{count}} 个反击",
+      "backStrikeAtLimit": "反击已达上限，未额外获得"
+    },
     "effect": {
       "fist": "拳: 伤害 +2",
       "palm": "掌: 伤害 +3",

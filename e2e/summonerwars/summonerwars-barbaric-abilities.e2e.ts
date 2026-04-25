@@ -584,6 +584,16 @@ const prepareSpiritBondNoChargeMoveState = (coreState: any) => {
   return { state: next, shamanStart, shamanMoveTo, allyTargetPos };
 };
 
+const prepareSpiritBondTransferMoveState = (coreState: any) => {
+  const prepared = prepareSpiritBondNoChargeMoveState(coreState);
+  const shaman = prepared.state.board[prepared.shamanStart.row]?.[prepared.shamanStart.col]?.unit;
+  if (!shaman) {
+    throw new Error('未找到祖灵法师，无法准备 transfer 测试状态');
+  }
+  shaman.boosts = 1;
+  return prepared;
+};
+
 // ============================================================================
 // 测试用例
 // ============================================================================
@@ -697,6 +707,67 @@ test.describe('炽原精灵阵营特色交互', () => {
         path: getEvidenceScreenshotPath(testInfo, 'spirit-bond-no-charge-after-charge-self-shaman-unit', {
           filename: 'spirit-bond-no-charge-after-charge-self-shaman-unit.png',
         }),
+      });
+    } finally {
+      void hostContext.close().catch(() => {});
+      void guestContext.close().catch(() => {});
+    }
+  });
+
+  test('祖灵交流：转移充能后不应再次弹出“只能充能自身”', async ({ browser }, testInfo) => {
+    test.setTimeout(180000);
+    const baseURL = testInfo.project.use.baseURL as string | undefined;
+    const match = await setupSWOnlineMatch(browser, baseURL, 'barbaric', 'necromancer');
+    if (!match) { test.skip(true, 'Game server unavailable or room creation failed.'); return; }
+    const { hostPage, hostContext, guestContext } = match;
+    try {
+      const coreState = await readCoreState(hostPage);
+      const { state: spiritBondCore, shamanStart, shamanMoveTo, allyTargetPos } =
+        prepareSpiritBondTransferMoveState(coreState);
+      await applyCoreState(hostPage, spiritBondCore);
+      await closeDebugPanelIfOpen(hostPage);
+      await waitForPhase(hostPage, 'move');
+      await hostPage.waitForTimeout(600);
+
+      await clickBoardElement(hostPage, `[data-testid="sw-unit-${shamanStart.row}-${shamanStart.col}"][data-owner="0"]`);
+      await clickBoardElement(hostPage, `[data-testid="sw-cell-${shamanMoveTo.row}-${shamanMoveTo.col}"]`);
+      await hostPage.waitForTimeout(900);
+
+      const chargeSelfButton = hostPage.locator('button').filter({ hasText: /Charge Self|充能自身/i }).first();
+      const skipButton = hostPage.locator('button').filter({ hasText: /^Skip$|^跳过$/i }).first();
+      await expect(chargeSelfButton).toBeVisible({ timeout: 8000 });
+      await expect(skipButton).toBeVisible({ timeout: 8000 });
+
+      await hostPage.screenshot({
+        path: getEvidenceScreenshotPath(testInfo, 'spirit-bond-transfer-before-target', {
+          filename: 'spirit-bond-transfer-before-target.png',
+        }),
+        fullPage: false,
+      });
+
+      await clickBoardElement(hostPage, `[data-testid="sw-unit-${allyTargetPos.row}-${allyTargetPos.col}"][data-owner="0"]`);
+      await hostPage.waitForTimeout(900);
+
+      await expect.poll(async () => {
+        const state = await readCoreState(hostPage);
+        const shaman = state?.board?.[shamanMoveTo.row]?.[shamanMoveTo.col]?.unit;
+        const ally = state?.board?.[allyTargetPos.row]?.[allyTargetPos.col]?.unit;
+        return (shaman?.boosts ?? -1) === 0 && (ally?.boosts ?? -1) === 1;
+      }, { timeout: 10000 }).toBe(true);
+
+      await expect(skipButton).toBeHidden({ timeout: 6000 });
+      await expect(chargeSelfButton).toBeHidden({ timeout: 6000 });
+
+      // 回归保护：转移收口后不应再弹出第二轮 spirit_bond 选择。
+      await hostPage.waitForTimeout(1500);
+      await expect(skipButton).toBeHidden({ timeout: 4000 });
+      await expect(chargeSelfButton).toBeHidden({ timeout: 4000 });
+
+      await hostPage.screenshot({
+        path: getEvidenceScreenshotPath(testInfo, 'spirit-bond-transfer-after-resolve', {
+          filename: 'spirit-bond-transfer-after-resolve.png',
+        }),
+        fullPage: false,
       });
     } finally {
       void hostContext.close().catch(() => {});

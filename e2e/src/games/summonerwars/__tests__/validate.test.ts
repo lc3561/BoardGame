@@ -21,8 +21,29 @@ function createTestRandom(): RandomFn {
   return { shuffle: <T>(arr: T[]) => arr, random: () => 0.5, d: (max: number) => Math.ceil(max * 0.5) || 1, range: (min: number, max: number) => Math.floor(min + (max - min) * 0.5) };
 }
 
-function validate(core: SummonerWarsCore, type: string, payload: Record<string, unknown>, playerId?: string) {
+function validate(
+  core: SummonerWarsCore,
+  type: string,
+  payload: Record<string, unknown>,
+  playerId?: string,
+  options?: { tutorialActive?: boolean },
+) {
   const sys = createInitialSystemState(['0', '1'], []);
+  if (options?.tutorialActive) {
+    sys.tutorial = {
+      active: true,
+      manifestId: 'summonerwars-basic',
+      stepIndex: 0,
+      steps: [],
+      step: undefined,
+      manifestAllowManualSkip: false,
+      manifestRandomPolicy: undefined,
+      randomPolicy: undefined,
+      aiActions: undefined,
+      allowManualSkip: false,
+      pendingAnimationAdvance: false,
+    };
+  }
   return SummonerWarsDomain.validate({ core, sys }, { type, payload, playerId: playerId ?? '0' });
 }
 
@@ -95,6 +116,21 @@ describe('SELECT_FACTION 验证', () => {
     const r = validate(core, SW_COMMANDS.SELECT_FACTION, { factionId: 'necromancer' }, '1');
     expect(r.valid).toBe(false);
     expect(r.error).toContain('已被其他玩家选择');
+  });
+
+  it('教程初始化允许镜像阵营', () => {
+    const core = SummonerWarsDomain.setup(['0', '1'], createTestRandom());
+    core.selectedFactions['0'] = 'necromancer';
+
+    const r = validate(
+      core,
+      SW_COMMANDS.SELECT_FACTION,
+      { factionId: 'necromancer' },
+      '1',
+      { tutorialActive: true },
+    );
+
+    expect(r.valid).toBe(true);
   });
 
   it('无效阵营拒绝', () => {

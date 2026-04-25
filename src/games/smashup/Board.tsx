@@ -86,6 +86,23 @@ import { useMobileViewport } from '../../hooks/ui/useMobileViewport';
 import { useRuntimeViewport } from '../../hooks/ui/useRuntimeViewport';
 import { getSmashUpReactionWindowPresentation } from './domain/reactionWindowState';
 
+const ABILITY_FEEDBACK_DEFAULT_MESSAGES: Record<string, string> = {
+    'ui.extra_minion_granted': '获得{{count}}次额外随从机会',
+    'ui.extra_minion_granted_after_interaction': '获得{{count}}次额外随从机会，处理完当前交互流程后可使用',
+    'ui.extra_action_granted': '获得{{count}}次额外行动机会',
+    'ui.extra_action_granted_after_interaction': '获得{{count}}次额外行动机会，处理完当前交互流程后可使用',
+    'feedback.deck_search_no_match': '牌库中未找到符合条件的卡牌，已重洗牌库',
+    'feedback.deck_search_skipped': '跳过选择，已重洗牌库',
+    'feedback.no_valid_targets': '场上没有符合条件的目标',
+    'feedback.discard_empty': '弃牌堆中没有符合条件的卡牌',
+    'feedback.deck_empty': '牌库为空',
+    'feedback.hand_empty': '手牌中没有符合条件的卡牌',
+    'feedback.condition_not_met': '条件不满足，能力未生效',
+    'feedback.target_protected': '目标受到保护，能力未生效',
+    'feedback.not_highest_power': '本随从不是这里力量最高的，能力未生效',
+    'feedback.no_power_counters': '没有可移除的+1力量指示物',
+};
+
 type Props = GameBoardProps<SmashUpCore>;
 type BuriedPromptOptionValue = {
     cardUid?: string;
@@ -1398,15 +1415,7 @@ const SmashUpBoard: FC<Props> = ({ G, dispatch, playerID: rawPlayerID, reset, ma
         if (gameFeedbacks.length === 0) return;
         for (const fb of gameFeedbacks) {
             if (fb.playerId === playerID) {
-                const defaultMessage = fb.messageKey === 'ui.extra_minion_granted'
-                    ? '获得{{count}}次额外随从机会'
-                    : fb.messageKey === 'ui.extra_minion_granted_after_interaction'
-                    ? '获得{{count}}次额外随从机会，处理完当前交互流程后可使用'
-                    : fb.messageKey === 'ui.extra_action_granted'
-                    ? '获得{{count}}次额外行动机会'
-                    : fb.messageKey === 'ui.extra_action_granted_after_interaction'
-                    ? '获得{{count}}次额外行动机会，处理完当前交互流程后可使用'
-                    : '牌库中未找到符合条件的卡牌，已重洗牌库';
+                const defaultMessage = ABILITY_FEEDBACK_DEFAULT_MESSAGES[fb.messageKey] ?? '能力未生效';
                 toast(t(fb.messageKey, { defaultValue: defaultMessage, ...fb.messageParams }));
             }
             removeGameFeedback(fb.id);

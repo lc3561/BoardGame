@@ -1,5 +1,26 @@
 # Smash Up 10 周年三派系专项审计（2026-04-19）
 
+## 2026-04-25 重审记录：旧“专项审计已收口”结论失效
+
+- 失效对象：
+  - 本文档中“`三派系（Mermaids / Skeletons / World Champs）已完成专项审计与回归验证`”这一无条件收口表述。
+  - 本文档中 `D1 / D3 / D5 / D8 / D47` 对三派系整体给出 `✅ 命中` 的总括式结论。
+- 失效原因：
+  - 本文档把 `interactionTargetTypeAudit / interactionDefIdAudit / abilityBehaviorAudit / interactionCompletenessAudit` 这类 **L1 结构证据**，和 `newFactionAbilities.test.ts` 这类 **L2 行为证据**，外加“派系选择页 / 实施中横幅”E2E 这种 **展示证据**，混写成了“三派系玩法已收口”。
+  - 本文档没有给出 `World Champs` 关键能力的 **L3 真实入口玩法证据**。以 `world_champs_stoneford` 为例，当前证据只有：
+    - `src/games/smashup/__tests__/newFactionAbilities.test.ts` 中的引擎级单测；
+    - 选择页与横幅截图；
+    - 没有从真实对局入口打出 `Stoneford` 并完成“检索行动卡 -> 入手 -> 洗牌”的浏览器级证据。
+  - 2026-04-25 新增反证：`Skeletons` 整派系与 Wiki 对照后确认存在 **12/12 张牌语义错配**，不是单卡漏测；对应证据见 `evidence/smashup/smashup-skeletons-wiki-semantic-audit-2026-04-25.md`。
+  - 同日核对还确认：旧 Wiki 对比脚本 `scripts/scrape-wiki-with-descriptions.mjs` 根本没有纳入 `skeletons`，此前“Wiki 对比全绿”结论不覆盖该派系。
+  - 因此，旧结论不是“维度不够多”，而是把低层证据误当成高层收口。
+- 重审后的当前等级：
+  - **仍有残余范围**
+- 当前残余范围：
+  - `World Champs` 至少仍缺 `Stoneford` 等关键能力的真实入口玩法验证。
+  - `Skeletons` 当前已确认为整派系语义错录，必须按整派系重新 intake / 重新实现；旧文档中关于 `Skeletons` 的“0 缺口 / 已收口”口径全部失效。
+  - 旧文档中的“三派系整体已收口”不能继续引用；后续若引用本文件，必须连同本失效记录一起看。
+
 ## 审计范围
 - 派系：`mermaids`、`skeletons`、`world_champs`
 - 目标：确认三派系实施没有引入新的交互审计回归，并记录当前全局审计基线状态。
@@ -318,3 +339,122 @@
 - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-mermaids-banner.png`
 - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-skeletons-banner.png`
 - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-world-champs-banner.png`
+
+### 修订记录（2026-04-25 10:30）
+
+> 旧结论失效回写：上节“mermaids_toll_bay 触发窗口标记”口径已失效。按当前权威卡面文本，`mermaids_toll_bay` 为“选择基地后按对手随从数即时抽牌”，不包含“本回合后续移动再触发抽牌”的持续窗口语义。
+
+#### 失效原因
+- 先前记录把一轮临时排查分支当成最终语义，留下了“触发窗口 + reducer 写入”的描述；
+- 当前主线代码与测试已回归到卡面语义：即时抽牌链路，且无 `mermaidsTollBayActiveTurnByPlayer` 字段依赖。
+
+#### 当前权威实现与验证
+1. `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/newFactionAbilities.test.ts --configLoader native --maxWorkers 1`
+   - 结果：`170 passed / 1 skipped`
+   - `mermaids_toll_bay` 对应用例为：
+     - `mermaids_toll_bay 打出后按目标基地对手随从数立即抽牌`
+     - `mermaids_toll_bay 目标基地没有对手随从时不抽牌`
+2. `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/interactionTargetTypeAudit.test.ts src/games/smashup/__tests__/interactionDefIdAudit.test.ts src/games/smashup/__tests__/abilityBehaviorAudit.test.ts src/games/smashup/__tests__/interactionCompletenessAudit.test.ts --config vitest.config.audit.ts --configLoader native --maxWorkers 1`
+   - 结果：`36 passed`
+3. `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/smashup.smoke.test.ts --configLoader native --maxWorkers 1`
+   - 结果：`121 passed`
+4. `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup --configLoader native --maxWorkers 1`
+   - 结果：`146 files passed / 9 files skipped`，`1962 passed / 19 skipped`
+5. `npm run i18n:check`
+   - 结果：通过（`no missing keys detected`）
+6. `npm run test:e2e:ci -- e2e/smashup/smashup.e2e.ts`
+   - 结果：`3 passed`
+
+#### 资源链路补充复核
+- `npm run assets:upload`（2026-04-25）结果：`上传 1342，跳过 530，失败 1（socket hang up，网络瞬断）`
+- 随后对关键 URL 执行 HEAD 复核，均为 `200`：
+  - `https://assets.easyboardgame.top/official/i18n/zh-CN/smashup/cards/compressed/wangling.webp`
+  - `https://assets.easyboardgame.top/official/i18n/zh-CN/smashup/base/compressed/wangling_base.webp`
+  - `https://assets.easyboardgame.top/official/common/audio/bgm/Villains Music Pack Vol. 1/Maniac (RT 5.161)/compressed/Villains Maniac Main.ogg`
+
+### 修订记录（2026-04-25 11:55）：世界冠军图集索引错位
+
+> 本文档此前把 `World Champs` 的能力单测与结构审计误当成“玩法已收口”。本次已定位到更底层的数据录入错误，进一步证明旧总括结论不成立。
+
+- 新发现根因：
+  - `src/games/smashup/data/factions/world_champs.ts` 的 `previewRef.index` 与 `wangling.webp` 实际卡面顺序不一致。
+- 已证实的关键错位：
+  - `world_champs_akye_the_turtle` 修复前错误指向 `index 27`，而 `index 27` 实际卡面是 `武士酱`
+  - `world_champs_mummy` 修复前错误指向 `index 31`，而 `index 31` 实际卡面是 `斯通福德`
+- 影响：
+  - 引擎按正确 `defId` 执行能力，但玩家看到的是另一张卡的完整卡面，导致“效果和卡面不对应”。
+  - 因而旧文档里“`World Champs` 已完成专项审计与回归验证”的高层收口口径失效，不是因为维度数量少，而是因为缺少“卡面资源映射”这一层的逐卡核对。
+- 本次修复：
+  - 已将 `世界冠军` 20 张卡的 `previewRef.index` 全部校正到 `wangling.webp` 的真实顺序。
+- 本次验证：
+  1. `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/smashup.smoke.test.ts --configLoader native --maxWorkers 1`
+     - 结果：`122 passed`
+  2. `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/newFactionAbilities.test.ts --configLoader native --maxWorkers 1 --testNamePattern "world_champs_akye_the_turtle 可交给对手一张手牌并抽两张|world_champs_samurai_chan 打出时不应触发海龟阿凯式 onPlay 交互|world_champs_stoneford 从牌库检索行动卡后加入手牌并洗牌"`
+     - 结果：`3 passed`
+  3. `npm run i18n:check`
+     - 结果：通过
+- 对本文当前可保留的结论收紧为：
+  - `Mermaids` / `Skeletons` 本轮未发现同类图集错位；
+  - `World Champs` 旧收口失效，现已补齐“卡面映射”缺陷修复与回归证据，后续引用必须连同本修订记录一起看。
+
+### 追加回归（2026-04-25 11:40）：巨石阵附着天赋二次发动
+
+- 发现路径：`npm run test:e2e:ci -- e2e/smashup/smashup-gameplay.e2e.ts` 首轮出现 `1 failed / 6 passed`。
+- 失败用例：`巨石阵应允许己方随从上的附着天赋第2次发动，并占用基地双才能名额`。
+- 根因：`USE_TALENT` 的 `ongoingCardUid` 校验分支未复用巨石阵双才能例外（`ongoing.talentUsed` 直接拒绝）。
+- 修复文件：
+  - `src/games/smashup/domain/commands.ts`
+  - `e2e/src/games/smashup/domain/commands.ts`
+  - `src/games/smashup/__tests__/talentAbilities.test.ts`
+  - `e2e/src/games/smashup/__tests__/talentAbilities.test.ts`
+- 修复后验证：
+  1. `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/talentAbilities.test.ts --configLoader native --maxWorkers 1` → `22 passed`
+  2. `npm run test:e2e:ci:file -- e2e/smashup/smashup-gameplay.e2e.ts "巨石阵应允许己方随从上的附着天赋第2次发动，并占用基地双才能名额"` → `1 passed`
+  3. `npm run test:e2e:ci -- e2e/smashup/smashup-gameplay.e2e.ts` → `7 passed`
+  4. `npm run test:e2e:ci -- e2e/smashup/smashup.e2e.ts` → `3 passed`
+  5. `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/newFactionAbilities.test.ts src/games/smashup/__tests__/smashup.smoke.test.ts --configLoader native --maxWorkers 1` → `newFactionAbilities: 174 passed / 1 skipped`，`smoke: 121 passed`
+  6. 四审计套件复跑 → `36 passed`
+  7. `npm run i18n:check` → 通过
+
+- 关键截图（绝对路径）：
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\smashup\smashup-gameplay.e2e\巨石阵应允许己方随从上的附着天赋第2次发动，并占用基地双才能名额\werewolf-standing-stones-before-second-talent.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\smashup\smashup-gameplay.e2e\巨石阵应允许己方随从上的附着天赋第2次发动，并占用基地双才能名额\werewolf-standing-stones-after-second-talent.png`
+
+### 复核记录（2026-04-25 13:30）：去重测试块后全链路重跑
+
+> 触发原因：`talentAbilities.test.ts`（src/e2e 镜像）出现重复新增 case。已去重为单组断言后，按长期任务口径重新跑全链路，确保不是“靠重复测试通过”。
+
+#### 去重内容
+- 文件：
+  - `src/games/smashup/__tests__/talentAbilities.test.ts`
+  - `e2e/src/games/smashup/__tests__/talentAbilities.test.ts`
+- 处理：
+  - 仅保留 1 组“巨石阵附着行动卡第2次天赋可用/不可用”回归 case。
+
+#### 本轮复跑结果
+1. `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/talentAbilities.test.ts --configLoader native --maxWorkers 1`
+   - 结果：`20 passed`
+2. `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/newFactionAbilities.test.ts src/games/smashup/__tests__/smashup.smoke.test.ts --configLoader native --maxWorkers 1`
+   - 结果：`newFactionAbilities 179 passed / 1 skipped`，`smoke 122 passed`
+3. `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/interactionTargetTypeAudit.test.ts src/games/smashup/__tests__/interactionDefIdAudit.test.ts src/games/smashup/__tests__/abilityBehaviorAudit.test.ts src/games/smashup/__tests__/interactionCompletenessAudit.test.ts --config vitest.config.audit.ts --configLoader native --maxWorkers 1`
+   - 结果：`36 passed`
+4. `npm run i18n:check`
+   - 结果：通过
+5. `npm run test:e2e:ci -- e2e/smashup/smashup-gameplay.e2e.ts`
+   - 结果：`7 passed`
+6. `npm run test:e2e:ci -- e2e/smashup/smashup.e2e.ts`
+   - 结果：`3 passed`
+
+#### 本轮关键截图（绝对路径）
+- Gameplay（13:25）：
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\smashup\smashup-gameplay.e2e\巨石阵应允许己方随从上的附着天赋第2次发动，并占用基地双才能名额\werewolf-standing-stones-before-second-talent.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\smashup\smashup-gameplay.e2e\巨石阵应允许己方随从上的附着天赋第2次发动，并占用基地双才能名额\werewolf-standing-stones-after-second-talent.png`
+- 派系列表横幅（13:28）：
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-selection.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-mermaids-banner.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-skeletons-banner.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-world-champs-banner.png`
+
+#### 结论
+- 本轮计数变化（`talent 22 -> 20`）来自重复测试块去重，不是行为回退。
+- 去重后，三派系链路仍保持：能力回归 + 四审计套件 + i18n + gameplay E2E + 选择页 E2E 全绿。

@@ -2,7 +2,7 @@ import type { AbilityCard } from '../../types';
 import { DICETHRONE_CARD_ATLAS_IDS, SHADOW_THIEF_DICE_FACE_IDS } from '../../domain/ids';
 import { COMMON_CARDS, injectCommonCardPreviewRefs } from '../../domain/commonCards';
 import type { RandomFn } from '../../../../engine/types';
-import { DAGGER_STRIKE_2, PICKPOCKET_2, KIDNEY_SHOT_2, SHADOW_DEFENSE_2, FEARLESS_RIPOSTE_2, SHADOW_DANCE_2, STEAL_2, CORNUCOPIA_2 } from './abilities';
+import { DAGGER_STRIKE_2, PICKPOCKET_2, KIDNEY_SHOT_2, SHADOW_DEFENSE_2, FEARLESS_RIPOSTE_2, SHADOW_DANCE_2, STEAL_2, CORNUCOPIA_2, SHADOW_THIEF_SFX_LOOT } from './abilities';
 
 /** 卡牌文本 i18n key 生成 */
 const cardText = (id: string, field: 'name' | 'description') => `cards.${id}.${field}`;
@@ -114,6 +114,7 @@ export const SHADOW_THIEF_CARDS: AbilityCard[] = [
         cpCost: 0,
         timing: 'instant',
         description: cardText('action-shadow-coins', 'description'),
+        sfxKey: SHADOW_THIEF_SFX_LOOT,
         previewRef: { type: 'atlas', atlasId: DICETHRONE_CARD_ATLAS_IDS.SHADOW_THIEF, index: 8 },
         effects: [{ description: '暗影币结算', action: { type: 'custom', target: 'self', customActionId: 'shadow_thief-shadow-coins' }, timing: 'immediate' }]
     },

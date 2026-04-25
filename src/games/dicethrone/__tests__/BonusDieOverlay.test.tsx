@@ -282,13 +282,20 @@ describe('BonusDieOverlay', () => {
             />
         );
 
-        expect(html).toContain('2个弓面：伤害+2');
+        expect(html).toContain('bonusDie.summary.attackDamageBonus:amount=2');
+        expect(html).toContain('bonusDie.summary.inflictEntangle');
         expect(html).not.toContain('bonusDie.effect.volley.result');
     });
 
     it('通用卡牌掷骰 key 应解析为最终结果而不是卡面说明', () => {
         const context = {
-            t: (key: string) => key,
+            t: (key: string, options?: Record<string, string | number>) => {
+                if (!options) return key;
+                const params = Object.entries(options)
+                    .map(([paramKey, value]) => `${paramKey}=${value}`)
+                    .join(',');
+                return `${key}:${params}`;
+            },
             i18n: {
                 resolvedLanguage: 'zh-CN',
                 language: 'zh-CN',
@@ -307,6 +314,11 @@ describe('BonusDieOverlay', () => {
         expect(resolveBonusDieText('bonusDie.effect.thunderStrikeDie', context, { value: 4 })).toBe('本骰点数 4 计入最终伤害');
         expect(resolveBonusDieText('bonusDie.effect.barbarianSuppress', context, { value: 5 })).toBe('本骰点数 5 计入最终伤害；总和达阈值会触发额外效果');
         expect(resolveBonusDieText('bonusDie.effect.pyroBlast2Die', context, { value: 6 }, 'meteor')).toBe('陨石: 施加击倒');
+        expect(resolveBonusDieText('bonusDie.effect.samuraiMasamune.result', context, {
+            katanaCount: 2,
+            appliedShameCount: 1,
+            grantedRetributionCount: 1,
+        })).toBe('bonusDie.summary.attackDamageBonus:amount=2；bonusDie.summary.inflictShame:count=1；bonusDie.summary.gainBackStrike:count=1');
     });
 
     it('同批卡牌与额外骰事件会把骰子绑定到卡牌特写，而不是直接丢失', async () => {

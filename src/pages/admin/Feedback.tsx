@@ -341,6 +341,7 @@ export default function AdminFeedbackPage() {
     const [activeId, setActiveId] = useState<string | null>(null);
     const [isPolling, setIsPolling] = useState(false);
     const [previewImage, setPreviewImage] = useState<string | null>(null);
+    const [aiPayloadPreview, setAiPayloadPreview] = useState<string | null>(null);
     const [page, setPage] = useState(1);
     const [total, setTotal] = useState(0);
     const [limit, setLimit] = useState(PAGE_LIMIT);
@@ -567,7 +568,10 @@ export default function AdminFeedbackPage() {
 
     return (
         <div className="mx-auto flex h-full min-h-0 w-full max-w-[1880px] flex-col gap-1 px-2 py-1">
-            <div className="flex flex-none flex-col gap-1 rounded-lg border border-zinc-200 bg-white px-2.5 py-2 shadow-sm">
+            <div
+                className="flex flex-none flex-col gap-1 rounded-lg border border-zinc-200 bg-white px-2.5 py-2 shadow-sm"
+                data-testid="feedback-list-controls"
+            >
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     <h1 className="text-sm font-semibold text-zinc-900">{t('feedback.title')}</h1>
                     <span className="rounded-md bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600">
@@ -727,17 +731,17 @@ export default function AdminFeedbackPage() {
             </div>
 
             <div className="grid flex-1 min-h-0 gap-1.5 xl:grid-cols-[minmax(0,1fr)_312px] 2xl:grid-cols-[minmax(0,1fr)_330px]">
-                <section className="min-h-0 overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm">
+                <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm">
                     {loading ? (
-                        <div className="flex h-full items-center justify-center py-20">
+                        <div className="flex flex-1 items-center justify-center py-20">
                             <RefreshCw className="animate-spin text-zinc-300" size={24} />
                         </div>
                     ) : feedbacks.length === 0 ? (
-                        <div className="flex h-full items-center justify-center px-6 text-center text-sm text-zinc-400">
+                        <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-zinc-400">
                             {t('feedback.table.empty')}
                         </div>
                     ) : (
-                        <div className="h-full min-h-0 overflow-auto">
+                        <div className="flex-1 min-h-0 max-h-[calc(100vh-260px)] overflow-auto" data-testid="feedback-list-scroll">
                             <table className="w-full table-fixed text-[11px]">
                                 <thead className="sticky top-0 z-10 bg-zinc-50/95 backdrop-blur">
                                     <tr className="text-left text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-400">
@@ -799,17 +803,19 @@ export default function AdminFeedbackPage() {
                     t={t}
                     onStatusUpdate={handleStatusUpdate}
                     onDelete={handleDelete}
+                    onAiPayloadCopy={setAiPayloadPreview}
                     onImageClick={setPreviewImage}
                 />
             </div>
 
             <div className="flex flex-none items-center justify-between rounded-lg border border-zinc-200 bg-white px-3 py-2 shadow-sm">
-                <div className="text-[11px] text-zinc-500">
-                    第 {page} / {totalPages} 页
+                <div className="text-[11px] text-zinc-500" data-testid="feedback-pagination-indicator">
+                    {page} / {totalPages}
                 </div>
                 <div className="flex items-center gap-2">
                     <button
                         type="button"
+                        data-testid="feedback-pagination-prev"
                         onClick={() => setPage((current) => Math.max(1, current - 1))}
                         disabled={page <= 1 || loading}
                         className="inline-flex h-7 items-center gap-1 rounded-md border border-zinc-200 px-2 text-[11px] font-medium text-zinc-600 transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40"
@@ -819,6 +825,7 @@ export default function AdminFeedbackPage() {
                     </button>
                     <button
                         type="button"
+                        data-testid="feedback-pagination-next"
                         onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
                         disabled={page >= totalPages || loading}
                         className="inline-flex h-7 items-center gap-1 rounded-md border border-zinc-200 px-2 text-[11px] font-medium text-zinc-600 transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40"
@@ -828,6 +835,16 @@ export default function AdminFeedbackPage() {
                     </button>
                 </div>
             </div>
+
+            {aiPayloadPreview && (
+                <textarea
+                    readOnly
+                    wrap="off"
+                    value={aiPayloadPreview}
+                    data-testid="feedback-ai-payload-viewer"
+                    className="min-h-[220px] w-full rounded-lg border border-zinc-200 bg-zinc-950 p-3 font-mono text-[11px] leading-5 text-emerald-200 shadow-sm"
+                />
+            )}
 
             <ImageLightbox src={previewImage} onClose={() => setPreviewImage(null)} />
         </div>
@@ -876,6 +893,8 @@ function FeedbackRow({
 
     return (
         <tr
+            data-testid="feedback-row"
+            data-feedback-id={item._id}
             onClick={onActivate}
             className={cn(
                 'group cursor-pointer border-b border-zinc-100 transition-colors',
@@ -916,6 +935,20 @@ function FeedbackRow({
                             {hasActionLog && <ScrollText size={10} title={t('feedback.actionLog.title')} />}
                             {hasSnapshot && <span title={t('feedback.stateSnapshot.title')}>JSON</span>}
                         </div>
+                        {active && item.clientContext?.route && (
+                            <div className="mt-1 text-[10px] leading-4 text-zinc-500">
+                                {item.clientContext.route}
+                            </div>
+                        )}
+                        {active && item.errorContext && (
+                            <div
+                                data-testid="feedback-error-context-panel"
+                                className="mt-1 rounded-md border border-red-100 bg-red-50 px-2 py-1 text-[10px] leading-4 text-red-700"
+                            >
+                                <div className="font-semibold">{item.errorContext.name || '-'}</div>
+                                <div>{item.errorContext.message || '-'}</div>
+                            </div>
+                        )}
                     </div>
                 </div>
             </td>
@@ -1018,6 +1051,7 @@ function FeedbackDetailPanel({
     t,
     onStatusUpdate,
     onDelete,
+    onAiPayloadCopy,
     onImageClick,
 }: {
     item: FeedbackItem | null;
@@ -1027,6 +1061,7 @@ function FeedbackDetailPanel({
     t: TFunction<'admin'>;
     onStatusUpdate: (id: string, status: string) => void;
     onDelete: (id: string) => void;
+    onAiPayloadCopy: (payloadText: string) => void;
     onImageClick: (src: string) => void;
 }) {
     const [snapshotCopied, setSnapshotCopied] = useState(false);
@@ -1150,7 +1185,7 @@ function FeedbackDetailPanel({
                     )}
                     {item.stateSnapshot && <MetaBadge>JSON</MetaBadge>}
                     <div className="ml-auto">
-                        <CopyFeedbackButton item={item} t={t} />
+                        <CopyFeedbackButton item={item} t={t} onAiPayloadCopy={onAiPayloadCopy} />
                     </div>
                 </div>
             </div>
@@ -1243,9 +1278,28 @@ function FeedbackDetailPanel({
                     </div>
                 </section>
 
+                {item.errorContext && (
+                    <section
+                        data-testid="feedback-error-context-panel"
+                        className="rounded-lg border border-red-100 bg-red-50 p-2.5"
+                    >
+                        <p className="mb-2 text-[10px] font-medium uppercase tracking-wide text-red-400">
+                            错误上下文
+                        </p>
+                        <div className="space-y-1 text-xs text-red-700">
+                            <p>{item.errorContext.name || '-'}</p>
+                            <p>{item.errorContext.message || '-'}</p>
+                            <p>{item.errorContext.source || '-'}</p>
+                        </div>
+                    </section>
+                )}
+
                 {item.actionLog && (
                     <details className="rounded-lg border border-zinc-200 bg-white p-2.5" open>
-                        <summary className="cursor-pointer text-[11px] font-medium text-zinc-500 hover:text-zinc-700">
+                        <summary
+                            data-testid="feedback-action-log-toggle"
+                            className="cursor-pointer text-[11px] font-medium text-zinc-500 hover:text-zinc-700"
+                        >
                             {t('feedback.actionLog.title')}
                         </summary>
                         <pre className="mt-2 max-h-56 overflow-auto rounded-lg border border-zinc-200 bg-zinc-100 p-2.5 font-mono text-[11px] leading-relaxed text-zinc-600 whitespace-pre-wrap">
@@ -1256,7 +1310,10 @@ function FeedbackDetailPanel({
 
                 {item.stateSnapshot && (
                     <details className="rounded-lg border border-zinc-200 bg-white p-2.5">
-                        <summary className="flex cursor-pointer items-center gap-2 text-[11px] font-medium text-zinc-500 hover:text-zinc-700">
+                        <summary
+                            data-testid="feedback-state-snapshot-toggle"
+                            className="flex cursor-pointer items-center gap-2 text-[11px] font-medium text-zinc-500 hover:text-zinc-700"
+                        >
                             <ScrollText size={12} />
                             {t('feedback.stateSnapshot.title')}
                         </summary>

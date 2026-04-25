@@ -165,6 +165,7 @@ export function validateCommand(
   command: { type: string; payload: unknown; playerId?: string }
 ): ValidationResult {
   const core = state.core;
+  const isTutorialActive = state.sys?.tutorial?.active === true;
   const playerId = core.currentPlayer;
   const payload = command.payload as Record<string, unknown>;
 
@@ -174,11 +175,13 @@ export function validateCommand(
       const factionId = payload.factionId as string;
       if (!VALID_FACTION_IDS.includes(factionId as FactionId)) return { valid: false, error: '无效的阵营 ID' };
       const selectingPlayerId = (command.playerId as PlayerId | undefined) ?? playerId;
-      const selectedByOtherPlayer = Object.entries(core.selectedFactions)
-        .some(([selectedPlayerId, selectedFactionId]) => (
-          selectedPlayerId !== selectingPlayerId && selectedFactionId === factionId
-        ));
-      if (selectedByOtherPlayer) return { valid: false, error: '该阵营已被其他玩家选择' };
+      if (!isTutorialActive) {
+        const selectedByOtherPlayer = Object.entries(core.selectedFactions)
+          .some(([selectedPlayerId, selectedFactionId]) => (
+            selectedPlayerId !== selectingPlayerId && selectedFactionId === factionId
+          ));
+        if (selectedByOtherPlayer) return { valid: false, error: '该阵营已被其他玩家选择' };
+      }
       return { valid: true };
     }
 

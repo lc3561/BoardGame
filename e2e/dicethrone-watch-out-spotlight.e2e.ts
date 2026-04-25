@@ -1849,6 +1849,12 @@ test.skip('samurai righteousness should resolve a visible bonus-die branch again
     const bonusDieOverlay = page.locator('[data-testid="bonus-die-overlay"]');
     await expect(bonusDieOverlay).toBeVisible({ timeout: 5000 });
     await expect(bonusDieOverlay).toContainText(/samuraiRighteousnessKatana|武士刀：\+2 伤害|\+2\s*伤害/i, { timeout: 5000 });
+    await savePageEvidenceScreenshot(
+        page,
+        testInfo,
+        'samurai-righteousness-should-resolve-a-valid-branch-against-monk',
+        '09-samurai-righteousness-bonus-die-overlay.png',
+    );
 
     await page.waitForFunction(() => {
         const state = (window as any).__BG_TEST_HARNESS__?.state?.get();
@@ -1879,7 +1885,25 @@ test.skip('samurai righteousness should resolve a visible bonus-die branch again
     expect(stateAfterPlay.effectKey).toBe('bonusDie.effect.samuraiRighteousnessKatana');
     expect(stateAfterPlay.shame).toBe(0);
 
-    await game.screenshot('09-samurai-righteousness-vs-monk', testInfo);
+    await bonusDieOverlay.click({ force: true });
+    await expect(bonusDieOverlay).toBeHidden({ timeout: 5000 });
+    await savePageEvidenceScreenshot(
+        page,
+        testInfo,
+        'samurai-righteousness-should-resolve-a-valid-branch-against-monk',
+        '09-samurai-righteousness-bonus-die-closed.png',
+    );
+    await expect.poll(async () => {
+        const state = await game.getState();
+        return state?.core?.pendingBonusDiceSettlement ?? null;
+    }, { timeout: 5000 }).toBeNull();
+
+    await savePageEvidenceScreenshot(
+        page,
+        testInfo,
+        'samurai-righteousness-should-resolve-a-valid-branch-against-monk',
+        '09-samurai-righteousness-vs-monk.png',
+    );
 });
 
 test.skip('samurai zanshin should show 5-die settlement and mixed samurai effects against paladin', async ({ page, game }, testInfo) => {
@@ -1950,6 +1974,7 @@ test.skip('samurai zanshin should show 5-die settlement and mixed samurai effect
 
 test('samurai righteousness should resolve a valid branch against monk', async ({ page, game }, testInfo) => {
     test.setTimeout(DICETHRONE_TEST_TIMEOUT_MS);
+    await clearEvidenceScreenshotsForTest(testInfo);
 
     await game.openTestGame('dicethrone', {}, DICETHRONE_OPEN_TIMEOUT_MS);
     await waitForTestHarness(page, 40000);
@@ -2004,6 +2029,12 @@ test('samurai righteousness should resolve a valid branch against monk', async (
 
     const activeBadge = page.locator('[data-testid="active-modifier-badge"]');
     await expect(bonusDieOverlay).toContainText(/samuraiRighteousnessKatana|武士刀：\+2 伤害|Katana:\s*\+2 damage|\+2\s*(伤害|damage)/i, { timeout: 5000 });
+    await savePageEvidenceScreenshot(
+        page,
+        testInfo,
+        'samurai-righteousness-should-resolve-a-valid-branch-against-monk',
+        '09-samurai-righteousness-bonus-die-overlay.png',
+    );
     await expect(activeBadge).toBeVisible({ timeout: 5000 });
     await expect(activeBadge).toContainText(/攻击修正\s*\+2|Attack Modifier\s*\+2/i, { timeout: 5000 });
     expect(stateAfterPlay.attackModifierBonusDamage).toBe(2);
@@ -2011,11 +2042,29 @@ test('samurai righteousness should resolve a valid branch against monk', async (
     expect(stateAfterPlay.shame).toBe(0);
     expect(stateAfterPlay.samuraiRetribution).toBe(0);
 
-    await game.screenshot('09-samurai-righteousness-vs-monk', testInfo);
+    await bonusDieOverlay.click({ force: true });
+    await expect(bonusDieOverlay).toBeHidden({ timeout: 5000 });
+    await savePageEvidenceScreenshot(
+        page,
+        testInfo,
+        'samurai-righteousness-should-resolve-a-valid-branch-against-monk',
+        '09-samurai-righteousness-bonus-die-closed.png',
+    );
+    await expect.poll(async () => {
+        const state = await game.getState();
+        return state?.core?.pendingBonusDiceSettlement ?? null;
+    }, { timeout: 5000 }).toBeNull();
+    await savePageEvidenceScreenshot(
+        page,
+        testInfo,
+        'samurai-righteousness-should-resolve-a-valid-branch-against-monk',
+        '09-samurai-righteousness-vs-monk.png',
+    );
 });
 
 test('samurai zanshin should settle 5 bonus dice and synchronize effects against paladin', async ({ page, game }, testInfo) => {
     test.setTimeout(DICETHRONE_TEST_TIMEOUT_MS);
+    await clearEvidenceScreenshotsForTest(testInfo);
 
     await game.openTestGame('dicethrone', {}, DICETHRONE_OPEN_TIMEOUT_MS);
     await waitForTestHarness(page, 40000);
@@ -2044,7 +2093,21 @@ test('samurai zanshin should settle 5 bonus dice and synchronize effects against
     }, { timeout: 10000, polling: 200 });
 
     await expect(bonusDieOverlay).toContainText(/Dice Results|投掷结果/i, { timeout: 5000 });
-    await expect(bonusDieOverlay).toContainText(/2.*(武士刀|Katana).*1.*(耻辱|Shame).*2.*(反击|Back Strike)/i, { timeout: 5000 });
+    await expect(bonusDieOverlay).toContainText(
+        /(本次)?(伤害\s*\+?2|\+?2\s*(伤害|damage)).*(施加\s*1\s*(层)?耻辱|1\s*Shame).*(获得\s*1\s*个反击|1\s*Back Strike)/i,
+        { timeout: 5000 },
+    );
+    await page.waitForFunction(() => {
+        const overlay = document.querySelector('[data-testid="bonus-die-overlay"]');
+        if (!overlay) return false;
+        return overlay.querySelectorAll('.animate-pulse').length >= 5;
+    }, { timeout: 12000, polling: 100 });
+    await saveLocatorEvidenceScreenshot(
+        bonusDieOverlay,
+        testInfo,
+        'samurai-zanshin-should-settle-5-bonus-dice-and-synchronize-effects-against-paladin',
+        '10-samurai-zanshin-bonus-die-overlay.png',
+    );
 
     const stateAfterPlay = await page.evaluate(() => {
         const state = (window as any).__BG_TEST_HARNESS__?.state?.get();
@@ -2092,14 +2155,31 @@ test('samurai zanshin should settle 5 bonus dice and synchronize effects against
     expect(stateAfterPlay.attackBonusDamage).toBe(2);
     expect(stateAfterPlay.totalBonusDamage).toBe(2);
     expect(stateAfterPlay.paladinShame).toBe(1);
-    expect(stateAfterPlay.samuraiRetribution).toBe(2);
+    // 真相源（tip.webp）标注反击（samurai_retribution）堆叠上限为 1；
+    // 即使 5 颗奖励骰里掷出 2 个旭日，授予结果也应被 clamp 到 1。
+    expect(stateAfterPlay.samuraiRetribution).toBe(1);
 
     const activeBadge = page.locator('[data-testid="active-modifier-badge"]');
     await expect(activeBadge).toBeVisible({ timeout: 5000 });
     await expect(activeBadge).toContainText(/攻击修正\s*\+2|Attack Modifier\s*\+2/i, { timeout: 5000 });
-
-    await page.waitForTimeout(900);
-    await game.screenshot('10-samurai-zanshin-vs-paladin', testInfo);
+    await bonusDieOverlay.click({ force: true });
+    await expect(bonusDieOverlay).toBeHidden({ timeout: 5000 });
+    await savePageEvidenceScreenshot(
+        page,
+        testInfo,
+        'samurai-zanshin-should-settle-5-bonus-dice-and-synchronize-effects-against-paladin',
+        '10-samurai-zanshin-bonus-die-closed.png',
+    );
+    await expect.poll(async () => {
+        const state = await game.getState();
+        return state?.core?.pendingBonusDiceSettlement ?? null;
+    }, { timeout: 5000 }).toBeNull();
+    await savePageEvidenceScreenshot(
+        page,
+        testInfo,
+        'samurai-zanshin-should-settle-5-bonus-dice-and-synchronize-effects-against-paladin',
+        '10-samurai-zanshin-vs-paladin.png',
+    );
 });
 
 test('samurai honor token should accumulate to +3 after two real clicks', async ({ page, game }, testInfo) => {

@@ -750,6 +750,8 @@ export function LocalGameProvider({
     const randomRef = useRef<LocalProviderRandom>(initialRandom);
     const onCommandRejectedRef = useRef(onCommandRejected);
     const lastAiAttemptKeyRef = useRef<string | null>(null);
+    const aiDelayGateBySeatRef = useRef<Record<string, number>>({});
+    const aiCommandEffectByTokenRef = useRef<Record<string, { hasStateDelta: boolean; markerProgressed: boolean }>>({});
     const [aiRetryVersion, setAiRetryVersion] = useState(0);
     const aiActivePhaseRef = useRef<{ key: string; startedAt: number } | null>(null);
     const aiRuntimeTruthKeyRef = useRef<string | null>(null);
@@ -963,6 +965,7 @@ export function LocalGameProvider({
                 return;
             }
             lastAiAttemptKeyRef.current = null;
+            aiDelayGateBySeatRef.current = {};
             setAiRetryVersion((version) => version + 1);
         });
     }, [localPregameControlledPlayerId, seatControllers]);
@@ -1044,6 +1047,18 @@ export function LocalGameProvider({
 
             if (!result.success) {
                 console.warn('[LocalGame] 命令执行失败:', type, result.error);
+                const rejectedPayload = {
+                    gameId: config.gameId,
+                    matchId: `local:${config.gameId}:${seed}`,
+                    commandType: type,
+                    playerId: resolvedPlayerId,
+                    error: result.error ?? 'command_failed',
+                    isTutorialAiCommand,
+                    phase: typeof prev.sys?.phase === 'string' ? prev.sys.phase : null,
+                    turnNumber: typeof prev.sys?.turnNumber === 'number' ? prev.sys.turnNumber : null,
+                };
+                localAiPerfLogger.warn('command-rejected', rejectedPayload);
+                emitLocalAiPerf('command-rejected', rejectedPayload);
                 // AI 命令失败时静默，不弹 toast 打扰用户
                 if (!isTutorialAiCommand) {
                     onCommandRejectedRef.current?.(type, result.error ?? 'command_failed');
@@ -1053,6 +1068,53 @@ export function LocalGameProvider({
 
             // 实时刷新交互选项（如果策略是 realtime）
             const refreshedState = refreshInteractionOptions(result.state);
+            if (isTutorialAiCommand) {
+                const playerBefore = (prev.core as {
+                    players?: Record<string, { hand?: unknown; resources?: Record<string, unknown> }>;
+                } | undefined)?.players?.[resolvedPlayerId];
+                const playerAfter = (refreshedState.core as {
+                    players?: Record<string, { hand?: unknown; resources?: Record<string, unknown> }>;
+                } | undefined)?.players?.[resolvedPlayerId];
+                const handCountBefore = Array.isArray(playerBefore?.hand) ? playerBefore.hand.length : null;
+                const handCountAfter = Array.isArray(playerAfter?.hand) ? playerAfter.hand.length : null;
+                const cpBefore = (() => {
+                    const resources = playerBefore?.resources;
+                    if (!resources || typeof resources !== 'object') return null;
+                    const cp = resources.cp;
+                    if (typeof cp === 'number') return cp;
+                    const uppercaseCp = resources.CP;
+                    return typeof uppercaseCp === 'number' ? uppercaseCp : null;
+                })();
+                const cpAfter = (() => {
+                    const resources = playerAfter?.resources;
+                    if (!resources || typeof resources !== 'object') return null;
+                    const cp = resources.cp;
+                    if (typeof cp === 'number') return cp;
+                    const uppercaseCp = resources.CP;
+                    return typeof uppercaseCp === 'number' ? uppercaseCp : null;
+                })();
+                const markerBefore = buildAiProgressMarker(prev);
+                const markerAfter = buildAiProgressMarker(refreshedState);
+                const appliedPayload = {
+                    gameId: config.gameId,
+                    matchId: `local:${config.gameId}:${seed}`,
+                    commandType: type,
+                    playerId: resolvedPlayerId,
+                    progressed: markerBefore !== markerAfter,
+                    phaseBefore: typeof prev.sys?.phase === 'string' ? prev.sys.phase : null,
+                    phaseAfter: typeof refreshedState.sys?.phase === 'string' ? refreshedState.sys.phase : null,
+                    turnBefore: typeof prev.sys?.turnNumber === 'number' ? prev.sys.turnNumber : null,
+                    turnAfter: typeof refreshedState.sys?.turnNumber === 'number' ? refreshedState.sys.turnNumber : null,
+                    handCountBefore,
+                    handCountAfter,
+                    cpBefore,
+                    cpAfter,
+                    markerBefore,
+                    markerAfter,
+                };
+                localAiPerfLogger.info('command-applied', appliedPayload);
+                emitLocalAiPerf('command-applied', appliedPayload);
+            }
             // 立即同步 ref，避免 AI 无进展检测读取到渲染前的旧快照而误触发重复重试
             stateRef.current = refreshedState;
             return refreshedState;
@@ -1074,11 +1136,13 @@ export function LocalGameProvider({
         const hasAiSeat = Object.values(seatControllers).some((controller) => controller.type !== 'human');
         if (!hasAiSeat) {
             lastAiAttemptKeyRef.current = null;
+            aiDelayGateBySeatRef.current = {};
             return;
         }
 
         if (localPregameControlledPlayerId) {
             lastAiAttemptKeyRef.current = null;
+            aiDelayGateBySeatRef.current = {};
             return;
         }
 
@@ -1128,10 +1192,9 @@ export function LocalGameProvider({
             const actionDelayTargetMs = fastTrackActionDelay
                 ? 0
                 : resolveAiMinimumActionDelayMs(controller);
-            const remainingDelayMs = Math.max(
-                0,
-                actionDelayTargetMs - (Date.now() - startedAt),
-            );
+            const delayGateUntil = aiDelayGateBySeatRef.current[resolution.playerId] ?? 0;
+            const gateDelayMs = Math.max(0, delayGateUntil - Date.now());
+            const remainingDelayMs = gateDelayMs;
             const commandTypes = resolution.action.commands.map((command) => command.type);
             const activePhaseElapsedMs = aiActivePhaseRef.current
                 ? decisionResolvedAt - aiActivePhaseRef.current.startedAt
@@ -1149,6 +1212,8 @@ export function LocalGameProvider({
                 activePhaseElapsedMs,
                 fastTrackActionDelay,
                 actionDelayTargetMs,
+                delayGateUntil,
+                gateDelayMs,
                 remainingDelayMs,
             });
             emitLocalAiPerf('scheduled', {
@@ -1163,6 +1228,8 @@ export function LocalGameProvider({
                 activePhaseElapsedMs,
                 fastTrackActionDelay,
                 actionDelayTargetMs,
+                delayGateUntil,
+                gateDelayMs,
                 remainingDelayMs,
             });
 
@@ -1180,15 +1247,98 @@ export function LocalGameProvider({
                 return;
             }
 
-            for (const command of resolution.action.commands) {
+            let hasAnyCommandEffect = false;
+            for (const [commandIndex, command] of resolution.action.commands.entries()) {
                 const normalizedPayload = command.payload && typeof command.payload === 'object'
                     ? command.payload as Record<string, unknown>
                     : {};
+                const playerBefore = (stateRef.current.core as {
+                    players?: Record<string, { hand?: unknown; resources?: Record<string, unknown> }>;
+                } | undefined)?.players?.[resolution.playerId];
+                const handCountBefore = Array.isArray(playerBefore?.hand) ? playerBefore.hand.length : null;
+                const cpBefore = (() => {
+                    const resources = playerBefore?.resources;
+                    if (!resources || typeof resources !== 'object') return null;
+                    const cp = resources.cp;
+                    if (typeof cp === 'number') return cp;
+                    const uppercaseCp = resources.CP;
+                    return typeof uppercaseCp === 'number' ? uppercaseCp : null;
+                })();
+                const markerBeforeCommand = buildAiProgressMarker(stateRef.current);
+                const phaseBeforeCommand = typeof stateRef.current.sys?.phase === 'string'
+                    ? stateRef.current.sys.phase
+                    : null;
+                const eventStreamNextIdBefore = typeof stateRef.current.sys?.eventStream?.nextId === 'number'
+                    ? stateRef.current.sys.eventStream.nextId
+                    : null;
                 dispatch(command.type, {
                     ...normalizedPayload,
                     __tutorialPlayerId: resolution.playerId,
                     __tutorialAiCommand: true,
                 });
+                const markerAfterCommand = buildAiProgressMarker(stateRef.current);
+                const playerAfter = (stateRef.current.core as {
+                    players?: Record<string, { hand?: unknown; resources?: Record<string, unknown> }>;
+                } | undefined)?.players?.[resolution.playerId];
+                const handCountAfter = Array.isArray(playerAfter?.hand) ? playerAfter.hand.length : null;
+                const cpAfter = (() => {
+                    const resources = playerAfter?.resources;
+                    if (!resources || typeof resources !== 'object') return null;
+                    const cp = resources.cp;
+                    if (typeof cp === 'number') return cp;
+                    const uppercaseCp = resources.CP;
+                    return typeof uppercaseCp === 'number' ? uppercaseCp : null;
+                })();
+                const phaseAfterCommand = typeof stateRef.current.sys?.phase === 'string'
+                    ? stateRef.current.sys.phase
+                    : null;
+                const eventStreamNextIdAfter = typeof stateRef.current.sys?.eventStream?.nextId === 'number'
+                    ? stateRef.current.sys.eventStream.nextId
+                    : null;
+                const progressed = markerAfterCommand !== markerBeforeCommand;
+                const hasStateDelta = progressed
+                    || handCountBefore !== handCountAfter
+                    || cpBefore !== cpAfter
+                    || phaseBeforeCommand !== phaseAfterCommand
+                    || eventStreamNextIdBefore !== eventStreamNextIdAfter;
+                if (hasStateDelta) {
+                    hasAnyCommandEffect = true;
+                }
+                const commandProgressPayload = {
+                    gameId: config.gameId,
+                    matchId: `local:${config.gameId}:${seed}`,
+                    playerId: resolution.playerId,
+                    source: resolution.source,
+                    actionKind: resolution.action.kind,
+                    commandType: command.type,
+                    commandIndex,
+                    commandTotal: resolution.action.commands.length,
+                    progressed,
+                    hasStateDelta,
+                    handCountBefore,
+                    handCountAfter,
+                    cpBefore,
+                    cpAfter,
+                    phaseBefore: phaseBeforeCommand,
+                    phaseAfter: phaseAfterCommand,
+                    eventStreamNextIdBefore,
+                    eventStreamNextIdAfter,
+                    markerBefore: markerBeforeCommand,
+                    markerAfter: markerAfterCommand,
+                };
+                if (hasStateDelta) {
+                    localAiPerfLogger.info('command-progress', commandProgressPayload);
+                    emitLocalAiPerf('command-progress', commandProgressPayload);
+                    continue;
+                }
+                localAiPerfLogger.warn('command-no-progress', commandProgressPayload);
+                emitLocalAiPerf('command-no-progress', commandProgressPayload);
+            }
+
+            if (actionDelayTargetMs > 0 && !fastTrackActionDelay && hasAnyCommandEffect) {
+                aiDelayGateBySeatRef.current[resolution.playerId] = Date.now() + actionDelayTargetMs;
+            } else {
+                delete aiDelayGateBySeatRef.current[resolution.playerId];
             }
 
             const totalElapsedMs = Date.now() - startedAt;
@@ -1200,6 +1350,9 @@ export function LocalGameProvider({
                 actionKind: resolution.action.kind,
                 commandTypes,
                 decisionElapsedMs,
+                hasAnyCommandEffect,
+                delayGateUntil,
+                gateDelayMs,
                 activePhaseElapsedMs: aiActivePhaseRef.current
                     ? Date.now() - aiActivePhaseRef.current.startedAt
                     : null,
@@ -1213,6 +1366,9 @@ export function LocalGameProvider({
                 actionKind: resolution.action.kind,
                 commandTypes,
                 decisionElapsedMs,
+                hasAnyCommandEffect,
+                delayGateUntil,
+                gateDelayMs,
                 activePhaseElapsedMs: aiActivePhaseRef.current
                     ? Date.now() - aiActivePhaseRef.current.startedAt
                     : null,
@@ -1231,6 +1387,9 @@ export function LocalGameProvider({
                         ? Date.now() - aiActivePhaseRef.current.startedAt
                         : null,
                     actionDelayTargetMs,
+                    hasAnyCommandEffect,
+                    delayGateUntil,
+                    gateDelayMs,
                     remainingDelayMs,
                     totalElapsedMs,
                 });
@@ -1246,6 +1405,9 @@ export function LocalGameProvider({
                         ? Date.now() - aiActivePhaseRef.current.startedAt
                         : null,
                     actionDelayTargetMs,
+                    hasAnyCommandEffect,
+                    delayGateUntil,
+                    gateDelayMs,
                     remainingDelayMs,
                     totalElapsedMs,
                 });

@@ -1000,20 +1000,34 @@ describe('Test Routes Integration', () => {
                 ]);
 
                 const player0SyncPromise = waitForClientSocketEvent<
-                    [string, { core: { counter: number } }, Array<{ id: number }>, { seed: string; cursor: number }]
+                    [
+                        string,
+                        { core: { counter: number } },
+                        Array<{ id: number }>,
+                        { seed: string; cursor: number },
+                        { stateID: number }
+                    ]
                 >(player0Socket, 'state:sync');
                 player0Socket.emit('sync', matchID, '0', player0Credentials);
-                const [player0SyncMatchID, player0State] = await player0SyncPromise;
+                const [player0SyncMatchID, player0State, , , player0SyncMeta] = await player0SyncPromise;
                 expect(player0SyncMatchID).toBe(matchID);
                 expect(player0State.core.counter).toBe(0);
+                expect(player0SyncMeta.stateID).toBe(0);
 
                 const player1SyncPromise = waitForClientSocketEvent<
-                    [string, { core: { counter: number } }, Array<{ id: number }>, { seed: string; cursor: number }]
+                    [
+                        string,
+                        { core: { counter: number } },
+                        Array<{ id: number }>,
+                        { seed: string; cursor: number },
+                        { stateID: number }
+                    ]
                 >(player1Socket, 'state:sync');
                 player1Socket.emit('sync', matchID, '1', player1Credentials);
-                const [player1SyncMatchID, player1State] = await player1SyncPromise;
+                const [player1SyncMatchID, player1State, , , player1SyncMeta] = await player1SyncPromise;
                 expect(player1SyncMatchID).toBe(matchID);
                 expect(player1State.core.counter).toBe(0);
+                expect(player1SyncMeta.stateID).toBe(0);
 
                 const connectedMatchResponse = await fetch(`${baseURL}/games/lifecycle-game/${matchID}`);
                 expect(connectedMatchResponse.status).toBe(200);

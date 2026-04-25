@@ -1,4 +1,4 @@
-# Smash Up 10 周年三派系选择页 E2E 证据（更新于 2026-04-24）
+# Smash Up 10 周年三派系选择页 E2E 证据（更新于 2026-04-25）
 
 ## 验证范围
 
@@ -107,6 +107,56 @@ node scripts/infra/run-e2e-command.mjs isolated e2e/smashup/smashup.e2e.ts --gre
   - 三派系仍保持同一套斜向“实施中”横幅样式；
   - 页面未出现“分批实施/持续完善”长文案回流；
   - 选派系总览与三张局部横幅截图可直接复查。
+- 本次复测截图（绝对路径）：
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-selection.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-mermaids-banner.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-skeletons-banner.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-world-champs-banner.png`
+
+## 复测记录（2026-04-25 09:56）
+
+- 触发原因：继续执行“三派系审计工作”批次，确认统一斜向横幅在最新主线仍稳定可见。
+- 复测命令：
+  - `npm run test:e2e:ci -- e2e/smashup/smashup.e2e.ts`
+- 复测结果：
+  - 整文件 `3 passed`（含横幅用例）。
+- 肉眼核图结论：
+  - 三派系卡面（Mermaids / Skeletons / World Champs）均可见且都有“实施中”斜向横幅；
+  - 横幅样式一致（无第二套实施中样式回流）；
+  - 未出现“分批实施/持续完善”长文案。
+- 本次截图时间（UTC）：`2026-04-25T01:56:04Z` 至 `2026-04-25T01:56:06Z`
+- 本次复测截图（绝对路径）：
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-selection.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-mermaids-banner.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-skeletons-banner.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-world-champs-banner.png`
+
+## 复测记录（2026-04-25 11:36）
+
+- 触发原因：修复“巨石阵附着天赋二次发动”后，对派系列表页进行同轮回归，确认统一“实施中”横幅未回归。
+- 复测命令：
+  - `npm run test:e2e:ci -- e2e/smashup/smashup.e2e.ts`
+- 结果：
+  - 整文件 `3 passed`（横幅用例继续通过）。
+- 本次截图时间（UTC）：
+  - `2026-04-25T03:36:27Z` ~ `2026-04-25T03:36:28Z`
+- 本次复测截图（绝对路径）：
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-selection.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-mermaids-banner.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-skeletons-banner.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-world-champs-banner.png`
+
+## 复测记录（2026-04-25 13:28）
+
+- 触发原因：去重 `talentAbilities` 重复 case 后，按长期任务口径再次跑整文件，确认“实施中”横幅样式未被连带影响。
+- 复测命令：
+  - `npm run test:e2e:ci -- e2e/smashup/smashup.e2e.ts`
+- 结果：
+  - 整文件 `3 passed`（横幅用例继续通过）。
+- 肉眼结论：
+  - Mermaids / Skeletons / World Champs 三派系均显示同一套斜向“实施中”横幅；
+  - 未出现第二套“实施中”样式；
+  - 未出现“分批实施/持续完善”长文案回流。
 - 本次复测截图（绝对路径）：
   - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-selection.png`
   - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-mermaids-banner.png`

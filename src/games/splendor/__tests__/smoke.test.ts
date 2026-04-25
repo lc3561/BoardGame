@@ -86,7 +86,7 @@ describe('splendor smoke', () => {
         expect(resolveAudioKey({
             type: 'TOKENS_GAINED',
             payload: { playerId: '0', tokens: { gold: 1 } },
-        } as AudioEvent)).toBe('coins.decks_and_cards_sound_fx_pack.big_coin_drop_001');
+        } as AudioEvent)).toBe('coins.decks_and_cards_sound_fx_pack.small_reward_001');
     });
 
     test('audio config distinguishes reserve source and purchase flow', () => {

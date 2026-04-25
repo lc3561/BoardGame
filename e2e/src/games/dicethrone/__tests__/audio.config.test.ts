@@ -7,7 +7,9 @@ import { DICETHRONE_AUDIO_CONFIG } from '../audio.config';
 import { STATUS_IDS, TOKEN_IDS } from '../domain/ids';
 import { ALL_TOKEN_DEFINITIONS } from '../domain/characters';
 import { MONK_ABILITIES } from '../heroes/monk/abilities';
-import { GUNSLINGER_ABILITIES, GUNSLINGER_SFX_HEAVY, GUNSLINGER_SFX_SHOT, GUNSLINGER_SFX_ULTIMATE } from '../heroes/gunslinger/abilities';
+import { GUNSLINGER_ABILITIES, GUNSLINGER_SFX_BOUNTY, GUNSLINGER_SFX_HEAVY, GUNSLINGER_SFX_LOADED, GUNSLINGER_SFX_SHOT, GUNSLINGER_SFX_ULTIMATE } from '../heroes/gunslinger/abilities';
+import { SHADOW_THIEF_ABILITIES, SHADOW_THIEF_SFX_LOOT, SHADOW_THIEF_SFX_STEAL } from '../heroes/shadow_thief/abilities';
+import { SHADOW_THIEF_CARDS } from '../heroes/shadow_thief/cards';
 import { SAMURAI_ABILITIES, SAMURAI_SFX_DEFENSE, SAMURAI_SFX_HEAVY, SAMURAI_SFX_LIGHT, SAMURAI_SFX_ULTIMATE } from '../heroes/samurai/abilities';
 import { SAMURAI_TOKEN_SFX_HONOR, SAMURAI_TOKEN_SFX_RETRIBUTION, SAMURAI_TOKEN_SFX_SHAME } from '../heroes/samurai/tokens';
 import type { AudioEvent } from '../../../lib/audio/types';
@@ -193,6 +195,13 @@ describe('DiceThrone 音效配置', () => {
     });
 
     describe('新英雄技能音效配置', () => {
+        it('影贼金币相关技能应切到更贴题的新素材', () => {
+            expect(SHADOW_THIEF_ABILITIES.find(a => a.id === 'steal')?.sfxKey).toBe(SHADOW_THIEF_SFX_STEAL);
+            expect(SHADOW_THIEF_ABILITIES.find(a => a.id === 'cornucopia')?.sfxKey).toBe(SHADOW_THIEF_SFX_LOOT);
+            expect(SHADOW_THIEF_SFX_STEAL).toBe('coins.decks_and_cards_sound_fx_pack.gold_pouch_handle_001');
+            expect(SHADOW_THIEF_SFX_LOOT).toBe('coins.decks_and_cards_sound_fx_pack.fair_reward_001');
+        });
+
         it('枪手核心技能应配置枪械主题音效', () => {
             expect(GUNSLINGER_ABILITIES.find(a => a.id === 'revolver')?.sfxKey).toBe(ABILITY_SFX_KEYS.revolver);
             expect(GUNSLINGER_ABILITIES.find(a => a.id === 'showdown')?.sfxKey).toBe(ABILITY_SFX_KEYS.showdown);
@@ -233,6 +242,16 @@ describe('DiceThrone 音效配置', () => {
     });
 
     describe('枪手 / 武士手牌音效配置', () => {
+        it('影贼金币主题手牌应返回卡牌级奖励音效', () => {
+            const shadowCoinsCard: AudioEvent = {
+                type: 'CARD_PLAYED',
+                payload: { playerId: '0', cardId: 'action-shadow-coins', cpCost: 0 },
+            };
+
+            expect(SHADOW_THIEF_CARDS.find(card => card.id === 'action-shadow-coins')?.sfxKey).toBe(SHADOW_THIEF_SFX_LOOT);
+            expect(resolveKey(shadowCoinsCard)).toBe(SHADOW_THIEF_SFX_LOOT);
+        });
+
         it('枪手打出主题手牌时应返回卡牌级专属音效', () => {
             const gunslingerShotCard: AudioEvent = {
                 type: 'CARD_PLAYED',
@@ -318,6 +337,16 @@ describe('DiceThrone 音效配置', () => {
             for (const bgm of DICETHRONE_AUDIO_CONFIG.bgm!) {
                 expect(registryMap.has(bgm.key), `BGM key 不在 registry: ${bgm.key}`).toBe(true);
             }
+        });
+    });
+
+    describe('枪手 Token 音效配置', () => {
+        it('装填与赏金应暴露更贴题的枪械/悬赏音效', () => {
+            const loaded = ALL_TOKEN_DEFINITIONS.find(token => token.id === TOKEN_IDS.LOADED);
+            const bounty = ALL_TOKEN_DEFINITIONS.find(token => token.id === TOKEN_IDS.BOUNTY);
+
+            expect(loaded?.sfxKey).toBe(GUNSLINGER_SFX_LOADED);
+            expect(bounty?.sfxKey).toBe(GUNSLINGER_SFX_BOUNTY);
         });
     });
 

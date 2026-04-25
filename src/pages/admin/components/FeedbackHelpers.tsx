@@ -1,8 +1,31 @@
 import { useState } from 'react';
-import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import type { TFunction } from 'i18next';
 import { Check, Copy } from 'lucide-react';
 import { cn } from '../../../lib/utils';
+
+interface FeedbackClientContext {
+    route?: string;
+    mode?: string;
+    matchId?: string;
+    playerId?: string;
+    gameId?: string;
+    appVersion?: string;
+    userAgent?: string;
+    viewport?: {
+        width: number;
+        height: number;
+    };
+    language?: string;
+    timezone?: string;
+}
+
+interface FeedbackErrorContext {
+    message?: string;
+    name?: string;
+    stack?: string;
+    source?: string;
+}
 
 interface FeedbackItemLike {
     _id: string;
@@ -10,6 +33,7 @@ interface FeedbackItemLike {
         _id: string;
         username: string;
         avatar?: string;
+        email?: string;
     };
     content: string;
     type: 'bug' | 'suggestion' | 'other';
@@ -23,10 +47,8 @@ interface FeedbackItemLike {
     contactInfo?: string;
     actionLog?: string;
     stateSnapshot?: string;
-    errorContext?: {
-        source?: string;
-        name?: string;
-    };
+    clientContext?: FeedbackClientContext;
+    errorContext?: FeedbackErrorContext;
     createdAt: string;
 }
 
@@ -36,12 +58,319 @@ function createEmbeddedImageRegExp(): RegExp {
     return new RegExp(EMBEDDED_IMG_RE.source, EMBEDDED_IMG_RE.flags);
 }
 
+function extractEmbeddedImages(content: string) {
+    return Array.from(content.matchAll(EMBEDDED_IMG_RE), (match) => ({
+        alt: match[1] || '',
+        src: match[2],
+    }));
+}
+
+function parseOperationLogs(actionLog?: string): unknown[] {
+    if (!actionLog?.trim()) return [];
+    try {
+        const parsed = JSON.parse(actionLog);
+        if (Array.isArray(parsed)) return parsed;
+        return [parsed];
+    } catch {
+        return actionLog
+            .split('\n')
+            .map((line) => line.trim())
+            .filter(Boolean);
+    }
+}
+
+function parseStateSnapshot(stateSnapshot?: string): unknown | null {
+    if (!stateSnapshot?.trim()) return null;
+    try {
+        return JSON.parse(stateSnapshot);
+    } catch {
+        return { parseError: true, raw: stateSnapshot };
+    }
+}
+
+function inferGameId(stateSnapshot: unknown, fallbackGameId?: string, fallbackGameName?: string): string | null {
+    if (stateSnapshot && typeof stateSnapshot === 'object' && 'gameId' in stateSnapshot) {
+        const gameId = (stateSnapshot as { gameId?: unknown }).gameId;
+        if (typeof gameId === 'string' && gameId.trim()) {
+            return gameId;
+        }
+    }
+    if (fallbackGameId?.trim()) return fallbackGameId;
+    if (fallbackGameName?.trim()) return fallbackGameName;
+    return null;
+}
+
+function normalizeInlineText(value: string): string {
+    return value.replace(/\s+/g, ' ').trim();
+}
+
+function truncateInlineText(value: string, maxLength = 160): string {
+    const normalized = normalizeInlineText(value);
+    if (normalized.length <= maxLength) return normalized;
+    return `${normalized.slice(0, Math.max(0, maxLength - 1))}...`;
+}
+
+function toRecord(value: unknown): Record<string, unknown> | null {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    return value as Record<string, unknown>;
+}
+
+function formatInlineValue(value: unknown, depth = 0): string {
+    if (value == null) return '';
+    if (typeof value === 'string') return truncateInlineText(value, depth === 0 ? 120 : 48);
+    if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') return String(value);
+    if (Array.isArray(value)) {
+        const items = value
+            .slice(0, depth === 0 ? 4 : 2)
+            .map((entry) => formatInlineValue(entry, depth + 1))
+            .filter(Boolean);
+        if (items.length === 0) return `items=${value.length}`;
+        const suffix = value.length > items.length ? ` +${value.length - items.length}` : '';
+        return `${items.join('/')}${suffix}`;
+    }
+
+    const record = toRecord(value);
+    if (!record) return '';
+
+    const keys = Object.keys(record);
+    const entries = keys
+        .filter((key) => record[key] != null)
+        .slice(0, depth === 0 ? 4 : 2)
+        .map((key) => {
+            const formatted = formatInlineValue(record[key], depth + 1);
+            return formatted ? `${key}=${formatted}` : '';
+        })
+        .filter(Boolean);
+
+    if (entries.length === 0) return '';
+    const suffix = keys.length > entries.length ? `, +${keys.length - entries.length}` : '';
+    return `${entries.join(', ')}${suffix}`;
+}
+
+function summarizeOperationLogs(actionLog?: string): string | null {
+    const logs = parseOperationLogs(actionLog);
+    if (logs.length === 0) return null;
+
+    const preview = logs.slice(0, 4).map((entry, index) => {
+        const formatted = formatInlineValue(entry);
+        return `${index + 1}.${formatted || 'unknown'}`;
+    });
+    const suffix = logs.length > preview.length ? `; +${logs.length - preview.length}条` : '';
+    return `${preview.join('; ')}${suffix}`;
+}
+
+function summarizeStateSnapshot(stateSnapshot: unknown): string | null {
+    const snapshot = toRecord(stateSnapshot);
+    if (!snapshot) return formatInlineValue(stateSnapshot) || null;
+
+    if (snapshot.parseError === true && typeof snapshot.raw === 'string') {
+        return `parseError=${truncateInlineText(snapshot.raw, 120)}`;
+    }
+
+    const core = toRecord(snapshot.core);
+    const sys = toRecord(snapshot.sys);
+    const interaction = toRecord(toRecord(sys?.interaction)?.current);
+    const responseWindow = toRecord(toRecord(sys?.responseWindow)?.current);
+    const topField = Array.isArray(snapshot.field) ? snapshot.field : null;
+    const coreField = Array.isArray(core?.field) ? core.field : null;
+    const field = topField ?? coreField;
+
+    const gameId = inferGameId(stateSnapshot)
+        ?? (typeof core?.gameId === 'string' ? core.gameId : null);
+    const turn = snapshot.turn ?? core?.turn ?? snapshot.round ?? core?.round;
+    const currentPlayer = snapshot.currentPlayer ?? core?.currentPlayer;
+    const phase = snapshot.phase ?? core?.phase;
+    const players = toRecord(snapshot.players) ?? toRecord(core?.players);
+    const parts = [
+        gameId ? `game=${gameId}` : '',
+        turn != null ? `turn=${String(turn)}` : '',
+        currentPlayer != null ? `player=${String(currentPlayer)}` : '',
+        phase != null ? `phase=${String(phase)}` : '',
+        players ? `players=${Object.keys(players).length}` : '',
+    ].filter(Boolean);
+
+    if (field) {
+        const fieldPreview = field.slice(0, 3).map((entry) => {
+            const unit = toRecord(entry);
+            if (!unit) return formatInlineValue(entry);
+            const card = toRecord(unit.card);
+            const unitId = typeof unit.id === 'string'
+                ? unit.id
+                : typeof card?.defId === 'string'
+                    ? card.defId
+                    : 'unknown';
+            const owner = unit.owner != null ? `@${String(unit.owner)}` : '';
+            return `${unitId}${owner}`;
+        }).filter(Boolean);
+        const suffix = field.length > fieldPreview.length ? ', ...' : '';
+        parts.push(`field=${field.length}${fieldPreview.length > 0 ? `(${fieldPreview.join(', ')}${suffix})` : ''}`);
+    }
+
+    if (interaction) {
+        const interactionType = typeof interaction.type === 'string' ? interaction.type : 'unknown';
+        const interactionPlayer = interaction.playerId != null ? `@${String(interaction.playerId)}` : '';
+        parts.push(`interaction=${interactionType}${interactionPlayer}`);
+    }
+
+    if (responseWindow) {
+        const triggerEvent = toRecord(responseWindow.triggerEvent);
+        if (typeof triggerEvent?.type === 'string') {
+            parts.push(`response=${triggerEvent.type}`);
+        }
+    }
+
+    if (parts.length > 0) return parts.join(', ');
+
+    const keys = Object.keys(snapshot).slice(0, 8);
+    return keys.length > 0 ? `keys=${keys.join(', ')}` : null;
+}
+
+function measureTextBlock(value?: string | null): { chars: number; lines: number } | null {
+    if (!value?.trim()) return null;
+    const normalized = value.replace(/\r\n/g, '\n');
+    return {
+        chars: normalized.length,
+        lines: normalized.split('\n').length,
+    };
+}
+
+function prettyPrintJson(raw?: string | null): string | null {
+    if (!raw?.trim()) return null;
+    try {
+        return JSON.stringify(JSON.parse(raw), null, 2);
+    } catch {
+        return raw.trim();
+    }
+}
+
+function buildClientContextLines(context: FeedbackClientContext | null | undefined): string[] {
+    if (!context) return ['- 未附带客户端上下文'];
+
+    return [
+        `- route: ${context.route || '-'}`,
+        `- mode: ${context.mode || '-'}`,
+        `- matchId: ${context.matchId || '-'}`,
+        `- playerId: ${context.playerId || '-'}`,
+        `- gameId: ${context.gameId || '-'}`,
+        `- appVersion: ${context.appVersion || '-'}`,
+        `- language: ${context.language || '-'}`,
+        `- timezone: ${context.timezone || '-'}`,
+        `- viewport: ${context.viewport ? `${context.viewport.width}x${context.viewport.height}` : '-'}`,
+        `- userAgent: ${context.userAgent || '-'}`,
+    ];
+}
+
+function buildErrorContextLines(context: FeedbackErrorContext | null | undefined): string[] {
+    if (!context) return ['- 未附带错误上下文'];
+
+    return [
+        `- source: ${context.source || '-'}`,
+        `- name: ${context.name || '-'}`,
+        `- message: ${context.message || '-'}`,
+    ];
+}
+
 export function extractText(content: string, t: TFunction<'admin'>): string {
     return content.replace(EMBEDDED_IMG_RE, '').trim() || t('feedback.content.onlyImage');
 }
 
 export function hasEmbeddedImage(content: string): boolean {
     return createEmbeddedImageRegExp().test(content);
+}
+
+export function buildFeedbackAiDiagnosticPacket(item: FeedbackItemLike, t: TFunction<'admin'>): string {
+    const parsedSnapshot = parseStateSnapshot(item.stateSnapshot);
+    const inferredGameId = inferGameId(parsedSnapshot, item.clientContext?.gameId, item.gameName);
+    const gameLabel = item.gameName && inferredGameId && item.gameName !== inferredGameId
+        ? `${item.gameName}(${inferredGameId})`
+        : item.gameName ?? inferredGameId;
+    const reporter = item.userId?.username || t('feedback.anonymous');
+    const screenshots = extractEmbeddedImages(item.content);
+    const operationSummary = summarizeOperationLogs(item.actionLog);
+    const stateSummary = summarizeStateSnapshot(parsedSnapshot);
+    const actionLogMetrics = measureTextBlock(item.actionLog);
+    const stateSnapshotMetrics = measureTextBlock(item.stateSnapshot);
+    const prettyActionLog = prettyPrintJson(item.actionLog);
+    const prettyStateSnapshot = prettyPrintJson(item.stateSnapshot);
+    const errorStack = item.errorContext?.stack?.trim() || null;
+    const contentText = extractText(item.content, t);
+
+    return [
+        '# AI 排障诊断包',
+        '',
+        '请基于下面的完整证据链定位问题。输出时优先给出：问题复述、最可疑模块或状态字段、验证步骤、如果证据不足还缺什么。',
+        '',
+        '## 1. 工单信息',
+        `- 反馈ID: ${item._id}`,
+        `- 时间: ${formatAbsoluteTime(item.createdAt)}`,
+        `- 类型: ${t(`feedback.type.${item.type}`)}`,
+        `- 严重度: ${t(`feedback.severity.${item.severity}`)}`,
+        `- 状态: ${t(`feedback.status.${item.status}`)}`,
+        gameLabel ? `- 游戏: ${gameLabel}` : '',
+        `- 提交人: ${reporter}`,
+        item.contactInfo ? `- 联系方式: ${item.contactInfo}` : '',
+        '',
+        '## 2. 用户反馈原文',
+        contentText,
+        '',
+        '## 3. 证据索引',
+        `- 内嵌截图: ${screenshots.length} 张`,
+        ...screenshots.map((image, index) => `- 截图${index + 1}: ${image.alt || '未命名截图'}`),
+        screenshots.length > 0
+            ? '- 说明: 为避免把 base64 图片正文污染对话上下文，复制文本只保留截图索引，原图请回后台反馈详情查看。'
+            : '',
+        `- 操作日志: ${actionLogMetrics ? `${actionLogMetrics.lines} 行 / ${actionLogMetrics.chars} 字符` : '未附带'}`,
+        `- 状态快照: ${stateSnapshotMetrics ? `${stateSnapshotMetrics.lines} 行 / ${stateSnapshotMetrics.chars} 字符` : '未附带'}`,
+        stateSummary ? `- 状态摘要: ${stateSummary}` : '',
+        errorStack ? `- 错误堆栈: ${measureTextBlock(errorStack)?.lines ?? 0} 行` : '- 错误堆栈: 未附带',
+        '',
+        '## 4. 客户端上下文',
+        ...buildClientContextLines(item.clientContext),
+        '',
+        '## 5. 错误上下文',
+        ...buildErrorContextLines(item.errorContext),
+        ...(errorStack
+            ? [
+                '',
+                '### 错误堆栈',
+                '```text',
+                errorStack,
+                '```',
+            ]
+            : []),
+        ...(operationSummary
+            ? [
+                '',
+                '## 6. 操作日志摘要',
+                operationSummary,
+            ]
+            : []),
+        ...(prettyActionLog
+            ? [
+                '',
+                '## 7. 操作日志原文',
+                '```json',
+                prettyActionLog,
+                '```',
+            ]
+            : []),
+        ...(stateSummary
+            ? [
+                '',
+                '## 8. 状态快照摘要',
+                stateSummary,
+            ]
+            : []),
+        ...(prettyStateSnapshot
+            ? [
+                '',
+                '## 9. 状态快照原文',
+                '```json',
+                prettyStateSnapshot,
+                '```',
+            ]
+            : []),
+    ].filter(Boolean).join('\n');
 }
 
 export function FeedbackContent({
@@ -114,128 +443,49 @@ export function FeedbackContent({
     return <div className="space-y-3">{parts}</div>;
 }
 
-function compressStateSnapshot(stateJson: string): string {
-    try {
-        const state = JSON.parse(stateJson);
-        const lines: string[] = [];
-
-        lines.push('=== 游戏状态快照（压缩版）===');
-        lines.push(`游戏: ${state.gameId || 'unknown'}`);
-        lines.push(`回合: P${state.core?.currentPlayer ?? '?'} | 阶段: ${state.core?.phase ?? '?'}`);
-
-        if (state.core?.players) {
-            lines.push('\n--- 玩家 ---');
-            Object.entries(state.core.players).forEach(([pid, player]: [string, any]) => {
-                const resources = player.resources
-                    ? Object.entries(player.resources).map(([key, value]) => `${key}:${value}`).join(' ')
-                    : '';
-                lines.push(`P${pid}: HP=${player.hp ?? '?'} ${resources} | 手牌=${player.hand?.length ?? 0} 牌库=${player.deck?.length ?? 0} 弃牌=${player.discard?.length ?? 0}`);
-            });
-        }
-
-        if (state.core?.field && state.core.field.length > 0) {
-            lines.push('\n--- 场上 ---');
-            state.core.field.forEach((unit: any, index: number) => {
-                const tags = unit.tags ? Object.keys(unit.tags).join(',') : '';
-                lines.push(`[${index}] ${unit.card?.defId ?? '?'} (P${unit.owner}) HP=${unit.hp ?? '?'} ${tags ? `[${tags}]` : ''}`);
-            });
-        }
-
-        if (state.sys?.interaction?.current) {
-            const interaction = state.sys.interaction.current;
-            lines.push('\n--- 交互 ---');
-            lines.push(`类型: ${interaction.type} | 玩家: P${interaction.playerId}`);
-            lines.push(`选项数: ${interaction.data?.options?.length ?? 0}`);
-        }
-
-        if (state.sys?.responseWindow?.current) {
-            lines.push('\n--- 响应窗口 ---');
-            lines.push(`触发事件: ${state.sys.responseWindow.current.triggerEvent?.type ?? '?'}`);
-        }
-
-        if (state.sys?.eventStream?.entries) {
-            const recent = state.sys.eventStream.entries.slice(-10);
-            if (recent.length > 0) {
-                lines.push('\n--- 最近事件 ---');
-                recent.forEach((entry: any) => {
-                    let params = '';
-                    if (entry.payload) {
-                        const payload = entry.payload;
-                        if (payload.playerId !== undefined) params += ` P${payload.playerId}`;
-                        if (payload.targetId !== undefined) params += ` -> ${payload.targetId}`;
-                        if (payload.damage !== undefined) params += ` dmg=${payload.damage}`;
-                        if (payload.amount !== undefined) params += ` amt=${payload.amount}`;
-                        if (payload.cardDefId) params += ` [${payload.cardDefId}]`;
-                        if (payload.abilityId) params += ` {${payload.abilityId}}`;
-                    }
-                    lines.push(`${entry.id}: ${entry.type}${params}`);
-                });
-            }
-        }
-
-        return lines.join('\n');
-    } catch (err) {
-        return `[状态解析失败: ${err instanceof Error ? err.message : '未知错误'}]`;
-    }
-}
-
 export function CopyFeedbackButton({
     item,
     t,
+    onAiPayloadCopy,
 }: {
     item: FeedbackItemLike;
     t: TFunction<'admin'>;
+    onAiPayloadCopy: (payloadText: string) => void;
 }) {
     const [copied, setCopied] = useState(false);
     const [copiedJson, setCopiedJson] = useState(false);
 
-    const handleCopy = (event: ReactMouseEvent) => {
+    const handleCopy = (event: React.MouseEvent) => {
         event.stopPropagation();
-        const submitter = item.userId?.username || t('feedback.anonymous');
-        const reporterType = item.reporterType ?? (item.contactInfo === 'system:online-ai-watchdog'
-            || item.errorContext?.source === 'online-ai-watchdog'
-            || /^\[system\]\[online-ai-watchdog\]\s+/.test(item.content)
-            ? 'system'
-            : 'user');
-        const source = item.source
-            ?? (reporterType === 'system' ? 'online-ai-watchdog' : 'feedback-modal');
-        const parts = [
-            `【${t(`feedback.type.${item.type}`)}】【${t(`feedback.severity.${item.severity}`)}】`,
-            item.gameName ? `游戏: ${item.gameName}` : '',
-            `提交者: ${submitter}`,
-            `来源: ${t(`feedback.reporterType.${reporterType}`)} / ${source}`,
-            `时间: ${new Date(item.createdAt).toLocaleString('zh-CN')}`,
-            '',
-            '--- 反馈内容 ---',
-            extractText(item.content, t),
-            item.actionLog ? `\n--- 操作日志 ---\n${item.actionLog}` : '',
-            item.stateSnapshot ? `\n--- 游戏状态 ---\n${compressStateSnapshot(item.stateSnapshot)}` : '',
-        ].filter(Boolean).join('\n');
-
-        navigator.clipboard.writeText(parts).then(() => {
+        const payloadText = buildFeedbackAiDiagnosticPacket(item, t);
+        navigator.clipboard.writeText(payloadText).then(() => {
+            onAiPayloadCopy(payloadText);
             setCopied(true);
             setTimeout(() => setCopied(false), 2000);
-        });
+        }).catch(() => undefined);
     };
 
-    const handleCopyJson = (event: ReactMouseEvent) => {
+    const handleCopyJson = (event: React.MouseEvent) => {
         event.stopPropagation();
         if (!item.stateSnapshot) return;
 
         navigator.clipboard.writeText(item.stateSnapshot).then(() => {
             setCopiedJson(true);
             setTimeout(() => setCopiedJson(false), 2000);
-        });
+        }).catch(() => undefined);
     };
 
     return (
-        <div className="inline-flex items-center gap-1">
+        <div className="inline-flex items-center gap-1" data-testid="feedback-copy-actions" data-feedback-id={item._id}>
             <button
                 type="button"
+                data-testid="feedback-copy-ai-payload"
                 onClick={handleCopy}
                 className={cn(
-                    'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs transition-colors',
-                    copied ? 'bg-emerald-50 text-emerald-600' : 'text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600'
+                    'inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs transition-colors',
+                    copied
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                        : 'border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50 hover:text-zinc-800'
                 )}
                 title={t('feedback.actions.copyAll')}
             >
@@ -245,10 +495,13 @@ export function CopyFeedbackButton({
             {item.stateSnapshot && (
                 <button
                     type="button"
+                    data-testid="feedback-copy-state-json"
                     onClick={handleCopyJson}
                     className={cn(
-                        'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs transition-colors',
-                        copiedJson ? 'bg-emerald-50 text-emerald-600' : 'text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600'
+                        'inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs transition-colors',
+                        copiedJson
+                            ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                            : 'border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50 hover:text-zinc-800'
                     )}
                     title={t('feedback.stateSnapshot.copy')}
                 >

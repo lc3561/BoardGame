@@ -280,8 +280,15 @@ describe('Feature: incremental-state-sync', () => {
   }
 
   /** 模拟服务端发送 state:sync 全量同步 */
-  function simulateSync(state: unknown, matchPlayers = [{ id: 0 }]) {
-    mockSocket.simulateEvent('state:sync', 'test-match', state, matchPlayers, { seed: 'abc', cursor: 0 });
+  function simulateSync(state: unknown, matchPlayers = [{ id: 0 }], stateID = 0) {
+    mockSocket.simulateEvent(
+      'state:sync',
+      'test-match',
+      state,
+      matchPlayers,
+      { seed: 'abc', cursor: 0 },
+      { stateID },
+    );
   }
 
   /** 模拟服务端发送 state:update 全量更新 */
@@ -317,10 +324,9 @@ describe('Feature: incremental-state-sync', () => {
             const onStateUpdate = vi.fn();
             const { client } = createConnectedClient({ onStateUpdate });
 
-            // 建立初始状态：通过 state:sync + state:update 设置 lastReceivedStateID
+            // 建立初始状态：sync 后立即建立 stateID 基线
             const initialState = { core: { turn: 0 } };
-            simulateSync(initialState);
-            simulateUpdate(initialState, { stateID: lastId, randomCursor: 0 });
+            simulateSync(initialState, [{ id: 0 }], lastId);
             onStateUpdate.mockClear();
             mockSocket.clearEmitted();
 
@@ -351,8 +357,7 @@ describe('Feature: incremental-state-sync', () => {
    * **Validates: Requirements 6.4, 6.5**
    *
    * Property 5: StateID 追踪一致性
-   * 成功处理 state:update / state:patch 后，_lastReceivedStateID 更新为事件的 stateID。
-   * state:sync 后重置为 null。
+   * 成功处理 state:sync / state:update / state:patch 后，_lastReceivedStateID 更新为事件的 stateID。
    */
   describe('Property 5: StateID Tracking', () => {
     beforeEach(() => {
@@ -378,19 +383,16 @@ describe('Feature: incremental-state-sync', () => {
 
           // 先建立初始状态
           const baseState = { core: { v: 0 } };
-          simulateSync(baseState);
+          simulateSync(baseState, [{ id: 0 }], 0);
 
           // 追踪预期的 lastReceivedStateID
-          let expectedLastID: number | null = null;
+          let expectedLastID: number | null = 0;
           let currentState = baseState;
-
-          // sync 后 expectedLastID = null
-          // 已经 simulateSync 了，所以 expectedLastID = null
 
           for (const event of events) {
             if (event.type === 'sync') {
-              simulateSync(currentState);
-              expectedLastID = null;
+              simulateSync(currentState, [{ id: 0 }], event.stateID);
+              expectedLastID = event.stateID;
             } else if (event.type === 'update') {
               const newState = { core: { v: event.stateID } };
               simulateUpdate(newState, { stateID: event.stateID, randomCursor: 0 });
@@ -398,7 +400,7 @@ describe('Feature: incremental-state-sync', () => {
               expectedLastID = event.stateID;
             } else {
               // patch：需要连续的 stateID 才能成功
-              const nextID: number = expectedLastID === null ? event.stateID : expectedLastID + 1;
+              const nextID: number = (expectedLastID ?? 0) + 1;
               const newState = { core: { v: nextID } };
               const diff = computeDiff(currentState, newState);
               if (diff.type === 'patch' && diff.patches) {
@@ -419,7 +421,7 @@ describe('Feature: incremental-state-sync', () => {
           const verifyState = { core: { v: 999 } };
           const verifyDiff = computeDiff(currentState, verifyState);
           if (verifyDiff.type === 'patch' && verifyDiff.patches && verifyDiff.patches.length > 0) {
-            const verifyID = expectedLastID === null ? 42 : expectedLastID + 1;
+            const verifyID = (expectedLastID ?? 0) + 1;
             simulatePatch(verifyDiff.patches, { stateID: verifyID, randomCursor: 0 });
             // 应成功处理（不触发 resync）
             expect(onStateUpdate).toHaveBeenCalled();
@@ -445,6 +447,28 @@ describe('Feature: incremental-state-sync', () => {
 
     afterEach(() => {
       vi.useRealTimers();
+    });
+
+    /**
+     * 需求 5.2：sync 后旧 patch 不得污染新基线
+     */
+    it('rejects stale patch after sync establishes a fresh stateID baseline', () => {
+      const onStateUpdate = vi.fn();
+      const { client } = createConnectedClient({ onStateUpdate });
+
+      const syncedState = { core: { hp: 100, hand: ['fresh'] } };
+      simulateSync(syncedState, [{ id: 0 }], 10);
+      onStateUpdate.mockClear();
+      mockSocket.clearEmitted();
+
+      const stalePatches: Operation[] = [{ op: 'replace', path: '/core/hp', value: 1 }];
+      simulatePatch(stalePatches, { stateID: 7, randomCursor: 0 });
+
+      expect(onStateUpdate).not.toHaveBeenCalled();
+      expect(mockSocket.findEmitted('sync').length).toBeGreaterThan(0);
+      expect(client.latestState).toEqual(syncedState);
+
+      client.disconnect();
     });
 
     /**

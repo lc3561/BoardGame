@@ -29,6 +29,11 @@ export const resolveBonusDieText = (
     const { t, i18n } = context;
     const language = i18n.resolvedLanguage ?? i18n.language ?? 'zh-CN';
     const resolvedKey = resolveDerivedEffectKey(key, face);
+    const derivedSummaryText = resolveDerivedSummaryText(resolvedKey, t, params, language);
+
+    if (derivedSummaryText) {
+        return derivedSummaryText;
+    }
 
     if (i18n.exists?.(resolvedKey, { ns: 'game-dicethrone' })) {
         return t(resolvedKey, params);
@@ -83,6 +88,114 @@ const resolveDerivedEffectKey = (key: string, face?: DieFace): string => {
             return 'bonusDie.effect.default';
         default:
             return key;
+    }
+};
+
+const getNumericParam = (
+    params: Record<string, string | number> | undefined,
+    ...keys: string[]
+): number => {
+    for (const key of keys) {
+        const value = params?.[key];
+        if (typeof value === 'number' && Number.isFinite(value)) {
+            return value;
+        }
+        if (typeof value === 'string' && value.trim() !== '') {
+            const parsed = Number(value);
+            if (Number.isFinite(parsed)) {
+                return parsed;
+            }
+        }
+    }
+    return 0;
+};
+
+const joinSummaryParts = (parts: string[], language: string): string => {
+    const filtered = parts.filter(Boolean);
+    if (filtered.length === 0) return '';
+    return language.startsWith('zh') ? filtered.join('；') : filtered.join('; ');
+};
+
+const resolveDerivedSummaryText = (
+    key: string,
+    t: TFunction,
+    params: Record<string, string | number> | undefined,
+    language: string,
+): string | undefined => {
+    const parts: string[] = [];
+
+    switch (key) {
+        case 'bonusDie.effect.volley.result': {
+            const bonusDamage = getNumericParam(params, 'bonusDamage');
+            if (bonusDamage > 0) {
+                parts.push(t('bonusDie.summary.attackDamageBonus', { amount: bonusDamage }));
+            }
+            parts.push(t('bonusDie.summary.inflictEntangle'));
+            return joinSummaryParts(parts, language);
+        }
+        case 'bonusDie.effect.luckyRoll.result': {
+            const healAmount = getNumericParam(params, 'healAmount');
+            if (healAmount > 0) {
+                parts.push(t('bonusDie.summary.heal', { amount: healAmount }));
+            }
+            return joinSummaryParts(parts, language);
+        }
+        case 'bonusDie.effect.morePleaseRoll.result': {
+            const damage = getNumericParam(params, 'damage');
+            if (damage > 0) {
+                parts.push(t('bonusDie.summary.attackDamageBonus', { amount: damage }));
+            }
+            parts.push(t('bonusDie.summary.inflictConcussion'));
+            return joinSummaryParts(parts, language);
+        }
+        case 'bonusDie.effect.gunslingerEatMyLead.result':
+        case 'bonusDie.effect.gunslingerEatMyLead.resultKnockdown': {
+            const bonusDamage = getNumericParam(params, 'bonusDamage');
+            if (bonusDamage > 0) {
+                parts.push(t('bonusDie.summary.attackDamageBonus', { amount: bonusDamage }));
+            }
+            if (key.endsWith('resultKnockdown')) {
+                parts.push(t('bonusDie.summary.inflictKnockdown'));
+            }
+            return joinSummaryParts(parts, language);
+        }
+        case 'bonusDie.effect.explodingArrow.result':
+        case 'bonusDie.effect.explodingArrow2.result':
+        case 'bonusDie.effect.explodingArrow3.result': {
+            const damage = getNumericParam(params, 'damage');
+            const moonCount = getNumericParam(params, 'moonCount');
+            if (damage > 0) {
+                parts.push(t('bonusDie.summary.damage', { amount: damage }));
+            }
+            if (moonCount > 0) {
+                parts.push(t('bonusDie.summary.loseCp', { amount: moonCount }));
+            }
+            parts.push(t('bonusDie.summary.inflictBlinded'));
+            if (key === 'bonusDie.effect.explodingArrow3.result') {
+                parts.push(t('bonusDie.summary.inflictEntangle'));
+            }
+            return joinSummaryParts(parts, language);
+        }
+        case 'bonusDie.effect.samuraiMasamune.result': {
+            const katanaCount = getNumericParam(params, 'katanaCount');
+            const appliedShameCount = getNumericParam(params, 'appliedShameCount', 'shameCount');
+            const grantedRetributionCount = getNumericParam(params, 'grantedRetributionCount', 'retributionCount');
+            const rawRetributionCount = getNumericParam(params, 'retributionCount');
+            if (katanaCount > 0) {
+                parts.push(t('bonusDie.summary.attackDamageBonus', { amount: katanaCount }));
+            }
+            if (appliedShameCount > 0) {
+                parts.push(t('bonusDie.summary.inflictShame', { count: appliedShameCount }));
+            }
+            if (grantedRetributionCount > 0) {
+                parts.push(t('bonusDie.summary.gainBackStrike', { count: grantedRetributionCount }));
+            } else if (rawRetributionCount > 0) {
+                parts.push(t('bonusDie.summary.backStrikeAtLimit'));
+            }
+            return joinSummaryParts(parts, language);
+        }
+        default:
+            return undefined;
     }
 };
 

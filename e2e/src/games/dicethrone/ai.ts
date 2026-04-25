@@ -1780,18 +1780,16 @@ const buildPhaseActions = (state: DiceThroneState, playerId: PlayerId, phase: Tu
             }
 
             const selectedDefenseAbilityId = state.core.pendingAttack?.defenseAbilityId;
+            // 防御技能一旦选定，本地 AI 不再生成 select-ability，避免在可选防御技间来回切换卡死。
+            if (selectedDefenseAbilityId) {
+                return [];
+            }
+
             if (state.core.rollCount === 0) {
-                // 防御阶段掷骰前允许手动切换防御技能，但本地 AI 不应在已选定后反复切换，
-                // 否则会持续偏向高分的 select-ability，卡死在 defensiveRoll。
-                if (selectedDefenseAbilityId) {
-                    return [];
-                }
                 return getDefensiveAbilityIds(state.core, playerId);
             }
 
-            return getAvailableAbilityIds(state.core, playerId, phase).filter(
-                (abilityId) => abilityId !== selectedDefenseAbilityId,
-            );
+            return getAvailableAbilityIds(state.core, playerId, phase);
         })();
         for (const abilityId of abilityIds) {
             appendAction(actions, state, playerId, {

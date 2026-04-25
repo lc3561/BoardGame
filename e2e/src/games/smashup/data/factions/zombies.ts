@@ -109,6 +109,7 @@ export const ZOMBIE_ACTIONS: ActionCardDef[] = [
         name: '子弹不够',
         nameEn: 'Not Enough Bullets',
         faction: 'zombies',
+        soundKey: 'combat.guns_sound_fx_pack.38_spl_revolver.foley.38_spl_revolver_dry_trigger_001',
         count: 1,
         previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.CARDS4, index: 9 },
     },

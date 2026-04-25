@@ -181,16 +181,14 @@ export const GameDetailsMobilePackageCard = ({
         ? knownTotalBytes
         : undefined;
     const isSyncingPreview = state.status === 'not-installed'
-        && state.previewResolved !== true
-        && !hasKnownPackageBytes(totalBytes);
-    const isUnpublishedPreview = state.status === 'not-installed'
-        && state.previewResolved === true
-        && state.manifestSource === 'fallback';
-    const sizeFallbackLabel = isUnpublishedPreview
-        ? t('packageManager.packageUnpublished')
-        : isSyncingPreview
-            ? t('packageManager.packageSyncing')
-            : t('packageManager.sizeUnknown');
+        && !hasKnownPackageBytes(totalBytes)
+        && (
+            state.previewResolved !== true
+            || state.manifestSource === 'fallback'
+        );
+    const sizeFallbackLabel = isSyncingPreview
+        ? t('packageManager.packageSyncing')
+        : t('packageManager.sizeUnknown');
     const sizeLabel = formatPackageBytes(totalBytes, sizeFallbackLabel);
     const showCancelAction = isInProgress && typeof onCancel === 'function';
     const actionHandler = showCancelAction
@@ -290,7 +288,7 @@ export const GameDetailsMobilePackageCard = ({
                         </div>
                     )}
 
-                    {actionLabel && !isUnpublishedPreview && (
+                    {actionLabel && (
                         <div className="mt-3">
                             <button
                                 type="button"

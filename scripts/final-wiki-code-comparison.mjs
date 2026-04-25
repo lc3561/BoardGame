@@ -11,13 +11,13 @@ function getCodeCards(factionId) {
     const cards = [];
     
     // 提取所有卡牌定义
-    const cardRegex = /nameEn:\s*'([^']+)'[\s\S]*?count:\s*(\d+)/g;
+    const cardRegex = /nameEn:\s*(["'])(.*?)\1[\s\S]*?count:\s*(\d+)/g;
     let match;
     
     while ((match = cardRegex.exec(content)) !== null) {
       cards.push({
-        name: match[1],
-        count: parseInt(match[2])
+        name: match[2].trim(),
+        count: parseInt(match[3])
       });
     }
     
@@ -27,14 +27,24 @@ function getCodeCards(factionId) {
   }
 }
 
+function normalizeCardName(name) {
+  return String(name || '')
+    .toLowerCase()
+    .replace(/[’‘`]/g, "'")
+    .replace(/['"]/g, '')
+    .replace(/[^a-z0-9]+/g, '')
+    .trim();
+}
+
 // 合并 Wiki 中的重复卡牌（取最大数量）
 function mergeWikiCards(cards) {
   const cardMap = new Map();
   
   for (const card of cards) {
-    const existing = cardMap.get(card.name);
+    const key = normalizeCardName(card.name);
+    const existing = cardMap.get(key);
     if (!existing || card.count > existing.count) {
-      cardMap.set(card.name, card);
+      cardMap.set(key, card);
     }
   }
   
@@ -45,6 +55,7 @@ function mergeWikiCards(cards) {
 function compareAndReport() {
   let report = '# Wiki vs 代码卡牌数量最终对比\n\n';
   report += `生成时间: ${new Date().toLocaleString('zh-CN')}\n\n`;
+  report += '> ⚠️ 本脚本只校验卡牌 `name/count` 对齐，不校验效果语义（description）。语义审计需单独执行。\n\n';
   
   const allIssues = [];
   
@@ -65,8 +76,8 @@ function compareAndReport() {
     report += `- 代码: ${codeCards.length} 种卡牌，共 ${codeTotal} 张\n\n`;
     
     // 创建映射
-    const wikiMap = new Map(mergedWikiCards.map(c => [c.name, c]));
-    const codeMap = new Map(codeCards.map(c => [c.name, c]));
+    const wikiMap = new Map(mergedWikiCards.map(c => [normalizeCardName(c.name), c]));
+    const codeMap = new Map(codeCards.map(c => [normalizeCardName(c.name), c]));
     
     const issues = [];
     

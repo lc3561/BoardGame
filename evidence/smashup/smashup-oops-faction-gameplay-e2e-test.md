@@ -114,3 +114,66 @@ npm install @alloc/quick-lru@5.2.0 --no-save
 
 - 当前证据覆盖的是三类代表性交互，不代表 Oops 四派系所有卡牌与所有组合场景都已在浏览器层逐张穷举。
 - 但阻塞审计收口的“新交互类型是否能在真实浏览器链路中完成”已经解除，本轮四派系审计可以按完成态汇报。
+
+---
+
+## 2026-04-25 追加回归：巨石阵附着天赋二次发动
+
+### 触发背景
+- 在持续推进三派系审计时，`e2e/smashup/smashup-gameplay.e2e.ts` 出现 1 条失败：
+  - `巨石阵应允许己方随从上的附着天赋第2次发动，并占用基地双才能名额`
+- 失败现象：点击附着行动卡后，`actionLimit` 仍为 `1`，`standingStonesDoubleTalentMinionUid` 仍为 `null`，说明命令未通过验证阶段。
+
+### 根因
+- `USE_TALENT` 的 `ongoingCardUid` 校验分支在发现 `ongoing.talentUsed === true` 时直接拒绝，未复用“巨石阵双才能”例外。
+- `reduce` 层其实已经支持“附着卡二次发动占用双才能名额”，但 `validate` 提前拦截导致能力永远进不到 reducer。
+
+### 修复
+- 文件：
+  - `src/games/smashup/domain/commands.ts`
+  - `e2e/src/games/smashup/domain/commands.ts`
+- 变更：
+  - 在 `ongoingCardUid` 分支识别附着宿主随从；
+  - 当目标基地是 `base_standing_stones`、宿主由当前玩家控制、且双才能名额未占用时，允许附着天赋第 2 次发动。
+
+### 回归测试
+1. 单测补强（同文件追加，不新增测试文件）：
+   - `src/games/smashup/__tests__/talentAbilities.test.ts`
+   - `e2e/src/games/smashup/__tests__/talentAbilities.test.ts`
+   - 新增 2 条：
+     - 双才能名额未占用时，附着天赋第 2 次可用；
+     - 双才能名额已占用时，附着天赋第 2 次被拒绝。
+2. 验证命令：
+   - `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/talentAbilities.test.ts --configLoader native --maxWorkers 1` → `22 passed`
+   - `npm run test:e2e:ci:file -- e2e/smashup/smashup-gameplay.e2e.ts "巨石阵应允许己方随从上的附着天赋第2次发动，并占用基地双才能名额"` → `1 passed`
+   - `npm run test:e2e:ci -- e2e/smashup/smashup-gameplay.e2e.ts` → `7 passed`
+
+### 截图证据（绝对路径）
+- `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\smashup\smashup-gameplay.e2e\巨石阵应允许己方随从上的附着天赋第2次发动，并占用基地双才能名额\werewolf-standing-stones-before-second-talent.png`
+- `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\smashup\smashup-gameplay.e2e\巨石阵应允许己方随从上的附着天赋第2次发动，并占用基地双才能名额\werewolf-standing-stones-after-second-talent.png`
+
+### 肉眼结论
+- 触发前截图可见附着行动卡存在且宿主已处于“已用过一次天赋”的状态；
+- 触发后截图对应断言通过：同一宿主附着天赋成功第 2 次发动，且巨石阵双才能名额被占用（与状态断言一致）。
+
+---
+
+## 2026-04-25 13:25 复测：去重单测后回归确认
+
+### 触发原因
+- `talentAbilities.test.ts`（src / e2e 镜像）出现重复新增 case。
+- 去重后重新跑 `smashup-gameplay.e2e.ts`，确认巨石阵附着天赋链路仍稳定通过。
+
+### 复测命令与结果
+1. `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/talentAbilities.test.ts --configLoader native --maxWorkers 1`
+   - 结果：`20 passed`
+2. `npm run test:e2e:ci -- e2e/smashup/smashup-gameplay.e2e.ts`
+   - 结果：`7 passed`
+
+### 本轮截图（绝对路径）
+- `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\smashup\smashup-gameplay.e2e\巨石阵应允许己方随从上的附着天赋第2次发动，并占用基地双才能名额\werewolf-standing-stones-before-second-talent.png`
+- `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\smashup\smashup-gameplay.e2e\巨石阵应允许己方随从上的附着天赋第2次发动，并占用基地双才能名额\werewolf-standing-stones-after-second-talent.png`
+
+### 肉眼复核
+- 第一张图可见特写前状态，附着行动卡仍挂在己方宿主随从上；
+- 第二张图可见第 2 次天赋触发后流程已推进，符合“巨石阵双才能名额被消耗”的预期路径。

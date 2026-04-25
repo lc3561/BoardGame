@@ -24,6 +24,8 @@ export const CHEAT_COMMANDS = {
     DRAW_SPECIFIC_CARD: 'SYS_CHEAT_DRAW_SPECIFIC_CARD',
     /** 根据图集索引发牌 */
     DEAL_CARD_BY_ATLAS_INDEX: 'SYS_CHEAT_DEAL_CARD_BY_ATLAS_INDEX',
+    /** 根据 cardId 直接补牌到手牌 */
+    ADD_CARD_TO_HAND_BY_CARD_ID: 'SYS_CHEAT_ADD_CARD_TO_HAND_BY_CARD_ID',
     /** 根据索引发牌（从牌库指定位置发牌到手牌） */
     DEAL_CARD_BY_INDEX: 'SYS_CHEAT_DEAL_CARD_BY_INDEX',
     /** 根据图集索引将牌库卡牌移入弃牌堆 */
@@ -105,6 +107,11 @@ export interface DealCardByAtlasIndexPayload {
     atlasIndex: number;
 }
 
+export interface AddCardToHandByCardIdPayload {
+    playerId: PlayerId;
+    cardId: string;
+}
+
 export interface DealCardToDiscardPayload {
     playerId: PlayerId;
     /** 图集索引 */
@@ -143,6 +150,8 @@ export interface CheatResourceModifier<TCore> {
     dealCardByIndex?: (core: TCore, playerId: PlayerId, deckIndex: number) => TCore;
     /** 根据图集索引发牌（可选） */
     dealCardByAtlasIndex?: (core: TCore, playerId: PlayerId, atlasIndex: number) => TCore;
+    /** 根据 cardId 直接补牌到手牌（可选） */
+    addCardToHandByCardId?: (core: TCore, playerId: PlayerId, cardId: string) => TCore;
     /** 根据图集索引将牌库卡牌移入弃牌堆（可选） */
     dealCardToDiscard?: (core: TCore, playerId: PlayerId, atlasIndex: number) => TCore;
     /** 刷新基地（可选，SmashUp 专用） */
@@ -307,6 +316,19 @@ export function createCheatSystem<TCore>(
                     state.core,
                     payload.playerId,
                     payload.atlasIndex
+                );
+                return {
+                    halt: true,
+                    state: { ...state, core: newCore },
+                };
+            }
+
+            if (command.type === CHEAT_COMMANDS.ADD_CARD_TO_HAND_BY_CARD_ID && modifier.addCardToHandByCardId) {
+                const payload = command.payload as AddCardToHandByCardIdPayload;
+                const newCore = modifier.addCardToHandByCardId(
+                    state.core,
+                    payload.playerId,
+                    payload.cardId,
                 );
                 return {
                     halt: true,

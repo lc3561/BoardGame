@@ -966,6 +966,47 @@ describe('祖灵法师 - 祖灵交流 (spirit_bond)', () => {
     expect(newState.board[4][4].unit?.boosts).toBe(1); // 获得1充能
   });
 
+  it('同回合二次祖灵交流应被拒绝，避免重复弹窗导致再次充能', () => {
+    const state = createBarbaricState();
+    clearArea(state, [2, 3, 4, 5, 6], [0, 1, 2, 3, 4, 5]);
+
+    const mage = placeUnit(state, { row: 4, col: 2 }, {
+      cardId: 'test-mage', card: makeSpiritMage('test-mage'), owner: '0',
+      boosts: 1,
+    });
+
+    placeUnit(state, { row: 4, col: 4 }, {
+      cardId: 'test-ally', card: makeLioness('test-ally'), owner: '0',
+    });
+
+    state.phase = 'move';
+    state.currentPlayer = '0';
+
+    const { newState: stateAfterFirst } = executeAndReduce(state, SW_COMMANDS.ACTIVATE_ABILITY, {
+      abilityId: 'spirit_bond',
+      sourceUnitId: mage.instanceId,
+      choice: 'transfer',
+      targetPosition: { row: 4, col: 4 },
+    });
+
+    expect(stateAfterFirst.abilityUsageCount[`${mage.instanceId}:spirit_bond`]).toBe(1);
+
+    const fullState = { core: stateAfterFirst, sys: {} as any };
+    const secondTry = SummonerWarsDomain.validate(fullState, {
+      type: SW_COMMANDS.ACTIVATE_ABILITY,
+      payload: {
+        abilityId: 'spirit_bond',
+        sourceUnitId: mage.instanceId,
+        choice: 'self',
+      },
+      playerId: '0',
+      timestamp: fixedTimestamp,
+    });
+
+    expect(secondTry.valid).toBe(false);
+    expect(secondTry.error).toContain('每回合只能使用一次');
+  });
+
   it('同 cardId 的不同实例可作为转移目标（按 instanceId 判定自身）', () => {
     const state = createBarbaricState();
     clearArea(state, [2, 3, 4, 5, 6], [0, 1, 2, 3, 4, 5]);

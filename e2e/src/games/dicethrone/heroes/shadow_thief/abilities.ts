@@ -10,11 +10,11 @@ export const SHADOW_THIEF_SFX_DAGGER = 'combat.general.khron_studio_fight_fury_v
 /** 抢夺（快速匕首变体） */
 export const SHADOW_THIEF_SFX_PICKPOCKET = 'combat.general.khron_studio_fight_fury_vol_1_assets.knife_stab.weapknif_knife_stab_02';
 /** 偷窃（偷钱音效） */
-export const SHADOW_THIEF_SFX_STEAL = 'coins.decks_and_cards_sound_fx_pack.small_coin_drop_001';
+export const SHADOW_THIEF_SFX_STEAL = 'coins.decks_and_cards_sound_fx_pack.gold_pouch_handle_001';
 /** 破隐一击（重匕首音） */
 export const SHADOW_THIEF_SFX_KIDNEY = 'combat.general.khron_studio_fight_fury_vol_1_assets.knife_stab.weapknif_knife_stab_03';
 /** 聚宝盆（战利品音效） */
-export const SHADOW_THIEF_SFX_LOOT = 'coins.decks_and_cards_sound_fx_pack.big_coin_drop_001';
+export const SHADOW_THIEF_SFX_LOOT = 'coins.decks_and_cards_sound_fx_pack.fair_reward_001';
 /** 暗影之舞 */
 export const SHADOW_THIEF_SFX_SHADOW = 'magic.general.simple_magic_sound_fx_pack_vol.dark.shadow_bolt_impact_a';
 /** 大招（暗影突刺） */

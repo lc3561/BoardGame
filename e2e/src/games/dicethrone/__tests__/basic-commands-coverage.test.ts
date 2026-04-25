@@ -1391,7 +1391,7 @@ describe('AI legal actions', () => {
         });
     });
 
-    it('防御阶段掷骰后应只暴露符合当前防御骰数量的最终技能，而不是全部防御技能', () => {
+    it('防御阶段掷骰后若已选防御技能，AI 不应再暴露 select-ability，避免循环切换', () => {
         const state = createHeroMatchup('monk', 'shadow_thief')(['0', '1'], fixedRandom);
         state.sys.phase = 'defensiveRoll';
         state.core.rollCount = 1;
@@ -1415,7 +1415,8 @@ describe('AI legal actions', () => {
             .filter((action) => action.kind === 'select-ability')
             .map((action) => action.metadata?.abilityId);
 
-        expect(abilityIds).toEqual(['shadow-defense']);
+        expect(abilityIds).toEqual([]);
+        expect(actions.some((action) => action.kind === 'confirm-roll')).toBe(true);
         expect(actions.some((action) => action.kind === 'advance-phase')).toBe(false);
         expect(tryCmd(state, cmd('ADVANCE_PHASE', '1')).success).toBe(false);
     });

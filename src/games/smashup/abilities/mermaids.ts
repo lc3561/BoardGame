@@ -301,11 +301,13 @@ function mermaidsCharmedOnPlay(ctx: AbilityContext): AbilityResult {
 
 function mermaidsShipwreckCoveAfterScoring(ctx: TriggerContext): AbilityResult {
     if (!ctx.sourceControllerId) return { events: [] };
+    const replacementBaseIndex = ctx.sourceBaseIndex ?? ctx.baseIndex;
     return {
         events: [
             grantContextualExtraMinion(
                 { playerId: ctx.sourceControllerId, now: ctx.now, matchState: ctx.matchState },
                 'mermaids_shipwreck_cove',
+                replacementBaseIndex,
             ),
         ],
     };

@@ -17,6 +17,36 @@ export interface MatchPlayerInfo {
     isConnected?: boolean;
 }
 
+export interface SyncStateMeta {
+    /** 当前全量同步对应的权威 stateID */
+    stateID: number;
+}
+
+export interface RandomSyncMeta {
+    /** 随机种子 */
+    seed: string;
+    /** 当前随机游标 */
+    cursor: number;
+}
+
+export interface StateUpdateMeta {
+    /** 当前权威状态版本 */
+    stateID?: number;
+    /** 最近一条命令的发送者 */
+    lastCommandPlayerId?: string;
+    /** 当前随机游标 */
+    randomCursor?: number;
+}
+
+export interface StatePatchMeta {
+    /** 当前权威状态版本 */
+    stateID: number;
+    /** 最近一条命令的发送者 */
+    lastCommandPlayerId?: string;
+    /** 当前随机游标 */
+    randomCursor: number;
+}
+
 // ============================================================================
 // 客户端 → 服务端 事件
 // ============================================================================
@@ -48,7 +78,9 @@ export interface ServerToClientEvents {
         state: unknown,
         matchPlayers: MatchPlayerInfo[],
         /** 随机数同步元数据（种子+游标），供客户端乐观引擎构建同步随机数生成器 */
-        randomMeta?: { seed: string; cursor: number },
+        randomMeta?: RandomSyncMeta,
+        /** 全量同步基线元数据，供客户端建立后续 patch 连续性校验基线 */
+        syncMeta?: SyncStateMeta,
     ) => void;
 
     /** 增量状态更新（命令执行后） */
@@ -57,7 +89,7 @@ export interface ServerToClientEvents {
         state: unknown,
         matchPlayers: MatchPlayerInfo[],
         /** 元数据，用于乐观更新校验 */
-        meta?: { stateID?: number; lastCommandPlayerId?: string; randomCursor?: number },
+        meta?: StateUpdateMeta,
     ) => void;
 
     /** 增量状态 patch（命令执行后，状态变化较小时） */
@@ -66,7 +98,7 @@ export interface ServerToClientEvents {
         patches: import('fast-json-patch').Operation[],
         matchPlayers: MatchPlayerInfo[],
         /** 元数据，用于乐观更新校验 */
-        meta: { stateID: number; lastCommandPlayerId?: string; randomCursor: number },
+        meta: StatePatchMeta,
     ) => void;
 
     /** 命令执行错误 */

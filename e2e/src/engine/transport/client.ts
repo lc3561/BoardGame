@@ -10,7 +10,13 @@
 import { io, type Socket } from 'socket.io-client';
 import msgpackParser from 'socket.io-msgpack-parser';
 import { SOCKET_CONNECT_TIMEOUT_MS, getSocketIoTransports, shouldTryAllSocketTransports } from '../../lib/socketConnectionConfig';
-import type { MatchPlayerInfo, ServerToClientEvents, ClientToServerEvents } from './protocol';
+import type {
+    MatchPlayerInfo,
+    ServerToClientEvents,
+    ClientToServerEvents,
+    StateUpdateMeta,
+    RandomSyncMeta,
+} from './protocol';
 import { applyPatches } from './patch';
 
 // ============================================================================
@@ -27,7 +33,12 @@ export interface GameTransportClientConfig {
     /** 认证凭证 */
     credentials?: string;
     /** 状态更新回调 */
-    onStateUpdate?: (state: unknown, matchPlayers: MatchPlayerInfo[], meta?: { stateID?: number; lastCommandPlayerId?: string; randomCursor?: number }, randomMeta?: { seed: string; cursor: number }) => void;
+    onStateUpdate?: (
+        state: unknown,
+        matchPlayers: MatchPlayerInfo[],
+        meta?: StateUpdateMeta,
+        randomMeta?: RandomSyncMeta,
+    ) => void;
     /** 连接状态变更回调 */
     onConnectionChange?: (connected: boolean) => void;
     /** 玩家连接/断开回调 */
@@ -138,17 +149,17 @@ export class GameTransportClient {
             this.sendSync();
         });
 
-        socket.on('state:sync', (matchID, state, matchPlayers, randomMeta) => {
+        socket.on('state:sync', (matchID, state, matchPlayers, randomMeta, syncMeta) => {
             if (this._destroyed || matchID !== this.config.matchID) return;
             this.clearSyncTimer();
             this._syncRetries = 0;
             this._connectionState = 'connected';
             this._latestState = state;
             this._matchPlayers = matchPlayers;
-            // sync 是全量同步，不携带 stateID，重置为 null
-            this._lastReceivedStateID = null;
+            // sync 是全量权威态，收到后立即建立 patch 连续性校验基线
+            this._lastReceivedStateID = syncMeta?.stateID ?? null;
             this.config.onConnectionChange?.(true);
-            this.config.onStateUpdate?.(state, matchPlayers, undefined, randomMeta);
+            this.config.onStateUpdate?.(state, matchPlayers, syncMeta, randomMeta);
         });
 
         socket.on('state:update', (matchID, state, matchPlayers, meta) => {

@@ -614,10 +614,19 @@ describe('Feature: incremental-state-sync (Server Integration)', () => {
             // 验证 state:sync 的 payload 结构
             const syncEvents = getEvents(socket, 'state:sync');
             expect(syncEvents.length).toBe(1);
-            const [syncMatchID, syncState, syncPlayers] = syncEvents[0].args as [string, unknown, unknown[]];
+            const [syncMatchID, syncState, syncPlayers, randomMeta, syncMeta] = syncEvents[0].args as [
+                string,
+                unknown,
+                unknown[],
+                { seed: string; cursor: number },
+                { stateID: number },
+            ];
             expect(syncMatchID).toBe(matchID);
             expect(syncState).toBeTruthy();
             expect(Array.isArray(syncPlayers)).toBe(true);
+            expect(randomMeta.seed).toBeTruthy();
+            expect(typeof randomMeta.cursor).toBe('number');
+            expect(syncMeta.stateID).toBe(0);
 
             // 验证缓存已写入：执行命令后应收到 state:patch（而非 state:update）
             socket.clearSent();
@@ -782,10 +791,17 @@ describe('Feature: incremental-state-sync (Server Integration)', () => {
 
             // 验证 state:sync 包含完整状态
             const syncEvents = getEvents(socket, 'state:sync');
-            const [syncMatchID, syncState] = syncEvents[0].args as [string, { core: unknown; sys: unknown }];
+            const [syncMatchID, syncState, , , syncMeta] = syncEvents[0].args as [
+                string,
+                { core: unknown; sys: unknown },
+                unknown[],
+                { seed: string; cursor: number },
+                { stateID: number },
+            ];
             expect(syncMatchID).toBe(matchID);
             expect(syncState.core).toBeTruthy();
             expect(syncState.sys).toBeTruthy();
+            expect(syncMeta.stateID).toBe(1);
         });
     });
 });

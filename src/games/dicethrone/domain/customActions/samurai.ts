@@ -245,22 +245,6 @@ function handleMasamune({ attackerId, ctx, sourceAbilityId, state, timestamp, ra
     const shameCount = dice.filter(die => die.face === FACE.HELM).length;
     const retributionCount = dice.filter(die => die.face === FACE.RISING_SUN).length;
 
-    events.push(createDisplayOnlySettlement(
-        sourceAbilityId,
-        attackerId,
-        defenderId,
-        dice,
-        timestamp + 10,
-        {
-            summaryEffectKey: 'bonusDie.effect.samuraiMasamune.result',
-            summaryEffectParams: {
-                katanaCount,
-                shameCount,
-                retributionCount,
-            },
-        },
-    ));
-
     if (katanaCount > 0) {
         events.push({
             type: 'BONUS_DAMAGE_ADDED',
@@ -278,14 +262,34 @@ function handleMasamune({ attackerId, ctx, sourceAbilityId, state, timestamp, ra
     }
 
     const shameEvent = createGrantTokenEvent(state, defenderId, TOKEN_IDS.SHAME, shameCount, sourceAbilityId, timestamp + 12);
+    const appliedShameCount = shameEvent?.payload.amount ?? 0;
     if (shameEvent) {
         events.push(shameEvent);
     }
 
     const retributionEvent = createGrantTokenEvent(state, attackerId, TOKEN_IDS.SAMURAI_RETRIBUTION, retributionCount, sourceAbilityId, timestamp + 13);
+    const grantedRetributionCount = retributionEvent?.payload.amount ?? 0;
     if (retributionEvent) {
         events.push(retributionEvent);
     }
+
+    events.push(createDisplayOnlySettlement(
+        sourceAbilityId,
+        attackerId,
+        defenderId,
+        dice,
+        timestamp + 10,
+        {
+            summaryEffectKey: 'bonusDie.effect.samuraiMasamune.result',
+            summaryEffectParams: {
+                katanaCount,
+                shameCount,
+                appliedShameCount,
+                retributionCount,
+                grantedRetributionCount,
+            },
+        },
+    ));
 
     return events;
 }

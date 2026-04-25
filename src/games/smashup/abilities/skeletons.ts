@@ -9,7 +9,7 @@ import { buildBuryCardEvents, uncoverBuriedCard } from '../domain/bury';
 import {
     buildAbilityFeedback,
     buildBaseTargetOptions,
-    buildMinionTargetOptions,
+    buildStandardDrawEvents,
     buildValidatedDestroyEvents,
     createSkipOption,
     recoverCardsFromDiscard,
@@ -93,25 +93,6 @@ function collectOwnedBuriedCards(
         });
     });
     return result;
-}
-
-function collectOpponentLowPowerMinions(state: SmashUpCore, playerId: PlayerId, maxPower: number = 3) {
-    const targets: Array<{ uid: string; defId: string; baseIndex: number; label: string }> = [];
-    state.bases.forEach((base, baseIndex) => {
-        const baseName = getBaseDef(base.defId)?.name ?? `基地 ${baseIndex + 1}`;
-        base.minions.forEach((minion) => {
-            if (minion.controller === playerId) return;
-            const def = getCardDef(minion.defId) as MinionCardDef | undefined;
-            if (!def || def.power > maxPower) return;
-            targets.push({
-                uid: minion.uid,
-                defId: minion.defId,
-                baseIndex,
-                label: `${def.name ?? def.id} @ ${baseName}`,
-            });
-        });
-    });
-    return targets;
 }
 
 function collectBasesWithOwnMinion(state: SmashUpCore, playerId: PlayerId): Array<{ baseIndex: number; label: string }> {
@@ -295,29 +276,32 @@ function skeletonsLordOfBonesTalent(ctx: AbilityContext): AbilityResult {
 }
 
 function skeletonsSpookyScaryOnPlay(ctx: AbilityContext): AbilityResult {
-    const targets = collectOpponentLowPowerMinions(ctx.state, ctx.playerId, 3);
-    if (targets.length === 0) {
-        return { events: [buildAbilityFeedback(ctx.playerId, 'feedback.no_valid_targets', ctx.now)] };
+    const cards = getLowPowerDiscardCards(ctx.state, ctx.playerId, 3);
+    if (cards.length === 0) {
+        return { events: [buildAbilityFeedback(ctx.playerId, 'feedback.discard_empty', ctx.now)] };
     }
-    if (targets.length === 1) {
+    if (cards.length === 1) {
         return {
-            events: buildValidatedDestroyEvents(ctx.matchState, {
-                minionUid: targets[0].uid,
-                minionDefId: targets[0].defId,
-                fromBaseIndex: targets[0].baseIndex,
-                destroyerId: ctx.playerId,
-                reason: 'skeletons_spooky_scary',
-                now: ctx.now,
-                sourceKind: 'action',
-            }),
+            events: [
+                ...buildDiscardBuryEvents(
+                    ctx.state,
+                    ctx.playerId,
+                    cards[0].uid,
+                    cards[0].defId,
+                    ctx.baseIndex,
+                    ctx.random,
+                    ctx.now,
+                ),
+                ...buildStandardDrawEvents(ctx.matchState, ctx.playerId, 1, ctx.random, ctx.now),
+            ],
         };
     }
     const interaction = createSimpleChoice(
         `skeletons_spooky_scary_${ctx.now}`,
         ctx.playerId,
-        '阴森可怖：选择另一位玩家的一个力量 3 或以下随从，将其移入弃牌堆',
-        buildMinionTargetOptions(targets, { state: ctx.state, sourcePlayerId: ctx.playerId, sourceDefId: ctx.defId }),
-        { sourceId: 'skeletons_spooky_scary', targetType: 'minion' },
+        '阴森可怖：选择一张力量 3 或以下随从埋葬，然后抽 1 张牌',
+        buildDiscardMinionOptions(cards),
+        { sourceId: 'skeletons_spooky_scary', targetType: 'discard' },
     );
     return { events: [], matchState: queueInteraction(ctx.matchState, interaction) };
 }
@@ -631,19 +615,14 @@ const handleSkeletonsLordOfBones: InteractionHandler = (state, playerId, value, 
 };
 
 const handleSkeletonsSpookyScary: InteractionHandler = (state, playerId, value, _data, _random, now) => {
-    const selected = value as MinionChoice;
-    if (!selected.minionUid || selected.baseIndex === undefined || !selected.defId) return { state, events: [] };
+    const selected = value as CardChoice;
+    if (!selected.cardUid || !selected.defId) return { state, events: [] };
     return {
         state,
-        events: buildValidatedDestroyEvents(state, {
-            minionUid: selected.minionUid,
-            minionDefId: selected.defId,
-            fromBaseIndex: selected.baseIndex,
-            destroyerId: playerId,
-            reason: 'skeletons_spooky_scary',
-            now,
-            sourceKind: 'action',
-        }),
+        events: [
+            ...buildDiscardBuryEvents(state.core, playerId, selected.cardUid, selected.defId, 0, _random, now),
+            ...buildStandardDrawEvents(state, playerId, 1, _random, now),
+        ],
     };
 };
 
