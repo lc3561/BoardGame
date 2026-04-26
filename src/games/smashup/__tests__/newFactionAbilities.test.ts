@@ -7414,6 +7414,41 @@ describe('Skeletons abilities', () => {
         expect((resolved.finalState.core.bases[0].buriedCards ?? []).some(card => card.uid === 'hand-a')).toBe(true);
     });
 
+    it('skeletons_lord_of_bones 天赋可挖掘这里任意埋葬牌而不只限自己', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0'),
+                '1': makePlayer('1'),
+            },
+            bases: [{
+                defId: 'base_a',
+                minions: [makeMinion('lob-1', 'skeletons_lord_of_bones', '0', 5, { powerModifier: 0 })],
+                ongoingActions: [],
+                buriedCards: [
+                    { uid: 'enemy-buried', defId: 'robot_microbot_alpha', trueOwnerId: '1', controllerId: '1', buriedFrom: 'hand' },
+                ],
+            }],
+        });
+
+        const used = runCommand(
+            makeMatchState(core),
+            { type: SU_COMMANDS.USE_TALENT, playerId: '0', payload: { minionUid: 'lob-1', baseIndex: 0 } },
+            defaultTestRandom,
+        );
+        const prompt = getInteractionsFromMS(used.finalState)[0] as any;
+        expect(prompt?.data?.sourceId).toBe('skeletons_lord_of_bones_uncover');
+        const option = prompt.data.options.find((entry: any) => entry.value?.cardUid === 'enemy-buried');
+        expect(option).toBeDefined();
+
+        const resolved = runCommand(
+            used.finalState,
+            { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: option.id } } as any,
+            defaultTestRandom,
+        );
+        expect(resolved.events.some(event => event.type === SU_EVENTS.BURIED_CARD_UNCOVERED && (event as any).payload?.cardUid === 'enemy-buried')).toBe(true);
+        expect((resolved.finalState.core.bases[0].buriedCards ?? []).some(card => card.uid === 'enemy-buried')).toBe(false);
+    });
+
     it('skeletons_grave_goods 只有手牌时应直接进入埋葬分支而不是报无目标', () => {
         const core = makeState({
             players: {
@@ -7491,6 +7526,56 @@ describe('Skeletons abilities', () => {
         expect(uncoverPrompt?.data?.sourceId).toBe('skeletons_grave_goods_uncover');
     });
 
+    it('skeletons_grave_goods 首次埋葬后若只剩一张手牌不能额外埋葬另一张', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0', {
+                    hand: [
+                        makeCard('grave-goods-1', 'skeletons_grave_goods', 'action', '0'),
+                        makeCard('bury-first', 'robot_microbot_alpha', 'minion', '0'),
+                        makeCard('last-hand', 'robot_microbot_beta', 'minion', '0'),
+                    ],
+                }),
+                '1': makePlayer('1'),
+            },
+            bases: [{
+                defId: 'base_a',
+                minions: [],
+                ongoingActions: [],
+                buriedCards: [
+                    { uid: 'buried-a', defId: 'robot_microbot_alpha', trueOwnerId: '0', controllerId: '0', buriedFrom: 'hand' },
+                ],
+            }],
+        });
+
+        const played = runCommand(
+            makeMatchState(core),
+            { type: SU_COMMANDS.PLAY_ACTION, playerId: '0', payload: { cardUid: 'grave-goods-1' } },
+            defaultTestRandom,
+        );
+        const basePrompt = getInteractionsFromMS(played.finalState)[0] as any;
+        const baseOption = basePrompt.data.options.find((entry: any) => entry.value?.baseIndex === 0);
+        expect(baseOption).toBeDefined();
+
+        const afterBase = runCommand(
+            played.finalState,
+            { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: baseOption.id } } as any,
+            defaultTestRandom,
+        );
+        const buryPrompt = getInteractionsFromMS(afterBase.finalState)[0] as any;
+        const buryOption = buryPrompt.data.options.find((entry: any) => entry.value?.cardUid === 'bury-first');
+        expect(buryOption).toBeDefined();
+
+        const afterBury = runCommand(
+            afterBase.finalState,
+            { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: buryOption.id } } as any,
+            defaultTestRandom,
+        );
+        const nextPrompt = getInteractionsFromMS(afterBury.finalState)[0] as any;
+        expect(nextPrompt?.data?.sourceId).toBe('skeletons_grave_goods_uncover');
+        expect(nextPrompt.data.options.some((entry: any) => entry.value?.mode === 'extra_bury')).toBe(false);
+    });
+
     it('skeletons_grave_goods 首次埋葬后可在额外埋葬与挖掘之间二选一', () => {
         const core = makeState({
             players: {
@@ -7498,7 +7583,9 @@ describe('Skeletons abilities', () => {
                     hand: [
                         makeCard('grave-goods-1', 'skeletons_grave_goods', 'action', '0'),
                         makeCard('bury-first', 'robot_microbot_alpha', 'minion', '0'),
+                        makeCard('discard-cost', 'robot_microbot_beta', 'minion', '0'),
                         makeCard('bury-extra', 'robot_microbot_beta', 'minion', '0'),
+                        makeCard('buffer-hand', 'robot_microbot_beta', 'minion', '0'),
                     ],
                 }),
                 '1': makePlayer('1'),
@@ -7578,7 +7665,9 @@ describe('Skeletons abilities', () => {
                     hand: [
                         makeCard('grave-goods-1', 'skeletons_grave_goods', 'action', '0'),
                         makeCard('bury-first', 'robot_microbot_alpha', 'minion', '0'),
+                        makeCard('discard-cost', 'robot_microbot_beta', 'minion', '0'),
                         makeCard('bury-extra', 'robot_microbot_beta', 'minion', '0'),
+                        makeCard('buffer-hand', 'robot_microbot_beta', 'minion', '0'),
                     ],
                 }),
                 '1': makePlayer('1'),
@@ -7621,13 +7710,24 @@ describe('Skeletons abilities', () => {
             { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: extraBuryOption.id } } as any,
             defaultTestRandom,
         );
-        const bonusPrompt = getInteractionsFromMS(afterMode.finalState)[0] as any;
+        const discardPrompt = getInteractionsFromMS(afterMode.finalState)[0] as any;
+        expect(discardPrompt?.data?.sourceId).toBe('skeletons_grave_goods_discard');
+        const discardCard = discardPrompt.data.options.find((entry: any) => entry.value?.cardUid === 'discard-cost');
+        expect(discardCard).toBeDefined();
+
+        const afterDiscard = runCommand(
+            afterMode.finalState,
+            { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: discardCard.id } } as any,
+            defaultTestRandom,
+        );
+        const bonusPrompt = getInteractionsFromMS(afterDiscard.finalState)[0] as any;
         expect(bonusPrompt?.data?.sourceId).toBe('skeletons_grave_goods_bonus');
         const bonusCard = bonusPrompt.data.options.find((entry: any) => entry.value?.cardUid === 'bury-extra');
         expect(bonusCard).toBeDefined();
+        expect(bonusPrompt.data.options.some((entry: any) => entry.value?.cardUid === 'discard-cost')).toBe(false);
 
         const afterBonusCard = runCommand(
-            afterMode.finalState,
+            afterDiscard.finalState,
             { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: bonusCard.id } } as any,
             defaultTestRandom,
         );
@@ -7644,6 +7744,9 @@ describe('Skeletons abilities', () => {
 
         expect((resolved.finalState.core.bases[0].buriedCards ?? []).some(card => card.uid === 'bury-first')).toBe(true);
         expect((resolved.finalState.core.bases[1].buriedCards ?? []).some(card => card.uid === 'bury-extra')).toBe(true);
+        expect(resolved.finalState.core.players['0'].discard.some(card => card.uid === 'discard-cost')).toBe(true);
+        expect((resolved.finalState.core.bases[0].buriedCards ?? []).some(card => card.uid === 'discard-cost')).toBe(false);
+        expect((resolved.finalState.core.bases[1].buriedCards ?? []).some(card => card.uid === 'discard-cost')).toBe(false);
     });
 
     it('skeletons_spooky_scary 从弃牌堆埋葬低力量随从并抽 1 张', () => {

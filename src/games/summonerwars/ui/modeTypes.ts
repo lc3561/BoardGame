@@ -77,15 +77,6 @@ export interface HypnoticLureModeState {
 // 技能模式
 // ============================================================================
 
-/** 攻击前待处理能力 */
-export interface PendingBeforeAttack {
-  abilityId: 'life_drain' | 'holy_arrow' | 'healing';
-  sourceUnitId: string;
-  targetUnitId?: string;
-  targetCardId?: string;
-  discardCardIds?: string[];
-}
-
 /** 念力推拉方向选择模式（棋盘点击终点） */
 export interface TelekinesisTargetModeState {
   abilityId: 'telekinesis' | 'high_telekinesis' | 'high_telekinesis_instead' | 'telekinesis_instead';

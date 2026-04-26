@@ -424,7 +424,6 @@ export const SummonerWarsBoard: React.FC<Props> = ({
     interactionId: string;
     selectedCardIds: string[];
   } | null>(null);
-  const noopSetAfterAttackAbilityMode = useCallback((_mode: AfterAttackAbilityModeState | null) => {}, []);
 
   const systemAbilityMode = useMemo<AbilityModeState | null>(
     () => deriveSystemAbilityMode(swInteraction, interactionAbilityDraft),
@@ -571,7 +570,7 @@ export const SummonerWarsBoard: React.FC<Props> = ({
     interaction: currentInteraction,
     abilityMode, setAbilityMode, soulTransferMode,
     mindCaptureMode, setMindCaptureMode: noopSetMindCaptureMode,
-    afterAttackAbilityMode, setAfterAttackAbilityMode: noopSetAfterAttackAbilityMode,
+    afterAttackAbilityMode,
     rapidFireMode: effectiveRapidFireMode,
     grabFollowMode: null,
     setGrabFollowMode: noopSetGrabFollowMode,

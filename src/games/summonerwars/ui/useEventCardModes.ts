@@ -70,7 +70,6 @@ interface UseEventCardModesParams {
   soulTransferMode: SoulTransferModeState | null;
   mindCaptureMode: MindCaptureModeState | null;
   afterAttackAbilityMode: AfterAttackAbilityModeState | null;
-  setAfterAttackAbilityMode: (mode: AfterAttackAbilityModeState | null) => void;
 }
 
 // ============================================================================
@@ -81,7 +80,7 @@ export function useEventCardModes({
   core, dispatch, currentPhase, myPlayerId, myHand, setSelectedHandCardId,
   swInteraction, respondInteractionOption,
   soulTransferMode, mindCaptureMode,
-  afterAttackAbilityMode, setAfterAttackAbilityMode,
+  afterAttackAbilityMode,
 }: UseEventCardModesParams) {
   const { t } = useTranslation('game-summonerwars');
   const showToast = useToast();
@@ -559,7 +558,7 @@ export function useEventCardModes({
       default:
         break;
     }
-  }, [clearAllEventModes, myHand, setAfterAttackAbilityMode, setSelectedHandCardId, swInteraction]);
+  }, [clearAllEventModes, myHand, setSelectedHandCardId, swInteraction]);
 
   // 阶段切换时自动取消所有多步骤事件卡模式
   // eslint-disable-next-line react-hooks/set-state-in-effect -- phase change batch reset internal state
@@ -742,10 +741,8 @@ export function useEventCardModes({
       if (isValid) {
         if (swInteraction?.type === 'after_attack_mind_transmission') {
           respondPositionOption({ row: gameRow, col: gameCol });
-          setAfterAttackAbilityMode(null);
         } else if (swInteraction?.type === 'after_attack_telekinesis_target') {
           respondPositionOption({ row: gameRow, col: gameCol });
-          setAfterAttackAbilityMode(null);
         }
       }
       return true;
@@ -924,7 +921,7 @@ export function useEventCardModes({
     return false;
   }, [core, dispatch,
     funeralPyreMode, soulTransferMode, mindCaptureMode,
-    afterAttackAbilityMode, afterAttackAbilityHighlights, setAfterAttackAbilityMode,
+    afterAttackAbilityMode, afterAttackAbilityHighlights,
     telekinesisTargetMode,
     bloodSummonMode, bloodSummonHighlights,
     annihilateHighlights,

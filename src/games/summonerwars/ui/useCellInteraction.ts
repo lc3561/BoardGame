@@ -69,7 +69,6 @@ interface UseCellInteractionParams {
   mindCaptureMode: MindCaptureModeState | null;
   setMindCaptureMode: (mode: MindCaptureModeState | null) => void;
   afterAttackAbilityMode: AfterAttackAbilityModeState | null;
-  setAfterAttackAbilityMode: (mode: AfterAttackAbilityModeState | null) => void;
   rapidFireMode: import('./modeTypes').RapidFireModeState | null;
   grabFollowMode: import('./useGameEvents').GrabFollowModeState | null;
   setGrabFollowMode: (mode: import('./useGameEvents').GrabFollowModeState | null) => void;
@@ -89,7 +88,7 @@ export function useCellInteraction({
   interaction,
   abilityMode, setAbilityMode, soulTransferMode,
   mindCaptureMode, setMindCaptureMode: _setMindCaptureMode,
-  afterAttackAbilityMode, setAfterAttackAbilityMode,
+  afterAttackAbilityMode,
   rapidFireMode,
   grabFollowMode, setGrabFollowMode,
 }: UseCellInteractionParams) {
@@ -164,7 +163,7 @@ export function useCellInteraction({
     swInteraction,
     respondInteractionOption,
     soulTransferMode, mindCaptureMode,
-    afterAttackAbilityMode, setAfterAttackAbilityMode,
+    afterAttackAbilityMode,
   });
 
   const interactionPositionOptions = useMemo(() => {
@@ -720,11 +719,14 @@ export function useCellInteraction({
             }
             return;
           } else {
-            dispatch(SW_COMMANDS.ACTIVATE_ABILITY, {
+            console.warn('[SummonerWars] 未处理的系统能力单位选择分支', {
               abilityId: abilityMode.abilityId,
-              sourceUnitId: abilityMode.sourceUnitId,
+              step: abilityMode.step,
+              context: abilityMode.context,
+              swInteractionType: swInteraction?.type ?? null,
               targetUnitId: targetUnit.instanceId,
             });
+            return;
           }
           setAbilityMode(null);
         }
@@ -890,18 +892,7 @@ export function useCellInteraction({
           dispatch(SW_COMMANDS.DECLARE_ATTACK, {
             attacker: core.selectedUnit,
             target: { row: gameRow, col: gameCol },
-            beforeAttack: activeBeforeAttack
-              ? {
-                abilityId: activeBeforeAttack.abilityId,
-                targetUnitId: activeBeforeAttack.targetUnitId,
-                targetCardId: activeBeforeAttack.targetCardId,
-                discardCardIds: activeBeforeAttack.discardCardIds,
-              }
-              : undefined,
           });
-          if (activeBeforeAttack) {
-            setPendingBeforeAttack(null);
-          }
         } else {
           const clickedUnit = core.board[gameRow]?.[gameCol]?.unit;
           if (clickedUnit && clickedUnit.owner === myPlayerId) {
@@ -1156,7 +1147,6 @@ export function useCellInteraction({
         optionIds,
       });
       setAbilityMode(null);
-      setPendingBeforeAttack(null);
       return;
     }
 
@@ -1174,7 +1164,6 @@ export function useCellInteraction({
           });
         }
         setAbilityMode(null);
-        setPendingBeforeAttack(null);
         return;
       }
       const option = swInteraction.options.find((opt) => {
@@ -1325,7 +1314,6 @@ export function useCellInteraction({
     // 状态
     selectedHandCardId, selectedCardsForDiscard,
     endPhaseConfirmPending, setEndPhaseConfirmPending,
-    pendingBeforeAttack,
     magicEventChoiceMode,
     abilitySelectedCardIds: abilityMode?.step === 'selectCards' ? (abilityMode.selectedCardIds ?? []) : [],
     // 事件卡模式（透传）

@@ -246,10 +246,10 @@ function skeletonsGraveyardTalent(ctx: AbilityContext): AbilityResult {
 
 function skeletonsLordOfBonesTalent(ctx: AbilityContext): AbilityResult {
     const hand = getHandCards(ctx.state, ctx.playerId);
-    const buried = buildOwnedBuriedOptions(ctx.state, ctx.playerId, { baseIndex: ctx.baseIndex });
+    const buried = buildBuriedOptions(ctx.state, { baseIndex: ctx.baseIndex });
     if (hand.length === 0 && buried.length === 0) return { events: [buildAbilityFeedback(ctx.playerId, 'feedback.no_valid_targets', ctx.now)] };
     if (hand.length === 0) {
-        const interaction = createSimpleChoice(`skeletons_lord_of_bones_uncover_${ctx.now}`, ctx.playerId, '骸骨之王：挖掘这里一张你的埋葬牌', buried, { sourceId: 'skeletons_lord_of_bones_uncover', targetType: 'generic' });
+        const interaction = createSimpleChoice(`skeletons_lord_of_bones_uncover_${ctx.now}`, ctx.playerId, '骸骨之王：挖掘这里一张埋葬牌', buried, { sourceId: 'skeletons_lord_of_bones_uncover', targetType: 'generic' });
         return { events: [], matchState: queueInteraction(ctx.matchState, interaction) };
     }
     if (buried.length === 0) {
@@ -257,7 +257,7 @@ function skeletonsLordOfBonesTalent(ctx: AbilityContext): AbilityResult {
         (interaction.data as any).continuationContext = { targetBaseIndex: ctx.baseIndex };
         return { events: [], matchState: queueInteraction(ctx.matchState, interaction) };
     }
-    const interaction = createSimpleChoice(`skeletons_lord_of_bones_mode_${ctx.now}`, ctx.playerId, '骸骨之王：选择埋葬手牌或挖掘这里的埋葬牌', [
+    const interaction = createSimpleChoice(`skeletons_lord_of_bones_mode_${ctx.now}`, ctx.playerId, '骸骨之王：选择埋葬手牌或挖掘这里的一张埋葬牌', [
         { id: 'bury', label: '埋葬手牌', value: { mode: 'bury' }, displayMode: 'button' as const },
         { id: 'uncover', label: '挖掘这里', value: { mode: 'uncover' }, displayMode: 'button' as const },
     ], { sourceId: 'skeletons_lord_of_bones_mode', targetType: 'button' });
@@ -442,7 +442,7 @@ export function registerSkeletonAbilities(): void {
         execute: skeletonsLordOfBonesTalent,
         validateUse: (ctx) =>
             getHandCards(ctx.state, ctx.playerId).length > 0
-            || buildOwnedBuriedOptions(ctx.state, ctx.playerId, { baseIndex: ctx.baseIndex }).length > 0
+            || buildBuriedOptions(ctx.state, { baseIndex: ctx.baseIndex }).length > 0
                 ? null
                 : '没有可埋葬或可挖掘的牌',
     });
@@ -576,7 +576,7 @@ const handleSkeletonsLordOfBonesMode: InteractionHandler = (state, playerId, val
         (interaction.data as any).continuationContext = continuation;
         return { state: queueInteraction(state, interaction), events: [] };
     }
-    const interaction = createSimpleChoice(`skeletons_lord_of_bones_uncover_${now}`, playerId, '骸骨之王：挖掘这里一张你的埋葬牌', buildOwnedBuriedOptions(state.core, playerId, { baseIndex: continuation.targetBaseIndex }), { sourceId: 'skeletons_lord_of_bones_uncover', targetType: 'generic' });
+    const interaction = createSimpleChoice(`skeletons_lord_of_bones_uncover_${now}`, playerId, '骸骨之王：挖掘这里一张埋葬牌', buildBuriedOptions(state.core, { baseIndex: continuation.targetBaseIndex }), { sourceId: 'skeletons_lord_of_bones_uncover', targetType: 'generic' });
     return { state: queueInteraction(state, interaction), events: [] };
 };
 
@@ -612,7 +612,7 @@ const handleSkeletonsSpookyScaryCard: InteractionHandler = (state, playerId, val
 const handleSkeletonsGraveGoodsMode: InteractionHandler = (state, playerId, value, _data, _random, now) => {
     const selected = value as ModeChoice;
     if (selected.mode === 'extra_bury') {
-        const interaction = createSimpleChoice(`skeletons_grave_goods_bonus_${now}`, playerId, '殉葬品：选择要弃掉并额外埋葬的手牌', buildHandCardOptions(getHandCards(state.core, playerId)), { sourceId: 'skeletons_grave_goods_bonus', targetType: 'hand' });
+        const interaction = createSimpleChoice(`skeletons_grave_goods_discard_${now}`, playerId, '殉葬品：选择要弃掉的手牌', buildHandCardOptions(getHandCards(state.core, playerId)), { sourceId: 'skeletons_grave_goods_discard', targetType: 'hand' });
         return { state: queueInteraction(state, interaction), events: [] };
     }
     const interaction = createSimpleChoice(`skeletons_grave_goods_uncover_${now}`, playerId, '殉葬品：选择一张你埋葬的牌', buildOwnedBuriedOptions(state.core, playerId), { sourceId: 'skeletons_grave_goods_uncover', targetType: 'generic' });
@@ -638,42 +638,57 @@ const handleSkeletonsGraveGoodsBury: InteractionHandler = (state, playerId, valu
     }
     const remainingHand = getHandCards(nextState.core, playerId);
     const buried = buildOwnedBuriedOptions(nextState.core, playerId);
-    const canExtraBury = remainingHand.length > 0;
+    const canExtraBury = remainingHand.length >= 2;
     const canUncover = buried.length > 0;
     if (!canExtraBury && !canUncover) return { state, events: firstEvents };
     if (canExtraBury && !canUncover) {
-        const interaction = createSimpleChoice(`skeletons_grave_goods_bonus_${now}`, playerId, '殉葬品：选择要弃掉并额外埋葬的手牌', buildHandCardOptions(remainingHand), { sourceId: 'skeletons_grave_goods_bonus', targetType: 'hand' });
+        const interaction = createSimpleChoice(`skeletons_grave_goods_discard_${now}`, playerId, '殉葬品：选择要弃掉的手牌', buildHandCardOptions(remainingHand), { sourceId: 'skeletons_grave_goods_discard', targetType: 'hand' });
         return { state: queueInteraction(nextState, interaction), events: firstEvents };
     }
     if (!canExtraBury && canUncover) {
         const interaction = createSimpleChoice(`skeletons_grave_goods_uncover_${now}`, playerId, '殉葬品：选择一张你埋葬的牌', buried, { sourceId: 'skeletons_grave_goods_uncover', targetType: 'generic' });
         return { state: queueInteraction(nextState, interaction), events: firstEvents };
     }
-    const interaction = createSimpleChoice(`skeletons_grave_goods_mode_${now}`, playerId, '殉葬品：你可以弃一张牌来额外埋葬一张牌，或挖掘一张你的埋葬牌', [
-        { id: 'extra-bury', label: '额外埋葬一张牌', value: { mode: 'extra_bury' }, displayMode: 'button' as const },
+    const interaction = createSimpleChoice(`skeletons_grave_goods_mode_${now}`, playerId, '殉葬品：你可以弃一张牌，再额外埋葬另一张牌，或挖掘一张你的埋葬牌', [
+        { id: 'extra-bury', label: '弃一张，再额外埋葬', value: { mode: 'extra_bury' }, displayMode: 'button' as const },
         { id: 'uncover', label: '挖掘一张埋葬牌', value: { mode: 'uncover' }, displayMode: 'button' as const },
     ], { sourceId: 'skeletons_grave_goods_mode', targetType: 'button' });
     return { state: queueInteraction(nextState, interaction), events: firstEvents };
 };
 
+const handleSkeletonsGraveGoodsDiscard: InteractionHandler = (state, playerId, value, _data, _random, now) => {
+    const selected = value as CardChoice;
+    if (selected.skip || !selected.cardUid) return { state, events: [] };
+    const remainingHand = getHandCards(state.core, playerId).filter(card => card.uid !== selected.cardUid);
+    if (remainingHand.length === 0) return { state, events: [] };
+    const interaction = createSimpleChoice(`skeletons_grave_goods_bonus_${now}`, playerId, '殉葬品：选择要额外埋葬的另一张手牌', buildHandCardOptions(remainingHand), { sourceId: 'skeletons_grave_goods_bonus', targetType: 'hand' });
+    (interaction.data as any).continuationContext = { discardCardUid: selected.cardUid };
+    return { state: queueInteraction(state, interaction), events: [] };
+};
+
 const handleSkeletonsGraveGoodsBonus: InteractionHandler = (state, playerId, value, data, random, now) => {
     const selected = value as CardChoice;
-    if (selected.skip || !selected.cardUid || !selected.defId) return { state, events: [] };
+    const continuation = data?.continuationContext as { discardCardUid?: string } | undefined;
+    if (selected.skip || !selected.cardUid || !selected.defId || !continuation?.discardCardUid) return { state, events: [] };
     const interaction = createSimpleChoice(`skeletons_grave_goods_bonus_base_${now}`, playerId, '殉葬品：选择额外埋葬到的基地', buildBaseTargetOptions(getBaseOptions(state.core), state.core), { sourceId: 'skeletons_grave_goods_bonus_base', targetType: 'base' });
-    (interaction.data as any).continuationContext = { cardUid: selected.cardUid, defId: selected.defId };
+    (interaction.data as any).continuationContext = {
+        discardCardUid: continuation.discardCardUid,
+        buryCardUid: selected.cardUid,
+        buryDefId: selected.defId,
+    };
     return { state: queueInteraction(state, interaction), events: [] };
 };
 
 const handleSkeletonsGraveGoodsBonusBase: InteractionHandler = (state, playerId, value, data, random, now) => {
     const selected = value as BaseChoice;
-    const continuation = data?.continuationContext as { cardUid?: string; defId?: string } | undefined;
-    if (selected.baseIndex === undefined || !continuation?.cardUid || !continuation.defId) return { state, events: [] };
-    const discardEvent: CardsDiscardedEvent = { type: SU_EVENTS.CARDS_DISCARDED, payload: { playerId, cardUids: [continuation.cardUid] }, timestamp: now };
+    const continuation = data?.continuationContext as { discardCardUid?: string; buryCardUid?: string; buryDefId?: string } | undefined;
+    if (selected.baseIndex === undefined || !continuation?.discardCardUid || !continuation.buryCardUid || !continuation.buryDefId) return { state, events: [] };
+    const discardEvent: CardsDiscardedEvent = { type: SU_EVENTS.CARDS_DISCARDED, payload: { playerId, cardUids: [continuation.discardCardUid] }, timestamp: now };
     return {
         state,
         events: [
             discardEvent,
-            ...buildDiscardBuryEvents(state.core, playerId, continuation.cardUid, continuation.defId, selected.baseIndex, random, now),
+            ...buildBuryCardEvents({ core: state.core, matchState: state, playerId, cardUid: continuation.buryCardUid, defId: continuation.buryDefId, baseIndex: selected.baseIndex, trueOwnerId: playerId, buriedFrom: 'hand', reason: 'skeletons_grave_goods_bonus', random, now }),
         ],
     };
 };
@@ -900,6 +915,7 @@ export function registerSkeletonInteractionHandlers(): void {
     registerInteractionHandler('skeletons_grave_goods_mode', handleSkeletonsGraveGoodsMode);
     registerInteractionHandler('skeletons_grave_goods_base', handleSkeletonsGraveGoodsBase);
     registerInteractionHandler('skeletons_grave_goods_bury', handleSkeletonsGraveGoodsBury);
+    registerInteractionHandler('skeletons_grave_goods_discard', handleSkeletonsGraveGoodsDiscard);
     registerInteractionHandler('skeletons_grave_goods_bonus', handleSkeletonsGraveGoodsBonus);
     registerInteractionHandler('skeletons_grave_goods_bonus_base', handleSkeletonsGraveGoodsBonusBase);
     registerInteractionHandler('skeletons_grave_goods_uncover', handleSkeletonsGraveGoodsUncover);
