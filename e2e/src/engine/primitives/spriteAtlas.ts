@@ -132,9 +132,10 @@ export function computeSpriteImgStyle(index: number, atlas: SpriteAtlasConfig): 
   imgWidth: string;
   /** img 高度百分比（相对于容器），如 "600%" */
   imgHeight: string;
-  /** 帧在精灵图中的列位置百分比（用于 object-position） */
-  objectPositionX: string;
-  objectPositionY: string;
+  /** 需要向左平移的百分比（相对于容器宽度） */
+  translateX: string;
+  /** 需要向上平移的百分比（相对于容器高度） */
+  translateY: string;
   /** 帧宽高比 */
   aspectRatio: number;
 } {
@@ -148,15 +149,14 @@ export function computeSpriteImgStyle(index: number, atlas: SpriteAtlasConfig): 
   const imgWidthPct = (atlas.imageW / cardW) * 100;
   const imgHeightPct = (atlas.imageH / cardH) * 100;
 
-  // object-position 百分比：与 background-position 相同的公式
-  const xPos = atlas.imageW > cardW ? (x / (atlas.imageW - cardW)) * 100 : 0;
-  const yPos = atlas.imageH > cardH ? (y / (atlas.imageH - cardH)) * 100 : 0;
+  const translateXPct = cardW > 0 ? (x / cardW) * 100 : 0;
+  const translateYPct = cardH > 0 ? (y / cardH) * 100 : 0;
 
   return {
     imgWidth: `${imgWidthPct}%`,
     imgHeight: `${imgHeightPct}%`,
-    objectPositionX: `${xPos}%`,
-    objectPositionY: `${yPos}%`,
+    translateX: `-${translateXPct}%`,
+    translateY: `-${translateYPct}%`,
     aspectRatio: cardW / cardH,
   };
 }

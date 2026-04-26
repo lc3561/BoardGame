@@ -298,6 +298,78 @@ async function injectAlienInteractionState(
     }));
 }
 
+async function injectCthulhuCorruptionState(matchId: string, page: Page): Promise<void> {
+    await applySmashUpStatePatch(matchId, page, (state) => ({
+        ...state,
+        core: {
+            ...state.core,
+            players: {
+                ...(state.core?.players ?? {}),
+                '0': {
+                    ...(state.core?.players?.['0'] ?? {}),
+                    id: '0',
+                    vp: 0,
+                    hand: [
+                        makeInjectedCard('corruption-1', 'cthulhu_corruption', 'action', HOST_PLAYER_ID),
+                        makeInjectedCard('fallback-minion-1', 'alien_scout', 'minion', HOST_PLAYER_ID),
+                    ],
+                    deck: [],
+                    discard: [],
+                    minionsPlayed: 0,
+                    minionLimit: 1,
+                    actionsPlayed: 0,
+                    actionLimit: 2,
+                    factions: ['cthulhu', 'aliens'],
+                    sameNameMinionDefId: null,
+                },
+                '1': {
+                    ...(state.core?.players?.['1'] ?? {}),
+                    id: '1',
+                    vp: 0,
+                    hand: [],
+                    deck: [],
+                    discard: [],
+                    minionsPlayed: 0,
+                    minionLimit: 1,
+                    actionsPlayed: 0,
+                    actionLimit: 1,
+                    factions: ['ninjas', 'robots'],
+                    sameNameMinionDefId: null,
+                },
+            },
+            turnOrder: ['0', '1'],
+            currentPlayerIndex: 0,
+            phase: 'playCards',
+            bases: [
+                {
+                    defId: 'base_the_homeworld',
+                    minions: [
+                        makeInjectedMinion('target-1', 'ninja_shinobi', '1', '1', 2),
+                    ],
+                    ongoingActions: [],
+                },
+                { defId: 'base_tar_pits', minions: [], ongoingActions: [] },
+                { defId: 'base_great_library', minions: [], ongoingActions: [] },
+            ],
+            titans: [],
+            enabledExpansions: [],
+            baseDeck: [],
+            baseDiscard: [],
+            turnNumber: 1,
+            nextUid: 500,
+            cardsPlayedThisTurn: 0,
+            powerCountersPlacedOnMinionsThisTurn: 0,
+            turnDestroyedMinions: [],
+            madnessDeck: ['madness', 'madness', 'madness'],
+        },
+        sys: {
+            ...state.sys,
+            phase: 'playCards',
+            interaction: { current: undefined, queue: [] },
+        },
+    }));
+}
+
 function getInteractionSourceId(state: any): string | null {
     return state?.sys?.interaction?.current?.data?.sourceId ?? null;
 }
@@ -370,6 +442,84 @@ async function clickMinion(page: Page, minionUid: string): Promise<void> {
         minion?.click();
     }, minionUid);
     await page.waitForTimeout(300);
+}
+
+async function respondCurrentInteraction(
+    page: Page,
+    payload: { optionId?: string; optionIds?: string[]; mergedValue?: unknown },
+): Promise<void> {
+    await page.evaluate((responsePayload) => {
+        const harness = (window as any).__BG_TEST_HARNESS__;
+        const interaction = harness?.state?.get?.()?.sys?.interaction?.current;
+        if (!interaction) {
+            throw new Error('当前没有可响应的交互');
+        }
+        harness.command.dispatch({
+            type: 'SYS_INTERACTION_RESPOND',
+            playerId: interaction.playerId,
+            payload: responsePayload,
+        });
+    }, payload);
+    await page.waitForTimeout(300);
+}
+
+async function dispatchHarnessCommand(
+    page: Page,
+    playerId: '0' | '1',
+    type: string,
+    payload: Record<string, unknown>,
+): Promise<void> {
+    await page.evaluate(({ commandType, commandPayload, commandPlayerId }) => {
+        const harness = (window as any).__BG_TEST_HARNESS__;
+        harness.command.dispatch({
+            type: commandType,
+            playerId: commandPlayerId,
+            payload: commandPayload,
+        });
+    }, {
+        commandType: type,
+        commandPayload: payload,
+        commandPlayerId: playerId,
+    });
+    await page.waitForTimeout(300);
+}
+
+async function drainPostResolutionFlow(
+    matchId: string,
+    hostPage: Page,
+    guestPage: Page,
+    timeout = 8000,
+): Promise<void> {
+    const start = Date.now();
+    while (Date.now() - start < timeout) {
+        const state = await getMatchState(matchId, hostPage);
+        const current = state?.sys?.interaction?.current ?? null;
+        const currentSourceId = current?.data?.sourceId ?? null;
+
+        if (currentSourceId === 'smashup_reaction_choose') {
+            const currentPlayerId = current?.playerId as '0' | '1' | undefined;
+            const options = Array.isArray(current?.data?.options) ? current.data.options as any[] : [];
+            const option = options.find(entry => entry?.id === 'pass' || entry?.value?.kind === 'pass') ?? options[0];
+            if (!currentPlayerId || !option?.id) break;
+            await respondCurrentInteraction(currentPlayerId === '0' ? hostPage : guestPage, { optionId: option.id });
+            continue;
+        }
+
+        const responseWindow = state?.sys?.responseWindow?.current ?? null;
+        const responderQueue = Array.isArray(responseWindow?.responderQueue) ? responseWindow.responderQueue : [];
+        const responderIndex = typeof responseWindow?.currentResponderIndex === 'number' ? responseWindow.currentResponderIndex : -1;
+        const currentResponder = responderIndex >= 0 ? responderQueue[responderIndex] as '0' | '1' | undefined : undefined;
+        if (!current && currentResponder && (currentResponder === '0' || currentResponder === '1')) {
+            await dispatchHarnessCommand(currentResponder === '0' ? hostPage : guestPage, currentResponder, 'RESPONSE_PASS', {});
+            continue;
+        }
+
+        if (!current && !responseWindow) {
+            return;
+        }
+        await hostPage.waitForTimeout(150);
+    }
+    throw new Error('未能在限定时间内收口后续反应链');
 }
 
 const ONLINE_SELECTION_MATCHES: any[] = [];
@@ -575,6 +725,53 @@ test.describe('SmashUp Base/Minion Selection', () => {
             filename: 'smashup-collector-resolved.png',
         });
         await page.screenshot({ path: collectorResolvedShot, fullPage: false });
+    });
+
+    test('随从选择：腐化 - 不弹窗，直接点击场上随从', async ({ browser }, testInfo) => {
+        const smashupMatch = await createOnlineSelectionMatch(browser, testInfo);
+        if (!smashupMatch) {
+            test.skip(true, '游戏服务器不可用或创建房间失败');
+            return;
+        }
+        const { hostPage: page, guestPage, matchId } = smashupMatch;
+        await clearEvidenceScreenshotsForTest(testInfo);
+
+        await waitForTestHarness(page);
+        await injectCthulhuCorruptionState(matchId, page);
+
+        await page.waitForSelector('[data-card-uid="corruption-1"]', { timeout: 5000 });
+        await page.click('[data-card-uid="corruption-1"]');
+        await page.click('[data-card-uid="corruption-1"]');
+        const promptOverlay = page.locator('[data-testid="prompt-overlay"]');
+        await expect(promptOverlay).not.toBeVisible();
+        await waitForInteractionSourceId(matchId, page, 'cthulhu_corruption');
+        await waitForSelectableMinion(page, 'target-1');
+
+        const corruptionHighlightShot = getEvidenceScreenshotPath(testInfo, 'cthulhu-corruption-minion-highlight', {
+            filename: 'smashup-cthulhu-corruption-minion-highlight.png',
+        });
+        await page.screenshot({ path: corruptionHighlightShot, fullPage: false });
+
+        await clickMinion(page, 'target-1');
+
+        await expect.poll(async () => {
+            const state = await getMatchState(matchId, page);
+            return state.core.bases[0].minions.some((minion: any) => minion.uid === 'target-1');
+        }, { timeout: 5000 }).toBe(false);
+
+        await drainPostResolutionFlow(matchId, page, guestPage);
+
+        const resolvedState = await getMatchState(matchId, page);
+        expect(getInteractionSourceId(resolvedState)).toBeNull();
+        expect(resolvedState.core.bases[0].minions.some((minion: any) => minion.uid === 'target-1')).toBe(false);
+        expect(resolvedState.core.bases[0].minions).toHaveLength(0);
+        expect(resolvedState.core.players['0'].hand.some((card: any) => card.defId === 'special_madness')).toBe(true);
+        expect(resolvedState.core.players['0'].hand.some((card: any) => card.uid === 'fallback-minion-1')).toBe(true);
+
+        const corruptionResolvedShot = getEvidenceScreenshotPath(testInfo, 'cthulhu-corruption-resolved', {
+            filename: 'smashup-cthulhu-corruption-resolved.png',
+        });
+        await page.screenshot({ path: corruptionResolvedShot, fullPage: false });
     });
 
     test('基地选择：外星人入侵（第二步）- 不弹窗，直接点击基地', async ({ browser }, testInfo) => {

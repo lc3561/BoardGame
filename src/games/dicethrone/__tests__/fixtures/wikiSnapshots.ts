@@ -194,7 +194,7 @@ export const MOON_ELF_ABILITY_SNAPSHOTS: WikiAbilitySnapshot[] = [
   { heroId: 'moon_elf', abilityId: 'longbow', level: 3, wikiName: 'Longbow III', wikiDescription: '3 Bows: Deal 5 damage. 4 Bows: Deal 7 damage. 5 Bows: Deal 9 damage. If 3+ same symbol, inflict Entangle.', wikiDamage: 5, wikiTrigger: '3/4/5 Bows' },
 
   // --- Covert Fire ---
-  { heroId: 'moon_elf', abilityId: 'covert-fire', level: 1, wikiName: 'Covert Fire', wikiDescription: 'Inflict Targeted. Deal 4 damage.', wikiDamage: 4, wikiStatusEffect: 'targeted', wikiStatusValue: 1, wikiTrigger: '3 Bows + 3 Moons' },
+  { heroId: 'moon_elf', abilityId: 'covert-fire', level: 1, wikiName: 'Covert Fire', wikiDescription: 'Inflict Targeted. Deal 4 damage.', wikiDamage: 4, wikiStatusEffect: 'targeted', wikiStatusValue: 1, wikiTrigger: '3 Bows + 2 Moons' },
   { heroId: 'moon_elf', abilityId: 'covert-fire', level: 2, wikiName: 'Covert Fire II', wikiDescription: 'Focus (2 Bows + 1 Moon): Inflict Targeted and Entangle. Deadeye Shot (3 Bows + 2 Moons): Inflict Targeted, deal 6 damage.', wikiDamage: 6, wikiTrigger: '2 Bows + 1 Moon / 3 Bows + 2 Moons' },
 
   // --- Covering Fire ---

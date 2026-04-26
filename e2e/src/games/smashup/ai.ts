@@ -273,6 +273,7 @@ const hasPendingScoreBasesSpecialActivation = (state: SmashUpState, playerId: Pl
 
 const canAdvancePhase = (state: SmashUpState, playerId: PlayerId): boolean => {
     if (state.sys.interaction?.current) return false;
+    if (state.sys.interaction?.isBlocked === true) return false;
     if (state.sys.responseWindow?.current) return false;
     if (state.sys.phase === 'scoreBases' && hasPendingScoreBasesSpecialActivation(state, playerId)) {
         return false;
@@ -1881,6 +1882,168 @@ const interactionValueScorer: LocalAiActionScorer = createInteractionHintScorer(
     id: 'interaction-value',
 });
 
+type SmashUpReactionChoiceValue = {
+    kind?: string;
+    triggerId?: string;
+    cardUid?: string;
+    targetBaseIndex?: number;
+    baseIndex?: number;
+    minionUid?: string;
+    titanUid?: string;
+};
+
+const readSmashUpReactionChoiceValue = (action: AiLegalAction): SmashUpReactionChoiceValue | null => {
+    const rawValue = action.metadata?.optionValue;
+    if (!rawValue || typeof rawValue !== 'object') return null;
+    return rawValue as SmashUpReactionChoiceValue;
+};
+
+const estimateSmashUpReactionChoiceUrgency = (
+    state: SmashUpState,
+    playerId: PlayerId,
+    action: AiLegalAction,
+): { score: number; reason: string } | null => {
+    if (action.kind !== 'interaction-choice') return null;
+
+    const choiceValue = readSmashUpReactionChoiceValue(action);
+    if (!choiceValue) return null;
+
+    const normalizedKind = typeof choiceValue.kind === 'string'
+        ? choiceValue.kind
+        : typeof choiceValue.triggerId === 'string'
+            ? 'trigger'
+            : null;
+    if (!normalizedKind || normalizedKind === 'pass') return null;
+
+    if (normalizedKind === 'trigger') {
+        const optionOrder = typeof action.metadata?.optionOrder === 'number'
+            ? action.metadata.optionOrder
+            : 0;
+        const triggerId = typeof choiceValue.triggerId === 'string' ? choiceValue.triggerId : '';
+        let score = 18 - optionOrder * 3;
+        if (triggerId.includes('afterScoring')) score += 6;
+        if (triggerId.includes('beforeScoring')) score += 4;
+        return {
+            score,
+            reason: '统一反应入口里的触发顺序默认沿用当前队列优先级',
+        };
+    }
+
+    if (normalizedKind === 'play_action') {
+        const player = state.core.players[playerId];
+        const card = player?.hand.find((candidate) => candidate.uid === choiceValue.cardUid);
+        const defId = card?.defId;
+        const cardMetrics = getActionCardAiMetrics(defId);
+        const strategyTags = defId ? getCardStrategyTags(defId, 'action') : [];
+        const targetBaseIndex = typeof choiceValue.targetBaseIndex === 'number'
+            ? choiceValue.targetBaseIndex
+            : undefined;
+
+        let score = 10;
+        if (strategyTags.includes('burst-scoring')) score += 56;
+        if ((cardMetrics.reactive ?? 0) > 0) score += (cardMetrics.reactive ?? 0) * 9;
+        if ((cardMetrics.extraAction ?? 0) > 0) score += (cardMetrics.extraAction ?? 0) * 6;
+
+        if (targetBaseIndex !== undefined) {
+            const { scoringEligible, gapBefore } = getBasePressureMetrics(state, targetBaseIndex);
+            if (scoringEligible) score += 84;
+            if (gapBefore <= 2) score += 42 - gapBefore * 10;
+            if (gapBefore >= 8) score -= 20;
+        }
+
+        return {
+            score: Number(score.toFixed(3)),
+            reason: targetBaseIndex !== undefined
+                ? '统一反应入口中存在可直接改写当前计分结果的行动牌'
+                : '统一反应入口中的行动牌具备即时收益',
+        };
+    }
+
+    if (normalizedKind === 'play_minion') {
+        const player = state.core.players[playerId];
+        const card = player?.hand.find((candidate) => candidate.uid === choiceValue.cardUid)
+            ?? player?.discard.find((candidate) => candidate.uid === choiceValue.cardUid);
+        const targetBaseIndex = typeof choiceValue.baseIndex === 'number'
+            ? choiceValue.baseIndex
+            : undefined;
+        const power = getMinionLikePower(card?.defId) ?? 0;
+
+        let score = 8 + power * 6;
+        if (targetBaseIndex !== undefined) {
+            const { scoringEligible, gapBefore, baseTotalPower, breakpoint } = getBasePressureMetrics(state, targetBaseIndex);
+            const projectedMargin = baseTotalPower + power - breakpoint;
+            if (scoringEligible) score += 68;
+            if (projectedMargin >= 0) score += 54;
+            else if (gapBefore <= 2) score += 24 - gapBefore * 6;
+        }
+
+        return {
+            score: Number(score.toFixed(3)),
+            reason: '统一反应入口中的随从落点可能直接改写当前基地胜负',
+        };
+    }
+
+    if (normalizedKind === 'activate_special') {
+        const baseIndex = typeof choiceValue.baseIndex === 'number'
+            ? choiceValue.baseIndex
+            : undefined;
+        const scoringEligible = baseIndex !== undefined
+            ? getBasePressureMetrics(state, baseIndex).scoringEligible
+            : false;
+        return {
+            score: scoringEligible ? 72 : 24,
+            reason: scoringEligible
+                ? '统一反应入口中的特殊能力直接作用于当前计分基地'
+                : '统一反应入口中的特殊能力仍可能改变后续局面',
+        };
+    }
+
+    return null;
+};
+
+const smashUpReactionChoiceScorer: LocalAiActionScorer = {
+    id: 'smashup-reaction-choice',
+    score(context, action) {
+        if (action.kind !== 'interaction-choice') return null;
+        if (context.interaction?.sourceId !== 'smashup_reaction_choose') return null;
+
+        const choiceValue = readSmashUpReactionChoiceValue(action);
+        if (!choiceValue) return null;
+
+        if (choiceValue.kind === 'pass') {
+            const state = context.visibleState as SmashUpState;
+            const bestAlternativeUrgency = context.legalActions.reduce((best, candidate) => {
+                if (candidate.actionId === action.actionId) return best;
+                const candidateUrgency = estimateSmashUpReactionChoiceUrgency(state, context.playerId, candidate);
+                return Math.max(best, candidateUrgency?.score ?? 0);
+            }, 0);
+
+            if (bestAlternativeUrgency >= 70) {
+                return {
+                    score: -96,
+                    reason: '统一反应入口里存在能明显改写当前计分的动作，不能直接让过',
+                };
+            }
+            if (bestAlternativeUrgency >= 36) {
+                return {
+                    score: -28,
+                    reason: '统一反应入口里仍有值得优先处理的动作，Pass 仅作次选',
+                };
+            }
+            return {
+                score: 18,
+                reason: '当前统一反应入口没有足够强的收益动作，Pass 可以作为稳妥收口',
+            };
+        }
+
+        return estimateSmashUpReactionChoiceUrgency(
+            context.visibleState as SmashUpState,
+            context.playerId,
+            action,
+        );
+    },
+};
+
 const interactionOrderScorer: LocalAiActionScorer = {
     id: 'interaction-order',
     score(_context, action) {
@@ -2110,6 +2273,7 @@ const baselineLocalPolicy = createLookaheadLocalAiPolicy({
     scorers: [
         actionKindScorer,
         interactionValueScorer,
+        smashUpReactionChoiceScorer,
         interactionOrderScorer,
         strategyProfileScorer,
         factionScorer,

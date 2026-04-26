@@ -70,6 +70,77 @@ describe('持续力量修正基础设施', () => {
         const state = makeState({ bases: [base] });
         expect(getTotalEffectivePowerOnBase(state, base, 0)).toBe(5);
     });
+
+    it('mermaids_siren 只减少控制者总力量，不改变基地总力量', () => {
+        const siren = makeMinion('siren-1', 'mermaids_siren', '0', 2, { powerModifier: 0 });
+        const victim = makeMinion('victim-1', 'test_minion', '1', 4, { powerModifier: 0 });
+        const base = { defId: 'base_a', minions: [siren, victim], ongoingActions: [] };
+        const state = makeState({ currentPlayerIndex: 0, bases: [base] });
+
+        expect(getPlayerEffectivePowerOnBase(state, base, 0, '1')).toBe(3);
+        expect(getTotalEffectivePowerOnBase(state, base, 0)).toBe(6);
+    });
+
+    it('mermaids_siren 对同一玩家多个随从只减少 1 次总力量', () => {
+        const siren = makeMinion('siren-1', 'mermaids_siren', '0', 2, { powerModifier: 0 });
+        const victimA = makeMinion('victim-1', 'test_minion', '1', 4, { powerModifier: 0 });
+        const victimB = makeMinion('victim-2', 'test_minion', '1', 3, { powerModifier: 0 });
+        const base = { defId: 'base_a', minions: [siren, victimA, victimB], ongoingActions: [] };
+        const state = makeState({ currentPlayerIndex: 0, bases: [base] });
+
+        expect(getPlayerEffectivePowerOnBase(state, base, 0, '1')).toBe(6);
+        expect(getTotalEffectivePowerOnBase(state, base, 0)).toBe(9);
+    });
+
+    it('base_mermaid_reef 只在当前玩家回合压低其他玩家总力量，不改变基地总力量', () => {
+        const mine = makeMinion('m1', 'test_minion', '0', 2, { powerModifier: 0 });
+        const theirs = makeMinion('m2', 'test_minion', '1', 4, { powerModifier: 0 });
+        const base = { defId: 'base_mermaid_reef', minions: [mine, theirs], ongoingActions: [] };
+        const state = makeState({ currentPlayerIndex: 0, bases: [base] });
+
+        expect(getPlayerEffectivePowerOnBase(state, base, 0, '0')).toBe(2);
+        expect(getPlayerEffectivePowerOnBase(state, base, 0, '1')).toBe(3);
+        expect(getTotalEffectivePowerOnBase(state, base, 0)).toBe(6);
+    });
+
+    it('base_mermaid_reef 对同一玩家多个随从只减少 1 次总力量', () => {
+        const mine = makeMinion('m1', 'test_minion', '0', 2, { powerModifier: 0 });
+        const theirsA = makeMinion('m2', 'test_minion', '1', 4, { powerModifier: 0 });
+        const theirsB = makeMinion('m3', 'test_minion', '1', 3, { powerModifier: 0 });
+        const base = { defId: 'base_mermaid_reef', minions: [mine, theirsA, theirsB], ongoingActions: [] };
+        const state = makeState({ currentPlayerIndex: 0, bases: [base] });
+
+        expect(getPlayerEffectivePowerOnBase(state, base, 0, '1')).toBe(6);
+        expect(getTotalEffectivePowerOnBase(state, base, 0)).toBe(9);
+    });
+
+    it('mermaids_desert_island 令随从不计入控制者总力量，但不改变基地总力量', () => {
+        const m1 = makeMinion('m1', 'test_minion', '0', 3, { powerModifier: 0 });
+        const m2 = makeMinion('m2', 'test_minion', '1', 4, { powerModifier: 0 });
+        const base = {
+            defId: 'base_a',
+            minions: [m1, m2],
+            ongoingActions: [{ uid: 'desert-1', defId: 'mermaids_desert_island', ownerId: '0' }],
+        };
+        const state = makeState({ bases: [base] });
+
+        expect(getPlayerEffectivePowerOnBase(state, base, 0, '0')).toBe(0);
+        expect(getPlayerEffectivePowerOnBase(state, base, 0, '1')).toBe(0);
+        expect(getTotalEffectivePowerOnBase(state, base, 0)).toBe(7);
+    });
+
+    it('mermaids_charmed 通过 metadata 压制总力量贡献，不直接改爆点用力量', () => {
+        const target = makeMinion('target-1', 'test_minion', '1', 3, {
+            powerModifier: 0,
+            metadata: { mermaidsCharmedSuppressedTurn: 1 },
+        });
+        const base = { defId: 'base_a', minions: [target], ongoingActions: [] };
+        const state = makeState({ turnNumber: 1, bases: [base] });
+
+        expect(getEffectivePower(state, target, 0)).toBe(3);
+        expect(getPlayerEffectivePowerOnBase(state, base, 0, '1')).toBe(0);
+        expect(getTotalEffectivePowerOnBase(state, base, 0)).toBe(3);
+    });
 });
 
 describe('suppressed source modifiers', () => {
@@ -109,6 +180,42 @@ describe('suppressed source modifiers', () => {
         } as any);
 
         expect(getEffectivePower(state, minion, 0)).toBe(3);
+    });
+
+    it('suppressed mermaids_siren 不应继续压低对手总力量', () => {
+        const siren = makeMinion('siren-1', 'mermaids_siren', '0', 2, { powerModifier: 0 });
+        const victim = makeMinion('victim-1', 'test_minion', '1', 4, { powerModifier: 0 });
+        const base = { defId: 'base_a', minions: [siren, victim], ongoingActions: [] };
+        const state = makeState({
+            currentPlayerIndex: 0,
+            bases: [base],
+            suppressedCardsUntilTurnStart: [{
+                cardUid: 'siren-1',
+                baseIndex: 0,
+                suppressorPlayerId: '1',
+                cardType: 'minion',
+            }],
+        } as any);
+
+        expect(getPlayerEffectivePowerOnBase(state, base, 0, '1')).toBe(4);
+        expect(getTotalEffectivePowerOnBase(state, base, 0)).toBe(6);
+    });
+
+    it('suppressed base_mermaid_reef 不应继续压低其他玩家总力量', () => {
+        const mine = makeMinion('m1', 'test_minion', '0', 2, { powerModifier: 0 });
+        const theirs = makeMinion('m2', 'test_minion', '1', 4, { powerModifier: 0 });
+        const base = { defId: 'base_mermaid_reef', minions: [mine, theirs], ongoingActions: [] };
+        const state = makeState({
+            currentPlayerIndex: 0,
+            bases: [base],
+            suppressedBasesUntilTurnStart: [{
+                baseIndex: 0,
+                suppressorPlayerId: '1',
+            }],
+        } as any);
+
+        expect(getPlayerEffectivePowerOnBase(state, base, 0, '1')).toBe(4);
+        expect(getTotalEffectivePowerOnBase(state, base, 0)).toBe(6);
     });
 });
 

@@ -92,6 +92,7 @@ export const useUndoStatus = (): {
     const snapshotCount = getUndoSnapshotCount(G.sys?.undo);
     const request = G.sys?.undo?.pendingRequest;
     const requesterId = request?.requesterId != null ? String(request.requesterId) : null;
+    const isLocalMode = undoState.isLocalMode === true;
     
     let status: 'canRequest' | 'canReview' | 'isRequester' | null = null;
     let hasNotification = false;
@@ -106,6 +107,11 @@ export const useUndoStatus = (): {
         hasNotification = true; // 显示红点提醒
     } else if (snapshotCount > 0 && !request) {
         // 可以发起撤回请求
+        status = 'canRequest';
+        hasNotification = false;
+    }
+
+    if (isLocalMode && snapshotCount > 0 && !request) {
         status = 'canRequest';
         hasNotification = false;
     }

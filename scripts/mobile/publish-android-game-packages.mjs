@@ -41,6 +41,7 @@ const explicitGameId = readArgValue('game', '');
 const explicitVersion = readArgValue('version', '');
 const dryRun = hasFlag('dry-run');
 const manifestOnly = hasFlag('manifest-only');
+const reuseSharedAudio = hasFlag('reuse-shared-audio');
 const buildTimestamp = new Date().toISOString().replace(/[:.]/g, '-');
 const assetsRoot = path.join(rootDir, 'public', 'assets');
 const assetsBaseUrl = (process.env.VITE_ASSETS_BASE_URL?.trim() || 'https://assets.easyboardgame.top/official').replace(/\/+$/, '');
@@ -68,6 +69,7 @@ const s3Client = dryRun
     : new S3Client({
         region: 'auto',
         endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+        maxAttempts: 1,
         credentials: {
             accessKeyId: process.env.R2_ACCESS_KEY_ID,
             secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
@@ -85,6 +87,47 @@ const walkFiles = (dirPath, entries = []) => {
     }
     return entries;
 };
+
+const hashFileSha256 = (fullPath) => {
+    const hash = createHash('sha256');
+    const input = createReadStream(fullPath);
+    return new Promise((resolve, reject) => {
+        input.on('error', reject);
+        input.on('data', (chunk) => {
+            hash.update(chunk);
+        });
+        input.on('end', () => {
+            resolve(hash.digest('hex'));
+        });
+    });
+};
+
+const buildFileIndexPayload = async (includedFiles, packageVersion) => {
+    const files = [];
+    let totalSize = 0;
+    for (const entry of includedFiles) {
+        const size = statSync(entry.fullPath).size;
+        const hash = await hashFileSha256(entry.fullPath);
+        files.push({
+            path: entry.relativePath,
+            hash,
+            size,
+        });
+        totalSize += size;
+    }
+    return {
+        version: '1.0.0',
+        assetPackVersion: packageVersion,
+        files,
+        totalSize,
+    };
+};
+
+const stringifyJsonWithTrailingNewline = (payload) => `${JSON.stringify(payload, null, 2)}\n`;
+
+const hashJsonPayload = (payload) => createHash('sha256')
+    .update(stringifyJsonWithTrailingNewline(payload))
+    .digest('hex');
 
 const discoverPackageManagedGames = () => {
     const gamesRoot = path.join(rootDir, 'src', 'games');
@@ -157,6 +200,8 @@ const fetchRemoteJson = async (url) => {
     return await response.json();
 };
 
+const resolveUploadBody = (body) => (typeof body === 'function' ? body() : body);
+
 const uploadObject = async (key, body, contentType, cacheControl, contentLength) => {
     if (!s3Client) {
         throw new Error('dry-run 模式下不应执行上传');
@@ -167,7 +212,7 @@ const uploadObject = async (key, body, contentType, cacheControl, contentLength)
             await s3Client.send(new PutObjectCommand({
                 Bucket: process.env.R2_BUCKET_NAME,
                 Key: key,
-                Body: body,
+                Body: resolveUploadBody(body),
                 ContentType: contentType,
                 CacheControl: cacheControl,
                 ...(typeof contentLength === 'number' ? { ContentLength: contentLength } : {}),
@@ -284,6 +329,8 @@ const buildSharedAudioManifestPayload = ({
     checksum,
     bytes,
     fileCount,
+    fileIndexUrl,
+    fileIndexChecksum,
 }) => ({
     gameId: SHARED_AUDIO_PACK_GAME_ID,
     runtimeChannel: channel,
@@ -296,6 +343,8 @@ const buildSharedAudioManifestPayload = ({
         checksum,
         bytes,
         fileCount,
+        fileIndexUrl,
+        fileIndexChecksum,
     },
 });
 
@@ -305,6 +354,8 @@ const buildGameManifestPayload = ({
     checksum,
     bytes,
     fileCount,
+    fileIndexUrl,
+    fileIndexChecksum,
     sharedAudioPackResult,
     modulePack = null,
 }) => ({
@@ -319,6 +370,8 @@ const buildGameManifestPayload = ({
         checksum,
         bytes,
         fileCount,
+        fileIndexUrl,
+        fileIndexChecksum,
     },
     sharedAudioPack: sharedAudioPackResult
         ? {
@@ -328,6 +381,8 @@ const buildGameManifestPayload = ({
             checksum: sharedAudioPackResult.checksum,
             bytes: sharedAudioPackResult.zipBytes,
             fileCount: sharedAudioPackResult.fileCount,
+            fileIndexUrl: sharedAudioPackResult.fileIndexUrl,
+            fileIndexChecksum: sharedAudioPackResult.fileIndexChecksum,
         }
         : null,
 });
@@ -344,6 +399,8 @@ const loadRemoteSharedAudioPackResult = async () => {
         zipBytes: assetPack.bytes,
         fileCount: assetPack.fileCount,
         checksum: assetPack.checksum,
+        fileIndexUrl: assetPack.fileIndexUrl,
+        fileIndexChecksum: assetPack.fileIndexChecksum,
         bundleKey: `${packagePrefix}/bundles/shared/${SHARED_AUDIO_PACK_GAME_ID}/${assetPack.version}.zip`,
         latestManifestKey: `${packagePrefix}/shared/${SHARED_AUDIO_PACK_GAME_ID}.json`,
         bundleUrl: assetPack.url,
@@ -368,28 +425,36 @@ const publishSharedAudioPackage = async () => {
     const zipResult = await createAndroidCompatibleZipFile(includedFiles, tempZipPath);
     const checksum = zipResult.checksum;
     const packageVersion = buildSharedAudioPackageVersion(checksum);
+    const fileIndexPayload = await buildFileIndexPayload(includedFiles, packageVersion);
+    const fileIndexJson = stringifyJsonWithTrailingNewline(fileIndexPayload);
+    const fileIndexChecksum = hashJsonPayload(fileIndexPayload);
     const bundleKey = `${packagePrefix}/bundles/shared/${SHARED_AUDIO_PACK_GAME_ID}/${packageVersion}.zip`;
+    const fileIndexKey = `${packagePrefix}/file-index/shared/${SHARED_AUDIO_PACK_GAME_ID}/${packageVersion}.json`;
     const versionManifestKey = `${packagePrefix}/manifests/shared/${SHARED_AUDIO_PACK_GAME_ID}/${packageVersion}.json`;
     const latestManifestKey = `${packagePrefix}/shared/${SHARED_AUDIO_PACK_GAME_ID}.json`;
     const bundleUrl = `${assetsBaseUrl}/mobile-packages/android/${channel}/bundles/shared/${encodeURIComponent(SHARED_AUDIO_PACK_GAME_ID)}/${encodeURIComponent(packageVersion)}.zip`;
+    const fileIndexUrl = `${assetsBaseUrl}/mobile-packages/android/${channel}/file-index/shared/${encodeURIComponent(SHARED_AUDIO_PACK_GAME_ID)}/${encodeURIComponent(packageVersion)}.json`;
     const manifest = buildSharedAudioManifestPayload({
         packageVersion,
         checksum,
         bytes: zipResult.bytes,
         fileCount: includedFiles.length,
+        fileIndexUrl,
+        fileIndexChecksum,
     });
 
     try {
         if (!dryRun) {
             await uploadObject(
                 bundleKey,
-                createReadStream(zipResult.zipFilePath),
+                () => createReadStream(zipResult.zipFilePath),
                 'application/zip',
                 'public, max-age=31536000, immutable',
                 zipResult.bytes,
             );
-            await uploadObject(versionManifestKey, `${JSON.stringify(manifest, null, 2)}\n`, 'application/json', 'public, max-age=60, must-revalidate');
-            await uploadObject(latestManifestKey, `${JSON.stringify(manifest, null, 2)}\n`, 'application/json', 'public, max-age=60, must-revalidate');
+            await uploadObject(fileIndexKey, fileIndexJson, 'application/json', 'public, max-age=31536000, immutable');
+            await uploadObject(versionManifestKey, stringifyJsonWithTrailingNewline(manifest), 'application/json', 'public, max-age=60, must-revalidate');
+            await uploadObject(latestManifestKey, stringifyJsonWithTrailingNewline(manifest), 'application/json', 'public, max-age=60, must-revalidate');
         }
     } finally {
         try {
@@ -404,6 +469,9 @@ const publishSharedAudioPackage = async () => {
         fileCount: includedFiles.length,
         checksum,
         bundleKey,
+        fileIndexKey,
+        fileIndexUrl,
+        fileIndexChecksum,
         latestManifestKey,
         bundleUrl,
     };
@@ -415,16 +483,23 @@ const publishSingleGamePackage = async (gameId, sharedAudioPackResult) => {
     const tempZipPath = path.join(tempZipRoot, `${runId}-${gameId}.zip`);
     const zipResult = await createAndroidCompatibleZipFile(includedFiles, tempZipPath);
     const checksum = zipResult.checksum;
+    const fileIndexPayload = await buildFileIndexPayload(includedFiles, packageVersion);
+    const fileIndexJson = stringifyJsonWithTrailingNewline(fileIndexPayload);
+    const fileIndexChecksum = hashJsonPayload(fileIndexPayload);
     const bundleKey = `${packagePrefix}/bundles/${gameId}/${packageVersion}.zip`;
+    const fileIndexKey = `${packagePrefix}/file-index/${gameId}/${packageVersion}.json`;
     const versionManifestKey = `${packagePrefix}/manifests/${gameId}/${packageVersion}.json`;
     const latestManifestKey = `${packagePrefix}/games/${gameId}.json`;
     const bundleUrl = `${assetsBaseUrl}/mobile-packages/android/${channel}/bundles/${encodeURIComponent(gameId)}/${encodeURIComponent(packageVersion)}.zip`;
+    const fileIndexUrl = `${assetsBaseUrl}/mobile-packages/android/${channel}/file-index/${encodeURIComponent(gameId)}/${encodeURIComponent(packageVersion)}.json`;
     const manifest = buildGameManifestPayload({
         gameId,
         packageVersion,
         checksum,
         bytes: zipResult.bytes,
         fileCount: includedFiles.length,
+        fileIndexUrl,
+        fileIndexChecksum,
         sharedAudioPackResult,
         modulePack: null,
     });
@@ -433,13 +508,14 @@ const publishSingleGamePackage = async (gameId, sharedAudioPackResult) => {
         if (!dryRun) {
             await uploadObject(
                 bundleKey,
-                createReadStream(zipResult.zipFilePath),
+                () => createReadStream(zipResult.zipFilePath),
                 'application/zip',
                 'public, max-age=31536000, immutable',
                 zipResult.bytes,
             );
-            await uploadObject(versionManifestKey, `${JSON.stringify(manifest, null, 2)}\n`, 'application/json', 'public, max-age=60, must-revalidate');
-            await uploadObject(latestManifestKey, `${JSON.stringify(manifest, null, 2)}\n`, 'application/json', 'public, max-age=60, must-revalidate');
+            await uploadObject(fileIndexKey, fileIndexJson, 'application/json', 'public, max-age=31536000, immutable');
+            await uploadObject(versionManifestKey, stringifyJsonWithTrailingNewline(manifest), 'application/json', 'public, max-age=60, must-revalidate');
+            await uploadObject(latestManifestKey, stringifyJsonWithTrailingNewline(manifest), 'application/json', 'public, max-age=60, must-revalidate');
         }
     } finally {
         try {
@@ -454,6 +530,9 @@ const publishSingleGamePackage = async (gameId, sharedAudioPackResult) => {
         fileCount: includedFiles.length,
         checksum,
         bundleKey,
+        fileIndexKey,
+        fileIndexUrl,
+        fileIndexChecksum,
         latestManifestKey,
         bundleUrl,
     };
@@ -468,6 +547,8 @@ const publishGameManifestOnly = async (gameId, sharedAudioPackResult) => {
         checksum: assetPack.checksum,
         bytes: assetPack.bytes,
         fileCount: assetPack.fileCount,
+        fileIndexUrl: assetPack.fileIndexUrl,
+        fileIndexChecksum: assetPack.fileIndexChecksum,
         sharedAudioPackResult,
         modulePack: remoteManifest.modulePack ?? null,
     });
@@ -500,7 +581,7 @@ if (targetGames.length === 0) {
     throw new Error('没有发现 package-managed 游戏，无法发布游戏包。');
 }
 
-const sharedAudioPackResult = manifestOnly
+const sharedAudioPackResult = (manifestOnly || reuseSharedAudio)
     ? await loadRemoteSharedAudioPackResult()
     : await publishSharedAudioPackage();
 
@@ -516,9 +597,15 @@ if (sharedAudioPackResult) {
     console.log(`zipBytes=${sharedAudioPackResult.zipBytes}`);
     console.log(`fileCount=${sharedAudioPackResult.fileCount}`);
     console.log(`bundleKey=${sharedAudioPackResult.bundleKey}`);
+    if (sharedAudioPackResult.fileIndexKey) {
+        console.log(`fileIndexKey=${sharedAudioPackResult.fileIndexKey}`);
+    }
     console.log(`latestManifestKey=${sharedAudioPackResult.latestManifestKey}`);
     console.log(`bundleUrl=${sharedAudioPackResult.bundleUrl}`);
     console.log(`checksum=${sharedAudioPackResult.checksum}`);
+    if (sharedAudioPackResult.fileIndexChecksum) {
+        console.log(`fileIndexChecksum=${sharedAudioPackResult.fileIndexChecksum}`);
+    }
     console.log('---');
 }
 
@@ -536,12 +623,18 @@ for (const gameId of targetGames) {
     console.log(`packageVersion=${result.packageVersion}`);
     console.log(`zipBytes=${result.zipBytes}`);
     console.log(`fileCount=${result.fileCount}`);
-    console.log(`bundleKey=${result.bundleKey}`);
-    console.log(`latestManifestKey=${result.latestManifestKey}`);
-    console.log(`bundleUrl=${result.bundleUrl}`);
-    console.log(`checksum=${result.checksum}`);
-    console.log('---');
-}
+        console.log(`bundleKey=${result.bundleKey}`);
+        if (result.fileIndexKey) {
+            console.log(`fileIndexKey=${result.fileIndexKey}`);
+        }
+        console.log(`latestManifestKey=${result.latestManifestKey}`);
+        console.log(`bundleUrl=${result.bundleUrl}`);
+        console.log(`checksum=${result.checksum}`);
+        if (result.fileIndexChecksum) {
+            console.log(`fileIndexChecksum=${result.fileIndexChecksum}`);
+        }
+        console.log('---');
+    }
 
 if (explicitGameId && existsSync(path.join(assetsRoot, 'i18n', 'zh-CN', explicitGameId))) {
     const stats = statSync(path.join(assetsRoot, 'i18n', 'zh-CN', explicitGameId));

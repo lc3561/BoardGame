@@ -161,11 +161,11 @@ export const LocalMatchRoom = () => {
     }
 
     if (!isGameNamespaceReady) {
-        return <LoadingScreen description={t('matchRoom.loadingResources')} />;
+        return <LoadingScreen description={t('matchRoom.preparingMatch')} progressText={t('matchRoom.loadingProgress.loadingGameModule')} />;
     }
 
     if (!isGameImplementationReady) {
-        return <LoadingScreen description={t('matchRoom.loadingResources')} />;
+        return <LoadingScreen description={t('matchRoom.preparingMatch')} progressText={t('matchRoom.loadingProgress.loadingGameModule')} />;
     }
 
     return (
@@ -195,7 +195,7 @@ export const LocalMatchRoom = () => {
                                     >
                                         <BoardBridge
                                             board={WrappedBoard}
-                                            loading={<LoadingScreen anchor="container" title={t('matchRoom.title.local')} description={t('matchRoom.loadingResources')} />}
+                                            loading={<LoadingScreen anchor="container" title={t('matchRoom.title.local')} description={t('matchRoom.preparingMatch')} progressText={t('matchRoom.loadingProgress.preparingRoom')} />}
                                         />
                                     </LocalGameProvider>
                                 ) : (

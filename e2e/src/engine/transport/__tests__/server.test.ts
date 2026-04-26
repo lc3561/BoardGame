@@ -4,6 +4,8 @@ import { buildAiProgressMarker, resolveCurrentPlayerId, resolveForceEndTurnForSt
 import { createInteractionSystem, createSimpleChoice, INTERACTION_COMMANDS } from '../../systems/InteractionSystem';
 import { createSimpleChoiceSystem } from '../../systems/SimpleChoiceSystem';
 import { createResponseWindowSystem, RESPONSE_WINDOW_EVENTS } from '../../systems/ResponseWindowSystem';
+import { resolveLocalAiActionVisibility } from '../../ai/actionVisibility';
+import { resolveLocalAiActionDelayPlan } from '../../ai';
 import * as aiModule from '../../ai';
 import { resolveOnlineAiDecisionView } from '../../ai/onlineDecisionView';
 import type {
@@ -820,6 +822,135 @@ describe('resolveCurrentPlayerId（防御阶段操作者）', () => {
     });
 });
 
+describe('resolveLocalAiActionVisibility（可见步骤分类）', () => {
+    it('metadata.visibleStepDelayPolicy 应优先覆盖默认分类', () => {
+        expect(resolveLocalAiActionVisibility({
+            actionId: 'toggle-hidden',
+            kind: 'toggle-die-lock',
+            label: '锁骰',
+            commands: [{ type: 'TOGGLE_DIE_LOCK', payload: {} }],
+            metadata: { visibleStepDelayPolicy: 'hidden' },
+        })).toBe('hidden');
+
+        expect(resolveLocalAiActionVisibility({
+            actionId: 'card-visible',
+            kind: 'play-card',
+            label: '打牌',
+            commands: [{ type: 'PLAY_CARD', payload: {} }],
+            metadata: { visibleStepDelayPolicy: 'visible' },
+        })).toBe('visible');
+    });
+
+    it('runtime 白名单存在时，只允许白名单动作吃可见步骤延迟', () => {
+        const runtime = {
+            localVisibleStepDelayConfig: {
+                mode: 'whitelist' as const,
+                actionKinds: ['play-card', 'roll-dice'],
+            },
+        };
+
+        expect(resolveLocalAiActionVisibility({
+            actionId: 'card-visible',
+            kind: 'play-card',
+            label: '打牌',
+            commands: [{ type: 'PLAY_CARD', payload: {} }],
+        }, runtime)).toBe('visible');
+
+        expect(resolveLocalAiActionVisibility({
+            actionId: 'lock-hidden',
+            kind: 'toggle-die-lock',
+            label: '锁骰',
+            commands: [{ type: 'TOGGLE_DIE_LOCK', payload: {} }],
+        }, runtime)).toBe('hidden');
+    });
+
+    it('无 runtime 配置时，默认将 interaction / advance-phase / fast command 视为隐藏步骤', () => {
+        expect(resolveLocalAiActionVisibility({
+            actionId: 'interaction-hidden',
+            kind: 'interaction-multistep',
+            label: '多步交互',
+            commands: [{ type: 'SYS_INTERACTION_CONFIRM', payload: {} }],
+        })).toBe('hidden');
+
+        expect(resolveLocalAiActionVisibility({
+            actionId: 'phase-hidden',
+            kind: 'advance-phase',
+            label: '推进阶段',
+            commands: [{ type: 'ADVANCE_PHASE', payload: {} }],
+        })).toBe('hidden');
+
+        expect(resolveLocalAiActionVisibility({
+            actionId: 'response-hidden',
+            kind: 'response-pass',
+            label: '放弃响应',
+            commands: [{ type: 'RESPONSE_PASS', payload: {} }],
+        })).toBe('hidden');
+    });
+
+    it('无 runtime 配置时，普通可见业务动作默认视为可见步骤', () => {
+        expect(resolveLocalAiActionVisibility({
+            actionId: 'card-visible',
+            kind: 'play-card',
+            label: '打牌',
+            commands: [{ type: 'PLAY_CARD', payload: {} }],
+        })).toBe('visible');
+    });
+});
+
+describe('resolveLocalAiActionDelayPlan（单一延迟预算）', () => {
+    it('隐藏动作不吃主动延迟', () => {
+        const plan = resolveLocalAiActionDelayPlan({
+            controller: { type: 'local-ai' },
+            actionVisibility: 'hidden',
+            now: 1_000,
+            lastVisibleActionAt: 200,
+            extraElapsedBudgetMs: [300],
+        });
+
+        expect(plan.minimumDelayMs).toBe(0);
+        expect(plan.delayBudgetElapsedMs).toBe(0);
+        expect(plan.remainingDelayMs).toBe(0);
+    });
+
+    it('默认可见动作统一使用 1000ms 最小时长', () => {
+        const plan = resolveLocalAiActionDelayPlan({
+            controller: { type: 'local-ai' },
+            actionVisibility: 'visible',
+            now: 1_000,
+        });
+
+        expect(plan.minimumDelayMs).toBe(1000);
+        expect(plan.lastVisibleActionAt).toBeNull();
+        expect(plan.visibleStepElapsedMs).toBeNull();
+        expect(plan.remainingDelayMs).toBe(1000);
+    });
+
+    it('在线链路已有决策/状态耗时会抵扣剩余延迟预算', () => {
+        const observedState = {
+            sys: {
+                eventStream: {
+                    entries: [
+                        { event: { timestamp: 8_000 } },
+                    ],
+                },
+            },
+        } as any;
+
+        const plan = resolveLocalAiActionDelayPlan({
+            controller: { type: 'local-ai' },
+            actionVisibility: 'visible',
+            now: 8_600,
+            observedState,
+            extraElapsedBudgetMs: [200],
+        });
+
+        expect(plan.minimumDelayMs).toBe(1000);
+        expect(plan.observedStateAgeMs).toBe(600);
+        expect(plan.delayBudgetElapsedMs).toBe(600);
+        expect(plan.remainingDelayMs).toBe(400);
+    });
+});
+
 describe('resolveForceEndTurnForStalledAi（action-loop）', () => {
     it('重复交替动作循环应触发 action-loop 兜底', () => {
         const sharedState = createOnlineAiRecoveryState({
@@ -1462,6 +1593,47 @@ describe('GameTransportServer（离座与重连）', () => {
         expect((persisted.state?.G as { core: { currentPlayer: string } }).core.currentPlayer).toBe('0');
         expect(hasEvent(socket, 'test:injectState:success')).toBe(false);
         expect(hasEvent(socket, 'test:injectState:error')).toBe(false);
+    });
+
+    it('batch expectedStateID 落后于服务端权威 stateID 时，应拒绝为 stale_state 且不执行命令', async () => {
+        const io = new MockIO();
+        const storage = new InMemoryStorage();
+
+        await storage.createMatch('match-batch-stale-state', {
+            initialState: createStoredState(),
+            metadata: createMetadata('cred-0'),
+        });
+
+        const server = new GameTransportServer({
+            io: io as unknown as any,
+            storage,
+            games: [createEngineConfig()],
+            authenticate: async (_matchID, playerID, credentials, metadata) => {
+                return metadata.players[playerID]?.credentials === credentials;
+            },
+        });
+        server.start();
+
+        const socket = new MockSocket('socket-batch-stale-state');
+        io.gameNamespace.connectSocket(socket);
+        await socket.clientEmit('sync', 'match-batch-stale-state', '0', 'cred-0');
+        await socket.clientEmit('command', 'match-batch-stale-state', 'TEST_CMD', { foo: 'fresh' }, 'cred-0');
+
+        socket.sent.length = 0;
+
+        await socket.clientEmit(
+            'batch',
+            'match-batch-stale-state',
+            'batch-stale-1',
+            [{ type: 'TEST_CMD', payload: { foo: 'stale' } }],
+            'cred-0',
+            { expectedStateID: 0 },
+        );
+
+        expect(hasEvent(socket, 'batch:rejected', (args) => args[1] === 'batch-stale-1' && args[2] === 'stale_state')).toBe(true);
+
+        const persisted = await storage.fetch('match-batch-stale-state', { state: true });
+        expect(persisted.state?._stateID).toBe(1);
     });
 
     it('成功命令后应采集训练决策样本', async () => {
@@ -3496,6 +3668,176 @@ describe('GameTransportServer（离座与重连）', () => {
         } finally {
             resolutionSpy.mockRestore();
         }
+    });
+
+    it('online AI watchdog 处理 live 校验交互时，应沿用原始 interactionData 快照，避免下游把 blocker 重新挂回', async () => {
+        const io = new MockIO();
+        const storage = new InMemoryStorage();
+        const feedbackReporter = vi.fn(async () => undefined);
+        const gameId = 'test-watchdog-live-interaction-snapshot';
+
+        const makeSnapshotSensitiveInteraction = () => createSimpleChoice(
+            'snapshot-sensitive-choice',
+            '1',
+            '选择一张卡牌',
+            [
+                { id: 'opt-1', label: '卡牌 1', value: { cardUid: 'card-1', defId: 'test-card-1' } },
+                { id: 'opt-2', label: '卡牌 2', value: { cardUid: 'card-2', defId: 'test-card-2' } },
+                { id: 'pass', label: 'Pass', value: { kind: 'pass' } },
+            ],
+            {
+                sourceId: 'test-live-snapshot',
+                targetType: 'button',
+                autoRefresh: 'hand',
+                responseValidationMode: 'live',
+            },
+        );
+
+        const expectedOptionIds = ['opt-1', 'opt-2', 'pass'];
+        const snapshotSensitiveSystem = {
+            id: 'snapshot-sensitive-followup',
+            name: 'SnapshotSensitiveFollowUp',
+            priority: 40,
+            afterEvents: ({ state, events }: { state: any; events: any[] }) => {
+                let newState = state;
+
+                for (const event of events) {
+                    if (event.type !== 'SYS_INTERACTION_RESOLVED') {
+                        continue;
+                    }
+
+                    const payload = event.payload as {
+                        sourceId?: string;
+                        interactionData?: {
+                            options?: Array<{ id?: string }>;
+                        };
+                    };
+                    if (payload.sourceId !== 'test-live-snapshot') {
+                        continue;
+                    }
+
+                    const optionIds = Array.isArray(payload.interactionData?.options)
+                        ? payload.interactionData.options
+                            .map((option) => option?.id)
+                            .filter((id): id is string => typeof id === 'string')
+                        : [];
+                    const snapshotPreserved = JSON.stringify(optionIds) === JSON.stringify(expectedOptionIds);
+
+                    newState = {
+                        ...newState,
+                        core: {
+                            ...newState.core,
+                            activePlayerId: snapshotPreserved ? '0' : '1',
+                            currentPlayerIndex: snapshotPreserved ? 0 : 1,
+                        },
+                        sys: {
+                            ...newState.sys,
+                            phase: snapshotPreserved ? 'draw' : 'scoreBases',
+                            eventStream: {
+                                ...(newState.sys?.eventStream ?? {}),
+                                nextId: (newState.sys?.eventStream?.nextId ?? 1) + 1,
+                            },
+                            interaction: snapshotPreserved
+                                ? {
+                                    ...(newState.sys?.interaction ?? {}),
+                                    current: undefined,
+                                    queue: [],
+                                    isBlocked: false,
+                                }
+                                : {
+                                    ...(newState.sys?.interaction ?? {}),
+                                    current: makeSnapshotSensitiveInteraction(),
+                                    queue: [],
+                                    isBlocked: false,
+                                },
+                        },
+                    };
+                }
+
+                return { halt: false, state: newState, events: [] };
+            },
+        } as any;
+
+        await storage.createMatch('match-watchdog-live-interaction-snapshot', {
+            initialState: {
+                G: {
+                    core: {
+                        activePlayerId: '1',
+                        currentPlayerIndex: 1,
+                        turnOrder: ['0', '1'],
+                        players: {
+                            '0': { hand: [] },
+                            '1': {
+                                hand: [{ uid: 'card-1', defId: 'test-card-1' }],
+                            },
+                        },
+                    },
+                    sys: {
+                        phase: 'scoreBases',
+                        turnNumber: 4,
+                        eventStream: { nextId: 1 },
+                        interaction: {
+                            current: makeSnapshotSensitiveInteraction(),
+                            queue: [],
+                            isBlocked: false,
+                        },
+                        responseWindow: {
+                            current: undefined,
+                        },
+                    },
+                },
+                _stateID: 0,
+                randomSeed: 'seed',
+                randomCursor: 0,
+            },
+            metadata: createOnlineAiRecoveryMetadata({ gameName: gameId }),
+        });
+
+        const server = new GameTransportServer({
+            io: io as unknown as any,
+            storage,
+            games: [{
+                ...createInteractiveEngineConfig(),
+                gameId,
+                domain: {
+                    ...createInteractiveEngineConfig().domain,
+                    gameId,
+                },
+                systems: [
+                    createInteractionSystem(),
+                    createSimpleChoiceSystem(),
+                    snapshotSensitiveSystem,
+                ],
+            }],
+            onlineAiRecoveryTickMs: 0,
+            onlineAiRecoveryTimeoutMs: 0,
+            onlineAiRecoveryFailureReportThreshold: 1,
+            onlineAiFeedbackReporter: feedbackReporter,
+        });
+
+        const serverInternal = server as unknown as {
+            loadMatch: (matchID: string) => Promise<any>;
+            runOnlineAiRecoveryTick: () => Promise<void>;
+        };
+
+        const match = await serverInternal.loadMatch('match-watchdog-live-interaction-snapshot');
+        await serverInternal.runOnlineAiRecoveryTick();
+        await serverInternal.runOnlineAiRecoveryTick();
+        await nextTick();
+        await nextTick();
+
+        expect(match.state.core.activePlayerId).toBe('0');
+        expect(match.state.sys.phase).toBe('draw');
+        expect(match.state.sys.interaction?.current).toBeUndefined();
+        expect(feedbackReporter).toHaveBeenCalledWith(expect.objectContaining({
+            matchId: 'match-watchdog-live-interaction-snapshot',
+            incidentKind: 'force-end-turn-success',
+            reason: 'visible-interaction:recover-interaction:steps=1',
+        }));
+        expect(feedbackReporter).not.toHaveBeenCalledWith(expect.objectContaining({
+            matchId: 'match-watchdog-live-interaction-snapshot',
+            incidentKind: 'force-end-turn-failed',
+        }));
     });
 
     it('online AI watchdog 在 factionSelect 阶段应走 legal-action recovery，而不是 fallback ADVANCE_PHASE', async () => {

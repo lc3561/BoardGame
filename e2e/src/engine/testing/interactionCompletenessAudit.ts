@@ -190,10 +190,22 @@ export function createOrphanHandlerCheck(config: OrphanHandlerConfig): void {
         for (const id of link.producesSourceIds) referenced.add(id);
       }
 
+      // 兼容 _pod 别名：
+      // 某些游戏会在注册阶段把 sourceId 自动扩展成 `${sourceId}_pod`。
+      // 对这类别名，若原始 sourceId 已被能力/链路引用，则 _pod 版本也视为已引用。
+      const withPodAliases = new Set<string>(referenced);
+      for (const id of referenced) {
+        if (id.endsWith('_pod')) {
+          withPodAliases.add(id.slice(0, -4));
+        } else {
+          withPodAliases.add(`${id}_pod`);
+        }
+      }
+
       const orphans: string[] = [];
       for (const id of config.registeredHandlerIds) {
         if (whitelist.has(id)) continue;
-        if (!referenced.has(id)) {
+        if (!withPodAliases.has(id)) {
           orphans.push(`  handler "${id}" 已注册但无能力或链式 handler 引用`);
         }
       }

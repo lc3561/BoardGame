@@ -9,6 +9,7 @@ import { logMobileRuntime, logMobileRuntimeCritical } from '../../lib/mobile/mob
 import { mergeGamePackageState } from './types';
 import { normalizeGamePackageAssetBaseUrl, normalizeNativeAssetRootPath } from './assetBaseUrl';
 import { isNativeAndroidRuntime } from '../../lib/mobile/androidRuntime';
+import { resolveAssetsBaseUrlFromEnv } from '../../core/AssetLoader';
 
 type PluginListenerHandle = {
     remove(): Promise<void>;
@@ -78,6 +79,26 @@ type NativeGamePackagePlugin = {
         assetPackVersion?: string;
         assetRootPath?: string;
     }>;
+    installGamePackageIncremental(options: {
+        gameId: string;
+        runtimeChannel: string;
+        assetPackId?: string;
+        assetPackVersion?: string;
+        assetPackUrl: string;
+        assetPackChecksum?: string;
+        assetBaseUrl: string;
+        fileIndexUrl: string;
+        fileIndexChecksum?: string;
+    }): Promise<{
+        accepted?: boolean;
+        taskId?: string;
+        status?: NativeInstallLifecycleStatus;
+        gameId: string;
+        runtimeChannel?: string;
+        installedAt?: number;
+        assetPackVersion?: string;
+        assetRootPath?: string;
+    }>;
     getNotificationPermissionStatus(): Promise<{
         required?: boolean;
         granted?: boolean;
@@ -101,6 +122,16 @@ type NativeGamePackagePlugin = {
         status?: number;
         body?: string;
         contentType?: string;
+    }>;
+    readInstalledAsset(options: {
+        gameId: string;
+        relativePath: string;
+    }): Promise<{
+        gameId?: string;
+        relativePath?: string;
+        mimeType?: string;
+        base64?: string;
+        size?: number;
     }>;
     cancelInstall(options: { gameId: string }): Promise<void>;
     addListener(
@@ -138,13 +169,23 @@ export interface NativeRemoteJsonResponse {
     contentType?: string;
 }
 
+export interface NativeInstalledAssetBlobUrlResult {
+    blobUrl: string;
+    mimeType?: string;
+    size?: number;
+}
+
 export interface NativeGamePackageInstallStateSnapshot {
+    exists: boolean;
     state: Partial<StoredGamePackageState>;
     taskRunning: boolean;
 }
 
 let nativePluginLoader: NativeGamePackagePlugin | null | undefined;
 const nativeGamePackagePlugin = registerPlugin<NativeGamePackagePlugin>('GamePackage');
+const resolvedAssetsBaseUrl = resolveAssetsBaseUrlFromEnv(
+    (import.meta as { env?: Record<string, string | boolean | undefined> }).env ?? {},
+);
 
 const buildBaseState = (manifest: ResolvedGamePackageManifest): StoredGamePackageState => ({
     gameId: manifest.gameId,
@@ -202,6 +243,32 @@ const normalizeNativeInstallStatus = (
         default:
             return undefined;
     }
+};
+
+const INCREMENTAL_INSTALL_UNAVAILABLE_PATTERNS = [
+    /installgamepackageincremental/i,
+    /not implemented/i,
+    /unimplemented/i,
+    /not available/i,
+    /not a function/i,
+    /does not exist/i,
+    /does not have/i,
+    /unable to find/i,
+    /method .* not found/i,
+];
+
+const shouldFallbackToFullInstallFromBridgeError = (error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error ?? '');
+    if (!message) {
+        return false;
+    }
+
+    const normalizedMessage = message.trim();
+    if (!normalizedMessage) {
+        return false;
+    }
+
+    return INCREMENTAL_INSTALL_UNAVAILABLE_PATTERNS.some((pattern) => pattern.test(normalizedMessage));
 };
 
 const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string): Promise<T> => {
@@ -346,6 +413,79 @@ export const fetchRemoteJsonThroughNativePlugin = async (
     }
 };
 
+const decodeBase64ToBlob = (base64: string, mimeType?: string) => {
+    const binary = globalThis.atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+        bytes[index] = binary.charCodeAt(index);
+    }
+    return new Blob([bytes], {
+        type: mimeType?.trim() || 'application/octet-stream',
+    });
+};
+
+export const readInstalledGamePackageAssetBlobUrl = async (
+    gameId: string,
+    relativePath: string,
+): Promise<NativeInstalledAssetBlobUrlResult | null> => {
+    const plugin = getNativePlugin();
+    const normalizedGameId = gameId.trim();
+    const normalizedRelativePath = relativePath.trim();
+    if (!plugin || !normalizedGameId || !normalizedRelativePath) {
+        logMobileRuntimeCritical('NativeGamePackagePlugin', 'read-installed-asset-invalid-input', {
+            gameId,
+            relativePath,
+            hasPlugin: Boolean(plugin),
+        });
+        return null;
+    }
+
+    try {
+        const result = await withTimeout(
+            plugin.readInstalledAsset({
+                gameId: normalizedGameId,
+                relativePath: normalizedRelativePath,
+            }),
+            8000,
+            `读取已安装游戏素材超时: ${normalizedGameId}/${normalizedRelativePath}`,
+        );
+        const base64 = typeof result.base64 === 'string' ? result.base64.trim() : '';
+        if (!base64) {
+            logMobileRuntimeCritical('NativeGamePackagePlugin', 'read-installed-asset-empty', {
+                gameId: normalizedGameId,
+                relativePath: normalizedRelativePath,
+                result,
+            });
+            return null;
+        }
+
+        const blob = decodeBase64ToBlob(base64, result.mimeType);
+        const blobUrl = URL.createObjectURL(blob);
+        logMobileRuntimeCritical('NativeGamePackagePlugin', 'read-installed-asset-success', {
+            gameId: normalizedGameId,
+            relativePath: normalizedRelativePath,
+            mimeType: result.mimeType ?? blob.type ?? null,
+            size: typeof result.size === 'number' && Number.isFinite(result.size)
+                ? result.size
+                : blob.size,
+        });
+        return {
+            blobUrl,
+            mimeType: result.mimeType?.trim() || blob.type || undefined,
+            size: typeof result.size === 'number' && Number.isFinite(result.size)
+                ? result.size
+                : blob.size,
+        };
+    } catch (error) {
+        logMobileRuntimeCritical('NativeGamePackagePlugin', 'read-installed-asset-failed', {
+            gameId: normalizedGameId,
+            relativePath: normalizedRelativePath,
+            error: error instanceof Error ? error.message : String(error),
+        });
+        return null;
+    }
+};
+
 export const readNativeGamePackageInstallState = async (
     gameId: string,
 ): Promise<NativeGamePackageInstallStateSnapshot | null> => {
@@ -364,7 +504,15 @@ export const readNativeGamePackageInstallState = async (
                 gameId,
                 result,
             });
-            return null;
+            return {
+                exists: false,
+                state: {
+                    gameId,
+                    status: result.taskRunning === true ? 'manifest' : 'not-installed',
+                    updatedAt: Date.now(),
+                },
+                taskRunning: result.taskRunning === true,
+            };
         }
 
         const assetBaseUrl = toAssetBaseUrl(result.assetRootPath);
@@ -391,6 +539,7 @@ export const readNativeGamePackageInstallState = async (
         };
 
         const snapshot: NativeGamePackageInstallStateSnapshot = {
+            exists: true,
             state: normalizedState,
             taskRunning: result.taskRunning === true,
         };
@@ -558,6 +707,15 @@ export const createNativeGamePackageInstallHandle = async (
         resolveTerminalState = resolve;
     });
 
+    const dispatchFullInstall = () => plugin.installGamePackage({
+        gameId: manifest.gameId,
+        runtimeChannel: manifest.runtimeChannel,
+        assetPackId: manifest.assetPackId,
+        assetPackVersion: manifest.assetPackVersion,
+        assetPackUrl: manifest.assetPackUrl!,
+        assetPackChecksum: manifest.assetPackChecksum,
+    });
+
     const finished = (async () => {
         try {
             logMobileRuntimeCritical('NativeGamePackagePlugin', 'install-start', {
@@ -629,15 +787,36 @@ export const createNativeGamePackageInstallHandle = async (
                 gameId: manifest.gameId,
                 assetPackUrl: manifest.assetPackUrl,
                 assetPackVersion: manifest.assetPackVersion,
+                fileIndexUrl: manifest.assetPackFileIndexUrl,
             });
-            const result = await plugin.installGamePackage({
-                gameId: manifest.gameId,
-                runtimeChannel: manifest.runtimeChannel,
-                assetPackId: manifest.assetPackId,
-                assetPackVersion: manifest.assetPackVersion,
-                assetPackUrl: manifest.assetPackUrl!,
-                assetPackChecksum: manifest.assetPackChecksum,
-            });
+            let result;
+            if (manifest.assetPackFileIndexUrl) {
+                try {
+                    result = await plugin.installGamePackageIncremental({
+                        gameId: manifest.gameId,
+                        runtimeChannel: manifest.runtimeChannel,
+                        assetPackId: manifest.assetPackId,
+                        assetPackVersion: manifest.assetPackVersion,
+                        assetPackUrl: manifest.assetPackUrl!,
+                        assetPackChecksum: manifest.assetPackChecksum,
+                        assetBaseUrl: resolvedAssetsBaseUrl,
+                        fileIndexUrl: manifest.assetPackFileIndexUrl,
+                        fileIndexChecksum: manifest.assetPackFileIndexChecksum,
+                    });
+                } catch (error) {
+                    if (!shouldFallbackToFullInstallFromBridgeError(error)) {
+                        throw error;
+                    }
+
+                    logMobileRuntimeCritical('NativeGamePackagePlugin', 'install-incremental-unavailable-fallback', {
+                        gameId: manifest.gameId,
+                        error: error instanceof Error ? error.message : String(error),
+                    });
+                    result = await dispatchFullInstall();
+                }
+            } else {
+                result = await dispatchFullInstall();
+            }
             logMobileRuntimeCritical('NativeGamePackagePlugin', 'install-native-call-resolved', {
                 gameId: manifest.gameId,
                 result,

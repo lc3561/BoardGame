@@ -445,7 +445,9 @@
   "attackShowcase": {
     "title": "Incoming Attack",
     "attackerLabel": "{{name}} used an ability",
-    "continue": "Defend"
+    "continue": "Defend",
+    "previewTitle": "Ability Revealed",
+    "previewContinue": "Continue"
   },
   "response": {
     "waitingOpponent": "Waiting for opponent to respond...",
@@ -1340,7 +1342,7 @@
     },
     "covert-fire": {
       "name": "Covert Fire",
-      "description": "3 Bow + 3 Moon: inflict Targeted, then deal 4 damage",
+      "description": "3 Bow + 2 Moon: inflict Targeted, then deal 4 damage",
       "effects": {
         "inflictTargeted": "Inflict 1 Targeted token",
         "damage4": "Deal 4 damage"

@@ -155,6 +155,76 @@ describe('月精灵百分比护盾集成测试', () => {
         expect(shadowThiefHp).toBe(INITIAL_HEALTH - 1);
     });
 
+    it('反馈 699eb46：9 点来伤场景下打不到我 II 应减半（向上取整）且反伤仍按弓面生效', () => {
+        // 暗影盗贼进攻掷骰 5 次 → [1,2,3,4,5] = 大顺子 → kidney-shot
+        // 初始 CP=5，kidney-shot 先 +4 CP 再造成等同 CP 伤害 → 来伤 9
+        // 月精灵防御掷骰 5 次 → [4,1,1,4,5] = 2 bow + 3 foot
+        //   → 打不到我 II：反伤 floor(2/2)=1；足面≥2 → 50% 护盾
+        // 预期：月精灵受到 9 - ceil(9*0.5)=4 点伤害；暗影盗贼受到 1 点反击伤害
+        const queuedRandom = createQueuedRandom([
+            // 暗影盗贼进攻掷骰（5 次）
+            1, 2, 3, 4, 5,
+            // 月精灵防御掷骰（5 次）
+            4, 1, 1, 4, 5,
+        ]);
+
+        const runner = new GameTestRunner({
+            domain: DiceThroneDomain,
+            systems: testSystems,
+            playerIds: ['0', '1'],
+            random: queuedRandom,
+            setup: (playerIds, r) => createShadowThiefVsMoonElf(playerIds, r, (core) => {
+                core.players['0'].resources[RESOURCE_IDS.CP] = 5;
+                const elusiveIdx = core.players['1'].abilities.findIndex(a => a.id === 'elusive-step');
+                if (elusiveIdx >= 0) {
+                    core.players['1'].abilities[elusiveIdx].effects = [
+                        {
+                            description: '迷影步 II 防御结算',
+                            action: { type: 'custom', target: 'self', customActionId: 'moon_elf-elusive-step-resolve-2' },
+                            timing: 'withDamage',
+                        },
+                    ];
+                }
+                core.players['1'].abilities = core.players['1'].abilities.filter(
+                    a => a.type !== 'defensive' || a.id === 'elusive-step'
+                );
+                for (const pid of ['0', '1']) {
+                    const player = core.players[pid];
+                    if (!player) continue;
+                    for (const key of Object.keys(player.tokens)) {
+                        player.tokens[key] = 0;
+                    }
+                }
+            }),
+            assertFn: assertState,
+            silent: false,
+        });
+
+        const result = runner.run({
+            name: '反馈699eb46 打不到我 II odd damage 9 场景',
+            commands: [
+                cmd('ADVANCE_PHASE', '0'),
+                cmd('ROLL_DICE', '0'),
+                cmd('CONFIRM_ROLL', '0'),
+                cmd('RESPONSE_PASS', '0'),
+                cmd('RESPONSE_PASS', '1'),
+                cmd('SELECT_ABILITY', '0', { abilityId: 'kidney-shot' }),
+                cmd('ADVANCE_PHASE', '0'),
+                cmd('ROLL_DICE', '1'),
+                cmd('CONFIRM_ROLL', '1'),
+                cmd('SELECT_ABILITY', '1', { abilityId: 'elusive-step' }),
+                cmd('ADVANCE_PHASE', '1'),
+            ],
+            expect: {
+                turnPhase: 'main2',
+            },
+        });
+
+        expect(result.assertionErrors).toEqual([]);
+        expect(result.finalState.core.players['1'].resources[RESOURCE_IDS.HP]).toBe(INITIAL_HEALTH - 4);
+        expect(result.finalState.core.players['0'].resources[RESOURCE_IDS.HP]).toBe(INITIAL_HEALTH - 1);
+    });
+
     it('迷影步 II 的 50% 护盾应减免暗影盗贼破隐一击的伤害（有 Token 响应路径）', () => {
         // 与上一个测试相同，但暗影盗贼有太极 Token → 触发 Token 响应窗口
         // 暗影盗贼进攻掷骰 5 次 → [1,2,3,4,5] = 大顺子 → kidney-shot

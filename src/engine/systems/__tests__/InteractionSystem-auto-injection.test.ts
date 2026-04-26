@@ -892,6 +892,66 @@ describe('InteractionSystem - 通用刷新', () => {
         expect(result?.error).toBe('无效的选择');
     });
 
+    it('responseValidationMode 为 live 时，RESOLVED 事件仍应保留原始 interactionData 快照', () => {
+        let state: MatchState<TestCore> = {
+            core: {
+                players: {
+                    p1: {
+                        hand: [
+                            { uid: 'card-1', defId: 'test-card-1' },
+                            { uid: 'card-2', defId: 'test-card-2' },
+                        ],
+                    },
+                },
+            },
+            sys: {
+                interaction: { queue: [] },
+            },
+        } as any;
+
+        const interaction = createSimpleChoice(
+            'respond-with-live-snapshot',
+            'p1',
+            '选择一张卡牌',
+            [
+                { id: 'opt-1', label: '卡牌 1', value: { cardUid: 'card-1', defId: 'test-card-1' } },
+                { id: 'opt-2', label: '卡牌 2', value: { cardUid: 'card-2', defId: 'test-card-2' } },
+            ],
+            { sourceId: 'test', autoRefresh: 'hand', responseValidationMode: 'live' },
+        );
+
+        state = queueInteraction(state, interaction);
+        state = {
+            ...state,
+            core: {
+                ...state.core,
+                players: {
+                    p1: {
+                        hand: [{ uid: 'card-1', defId: 'test-card-1' }],
+                    },
+                },
+            },
+        };
+
+        const system = createSimpleChoiceSystem<TestCore>();
+        const result = system.beforeCommand?.({
+            state,
+            command: {
+                type: INTERACTION_COMMANDS.RESPOND,
+                playerId: 'p1',
+                payload: { optionId: 'opt-1' },
+            } as any,
+            events: [],
+            random: dummyRandom as any,
+            playerIds: ['p1'],
+        });
+
+        expect(result?.halt).toBe(false);
+        expect(result?.events?.[0].type).toBe(INTERACTION_EVENTS.RESOLVED);
+        expect(((result?.events?.[0] as any)?.payload?.interactionData?.options ?? []).map((option: any) => option.id))
+            .toEqual(['opt-1', 'opt-2']);
+    });
+
     it('autoRefresh=buried 时，后续交互弹出应剔除已失效的埋葬牌选项', () => {
         let state: MatchState<TestCore> = {
             core: {

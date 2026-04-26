@@ -5,11 +5,20 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const rootDir = process.cwd();
 const debugAndroidAppIdSegments = new Set(['debug', 'dev', 'test', 'qa']);
+const preservedProcessEnv = { ...process.env };
 
 for (const file of ['.env', '.env.android', '.env.android.local']) {
     const fullPath = path.join(rootDir, file);
     if (!existsSync(fullPath)) continue;
     dotenv.config({ path: fullPath, override: true, quiet: true });
+}
+
+// Keep explicit shell env higher priority than local dotenv files while still
+// allowing .env.android.local to override earlier dotenv files.
+for (const [key, value] of Object.entries(preservedProcessEnv)) {
+    if (typeof value === 'string') {
+        process.env[key] = value;
+    }
 }
 
 const parseBooleanEnv = (value: string | undefined) => /^(1|true|yes|on)$/i.test(value?.trim() || '');
@@ -18,8 +27,6 @@ const appName = process.env.CAPACITOR_APP_NAME?.trim() || '易桌游';
 const mode = (process.env.ANDROID_WEBVIEW_MODE?.trim().toLowerCase() || 'embedded');
 const remoteUrl = process.env.ANDROID_REMOTE_WEB_URL?.trim() || '';
 const isHttpRemoteUrl = /^http:\/\//i.test(remoteUrl);
-const backendUrl = process.env.VITE_BACKEND_URL?.trim() || '';
-const embeddedAndroidScheme = /^http:\/\//i.test(backendUrl) ? 'http' : 'https';
 const isNonReleaseAndroidAppId = (value: string) => value
     .split('.')
     .some((segment) => debugAndroidAppIdSegments.has(segment.trim().toLowerCase()));
@@ -36,7 +43,9 @@ if (mode === 'remote' && !/^https?:\/\//i.test(remoteUrl)) {
 }
 
 const server: NonNullable<CapacitorConfig['server']> = {
-    androidScheme: mode === 'embedded' ? embeddedAndroidScheme : 'https',
+    // Android embedded WebView must keep the local bridge on http://localhost
+    // so Capacitor.convertFileSrc() can resolve /_capacitor_file_/... correctly.
+    androidScheme: mode === 'embedded' ? 'http' : 'https',
 };
 
 if (mode === 'remote') {

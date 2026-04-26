@@ -38,7 +38,10 @@ export function registerNinjaAbilities(): void {
     // 忍者侍从（special）：基地计分前返回手牌并额外打出一个随从到该基地
     registerAbility('ninja_acolyte', 'special', ninjaAcolyteSpecial);
     // 忍者侍从 POD（talent）：若本回合尚未打出过随从，则返回手牌并立即在这里额外打出一个随从
-    registerAbility('ninja_acolyte_pod', 'talent', ninjaAcolytePodTalent);
+    registerAbility('ninja_acolyte_pod', 'talent', {
+        execute: ninjaAcolytePodTalent,
+        validateUse: ninjaAcolytePodTalentValidate,
+    });
 
     // 注册 ongoing 拦截器（含 beforeScoring 触发器：影舞者、忍者侍从）
     registerNinjaOngoingEffects();
@@ -493,6 +496,15 @@ function ninjaAcolytePodTalent(ctx: AbilityContext): AbilityResult {
     };
 }
 
+function ninjaAcolytePodTalentValidate(ctx: AbilityContext): string | null {
+    const player = ctx.state.players[ctx.playerId];
+    if (!player) return '玩家不存在';
+    if (player.minionsPlayed > 0) {
+        return '本回合已打出过随从，不能使用该天赋';
+    }
+    return null;
+}
+
 // ============================================================================
 // Ongoing 拦截器注册
 // ============================================================================
@@ -573,8 +585,8 @@ function registerNinjaOngoingEffects(): void {
 
     // 渗透：附着此卡的随从不受基地能力影响（广义保护）?
     registerProtection('ninja_infiltrate', 'affect', (ctx) => {
-        // 检查目标随从是否附着了?infiltrate
-        return ctx.targetMinion.attachedActions.some(a => matchesDefId(a.defId, 'ninja_infiltrate'));
+        // 只有基础版 Infiltrate 具有这条旧版保护语义；POD 版不能混入这条链路。
+        return ctx.targetMinion.attachedActions.some(a => a.defId === 'ninja_infiltrate');
     });
     // 渗透：拥有者下回合开始时自毁
     registerTrigger('ninja_infiltrate', 'onTurnStart', (trigCtx) => {
@@ -582,7 +594,7 @@ function registerNinjaOngoingEffects(): void {
         for (let i = 0; i < trigCtx.state.bases.length; i++) {
             for (const m of trigCtx.state.bases[i].minions) {
                 for (const a of m.attachedActions) {
-                    if (!matchesDefId(a.defId, 'ninja_infiltrate')) continue;
+                    if (a.defId !== 'ninja_infiltrate') continue;
                     if (a.ownerId !== trigCtx.playerId) continue;
                     events.push({
                         type: SU_EVENTS.ONGOING_DETACHED,

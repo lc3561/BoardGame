@@ -1654,6 +1654,8 @@ export function processAffectTriggers(
                 triggerMinionDefId: record.triggerMinionDefId,
                 triggerMinion: record.triggerMinion,
                 affectType: record.affectType,
+                counterChangeKind: record.counterChangeKind,
+                counterDelta: record.counterDelta,
                 reason: record.reason,
                 random,
                 now,

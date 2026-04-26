@@ -67,6 +67,28 @@ function buildWizardMassEnchantmentOptions(
         }));
 }
 
+function buildWizardScryOptions(
+    state: SmashUpCore,
+    playerId: string,
+) {
+    const player = state.players[playerId];
+    if (!player) return [];
+
+    return player.deck
+        .filter((card) => card.type === 'action')
+        .map((card, index) => {
+            const def = getCardDef(card.defId);
+            const name = def?.name ?? card.defId;
+            return {
+                id: `card-${index}`,
+                label: name,
+                value: { cardUid: card.uid, defId: card.defId },
+                _source: 'static' as const,
+                displayMode: 'card' as const,
+            };
+        });
+}
+
 type WizardPortalOrderContext = {
     remaining: { uid: string; defId: string }[];
     ordered: { uid: string; defId: string }[];
@@ -495,8 +517,8 @@ function wizardPortalOrderRemaining(
 /** 占卜 onPlay：搜索牌库找一张行动卡放入手牌，然后洗牌库 */
 function wizardScry(ctx: AbilityContext): AbilityResult {
     const player = ctx.state.players[ctx.playerId];
-    const actionCards = player.deck.filter(c => c.type === 'action');
-    if (actionCards.length === 0) {
+    const options = buildWizardScryOptions(ctx.state, ctx.playerId);
+    if (options.length === 0) {
         // 牌库中无行动卡，规则仍要求重洗牌库
         const shuffled = ctx.random.shuffle([...player.deck]);
         return { events: [{
@@ -507,16 +529,14 @@ function wizardScry(ctx: AbilityContext): AbilityResult {
         buildAbilityFeedback(ctx.playerId, 'feedback.deck_search_no_match', ctx.now),
         ] };
     }
-    const options = actionCards.map((c, i) => {
-        const def = getCardDef(c.defId);
-        const name = def?.name ?? c.defId;
-        return { id: `card-${i}`, label: name, value: { cardUid: c.uid, defId: c.defId }, _source: 'static' as const, displayMode: 'card' as const };
-    });
     const interaction = createSimpleChoice(
         `wizard_scry_${ctx.now}`, ctx.playerId,
         '占卜：选择一张行动卡放入手牌', options,
         { sourceId: 'wizard_scry', targetType: 'generic', autoRefresh: 'deck', responseValidationMode: 'live' }, // 显式声明从牌库刷新并在响应时重验
     );
+    (interaction.data as { optionsGenerator?: unknown }).optionsGenerator = (
+        nextState: { core: SmashUpCore },
+    ) => buildWizardScryOptions(nextState.core, ctx.playerId);
     return { events: [], matchState: queueInteraction(ctx.matchState, interaction) };
 }
 

@@ -31,6 +31,8 @@ type ReactionChoiceValue =
 interface ReactionOption {
     id: string;
     label: string;
+    labelKey?: string;
+    labelParams?: Record<string, string | number>;
     value: ReactionChoiceValue;
     displayMode: 'button';
 }
@@ -171,9 +173,14 @@ function popSuspendedSmashUpReactionSession(
     };
 }
 
+function buildReactionSourceNameLabel(defId: string): string {
+    const source = getCardDef(defId) ?? getBaseDef(defId);
+    return source ? `cards.${defId}.name` : defId;
+}
+
 function buildTriggerLabel(trigger: TriggerInstance): string {
     const source = getCardDef(trigger.sourceDefId) ?? getBaseDef(trigger.sourceDefId);
-    return source?.name ?? trigger.sourceDefId;
+    return source ? buildReactionSourceNameLabel(trigger.sourceDefId) : trigger.sourceDefId;
 }
 
 function getSessionFrameTriggers(state: MatchState<SmashUpCore>, frameId: string): TriggerInstance[] {
@@ -249,7 +256,22 @@ function buildPlayableCardOptions(
     const player = state.core.players[playerId];
     if (!player) return [];
 
-    const eligibleBaseIndices = getScoringEligibleBaseIndices(state.core);
+    const scoringEligibleBaseIndices = getScoringEligibleBaseIndices(state.core);
+    const eligibleBaseIndices = session.responseWindowType === 'afterScoring'
+        ? (
+            typeof session.sourceBaseIndex === 'number'
+                && session.sourceBaseIndex >= 0
+                && session.sourceBaseIndex < state.core.bases.length
+                ? (
+                    // afterScoring 仅允许当前正在结算的基地；该基地结算完成后不再提供反应选项
+                    scoringEligibleBaseIndices.includes(session.sourceBaseIndex)
+                        ? [session.sourceBaseIndex]
+                        : []
+                )
+                // 兼容旧状态：若缺 sourceBaseIndex，则回退到当前可计分基地集合
+                : scoringEligibleBaseIndices
+        )
+        : scoringEligibleBaseIndices;
     const probeState = buildProbeState(state, session, playerId, now);
     const options: ReactionOption[] = [];
 
@@ -269,6 +291,11 @@ function buildPlayableCardOptions(
                 options.push({
                     id: `play_minion:${card.uid}:${targetBaseIndex}`,
                     label: `${def?.name ?? card.defId} -> 基地 ${targetBaseIndex + 1}`,
+                    labelKey: 'ui.reaction_choose_play_to_base',
+                    labelParams: {
+                        name: buildReactionSourceNameLabel(card.defId),
+                        baseNumber: targetBaseIndex + 1,
+                    },
                     value: {
                         kind: 'play_minion',
                         playerId,
@@ -293,6 +320,11 @@ function buildPlayableCardOptions(
                 options.push({
                     id: `play_action:${card.uid}:${targetBaseIndex}`,
                     label: `${def?.name ?? card.defId} -> 基地 ${targetBaseIndex + 1}`,
+                    labelKey: 'ui.reaction_choose_play_to_base',
+                    labelParams: {
+                        name: buildReactionSourceNameLabel(card.defId),
+                        baseNumber: targetBaseIndex + 1,
+                    },
                     value: {
                         kind: 'play_action',
                         playerId,
@@ -313,10 +345,9 @@ function buildPlayableCardOptions(
             timestamp: now,
         } as any);
         if (actionValidationWithoutBase.valid) {
-            const def = getCardDef(card.defId);
             options.push({
                 id: `play_action:${card.uid}:none`,
-                label: def?.name ?? card.defId,
+                label: buildReactionSourceNameLabel(card.defId),
                 value: {
                     kind: 'play_action',
                     playerId,
@@ -345,6 +376,10 @@ function buildPlayableCardOptions(
             options.push({
                 id: `activate_special:minion:${minion.uid}:${baseIndex}`,
                 label: `${def?.name ?? minion.defId} 特殊能力`,
+                labelKey: 'ui.reaction_choose_activate_special',
+                labelParams: {
+                    name: buildReactionSourceNameLabel(minion.defId),
+                },
                 value: {
                     kind: 'activate_special',
                     playerId,
@@ -370,6 +405,10 @@ function buildPlayableCardOptions(
             options.push({
                 id: `activate_special:titan:${titan.uid}:${baseIndex}`,
                 label: `${def?.name ?? titan.defId} 特殊能力`,
+                labelKey: 'ui.reaction_choose_activate_special',
+                labelParams: {
+                    name: buildReactionSourceNameLabel(titan.defId),
+                },
                 value: {
                     kind: 'activate_special',
                     playerId,
@@ -412,6 +451,7 @@ function buildReactionOptions(
         {
             id: 'pass',
             label: 'Pass',
+            labelKey: 'ui.me_first_pass',
             value: { kind: 'pass' },
             displayMode: 'button',
         },
@@ -472,6 +512,8 @@ function executeQueuedTrigger(
             : undefined,
         reason: trigger.reason,
         affectType: trigger.affectType,
+        counterChangeKind: trigger.counterChangeKind,
+        counterDelta: trigger.counterDelta,
         actionTargetBaseIndex: trigger.actionTargetBaseIndex,
         actionTargetType: trigger.actionTargetType,
         actionTargetMinionUid: trigger.actionTargetMinionUid,
@@ -611,7 +653,9 @@ function buildReactionInteraction(
     const interaction = createSimpleChoice(
         `smashup_reaction_${session.frameId}_${session.activePlayerId}_${now}`,
         session.activePlayerId,
-        session.phase === 'mandatory' ? '选择先结算的强制效果' : '选择一个反应动作',
+        session.phase === 'mandatory'
+            ? 'ui.reaction_choose_mandatory_title'
+            : 'ui.reaction_choose_optional_title',
         initialOptions,
         {
             sourceId: 'smashup_reaction_choose',

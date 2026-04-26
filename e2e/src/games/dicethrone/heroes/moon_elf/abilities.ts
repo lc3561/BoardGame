@@ -51,7 +51,7 @@ export const MOON_ELF_ABILITIES: AbilityDef[] = [
         type: 'offensive',
         description: abilityText('covert-fire', 'description'),
         sfxKey: MOON_ELF_SFX_SHOT,
-        trigger: { type: 'diceSet', faces: { [FACE.BOW]: 3, [FACE.MOON]: 3 } },
+        trigger: { type: 'diceSet', faces: { [FACE.BOW]: 3, [FACE.MOON]: 2 } },
         effects: [
             inflictStatus(STATUS_IDS.TARGETED, 1, abilityEffectText('covert-fire', 'inflictTargeted')),
             damage(4, abilityEffectText('covert-fire', 'damage4')),

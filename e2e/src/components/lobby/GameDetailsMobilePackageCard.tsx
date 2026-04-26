@@ -5,7 +5,6 @@ import {
     type GamePackageCardState,
     type GamePackageInstallStatus,
 } from '../../features/mobile-packages/types';
-import { formatPackageBytes, hasKnownPackageBytes } from './packageManagerFormat';
 
 export type GamePackageCardStatus = GamePackageInstallStatus;
 export type { GamePackageCardState };
@@ -171,25 +170,11 @@ export const GameDetailsMobilePackageCard = ({
         || state.status === 'verifying';
     const progressMode = state.progressMode ?? 'indeterminate';
     const progressPercent = Math.max(0, Math.min(100, state.progressPercent ?? 0));
-    const knownTotalBytes = [state.modulePackBytes, state.assetPackBytes].reduce((total, value) => (
-        typeof value === 'number' && Number.isFinite(value)
-            ? total + value
-            : total
-    ), 0);
-    const hasAnyKnownBytes = [state.modulePackBytes, state.assetPackBytes].some((value) => hasKnownPackageBytes(value));
-    const totalBytes = hasAnyKnownBytes
-        ? knownTotalBytes
-        : undefined;
-    const isSyncingPreview = state.status === 'not-installed'
-        && !hasKnownPackageBytes(totalBytes)
-        && (
-            state.previewResolved !== true
-            || state.manifestSource === 'fallback'
-        );
-    const sizeFallbackLabel = isSyncingPreview
+    const syncStatusLabel = state.previewResolved !== true
         ? t('packageManager.packageSyncing')
-        : t('packageManager.sizeUnknown');
-    const sizeLabel = formatPackageBytes(totalBytes, sizeFallbackLabel);
+        : state.manifestSource === 'remote'
+            ? t('packageManager.packageSyncCompleted')
+            : t('packageManager.packageSyncFailed');
     const showCancelAction = isInProgress && typeof onCancel === 'function';
     const actionHandler = showCancelAction
         ? onCancel
@@ -205,7 +190,7 @@ export const GameDetailsMobilePackageCard = ({
             ? hasUsableInstalledGamePackageVersion(state.installedVersion)
                 ? t('packageManager.installedVersionBadge', { version: state.installedVersion?.trim() })
                 : t('packageManager.installedCompletedBadge')
-            : sizeLabel;
+            : syncStatusLabel;
 
     return (
         <section

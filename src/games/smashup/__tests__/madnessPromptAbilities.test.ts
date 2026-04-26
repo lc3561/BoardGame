@@ -714,6 +714,89 @@ describe('米斯卡塔尼克大学 - miskatonic_book_of_iter_the_unseen（金克
         expect(finalState.madnessDeck!.length).toBe(MADNESS_DECK_SIZE + 1);
     });
 
+    it('选择从弃牌堆返回2张疯狂卡时应实际返回2张', () => {
+        const state = makeStateWithMadness({
+            players: {
+                '0': makePlayer('0', {
+                    hand: [makeCard('a1', 'miskatonic_book_of_iter_the_unseen', 'action', '0')],
+                    discard: [
+                        makeCard('m1', MADNESS_CARD_DEF_ID, 'action', '0'),
+                        makeCard('m2', MADNESS_CARD_DEF_ID, 'action', '0'),
+                    ],
+                }),
+                '1': makePlayer('1'),
+            },
+        });
+
+        const play = runCommand(makeMatchState(state), {
+            type: SU_COMMANDS.PLAY_ACTION,
+            playerId: '0',
+            payload: { cardUid: 'a1' },
+        } as any, defaultRandom);
+        expect(play.success).toBe(true);
+
+        const prompt = (play.finalState.sys as any)?.interaction?.current;
+        expect(prompt?.data?.sourceId).toBe('miskatonic_book_of_iter_the_unseen');
+        const discardTwoOption = prompt.data.options.find(
+            (option: any) => option.value?.source === 'discard' && option.value?.count === 2,
+        );
+        expect(discardTwoOption?.id).toBeTruthy();
+
+        const resolve = runCommand(play.finalState, {
+            type: INTERACTION_COMMANDS.RESPOND,
+            playerId: '0',
+            payload: { optionId: discardTwoOption.id },
+        } as any, defaultRandom);
+        expect(resolve.success).toBe(true);
+
+        const finalCore = resolve.finalState.core;
+        expect(finalCore.madnessDeck?.length).toBe(MADNESS_DECK_SIZE + 2);
+        expect(finalCore.players['0'].discard.filter((card) => card.defId === MADNESS_CARD_DEF_ID)).toHaveLength(0);
+    });
+
+    it('弃牌堆存在同 uid 的疯狂卡时，返回2张应逐张生效', () => {
+        const state = makeStateWithMadness({
+            players: {
+                '0': makePlayer('0', {
+                    hand: [makeCard('a1', 'miskatonic_book_of_iter_the_unseen', 'action', '0')],
+                    discard: [
+                        makeCard('dup', MADNESS_CARD_DEF_ID, 'action', '0'),
+                        makeCard('dup', MADNESS_CARD_DEF_ID, 'action', '0'),
+                        makeCard('m3', MADNESS_CARD_DEF_ID, 'action', '0'),
+                    ],
+                }),
+                '1': makePlayer('1'),
+            },
+        });
+
+        const play = runCommand(makeMatchState(state), {
+            type: SU_COMMANDS.PLAY_ACTION,
+            playerId: '0',
+            payload: { cardUid: 'a1' },
+        } as any, defaultRandom);
+        expect(play.success).toBe(true);
+
+        const prompt = (play.finalState.sys as any)?.interaction?.current;
+        const discardTwoOption = prompt?.data?.options?.find(
+            (option: any) => option.value?.source === 'discard' && option.value?.count === 2,
+        );
+        expect(discardTwoOption?.id).toBeTruthy();
+
+        const resolve = runCommand(play.finalState, {
+            type: INTERACTION_COMMANDS.RESPOND,
+            playerId: '0',
+            payload: { optionId: discardTwoOption.id },
+        } as any, defaultRandom);
+        expect(resolve.success).toBe(true);
+
+        const finalCore = resolve.finalState.core;
+        expect(finalCore.madnessDeck?.length).toBe(MADNESS_DECK_SIZE + 2);
+        const remainingMadness = finalCore.players['0'].discard
+            .filter((card) => card.defId === MADNESS_CARD_DEF_ID)
+            .map((card) => card.uid);
+        expect(remainingMadness).toEqual(['m3']);
+    });
+
     it('选择跳过时不产生事件', () => {
         const state = makeStateWithMadness({
             players: {

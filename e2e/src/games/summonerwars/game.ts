@@ -21,7 +21,7 @@ import {
 } from '../../engine';
 import { createGameEngine } from '../../engine/adapter';
 import { SummonerWarsDomain, SW_COMMANDS } from './domain';
-import type { GamePhase, PlayerId, SummonerWarsCore } from './domain/types';
+import type { Card, FactionId, GamePhase, PlayerId, SummonerWarsCore } from './domain/types';
 import { summonerWarsFlowHooks } from './domain/flowHooks';
 import { createSummonerWarsInteractionSystem } from './domain/systems';
 import { registerCardPreviewGetter } from '../../components/game/registry/cardPreviewRegistry';
@@ -31,6 +31,8 @@ import { ACTION_ALLOWLIST, UNDO_ALLOWLIST, formatSummonerWarsActionEntry } from 
 import { summonerWarsCriticalImageResolver } from './criticalImageResolver';
 import { registerGameAiRuntime } from '../../engine/ai';
 import { summonerWarsAiRuntime } from './ai';
+import { buildCardRegistry, getCardPoolByFaction } from './config/cardRegistry';
+import { getBaseCardId } from './domain/ids';
 
 // Summoner Wars 作弊系统配置
 const normalizePlayerId = (playerId: string): PlayerId | null => {
@@ -38,7 +40,161 @@ const normalizePlayerId = (playerId: string): PlayerId | null => {
     return null;
 };
 
-const summonerWarsCheatModifier: CheatResourceModifier<SummonerWarsCore> = {
+const summonerWarsCardRegistry = buildCardRegistry();
+
+const normalizeStableCardId = (cardId: string) => getBaseCardId(cardId);
+
+const cloneCheatCard = <T extends Card>(card: T, nextId: string): T => ({
+    ...card,
+    id: nextId,
+});
+
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const collectAllCardIds = (core: SummonerWarsCore): Set<string> => {
+    const allIds = new Set<string>();
+
+    (['0', '1'] as const).forEach((playerId) => {
+        const player = core.players[playerId];
+        if (!player) return;
+        player.hand.forEach((card) => allIds.add(card.id));
+        player.deck.forEach((card) => allIds.add(card.id));
+        player.discard.forEach((card) => allIds.add(card.id));
+        player.activeEvents.forEach((card) => allIds.add(card.id));
+    });
+
+    core.board.forEach((row) => {
+        row.forEach((cell) => {
+            if (cell.unit) {
+                allIds.add(cell.unit.cardId);
+                cell.unit.attachedCards?.forEach((card) => allIds.add(card.id));
+                cell.unit.attachedUnits?.forEach((attachedUnit) => allIds.add(attachedUnit.cardId));
+            }
+            if (cell.structure) {
+                allIds.add(cell.structure.cardId);
+            }
+        });
+    });
+
+    return allIds;
+};
+
+const allocateInjectedCardId = (
+    core: SummonerWarsCore,
+    playerId: PlayerId,
+    stableCardId: string,
+) => {
+    const allIds = collectAllCardIds(core);
+    const matcher = new RegExp(`^${escapeRegExp(stableCardId)}-${playerId}-(\\d+)$`);
+    let nextIndex = 0;
+
+    allIds.forEach((id) => {
+        const matched = id.match(matcher);
+        if (!matched) return;
+        const index = Number(matched[1]);
+        if (Number.isFinite(index) && index >= nextIndex) {
+            nextIndex = index + 1;
+        }
+    });
+
+    let candidate = `${stableCardId}-${playerId}-${nextIndex}`;
+    while (allIds.has(candidate)) {
+        nextIndex += 1;
+        candidate = `${stableCardId}-${playerId}-${nextIndex}`;
+    }
+    return candidate;
+};
+
+const registerDebugCardDefinition = (cardsByBaseId: Map<string, Card>, card: Card | undefined) => {
+    if (!card) return;
+
+    const stableCardId = normalizeStableCardId(card.id);
+    if (card.cardType === 'unit' && card.unitClass === 'summoner') return;
+
+    if (cardsByBaseId.has(stableCardId)) return;
+
+    const canonicalCard = summonerWarsCardRegistry.get(stableCardId);
+    cardsByBaseId.set(
+        stableCardId,
+        canonicalCard
+            ? { ...canonicalCard }
+            : { ...card, id: stableCardId },
+    );
+};
+
+const getConfiguredDebugCardPool = (core: SummonerWarsCore, playerId: PlayerId): Card[] => {
+    const cardsByBaseId = new Map<string, Card>();
+    const selectedFaction = core.selectedFactions[playerId];
+    const customDeckData = core.customDeckData?.[playerId];
+    const player = core.players[playerId];
+
+    if (!player) return [];
+
+    if (!player) return [];
+
+    if (customDeckData?.cards?.length) {
+        customDeckData.cards.forEach((entry) => {
+            registerDebugCardDefinition(cardsByBaseId, summonerWarsCardRegistry.get(entry.cardId));
+        });
+    } else if (selectedFaction && selectedFaction !== 'unselected') {
+        getCardPoolByFaction(selectedFaction as FactionId).forEach((card) => {
+            registerDebugCardDefinition(cardsByBaseId, card);
+        });
+    }
+
+    player.deck.forEach((card) => registerDebugCardDefinition(cardsByBaseId, card));
+    player.hand.forEach((card) => registerDebugCardDefinition(cardsByBaseId, card));
+    player.discard.forEach((card) => registerDebugCardDefinition(cardsByBaseId, card));
+    player.activeEvents.forEach((card) => registerDebugCardDefinition(cardsByBaseId, card));
+    core.board.forEach((row) => {
+        row.forEach((cell) => {
+            if (cell.unit?.owner === playerId) {
+                registerDebugCardDefinition(cardsByBaseId, cell.unit.card);
+                cell.unit.attachedCards?.forEach((card) => registerDebugCardDefinition(cardsByBaseId, card));
+                cell.unit.attachedUnits?.forEach((attachedUnit) => registerDebugCardDefinition(cardsByBaseId, attachedUnit.card));
+            }
+            if (cell.structure?.owner === playerId) {
+                registerDebugCardDefinition(cardsByBaseId, cell.structure.card);
+            }
+        });
+    });
+    core.board.forEach((row) => {
+        row.forEach((cell) => {
+            if (cell.unit?.owner === playerId) {
+                registerDebugCardDefinition(cardsByBaseId, cell.unit.card);
+                cell.unit.attachedCards?.forEach((card) => registerDebugCardDefinition(cardsByBaseId, card));
+                cell.unit.attachedUnits?.forEach((attachedUnit) => registerDebugCardDefinition(cardsByBaseId, attachedUnit.card));
+            }
+            if (cell.structure?.owner === playerId) {
+                registerDebugCardDefinition(cardsByBaseId, cell.structure.card);
+            }
+        });
+    });
+
+    return Array.from(cardsByBaseId.entries()).map(([stableCardId, card]) => ({
+        ...card,
+        id: stableCardId,
+    }));
+};
+
+const getUniqueDeckMatchesByAtlas = (
+    deck: SummonerWarsCore['players']['0']['deck'],
+    atlasIndex: number,
+) => {
+    const matchedCards = deck
+        .map((card, deckIndex) => ({ card, deckIndex }))
+        .filter(({ card }) => card.spriteIndex === atlasIndex);
+
+    if (matchedCards.length === 0) return [];
+
+    const distinctStableKeys = new Set(
+        matchedCards.map(({ card }) => `${card.spriteAtlas ?? 'cards'}:${normalizeStableCardId(card.id)}`),
+    );
+
+    return distinctStableKeys.size === 1 ? matchedCards : [];
+};
+
+export const summonerWarsCheatModifier: CheatResourceModifier<SummonerWarsCore> = {
     getResource: (core, playerId, resourceId) => {
         if (resourceId !== 'magic') return undefined;
         const normalizedId = normalizePlayerId(playerId);
@@ -90,11 +246,13 @@ const summonerWarsCheatModifier: CheatResourceModifier<SummonerWarsCore> = {
         if (!normalizedId) return core;
         const player = core.players[normalizedId];
         if (!player) return core;
-        // 在牌库中查找匹配精灵图索引的卡牌
-        const cardIndex = player.deck.findIndex(c => c.spriteIndex === atlasIndex);
-        if (cardIndex === -1) return core;
+        // atlas 指令保留给旧教程/兼容链路：只在牌库中存在唯一稳定卡面时才移动。
+        const matchedCards = getUniqueDeckMatchesByAtlas(player.deck, atlasIndex);
+        if (matchedCards.length === 0) return core;
+
         const newDeck = [...player.deck];
-        const [card] = newDeck.splice(cardIndex, 1);
+        const [{ deckIndex }] = matchedCards;
+        const [card] = newDeck.splice(deckIndex, 1);
         return {
             ...core,
             players: {
@@ -107,16 +265,43 @@ const summonerWarsCheatModifier: CheatResourceModifier<SummonerWarsCore> = {
             },
         };
     },
+    addCardToHandByCardId: (core, playerId, cardId) => {
+        const normalizedId = normalizePlayerId(playerId);
+        if (!normalizedId) return core;
+        const player = core.players[normalizedId];
+        if (!player) return core;
+
+        const stableCardId = normalizeStableCardId(cardId);
+        const sourceCard = getConfiguredDebugCardPool(core, normalizedId)
+            .find((card) => normalizeStableCardId(card.id) === stableCardId);
+        if (!sourceCard) return core;
+
+        const injectedCardId = allocateInjectedCardId(core, normalizedId, stableCardId);
+        const injectedCard = cloneCheatCard(sourceCard, injectedCardId);
+
+        return {
+            ...core,
+            players: {
+                ...core.players,
+                [normalizedId]: {
+                    ...player,
+                    hand: [...player.hand, injectedCard],
+                },
+            },
+        };
+    },
     dealCardToDiscard: (core, playerId, atlasIndex) => {
         const normalizedId = normalizePlayerId(playerId);
         if (!normalizedId) return core;
         const player = core.players[normalizedId];
         if (!player) return core;
-        // 在牌库中查找匹配精灵图索引的卡牌，移入弃牌堆
-        const cardIndex = player.deck.findIndex(c => c.spriteIndex === atlasIndex);
-        if (cardIndex === -1) return core;
+        // atlas 指令保留给旧教程/兼容链路：只在牌库中存在唯一稳定卡面时才移动。
+        const matchedCards = getUniqueDeckMatchesByAtlas(player.deck, atlasIndex);
+        if (matchedCards.length === 0) return core;
+
         const newDeck = [...player.deck];
-        const [card] = newDeck.splice(cardIndex, 1);
+        const [{ deckIndex }] = matchedCards;
+        const [card] = newDeck.splice(deckIndex, 1);
         return {
             ...core,
             players: {

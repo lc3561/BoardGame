@@ -125,12 +125,19 @@ export function diceModifyReducer(
     current: DiceModifyResult,
     step: DiceModifyStep,
     config: DtInteractionDescriptor['dieModifyConfig'],
+    maxSelectCount?: number,
 ): DiceModifyResult {
     const mode = config?.mode;
+    const hasReachedSelectionLimit = (dieId: number): boolean => {
+        if (typeof maxSelectCount !== 'number' || maxSelectCount <= 0) return false;
+        const alreadyTracked = Object.prototype.hasOwnProperty.call(current.modifications, String(dieId));
+        return !alreadyTracked && current.modCount >= maxSelectCount;
+    };
 
     if (step.action === 'select') {
         // set 模式：选中骰子，记录目标值
         if (mode === 'set') {
+            if (hasReachedSelectionLimit(step.dieId)) return current;
             const targetValue = config?.targetValue ?? step.dieValue;
             return {
                 ...current,
@@ -142,6 +149,7 @@ export function diceModifyReducer(
         if (mode === 'copy') {
             const entries = Object.entries(current.modifications);
             if (entries.length === 0) {
+                if (hasReachedSelectionLimit(step.dieId)) return current;
                 // 第一颗：记录源骰子（值不变）
                 return {
                     ...current,
@@ -149,6 +157,7 @@ export function diceModifyReducer(
                     modCount: 1,
                 };
             }
+            if (hasReachedSelectionLimit(step.dieId)) return current;
             // 第二颗：复制第一颗的值
             const sourceValue = Number(entries[0][1]);
             return {
@@ -162,6 +171,7 @@ export function diceModifyReducer(
 
     if (step.action === 'adjust') {
         // adjust 模式：累加调整量
+        if (hasReachedSelectionLimit(step.dieId)) return current;
         const prevValue = current.modifications[step.dieId] ?? step.currentValue;
         const newValue = prevValue + step.delta;
         if (newValue < 1 || newValue > 6) return current;
@@ -177,6 +187,7 @@ export function diceModifyReducer(
 
     if (step.action === 'setAny') {
         // any 模式：直接设置值
+        if (hasReachedSelectionLimit(step.dieId)) return current;
         if (step.newValue < 1 || step.newValue > 6) return current;
         return {
             ...current,
@@ -194,9 +205,15 @@ export function diceModifyReducer(
  * 骰子修改 toCommands：将累积结果转换为 MODIFY_DIE 命令列表
  * 导出供客户端在序列化边界后重新注入
  */
-export function diceModifyToCommands(result: DiceModifyResult): Array<{ type: string; payload: unknown }> {
-    return Object.entries(result.modifications)
+export function diceModifyToCommands(
+    result: DiceModifyResult,
+    maxSelectCount?: number,
+): Array<{ type: string; payload: unknown }> {
+    const modificationEntries = Object.entries(result.modifications)
         .filter(([, newValue]) => newValue !== undefined)
+        .slice(0, typeof maxSelectCount === 'number' && maxSelectCount > 0 ? maxSelectCount : undefined);
+
+    return modificationEntries
         .map(([dieId, newValue]) => ({
             type: 'MODIFY_DIE',
             payload: { dieId: Number(dieId), newValue },
@@ -376,8 +393,8 @@ export function createDiceThroneEventSystem(): EngineSystem<DiceThroneCore> {
                             maxSteps,
                             minSteps: isManualConfirmMode ? 1 : undefined,
                             initialResult: { modifications: {}, modCount: 0, totalAdjustment: 0 },
-                            localReducer: (current, step) => diceModifyReducer(current, step, config),
-                            toCommands: diceModifyToCommands,
+                            localReducer: (current, step) => diceModifyReducer(current, step, config, selectCount),
+                            toCommands: (result) => diceModifyToCommands(result, selectCount),
                             allowedDieIds,
                             completedDieIds,
                             meta: {

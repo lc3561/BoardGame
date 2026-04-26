@@ -37,7 +37,7 @@ interface RevealItem {
 
 interface RevealOverlayProps {
     entries: EventStreamEntry[];
-    currentPlayerId: PlayerId;
+    currentPlayerId: PlayerId | null;
 }
 
 const AUTO_DISMISS_MS = 15_000;
@@ -103,14 +103,13 @@ export function RevealOverlay({ entries, currentPlayerId }: RevealOverlayProps) 
                 continue;
             }
 
-            // 权限过滤：单人模式下只有指定查看者能看
             const isAllMode = p.viewerPlayerId === 'all';
             const targetIds = Array.isArray(p.targetPlayerId) ? p.targetPlayerId : [p.targetPlayerId];
             
             // 权限过滤：
             // - all 模式：所有人都能看
-            // - 单人模式：只有指定查看者能看
-            if (!isAllMode && p.viewerPlayerId !== currentPlayerId) {
+            // - 私有模式：只有明确属于该玩家的页面能看
+            if (!isAllMode && (currentPlayerId == null || p.viewerPlayerId !== currentPlayerId)) {
                 continue;
             }
 
@@ -179,6 +178,7 @@ export function RevealOverlay({ entries, currentPlayerId }: RevealOverlayProps) 
                 transition={{ duration: 0.2 }}
                 onClick={handleDismiss}
                 data-interaction-allow
+                data-testid="reveal-overlay"
             >
                 {/* 半透明背景（不完全遮挡） */}
                 <div className="absolute inset-0 bg-black/30" />
@@ -214,6 +214,7 @@ export function RevealOverlay({ entries, currentPlayerId }: RevealOverlayProps) 
                             return (
                                 <motion.div
                                     key={card.uid}
+                                    data-testid="reveal-card"
                                     initial={{ y: 40, opacity: 0 }}
                                     animate={{ y: 0, opacity: 1 }}
                                     transition={{ delay: idx * 0.05, type: 'spring', stiffness: 400, damping: 25 }}

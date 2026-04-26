@@ -38,6 +38,10 @@ export interface AttackShowcaseState {
     isShowcaseVisible: boolean;
     /** 特写数据 */
     showcaseData: AttackShowcaseData | null;
+    /** 特写模式 */
+    mode: 'defensive-entry' | 'offensive-preview' | null;
+    /** 自动关闭时长，null 表示仅手动关闭 */
+    autoDismissMs: number | null;
     /** 关闭特写（点击继续） */
     dismissShowcase: () => void;
 }
@@ -45,7 +49,7 @@ export interface AttackShowcaseState {
 interface AttackShowcaseConfig {
     /** 当前阶段 */
     currentPhase: TurnPhase;
-    /** 当前玩家 ID（防御方才展示） */
+    /** 当前玩家 ID（非攻击方才展示） */
     currentPlayerId: PlayerId;
     /** 是否为观战模式（观战不展示） */
     isSpectator?: boolean;
@@ -62,8 +66,14 @@ interface AttackShowcaseConfig {
 /**
  * 生成当前攻击的唯一标识
  */
-function getAttackKey(pa: PendingAttack): string {
-    return `${pa.attackerId}:${pa.sourceAbilityId ?? ''}`;
+function getAttackKey(pa: PendingAttack, state: DiceThroneCore): string {
+    return [
+        state.turnNumber,
+        state.attackResolvedSequence ?? 0,
+        pa.attackerId,
+        pa.defenderId ?? 'none',
+        pa.sourceAbilityId ?? '',
+    ].join(':');
 }
 
 /**
@@ -122,35 +132,81 @@ export function useAttackShowcase(config: AttackShowcaseConfig): AttackShowcaseS
 
     // 已关闭的攻击 key（用户点击"继续"后设置，触发重渲染隐藏遮罩）
     const [dismissedKey, setDismissedKey] = useState<string | null>(null);
+    const [latchedShowcase, setLatchedShowcase] = useState<{
+        key: string;
+        data: AttackShowcaseData;
+        mode: 'defensive-entry' | 'offensive-preview';
+        autoDismissMs: number | null;
+    } | null>(null);
 
-    // 离开 defensiveRoll 时重置
+    // 离开 defensiveRoll 后，如果当前展示是“进入防御”提示，则自动收口
     useEffect(() => {
         if (currentPhase !== 'defensiveRoll') {
-            setDismissedKey(null);
+            setLatchedShowcase((prev) => prev?.mode === 'defensive-entry' ? null : prev);
         }
     }, [currentPhase]);
 
-    // 判断是否应该展示（纯派生逻辑）
-    const shouldShow =
-        currentPhase === 'defensiveRoll'
-        && !isSpectator
+    const attackKey = pendingAttack ? getAttackKey(pendingAttack, state) : null;
+    const isNonAttackerViewer = pendingAttack
+        ? String(pendingAttack.attackerId) !== String(currentPlayerId)
+        : false;
+    const shouldDeriveShowcase =
+        !isSpectator
         && pendingAttack !== null
-        && pendingAttack.isDefendable
         && Boolean(pendingAttack.sourceAbilityId)
-        && String(pendingAttack.defenderId) === String(currentPlayerId)
-        && getAttackKey(pendingAttack) !== dismissedKey;
-
-    const showcaseData = shouldShow && pendingAttack
+        && isNonAttackerViewer;
+    const showcaseData = shouldDeriveShowcase && pendingAttack
         ? buildShowcaseData(pendingAttack, selectedCharacters, abilityLevels, state)
         : null;
+    const showcaseMode = shouldDeriveShowcase && pendingAttack
+        ? (
+            currentPhase === 'defensiveRoll'
+            && pendingAttack.isDefendable
+            && String(pendingAttack.defenderId) === String(currentPlayerId)
+                ? 'defensive-entry'
+                : 'offensive-preview'
+        )
+        : null;
 
-    const isShowcaseVisible = shouldShow && showcaseData !== null;
+    useEffect(() => {
+        if (!attackKey || !showcaseData || !showcaseMode) {
+            return;
+        }
+        if (attackKey === dismissedKey) {
+            return;
+        }
+
+        setLatchedShowcase((prev) => {
+            if (prev?.key === attackKey && prev.mode === showcaseMode) {
+                return prev;
+            }
+            return {
+                key: attackKey,
+                data: showcaseData,
+                mode: showcaseMode,
+                autoDismissMs: showcaseMode === 'offensive-preview' ? 3000 : null,
+            };
+        });
+    }, [attackKey, showcaseData, showcaseMode, dismissedKey]);
+
+    useEffect(() => {
+        if (dismissedKey === null) return;
+        setLatchedShowcase((prev) => prev?.key === dismissedKey ? null : prev);
+    }, [dismissedKey]);
+
+    const isShowcaseVisible = latchedShowcase !== null;
 
     const dismissShowcase = useCallback(() => {
-        if (pendingAttack) {
-            setDismissedKey(getAttackKey(pendingAttack));
+        if (latchedShowcase) {
+            setDismissedKey(latchedShowcase.key);
         }
-    }, [pendingAttack]);
+    }, [latchedShowcase]);
 
-    return { isShowcaseVisible, showcaseData, dismissShowcase };
+    return {
+        isShowcaseVisible,
+        showcaseData: latchedShowcase?.data ?? null,
+        mode: latchedShowcase?.mode ?? null,
+        autoDismissMs: latchedShowcase?.autoDismissMs ?? null,
+        dismissShowcase,
+    };
 }

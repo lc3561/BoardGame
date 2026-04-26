@@ -14,6 +14,97 @@ import { SU_EVENT_TYPES } from '../domain/events';
 import { createInitialSystemState } from '../../../engine/pipeline';
 
 describe('afterScoring 响应窗口中打出卡牌的执行', () => {
+    it('afterScoring 响应窗口中的重返深海不能指向其他达标基地', () => {
+        const runner = new GameTestRunner<SmashUpCore, SmashUpCommand, SmashUpEvent>({
+            domain: SmashUpDomain,
+            systems: smashUpSystemsForTest,
+            playerIds: ['0', '1'],
+            setup: (playerIds, random) => {
+                const core = SmashUpDomain.setup(playerIds, random);
+                const sys = createInitialSystemState(playerIds, smashUpSystemsForTest, undefined);
+
+                core.factionSelection = undefined;
+                sys.phase = 'scoreBases';
+
+                core.bases[0] = {
+                    defId: 'base_the_mothership',
+                    minions: [
+                        {
+                            uid: 'm1',
+                            defId: 'innsmouth_the_locals',
+                            owner: '0',
+                            controller: '0',
+                            basePower: 2,
+                            powerModifier: 0,
+                            tempPowerModifier: 0,
+                            powerCounters: 10,
+                            attachedActions: [],
+                            talentUsed: false,
+                        },
+                    ] as MinionOnBase[],
+                    ongoingActions: [],
+                };
+                core.bases[1] = {
+                    defId: 'base_great_library',
+                    minions: [
+                        {
+                            uid: 'm2',
+                            defId: 'robot_microbot_alpha',
+                            owner: '0',
+                            controller: '0',
+                            basePower: 2,
+                            powerModifier: 0,
+                            tempPowerModifier: 0,
+                            powerCounters: 10,
+                            attachedActions: [],
+                            talentUsed: false,
+                        },
+                    ] as MinionOnBase[],
+                    ongoingActions: [],
+                };
+
+                core.scoringEligibleBaseIndices = [0, 1];
+                core.players['0'].hand = [
+                    { uid: 'card-1', defId: 'innsmouth_return_to_the_sea', type: 'action', owner: '0' },
+                ];
+                core.players['1'].hand = [];
+
+                (sys as any).smashupReactionSession = {
+                    frameId: 'score-after:0:test',
+                    frameKind: 'score-after',
+                    phase: 'optional',
+                    activePlayerId: '0',
+                    currentPlayerId: '0',
+                    consecutivePasses: 0,
+                    sourceBaseIndex: 0,
+                    responseWindowType: 'afterScoring',
+                };
+                sys.responseWindow = {
+                    ...(sys.responseWindow ?? {}),
+                    current: undefined,
+                };
+
+                return { core, sys };
+            },
+        });
+
+        const wrongBaseResult = runner.dispatch('su:play_action', {
+            playerId: '0',
+            cardUid: 'card-1',
+            targetBaseIndex: 1,
+        });
+
+        expect(wrongBaseResult.success).toBe(false);
+        expect(wrongBaseResult.error).toBe('afterScoring 只能选择当前正在结算的基地');
+
+        const correctBaseResult = runner.dispatch('su:play_action', {
+            playerId: '0',
+            cardUid: 'card-1',
+            targetBaseIndex: 0,
+        });
+        expect(correctBaseResult.success).toBe(true);
+    });
+
     it('在 afterScoring 响应窗口中打出"重返深海"应该立即执行能力', () => {
         const runner = new GameTestRunner<SmashUpCore, SmashUpCommand, SmashUpEvent>({
             domain: SmashUpDomain,

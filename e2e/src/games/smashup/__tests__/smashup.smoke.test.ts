@@ -12,7 +12,7 @@ import { smashUpFlowHooks } from '../domain/index';
 import { createFlowSystem, createBaseSystems, createInitialSystemState } from '../../../engine';
 import { resolveNextLocalAiAction } from '../../../engine/ai';
 import { resolveAiDifficultyProfile } from '../../../engine/ai/difficulty';
-import { createSimpleChoice, INTERACTION_EVENTS } from '../../../engine/systems/InteractionSystem';
+import { createSimpleChoice, INTERACTION_COMMANDS, INTERACTION_EVENTS } from '../../../engine/systems/InteractionSystem';
 import { executePipeline } from '../../../engine/pipeline';
 import type { CardsDrawnEvent, SmashUpCore, SmashUpCommand, SmashUpEvent } from '../domain/types';
 import { MADNESS_CARD_DEF_ID, SU_COMMANDS, SU_EVENTS, getCurrentPlayerId } from '../domain/types';
@@ -1585,7 +1585,7 @@ describe('smashup', () => {
         }
     });
 
-    it('Smash Up baseline AI 在 pirate_broadside 这类基地+玩家复合目标里会优先点敌方目标', async () => {
+    it('Smash Up baseline AI 在 pirate_broadside 两步链里会先选基地，再优先点敌方目标', async () => {
         const core = makeState({
             currentPlayerIndex: 0,
             players: {
@@ -1617,7 +1617,7 @@ describe('smashup', () => {
 
         expect(SmashUpDomain.validate(state, command).valid).toBe(true);
         SmashUpDomain.execute(state, command, FIXED_RANDOM);
-        expect(state.sys.interaction?.current?.data?.sourceId).toBe('pirate_broadside');
+        expect(state.sys.interaction?.current?.data?.sourceId).toBe('pirate_broadside_choose_base');
 
         const legalActions = buildSmashUpAiLegalActions({
             playerId: '0',
@@ -1639,7 +1639,45 @@ describe('smashup', () => {
         const chosenAction = legalActions.find((action) => action.actionId === decision?.actionId);
 
         expect(chosenAction?.kind).toBe('interaction-choice');
-        expect((chosenAction?.metadata?.optionValue as { targetPlayerId?: string } | undefined)?.targetPlayerId).toBe('1');
+        expect((chosenAction?.metadata?.optionValue as { baseIndex?: number } | undefined)?.baseIndex).toBe(0);
+
+        const baseOption = findInteractionOption(
+            state.sys.interaction?.current,
+            option => option?.value?.baseIndex === 0,
+        );
+        expect(baseOption).toBeDefined();
+
+        const baseRespondResult = runCommand(state, {
+            type: INTERACTION_COMMANDS.RESPOND,
+            playerId: '0',
+            payload: { optionId: baseOption!.id },
+            timestamp: 89,
+        } as any, FIXED_RANDOM);
+        const stateAfterChooseBase = baseRespondResult.finalState;
+
+        expect(stateAfterChooseBase.sys.interaction?.current?.data?.sourceId).toBe('pirate_broadside_choose_player');
+
+        const nextLegalActions = buildSmashUpAiLegalActions({
+            playerId: '0',
+            state: stateAfterChooseBase,
+        });
+        const nextDecision = await smashUpAiRuntime.localPolicies!.baseline.decide({
+            gameId: 'smashup',
+            matchId: 'test-smashup-ai-pirate-broadside-target-player',
+            playerId: '0',
+            visibleState: stateAfterChooseBase,
+            interaction: null,
+            responseWindow: null,
+            legalActions: nextLegalActions,
+            rulesVersion: null,
+            decisionBudgetMs: 250,
+            difficulty: resolveAiDifficultyProfile('expert'),
+            source: 'local',
+        });
+        const nextChosenAction = nextLegalActions.find((action) => action.actionId === nextDecision?.actionId);
+
+        expect(nextChosenAction?.kind).toBe('interaction-choice');
+        expect((nextChosenAction?.metadata?.optionValue as { targetPlayerId?: string } | undefined)?.targetPlayerId).toBe('1');
     });
 
     it('Smash Up baseline AI 在基础出牌阶段优先打随从', async () => {
@@ -6015,6 +6053,15 @@ describe('smashup', () => {
         });
     });
 
+    it('世界冠军关键中文卡名应与当前卡图重录口径一致', () => {
+        expect(getCardDef('world_champs_calicoin')?.name).toBe('金币猫');
+        expect(getCardDef('world_champs_samurai_chan')?.name).toBe('武士 陈');
+        expect(getCardDef('world_champs_stoneford')?.name).toBe('斯坦福');
+        expect(getCardDef('world_champs_sheriff')?.name).toBe('警长');
+        expect(getCardDef('world_champs_bewitched')?.name).toBe('着魔');
+        expect(getCardDef('world_champs_mouse_bird_and_sausage')?.name).toBe('老鼠、鸟和香肠');
+    });
+
     it('同时消耗通常随从与通常战术额度的泰坦打出事件会正确结算两种额度', () => {
         const core = makeState({
             players: {
@@ -6179,6 +6226,186 @@ describe('smashup', () => {
             '消灭己方随从',
             '移除 +1 指示物',
         ]));
+    });
+
+    it('The Bride 仅在己方随从新增 +1 指示物时抽牌，且同回合只触发一次', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0', {
+                    factions: [SMASHUP_FACTION_IDS.FRANKENSTEIN, SMASHUP_FACTION_IDS.ALIENS],
+                    deck: [makeCard('bride-draw-card-1', 'frankenstein_igor', 'minion', '0')],
+                }),
+                '1': makePlayer('1'),
+            },
+            bases: [makeBase({
+                defId: 'base_the_factory',
+                minions: [makeMinion('bride-target-1', 'robot_zapbot', '0', 2)],
+                ongoingActions: [],
+            })],
+            titans: [{
+                uid: 'bride-ongoing-1',
+                defId: 'frankenstein_the_bride',
+                faction: SMASHUP_FACTION_IDS.FRANKENSTEIN,
+                ownerId: '0',
+                controllerId: '0',
+                powerCounters: 0,
+                talentUsed: false,
+                location: { zone: 'base', baseIndex: 0 },
+            } satisfies TitanState],
+            turnNumber: 5,
+        });
+
+        const triggerMinion = core.bases[0].minions.find(minion => minion.uid === 'bride-target-1');
+        expect(triggerMinion).toBeDefined();
+
+        const removed = fireTriggers(core, 'onMinionAffected', {
+            state: core,
+            matchState: makeMatchState(core, 'playCards', '0'),
+            playerId: '1',
+            baseIndex: 0,
+            triggerMinionUid: 'bride-target-1',
+            triggerMinionDefId: triggerMinion!.defId,
+            triggerMinion,
+            affectType: 'power_change',
+            counterChangeKind: 'removed',
+            counterDelta: -1,
+            reason: 'test_removed_counter',
+            random: FIXED_RANDOM,
+            now: 200,
+        });
+        expect(removed.events).toEqual([]);
+
+        const first = fireTriggers(core, 'onMinionAffected', {
+            state: core,
+            matchState: makeMatchState(core, 'playCards', '0'),
+            playerId: '1',
+            baseIndex: 0,
+            triggerMinionUid: 'bride-target-1',
+            triggerMinionDefId: triggerMinion!.defId,
+            triggerMinion,
+            affectType: 'power_change',
+            counterChangeKind: 'added',
+            counterDelta: 1,
+            reason: 'frankenstein_uberserum_pod',
+            random: FIXED_RANDOM,
+            now: 201,
+        });
+        expect(first.events.map(event => event.type)).toEqual(expect.arrayContaining([
+            SU_EVENTS.TITAN_METADATA_UPDATED,
+            SU_EVENTS.CARDS_DRAWN,
+        ]));
+        const drawEvent = first.events.find(event => event.type === SU_EVENTS.CARDS_DRAWN) as CardsDrawnEvent | undefined;
+        expect(drawEvent?.payload.playerId).toBe('0');
+
+        const coreAfterFirst = first.events.reduce(
+            (acc, event) => SmashUpDomain.reduce(acc, event),
+            core,
+        );
+        const second = fireTriggers(coreAfterFirst, 'onMinionAffected', {
+            state: coreAfterFirst,
+            matchState: makeMatchState(coreAfterFirst, 'playCards', '0'),
+            playerId: '1',
+            baseIndex: 0,
+            triggerMinionUid: 'bride-target-1',
+            triggerMinionDefId: triggerMinion!.defId,
+            triggerMinion: coreAfterFirst.bases[0].minions.find(minion => minion.uid === 'bride-target-1'),
+            affectType: 'power_change',
+            counterChangeKind: 'added',
+            counterDelta: 1,
+            reason: 'frankenstein_uberserum_pod',
+            random: FIXED_RANDOM,
+            now: 202,
+        });
+        expect(second.events).toEqual([]);
+    });
+
+    it('身体改造在回合开始给己方随从加指示物时应触发 The Bride 抽 1（线上反馈 69ec35a1）', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0', {
+                    deck: [makeCard('draw-1', 'frankenstein_jolt_pod', 'action', '0')],
+                    hand: [],
+                    discard: [],
+                }),
+                '1': makePlayer('1'),
+            },
+            bases: [makeBase({
+                defId: 'base_great_library',
+                minions: [{
+                    ...makeMinion('locals-1', 'innsmouth_the_locals_pod', '0', 2),
+                    powerCounters: 0,
+                    attachedActions: [{
+                        uid: 'attach-uberserum',
+                        defId: 'frankenstein_uberserum_pod',
+                        ownerId: '0',
+                        talentUsed: false,
+                    }],
+                }],
+                ongoingActions: [],
+            })],
+            titans: [{
+                uid: 'bride-live-1',
+                defId: 'frankenstein_the_bride',
+                faction: SMASHUP_FACTION_IDS.FRANKENSTEIN,
+                ownerId: '0',
+                controllerId: '0',
+                powerCounters: 0,
+                talentUsed: false,
+                location: { zone: 'base', baseIndex: 0 },
+            } satisfies TitanState],
+            turnOrder: ['0', '1'],
+            currentPlayerIndex: 0,
+            turnNumber: 7,
+        });
+        const matchState = makeMatchState(core, 'startTurn', '0');
+        const queuedTurnStart = collectTriggers(core, 'onTurnStart', {
+            state: core,
+            matchState,
+            playerId: '0',
+            frameId: 'test-turn-start-uberserum',
+            sourceEventId: 'test-turn-start-uberserum',
+            random: FIXED_RANDOM,
+            now: 901,
+        });
+        expect(queuedTurnStart).toBeDefined();
+
+        const coreWithQueued = SmashUpDomain.reduce(core, queuedTurnStart as SmashUpEvent);
+        const post = postProcessSystemEvents(
+            coreWithQueued,
+            [queuedTurnStart as SmashUpEvent],
+            FIXED_RANDOM,
+            makeMatchState(coreWithQueued, 'startTurn', '0'),
+        );
+        const runReactionChain = (preferSourceDefId: 'frankenstein_uberserum' | 'frankenstein_the_bride') => {
+            const interactionResult = post.matchState
+                ? resolveInteractionChain(post.matchState, (prompt) => {
+                    const sourceId = prompt?.data?.sourceId as string | undefined;
+                    if (sourceId === 'smashup_reaction_choose') {
+                        const options = prompt?.data?.options ?? [];
+                        const preferredTrigger = options.find((option: any) =>
+                            option?.value?.kind === 'trigger'
+                            && String(option?.value?.triggerId ?? '').includes(preferSourceDefId),
+                        );
+                        const genericTrigger = options.find((option: any) => option?.value?.kind === 'trigger');
+                        const fallback = preferredTrigger ?? genericTrigger ?? options[0];
+                        return { optionId: fallback.id };
+                    }
+                    return { optionId: prompt?.data?.options?.[0]?.id };
+                }, FIXED_RANDOM)
+                : { finalState: makeMatchState(coreWithQueued, 'startTurn', '0'), events: [] };
+
+            const allEvents = [...post.events, ...interactionResult.events] as SmashUpEvent[];
+            const cardsDrawnEvents = allEvents.filter(event => event.type === SU_EVENTS.CARDS_DRAWN) as CardsDrawnEvent[];
+            const brideDraw = cardsDrawnEvents.find(event => event.payload.playerId === '0' && event.payload.count === 1);
+            expect(brideDraw).toBeDefined();
+
+            const resolved = allEvents.reduce((acc, event) => SmashUpDomain.reduce(acc, event), coreWithQueued);
+            const localsAfter = resolved.bases[0]?.minions.find(minion => minion.uid === 'locals-1');
+            expect(localsAfter?.powerCounters).toBe(1);
+        };
+
+        runReactionChain('frankenstein_uberserum');
+        runReactionChain('frankenstein_the_bride');
     });
 
     it('pecos_bill 未进入决斗触发链时不应被当成可手动打出的泰坦', () => {

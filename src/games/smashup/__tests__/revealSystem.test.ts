@@ -8,12 +8,13 @@
  * - 疯狂卡平局规则
  */
 
-import { describe, it, expect, beforeAll } from 'vitest';
+import React from 'react';
+import { cleanup, render, screen } from '@testing-library/react';
+import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
 import { GameTestRunner } from '../../../engine/testing';
 import { SmashUpDomain } from '../domain';
 import type { SmashUpCore, SmashUpCommand, SmashUpEvent } from '../domain/types';
-import { SU_COMMANDS } from '../domain/types';
-import { SU_EVENTS } from '../domain/events';
+import { SU_COMMANDS, SU_EVENTS } from '../domain/types';
 import { createFlowSystem, createBaseSystems } from '../../../engine';
 import { smashUpFlowHooks } from '../domain/index';
 import { initAllAbilities, resetAbilityInit } from '../abilities';
@@ -24,6 +25,16 @@ import { createSmashUpEventSystem } from '../domain/systems';
 import { SMASHUP_FACTION_IDS } from '../domain/ids';
 import { reduce } from '../domain/reduce';
 import type { RevealHandEvent, RevealDeckTopEvent } from '../domain/types';
+import type { EventStreamEntry } from '../../../engine/types';
+import { RevealOverlay } from '../ui/RevealOverlay';
+
+vi.mock('../../../components/common/media/CardPreview', () => ({
+    CardPreview: ({ alt }: { alt?: string }) => React.createElement('div', { 'data-card-preview': alt ?? 'preview' }),
+}));
+
+afterEach(() => {
+    cleanup();
+});
 
 const PLAYER_IDS = ['0', '1'];
 
@@ -45,6 +56,28 @@ const DRAFT_COMMANDS = [
     { type: SU_COMMANDS.SELECT_FACTION, playerId: '1', payload: { factionId: SMASHUP_FACTION_IDS.NINJAS } },
     { type: SU_COMMANDS.SELECT_FACTION, playerId: '0', payload: { factionId: SMASHUP_FACTION_IDS.DINOSAURS } },
 ] as SmashUpCommand[];
+
+function makeRevealEntry({
+    id,
+    viewerPlayerId,
+}: {
+    id: number;
+    viewerPlayerId: '0' | '1' | 'all';
+}): EventStreamEntry {
+    return {
+        id,
+        event: {
+            type: SU_EVENTS.REVEAL_HAND,
+            payload: {
+                targetPlayerId: '1',
+                viewerPlayerId,
+                cards: [{ uid: `card-${id}`, defId: 'pirate_first_mate' }],
+                reason: 'test_reveal_visibility',
+            },
+            timestamp: id * 100,
+        },
+    };
+}
 
 describe('卡牌展示系统', () => {
     beforeAll(() => {
@@ -114,6 +147,36 @@ describe('卡牌展示系统', () => {
 
             const newState = reduce(baseState, event);
             expect(newState).toBe(baseState);
+        });
+    });
+
+    describe('RevealOverlay 可见性归属', () => {
+        it('联机页没有 playerID 时，不应看到私有展示', async () => {
+            render(React.createElement(RevealOverlay, {
+                entries: [makeRevealEntry({ id: 1, viewerPlayerId: '1' })],
+                currentPlayerId: null,
+            }));
+
+            await Promise.resolve();
+            expect(screen.queryByTestId('reveal-overlay')).toBeNull();
+        });
+
+        it('公开展示在没有 playerID 的页面也应可见', async () => {
+            render(React.createElement(RevealOverlay, {
+                entries: [makeRevealEntry({ id: 2, viewerPlayerId: 'all' })],
+                currentPlayerId: null,
+            }));
+
+            expect(await screen.findByTestId('reveal-overlay')).toBeInTheDocument();
+        });
+
+        it('私有展示只应出现在归属玩家页面', async () => {
+            render(React.createElement(RevealOverlay, {
+                entries: [makeRevealEntry({ id: 3, viewerPlayerId: '1' })],
+                currentPlayerId: '1',
+            }));
+
+            expect(await screen.findByTestId('reveal-overlay')).toBeInTheDocument();
         });
     });
 

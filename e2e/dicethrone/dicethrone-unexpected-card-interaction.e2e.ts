@@ -1,3 +1,5 @@
+import { mkdir } from 'node:fs/promises';
+import path from 'node:path';
 import { test, expect } from '../framework';
 import type { GameTestContext } from '../framework';
 
@@ -48,6 +50,14 @@ async function setupUnexpectedInteraction(game: GameTestContext): Promise<void> 
     });
 }
 
+async function savePersistentEvidenceScreenshot(page: any, filename: string): Promise<string> {
+    const evidenceDir = path.join(process.cwd(), 'test-results', 'evidence-screenshots', '_shared');
+    await mkdir(evidenceDir, { recursive: true });
+    const screenshotPath = path.join(evidenceDir, filename);
+    await page.screenshot({ path: screenshotPath, fullPage: true });
+    return screenshotPath;
+}
+
 test.describe('DiceThrone 意不意外交互', () => {
     test('本地 framework 场景下应完成双骰改值交互', async ({ page, game }) => {
         await setupUnexpectedInteraction(game);
@@ -75,31 +85,16 @@ test.describe('DiceThrone 意不意外交互', () => {
             mode: 'any',
         });
 
-        await page.evaluate(() => {
-            const dispatch = (window as any).__BG_TEST_HARNESS__?.command?.dispatch;
-            if (!dispatch) {
-                throw new Error('TestHarness dispatch unavailable');
-            }
+        await savePersistentEvidenceScreenshot(
+            page,
+            'dicethrone-feedback-69b174ba57a311c84a8fdd68-unexpected-open.png',
+        );
 
-            dispatch({
-                type: 'MODIFY_DIE',
-                playerId: '0',
-                payload: { dieId: 0, newValue: 6 },
-                timestamp: Date.now(),
-            });
-            dispatch({
-                type: 'MODIFY_DIE',
-                playerId: '0',
-                payload: { dieId: 1, newValue: 5 },
-                timestamp: Date.now(),
-            });
-            dispatch({
-                type: 'SYS_INTERACTION_CONFIRM',
-                playerId: '0',
-                payload: {},
-                timestamp: Date.now(),
-            });
-        });
+        const plusButtons = page.getByRole('button', { name: '+' });
+        await expect(plusButtons).toHaveCount(5);
+        await plusButtons.nth(0).click();
+        await plusButtons.nth(1).click();
+        await page.getByRole('button', { name: /确认|Confirm/i }).click();
 
         await expect.poll(async () => {
             const state = await game.getState();
@@ -114,7 +109,7 @@ test.describe('DiceThrone 意不意外交互', () => {
             };
         }, { timeout: 5000 }).toMatchObject({
             interactionKind: null,
-            firstTwoDice: [6, 5],
+            firstTwoDice: [2, 3],
             handIds: [],
         });
 
@@ -124,7 +119,12 @@ test.describe('DiceThrone 意不意外交互', () => {
             .slice(-8)
             .map((entry: any) => entry.event?.type);
 
-        expect((state?.core?.dice ?? []).map((die: any) => die.value).slice(0, 2)).toEqual([6, 5]);
+        await savePersistentEvidenceScreenshot(
+            page,
+            'dicethrone-feedback-69b174ba57a311c84a8fdd68-unexpected-settled.png',
+        );
+
+        expect((state?.core?.dice ?? []).map((die: any) => die.value).slice(0, 2)).toEqual([2, 3]);
         expect((player0?.hand ?? []).map((card: any) => card.id)).not.toContain('card-unexpected');
         expect((player0?.discard ?? []).map((card: any) => card.id)).toContain('card-unexpected');
         expect(lastEventTypes).toContain('CARD_PLAYED');

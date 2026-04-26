@@ -1519,9 +1519,31 @@ export function reduce(state: SmashUpCore, event: SmashUpEvent): SmashUpCore {
         case SU_EVENTS.TURN_ENDED: {
             const { playerId, nextPlayerIndex } = event.payload;
             const remainingSleepMarked = state.sleepMarkedPlayers?.filter(pid => pid !== playerId);
+            const restoredBases = state.bases.map((base) => ({
+                ...base,
+                minions: base.minions.map((minion) => {
+                    const metadata = minion.metadata as Record<string, unknown> | undefined;
+                    if (!metadata) return minion;
+                    if (metadata.mermaidsTemporaryControlPlayerId !== playerId) return minion;
+                    if (metadata.mermaidsTemporaryControlTurn !== state.turnNumber) return minion;
+                    const originalController = metadata.mermaidsTemporaryControlOriginalController;
+                    if (typeof originalController !== 'string') return minion;
+                    return {
+                        ...minion,
+                        controller: originalController as PlayerId,
+                        metadata: {
+                            ...metadata,
+                            mermaidsTemporaryControlPlayerId: undefined,
+                            mermaidsTemporaryControlTurn: undefined,
+                            mermaidsTemporaryControlOriginalController: undefined,
+                        },
+                    };
+                }),
+            }));
             return {
                 ...state,
                 currentPlayerIndex: nextPlayerIndex,
+                bases: restoredBases,
                 sleepMarkedPlayers: remainingSleepMarked?.length ? remainingSleepMarked : undefined,
                 titanOngoingSuppressedUntilTurnEnd: undefined,
                 activeDuel: undefined,
@@ -2649,12 +2671,22 @@ export function reduce(state: SmashUpCore, event: SmashUpEvent): SmashUpCore {
             const { playerId, cardUid } = (event as MadnessReturnedEvent).payload;
             const player = state.players[playerId];
             if (!player || !state.madnessDeck) return state;
-            // 从手牌或弃牌堆移除疯狂卡，放回疯狂牌库
-            const returningCard = player.hand.find(c => c.uid === cardUid)
-                ?? player.discard.find(c => c.uid === cardUid);
+            // 从手牌或弃牌堆移除一张疯狂卡，放回疯狂牌库。
+            // 注意：即使出现历史脏数据导致同 uid 重复，也应每个事件只移除一张，避免一次性移除多张。
+            const handIndex = player.hand.findIndex(c => c.uid === cardUid);
+            const discardIndex = handIndex >= 0 ? -1 : player.discard.findIndex(c => c.uid === cardUid);
+            const returningCard = handIndex >= 0
+                ? player.hand[handIndex]
+                : discardIndex >= 0
+                    ? player.discard[discardIndex]
+                    : undefined;
             if (!returningCard) return state;
-            const newHand = player.hand.filter(c => c.uid !== cardUid);
-            const newDiscard = player.discard.filter(c => c.uid !== cardUid);
+            const newHand = handIndex >= 0
+                ? [...player.hand.slice(0, handIndex), ...player.hand.slice(handIndex + 1)]
+                : player.hand;
+            const newDiscard = discardIndex >= 0
+                ? [...player.discard.slice(0, discardIndex), ...player.discard.slice(discardIndex + 1)]
+                : player.discard;
             return {
                 ...state,
                 madnessDeck: [...state.madnessDeck, MADNESS_CARD_DEF_ID],

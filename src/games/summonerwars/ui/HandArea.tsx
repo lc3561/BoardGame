@@ -68,6 +68,12 @@ interface ResolveMagicPhaseClickRouteParams {
   abilitySelectingCards: boolean;
 }
 
+interface ResolveHandCardMagnifyPresentationParams {
+  isCoarsePointer: boolean;
+  isSelected: boolean;
+  hasMagnifyAction: boolean;
+}
+
 export function resolveMagicPhaseClickRoute({
   phase,
   isMyTurn,
@@ -80,6 +86,18 @@ export function resolveMagicPhaseClickRoute({
   if (bloodSummonSelectingCard || abilitySelectingCards) return null;
   if (cardType === 'event' && interactionBusy) return 'blocked-by-interaction';
   return 'delegate-to-onCardClick';
+}
+
+export function resolveHandCardMagnifyPresentation({
+  isCoarsePointer,
+  isSelected,
+  hasMagnifyAction,
+}: ResolveHandCardMagnifyPresentationParams) {
+  const showTouchMagnifyButton = isCoarsePointer && hasMagnifyAction && isSelected;
+  return {
+    showTouchMagnifyButton,
+    suppressMagnifyButton: !showTouchMagnifyButton && isCoarsePointer,
+  };
 }
 
 function getCardCost(card: Card): number {
@@ -106,9 +124,11 @@ function getCardSpriteConfig(card: Card): { atlasId: string; frameIndex: number 
 
 const CARD_WIDTH_RATIO = 'var(--sw-hand-card-width-ratio, 0.16)';
 const HAND_REFERENCE_WIDTH = `var(--sw-hand-reference-width, ${BOARD_SHELL_REFERENCE_WIDTH})`;
-const MAGNIFY_BUTTON_OFFSET_RATIO = 0.003;
-const MAGNIFY_BUTTON_SIZE_RATIO = 0.018;
-const MAGNIFY_ICON_SIZE_RATIO = 0.01;
+const MAGNIFY_BUTTON_OFFSET_CSS = `clamp(4px, calc(${HAND_REFERENCE_WIDTH} * 0.0045), 8px)`;
+const MAGNIFY_BUTTON_SIZE_CSS = `clamp(24px, calc(${HAND_REFERENCE_WIDTH} * 0.026), 32px)`;
+const MAGNIFY_ICON_SIZE_CSS = `clamp(13px, calc(${HAND_REFERENCE_WIDTH} * 0.014), 18px)`;
+const TOUCH_MAGNIFY_HIT_TARGET_SIZE = 80;
+const TOUCH_MAGNIFY_HIT_TARGET_CSS = `max(${TOUCH_MAGNIFY_HIT_TARGET_SIZE}px, calc(${MAGNIFY_BUTTON_SIZE_CSS} * 2.4))`;
 const LONG_PRESS_DURATION_MS = 420;
 const LONG_PRESS_MOVE_CANCEL_PX = 14;
 const LONG_PRESS_CLICK_BLOCK_MS = 450;
@@ -127,6 +147,7 @@ const HandCard: React.FC<{
   onPointerUp?: React.PointerEventHandler<HTMLDivElement>;
   onPointerCancel?: React.PointerEventHandler<HTMLDivElement>;
   suppressMagnifyButton?: boolean;
+  showTouchMagnifyButton?: boolean;
   compactLayout?: boolean;
 }> = ({
   card,
@@ -142,18 +163,29 @@ const HandCard: React.FC<{
   onPointerUp,
   onPointerCancel,
   suppressMagnifyButton = false,
+  showTouchMagnifyButton = false,
   compactLayout = false,
 }) => {
   const [isHovered, setIsHovered] = useState(false);
   const spriteConfig = getCardSpriteConfig(card);
   const showPlayableHighlight = canPlay && !isSelected;
   const shouldRenderMagnifyButton = Boolean(onMagnify) && !suppressMagnifyButton;
-  const magnifyButtonSize = `calc(${HAND_REFERENCE_WIDTH} * ${MAGNIFY_BUTTON_SIZE_RATIO})`;
-  const magnifyButtonOffset = `calc(${HAND_REFERENCE_WIDTH} * ${MAGNIFY_BUTTON_OFFSET_RATIO})`;
-  const magnifyIconSize = `calc(${HAND_REFERENCE_WIDTH} * ${MAGNIFY_ICON_SIZE_RATIO})`;
+  const magnifyButtonSize = MAGNIFY_BUTTON_SIZE_CSS;
+  const magnifyButtonOffset = MAGNIFY_BUTTON_OFFSET_CSS;
+  const magnifyIconSize = MAGNIFY_ICON_SIZE_CSS;
   const hoverMagnifyButtonStyle: React.CSSProperties = {
     top: magnifyButtonOffset,
     right: magnifyButtonOffset,
+    width: magnifyButtonSize,
+    height: magnifyButtonSize,
+  };
+  const touchMagnifyHitAreaStyle: React.CSSProperties = {
+    top: `calc(${magnifyButtonOffset} * -1)`,
+    right: `calc(${magnifyButtonOffset} * -1)`,
+    width: TOUCH_MAGNIFY_HIT_TARGET_CSS,
+    height: TOUCH_MAGNIFY_HIT_TARGET_CSS,
+  };
+  const magnifyButtonVisualStyle: React.CSSProperties = {
     width: magnifyButtonSize,
     height: magnifyButtonSize,
   };
@@ -252,10 +284,24 @@ const HandCard: React.FC<{
           onClick={handleMagnifyClick}
           onKeyDown={handleMagnifyKeyDown}
           data-testid="sw-hand-card-magnify"
-          style={hoverMagnifyButtonStyle}
-          className="absolute z-20 flex items-center justify-center rounded-full border border-white/20 bg-black/60 text-white opacity-0 pointer-events-none shadow-lg transition-[opacity,background-color] duration-200 group-hover:opacity-100 group-hover:pointer-events-auto hover:bg-amber-500/80"
+          style={showTouchMagnifyButton ? touchMagnifyHitAreaStyle : hoverMagnifyButtonStyle}
+          className={
+            showTouchMagnifyButton
+              ? 'absolute z-20 flex items-start justify-end rounded-full bg-transparent text-white pointer-events-auto'
+              : 'absolute z-20 flex items-center justify-center rounded-full border border-white/20 bg-black/60 text-white opacity-0 pointer-events-none shadow-lg transition-[opacity,background-color] duration-200 group-hover:opacity-100 group-hover:pointer-events-auto hover:bg-amber-500/80'
+          }
         >
-          <MagnifyIcon style={magnifyIconStyle} />
+          {showTouchMagnifyButton ? (
+            <span
+              data-testid="sw-hand-card-magnify-visual"
+              style={magnifyButtonVisualStyle}
+              className="flex items-center justify-center rounded-full border border-white/25 bg-black/75 shadow-lg transition-[background-color] duration-200 hover:bg-amber-500/80"
+            >
+              <MagnifyIcon style={magnifyIconStyle} />
+            </span>
+          ) : (
+            <MagnifyIcon style={magnifyIconStyle} />
+          )}
         </div>
       )}
     </motion.div>
@@ -504,6 +550,11 @@ export const HandArea: React.FC<HandAreaProps> = ({
             const canPlay = canPlayCard(card);
             const isSelected = selectedCardId === card.id || selectedCardIds.includes(card.id);
             const isNew = newCardIds.has(card.id);
+            const magnifyPresentation = resolveHandCardMagnifyPresentation({
+              isCoarsePointer,
+              isSelected,
+              hasMagnifyAction: Boolean(onMagnifyCard),
+            });
 
             return (
               <motion.div
@@ -526,8 +577,8 @@ export const HandArea: React.FC<HandAreaProps> = ({
                   onPointerMove={(event) => handleTouchLongPressMove(event, card.id)}
                   onPointerUp={() => handleTouchLongPressEnd(card.id)}
                   onPointerCancel={() => handleTouchLongPressEnd(card.id)}
-                  // 触屏下统一走长按放大，不渲染显式按钮，避免遮挡再次点按手牌。
-                  suppressMagnifyButton={isCoarsePointer}
+                  suppressMagnifyButton={magnifyPresentation.suppressMagnifyButton}
+                  showTouchMagnifyButton={magnifyPresentation.showTouchMagnifyButton}
                   compactLayout={compactLayout}
                 />
               </motion.div>

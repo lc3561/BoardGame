@@ -91,9 +91,21 @@ function buildRaidingPartyChoiceOptions(
 }
 
 export function registerVikingsAbilities(): void {
-    registerAbility('vikings_huscarl', 'talent', vikingsHuscarlTalent);
+    registerAbility('vikings_huscarl', 'talent', {
+        execute: vikingsHuscarlTalent,
+        validateUse: (ctx) => {
+            const player = ctx.state.players[ctx.playerId];
+            return player && player.hand.length > 0 ? null : '手牌为空，无法发动此天赋';
+        },
+    });
     registerAbility('vikings_shield_maiden', 'onPlay', vikingsShieldMaidenOnPlay);
-    registerAbility('vikings_raider', 'talent', vikingsRaiderTalent);
+    registerAbility('vikings_raider', 'talent', {
+        execute: vikingsRaiderTalent,
+        validateUse: (ctx) => {
+            const player = ctx.state.players[ctx.playerId];
+            return player && player.hand.length > 0 ? null : '手牌为空，无法发动此天赋';
+        },
+    });
     registerAbility('vikings_valkyrie', 'onPlay', vikingsValkyrieOnPlay);
     registerAbility('vikings_ransack', 'onPlay', vikingsRansackOnPlay);
     registerAbility('vikings_pillage', 'onPlay', vikingsPillageOnPlay);

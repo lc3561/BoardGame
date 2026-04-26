@@ -738,10 +738,28 @@ export function registerMiskatonicAbilities(): void {
 
     // === 随从 ===
     // 教授（power 5, talent）：弃1张疯狂卡 → 额外行动 + 额外随从
-    registerAbility('miskatonic_professor', 'talent', miskatonicProfessorTalent);
-    registerAbility('miskatonic_professor_pod', 'talent', miskatonicProfessorTalent);
+    registerAbility('miskatonic_professor', 'talent', {
+        execute: miskatonicProfessorTalent,
+        validateUse: (ctx) => {
+            const player = ctx.state.players[ctx.playerId];
+            return player.hand.some(c => c.defId === MADNESS_CARD_DEF_ID) ? null : '手中没有疯狂卡';
+        },
+    });
+    registerAbility('miskatonic_professor_pod', 'talent', {
+        execute: miskatonicProfessorTalent,
+        validateUse: (ctx) => {
+            const player = ctx.state.players[ctx.playerId];
+            return player.hand.some(c => c.defId === MADNESS_CARD_DEF_ID) ? null : '手中没有疯狂卡';
+        },
+    });
     // 图书管理员（power 4, talent）：弃1张疯狂卡 → 抽1张牌
-    registerAbility('miskatonic_librarian', 'talent', miskatonicLibrarianTalent);
+    registerAbility('miskatonic_librarian', 'talent', {
+        execute: miskatonicLibrarianTalent,
+        validateUse: (ctx) => {
+            const player = ctx.state.players[ctx.playerId];
+            return player.hand.some(c => c.defId === MADNESS_CARD_DEF_ID) ? null : '手中没有疯狂卡';
+        },
+    });
     registerAbility('miskatonic_librarian_pod', 'talent', miskatonicLibrarianPodTalent);
     // 心理学家（power 3, onPlay）：将手牌或弃牌堆中的1张疯狂卡返回疯狂牌库
     registerAbility('miskatonic_psychologist', 'onPlay', miskatonicPsychologistOnPlay);

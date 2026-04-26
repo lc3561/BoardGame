@@ -77,6 +77,20 @@ function tryCmd(
 // ============================================================================
 
 describe('TOGGLE_DIE_LOCK 锁定/解锁骰子', () => {
+    it('本地 AI 可见步骤白名单应保留技能选择与被动发动，但不拖慢锁骰', () => {
+        const visibleStepConfig = diceThroneAiRuntime.localVisibleStepDelayConfig;
+        expect(visibleStepConfig?.mode).toBe('whitelist');
+        expect(visibleStepConfig?.actionKinds).toEqual(expect.arrayContaining([
+            'play-card',
+            'response-play-card',
+            'use-passive-ability',
+            'select-ability',
+            'roll-dice',
+            'bonus-die-reroll',
+        ]));
+        expect(visibleStepConfig?.actionKinds).not.toContain('toggle-die-lock');
+    });
+
     it('GTR: 掷骰后锁定骰子，再次掷骰时锁定骰子不变', () => {
         // 第一次掷骰: [3,3,3,3,3]，锁定 die 0 后第二次掷骰: [1,1,1,1]（die 0 保持 3）
         const diceValues = [3, 3, 3, 3, 3, 1, 1, 1, 1, 1, 1, 1, 1];
@@ -2309,6 +2323,63 @@ describe('AI legal actions', () => {
         ))).toBe(true);
     });
 
+    it('教皇税同值重掷不应清掉已确认骰面', () => {
+        let state = createHeroMatchup('paladin', 'monk')(['0', '1'], fixedRandom);
+        state.sys.phase = 'offensiveRoll';
+        state.core.activePlayerId = '0';
+        state.core.rollCount = 1;
+        state.core.rollLimit = 3;
+        state.core.rollDiceCount = 5;
+        state.core.rollConfirmed = true;
+        state.core.players['0'].resources[RESOURCE_IDS.CP] = 3;
+
+        const originalValue = state.core.dice[0].value;
+        const sameValueRandom = createQueuedRandom([originalValue]);
+
+        state = execCmd(
+            state,
+            cmd('USE_PASSIVE_ABILITY', '0', {
+                passiveId: 'tithes',
+                actionIndex: 0,
+                targetDieId: 0,
+            }),
+            sameValueRandom,
+        );
+
+        expect(state.core.players['0'].resources[RESOURCE_IDS.CP]).toBe(2);
+        expect(state.core.dice[0].value).toBe(originalValue);
+        expect(state.core.rollConfirmed).toBe(true);
+    });
+
+    it('教皇税异值重掷仍应清掉已确认骰面', () => {
+        let state = createHeroMatchup('paladin', 'monk')(['0', '1'], fixedRandom);
+        state.sys.phase = 'offensiveRoll';
+        state.core.activePlayerId = '0';
+        state.core.rollCount = 1;
+        state.core.rollLimit = 3;
+        state.core.rollDiceCount = 5;
+        state.core.rollConfirmed = true;
+        state.core.players['0'].resources[RESOURCE_IDS.CP] = 3;
+
+        const originalValue = state.core.dice[0].value;
+        const changedValue = originalValue === 6 ? 5 : 6;
+        const changedValueRandom = createQueuedRandom([changedValue]);
+
+        state = execCmd(
+            state,
+            cmd('USE_PASSIVE_ABILITY', '0', {
+                passiveId: 'tithes',
+                actionIndex: 0,
+                targetDieId: 0,
+            }),
+            changedValueRandom,
+        );
+
+        expect(state.core.players['0'].resources[RESOURCE_IDS.CP]).toBe(2);
+        expect(state.core.dice[0].value).toBe(changedValue);
+        expect(state.core.rollConfirmed).toBe(false);
+    });
+
     it('不同难度会影响搜索行为，专家玩法噪声保持为 0', async () => {
         const state = createSetupWithHand(['card-enlightenment', 'card-boss-generous'], { cp: 0 })(['0', '1'], fixedRandom);
         const matchId = 'probe';
@@ -2467,7 +2538,7 @@ describe('AI legal actions', () => {
     });
 
     it('专家难度 trace 会记录 strategy 驱动的 searchPriority，供通用搜索层复用', async () => {
-        const state = createSetupWithHand(['card-enlightenment', 'card-boss-generous'], { cp: 0 })(['0', '1'], fixedRandom);
+        const state = createSetupWithHand(['card-enlightenment', 'card-boss-generous', 'card-unexpected', 'card-double'], { cp: 0 })(['0', '1'], fixedRandom);
         const expertContext = buildAiDecisionContext({
             gameId: 'dicethrone',
             matchId: 'probe-strategy-priority',
@@ -2490,6 +2561,44 @@ describe('AI legal actions', () => {
         expect(expertEvaluations.some((item) => item.shortlisted)).toBe(true);
     });
 
+    it('主阶段卖牌只在能立刻解锁可打出的牌时才生成，避免 AI 开局无脑清手', async () => {
+        const state = createSetupWithHand(['card-unexpected', 'card-surprise'], { cp: 0 })(['0', '1'], fixedRandom);
+        const legalActions = buildDiceThroneAiLegalActions({
+            playerId: '0',
+            state,
+        });
+
+        expect(legalActions.some((action) => action.kind === 'sell-card')).toBe(false);
+        expect(legalActions.some((action) => action.kind === 'advance-phase')).toBe(true);
+
+        const resolution = await resolveNextLocalAiAction({
+            engineConfig,
+            state,
+            matchId: 'dicethrone-ai-no-blind-opening-sell',
+            seatControllers: {
+                '0': { type: 'local-ai', difficulty: 'expert' },
+            },
+        });
+
+        expect(resolution?.playerId).toBe('0');
+        expect(resolution?.action.kind).toBe('advance-phase');
+    });
+
+    it('主阶段卖牌在能立刻解锁 1CP 动作时仍应保留该行动线', () => {
+        const state = createSetupWithHand(['card-unexpected', 'card-double'], { cp: 0 })(['0', '1'], fixedRandom);
+        const legalActions = buildDiceThroneAiLegalActions({
+            playerId: '0',
+            state,
+        });
+
+        expect(
+            legalActions.filter((action) => action.kind === 'sell-card').map((action) => action.metadata?.cardId),
+        ).toEqual(['card-unexpected']);
+        expect(
+            legalActions.some((action) => action.kind === 'play-card' && action.metadata?.cardId === 'card-double'),
+        ).toBe(false);
+    });
+
     it('高动作密度下应启用 candidate loop 批次搜索，并产出 lookahead 前瞻贡献', async () => {
         const state = createHeroMatchup('paladin', 'monk', (core) => {
             const player = core.players['0'];
@@ -2499,7 +2608,7 @@ describe('AI legal actions', () => {
                 if (seenIds.has(card.id)) continue;
                 seenIds.add(card.id);
                 uniqueDeckCards.push(card);
-                if (uniqueDeckCards.length >= 9) break;
+                if (uniqueDeckCards.length >= 13) break;
             }
             player.hand = uniqueDeckCards.map((card) => ({ ...card }));
             player.deck = player.deck.filter((card) => !seenIds.has(card.id));
@@ -2686,6 +2795,57 @@ describe('作弊发牌 atlas 索引保护', () => {
 
         expect(nextCore.players['0'].hand.map((card) => card.id)).toEqual(['upgrade-deadeye-2']);
         expect(nextCore.players['0'].deck[0]?.id).not.toBe('upgrade-deadeye-2');
+    });
+
+    it('atlas 对应卡已不在剩余牌库时，仍可直接补到手牌', () => {
+        const state = createHeroMatchup('barbarian', 'monk', (core) => {
+            const player = core.players['0'];
+            player.hand = [getCardById('card-bye-bye')];
+            player.discard = [];
+            player.deck = player.deck.filter((card) => card.id !== 'card-bye-bye');
+        })(['0', '1'], fixedRandom);
+
+        const nextCore = diceThroneCheatModifier.dealCardByAtlasIndex!(state.core, '0', 26);
+
+        expect(nextCore.players['0'].deck).toHaveLength(state.core.players['0'].deck.length);
+        expect(nextCore.players['0'].hand.filter((card) => card.id === 'card-bye-bye')).toHaveLength(2);
+    });
+
+    it('可按 cardId 直接补牌到手牌，不依赖剩余牌库', () => {
+        const state = createHeroMatchup('barbarian', 'monk', (core) => {
+            const player = core.players['0'];
+            player.hand = [];
+            player.discard = [getCardById('card-bye-bye')];
+            player.deck = player.deck.filter((card) => card.id !== 'card-bye-bye');
+        })(['0', '1'], fixedRandom);
+
+        const nextCore = diceThroneCheatModifier.addCardToHandByCardId!(state.core, '0', 'card-bye-bye');
+
+        expect(nextCore.players['0'].deck).toHaveLength(state.core.players['0'].deck.length);
+        expect(nextCore.players['0'].discard).toHaveLength(state.core.players['0'].discard.length);
+        expect(nextCore.players['0'].hand.filter((card) => card.id === 'card-bye-bye')).toHaveLength(1);
+    });
+
+    it('samurai atlas 4 应发出 card-super-double，而不是 card-me-too', () => {
+        const state = createHeroMatchup('samurai', 'monk', (core) => {
+            const player = core.players['0'];
+            player.hand = [];
+            player.discard = [];
+            player.deck = [
+                getCardById('card-super-double'),
+                getCardById('card-me-too'),
+                ...player.deck.filter((card) => card.id !== 'card-super-double' && card.id !== 'card-me-too'),
+            ];
+        })(['0', '1'], fixedRandom);
+
+        const nextCore = diceThroneCheatModifier.dealCardByAtlasIndex!(state.core, '0', 4);
+        const dealtCard = nextCore.players['0'].hand[0];
+
+        expect(dealtCard?.id).toBe('card-super-double');
+        expect(dealtCard?.effects?.[0]?.action).toMatchObject({
+            type: 'drawCard',
+            drawCount: 3,
+        });
     });
 });
 

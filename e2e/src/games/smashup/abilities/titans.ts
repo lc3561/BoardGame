@@ -401,12 +401,20 @@ function explorersVeryLargeBoulderOnMinionMoved(ctx: TriggerContext): TriggerRes
     const interaction = createSimpleChoice(
         `titan_explorers_very_large_boulder_move_${titan.uid}_${ctx.now}`,
         titan.controllerId,
-        `Very Large Boulder: move to ${getBaseDef(destinationBase?.defId ?? '')?.name ?? `Base ${ctx.moveToBaseIndex + 1}`}?`,
+        'ui.titan_very_large_boulder_move_title',
         [
-            { id: 'move', label: 'Move there', value: { move: true }, displayMode: 'button' as const },
-            { id: 'skip', label: 'Skip', value: { move: false }, displayMode: 'button' as const },
+            { id: 'move', label: '移动到该基地', labelKey: 'ui.move_there', value: { move: true }, displayMode: 'button' as const },
+            { id: 'skip', label: '跳过', labelKey: 'ui.skip', value: { move: false }, displayMode: 'button' as const },
         ],
-        { sourceId: 'titan_explorers_very_large_boulder_move', targetType: 'button' },
+        {
+            sourceId: 'titan_explorers_very_large_boulder_move',
+            targetType: 'button',
+            titleKey: 'ui.titan_very_large_boulder_move_title',
+            titleParams: {
+                name: 'cards.explorers_very_large_boulder.name',
+                baseName: destinationBase?.defId ? `cards.${destinationBase.defId}.name` : `基地 ${ctx.moveToBaseIndex + 1}`,
+            },
+        },
     );
     (interaction.data as {
         continuationContext?: {
@@ -724,12 +732,20 @@ function megaTroopersMegabotBeforeScoring(ctx: TriggerContext): TriggerResult | 
     const interaction = createSimpleChoice(
         `titan_mega_troopers_megabot_move_${first.titanUid}_${ctx.now}`,
         first.controllerId,
-        `Megabot: move to ${getBaseDef(scoringBase.defId)?.name ?? `Base ${scoringBaseIndex + 1}`} before it scores?`,
+        'ui.titan_megabot_move_title',
         [
-            { id: 'move', label: 'Move there', value: { move: true }, displayMode: 'button' as const },
-            { id: 'stay', label: 'Stay here', value: { move: false }, displayMode: 'button' as const },
+            { id: 'move', label: '移动到该基地', labelKey: 'ui.move_there', value: { move: true }, displayMode: 'button' as const },
+            { id: 'stay', label: '留在原地', labelKey: 'ui.stay_here', value: { move: false }, displayMode: 'button' as const },
         ],
-        { sourceId: 'titan_mega_troopers_megabot_move', targetType: 'button' },
+        {
+            sourceId: 'titan_mega_troopers_megabot_move',
+            targetType: 'button',
+            titleKey: 'ui.titan_megabot_move_title',
+            titleParams: {
+                name: 'cards.mega_troopers_megabot.name',
+                baseName: `cards.${scoringBase.defId}.name`,
+            },
+        },
     );
     (interaction.data as {
         continuationContext?: {
@@ -2039,12 +2055,19 @@ function ittyCrittersRainborocAfterScoring(ctx: {
         const interaction = createSimpleChoice(
             `titan_itty_critters_rainboroc_play_replacement_${titan.uid}_${ctx.now}`,
             titan.ownerId,
-            'Rainboroc: play this titan on the replacement base?',
+            'ui.titan_rainboroc_play_replacement_title',
             [
-                { id: 'play', label: 'Play Rainboroc', value: { play: true }, displayMode: 'button' as const },
-                { id: 'skip', label: 'Skip', value: { skip: true }, displayMode: 'button' as const },
+                { id: 'play', label: '打出这个泰坦', labelKey: 'ui.play_this_titan', value: { play: true }, displayMode: 'button' as const },
+                { id: 'skip', label: '跳过', labelKey: 'ui.skip', value: { skip: true }, displayMode: 'button' as const },
             ],
-            { sourceId: 'titan_itty_critters_rainboroc_play_replacement', targetType: 'button' },
+            {
+                sourceId: 'titan_itty_critters_rainboroc_play_replacement',
+                targetType: 'button',
+                titleKey: 'ui.titan_rainboroc_play_replacement_title',
+                titleParams: {
+                    name: 'cards.itty_critters_rainboroc.name',
+                },
+            },
         );
         (interaction.data as { continuationContext?: unknown }).continuationContext = {
             titanUid: titan.uid,
@@ -2480,10 +2503,16 @@ function queueVampireAncientLordSpecialInteraction(
 }
 
 function vampireAncientLordOnPowerCounterChanged(ctx: TriggerContext): TriggerResult | SmashUpEvent[] {
-    if (!ctx.matchState || ctx.counterChangeKind !== 'added' || (ctx.counterDelta ?? 0) <= 0) {
+    if (
+        !ctx.matchState
+        || ctx.affectType !== 'power_change'
+        || ctx.counterChangeKind !== 'added'
+        || (ctx.counterDelta ?? 0) <= 0
+    ) {
         return [];
     }
-    if (!ctx.triggerMinion || ctx.triggerMinion.controller !== ctx.playerId || ctx.baseIndex === undefined) {
+    const controllerId = ctx.triggerMinion?.controller;
+    if (!controllerId || !ctx.triggerMinion || ctx.baseIndex === undefined) {
         return [];
     }
     if (ctx.reason?.startsWith('vampires_ancient_lord_special')) {
@@ -2493,7 +2522,7 @@ function vampireAncientLordOnPowerCounterChanged(ctx: TriggerContext): TriggerRe
     const nextState = queueVampireAncientLordSpecialInteraction(
         ctx.matchState,
         ctx.state,
-        ctx.playerId,
+        controllerId,
         ctx.triggerMinion.uid,
         ctx.baseIndex,
         ctx.now,
@@ -2848,8 +2877,8 @@ function invisibleNinjaOnTurnStart(ctx: TriggerContext): TriggerResult | SmashUp
         ctx.playerId,
         'Invisible Ninja：你可以消灭此泰坦，额外打出 1 张战斗力 3 或以下的随从',
         [
-            { id: 'destroy', label: 'Destroy it and gain the extra minion play', value: { destroyTitan: true }, displayMode: 'button' as const },
-            { id: 'skip', label: 'Skip', value: { skip: true }, displayMode: 'button' as const },
+            { id: 'destroy', label: '消灭它并获得额外随从机会', labelKey: 'ui.destroy_titan_and_gain_extra_minion_play', value: { destroyTitan: true }, displayMode: 'button' as const },
+            { id: 'skip', label: '跳过', labelKey: 'ui.skip', value: { skip: true }, displayMode: 'button' as const },
         ],
         { sourceId: 'titan_ninjas_invisible_ninja_start_turn', targetType: 'generic' },
     );
@@ -3252,14 +3281,25 @@ function theBrideOnTurnStart(ctx: TriggerContext): TriggerResult | SmashUpEvent[
 }
 
 function theBrideOnPowerCounterChanged(ctx: TriggerContext): SmashUpEvent[] {
-    const titan = getControlledTitanOnBase(ctx.state, 'frankenstein_the_bride', ctx.playerId);
+    if (
+        ctx.affectType !== 'power_change'
+        || ctx.counterChangeKind !== 'added'
+        || (ctx.counterDelta ?? 0) <= 0
+    ) {
+        return [];
+    }
+
+    const controllerId = ctx.triggerMinion?.controller;
+    if (!controllerId) return [];
+
+    const titan = getControlledTitanOnBase(ctx.state, 'frankenstein_the_bride', controllerId);
     if (!titan) return [];
     if (Number(titan.metadata?.theBrideTriggeredTurn ?? -1) === ctx.state.turnNumber) {
         return [];
     }
     return [
         buildTitanMetadataUpdateEvent(titan.uid, { theBrideTriggeredTurn: ctx.state.turnNumber }, 'frankenstein_the_bride_ongoing', ctx.now),
-        ...buildStandardDrawEvents(ctx.state, ctx.playerId, 1, ctx.random, ctx.now),
+        ...buildStandardDrawEvents(ctx.state, controllerId, 1, ctx.random, ctx.now),
     ];
 }
 
@@ -3441,7 +3481,7 @@ export function registerTitanAbilities(): void {
             : 'No valid talent targets';
     });
     registerTrigger('frankenstein_the_bride', 'onTurnStart', theBrideOnTurnStart, { global: true });
-    registerTrigger('frankenstein_the_bride', 'onPowerCounterChanged', theBrideOnPowerCounterChanged, { baseScoped: false });
+    registerTrigger('frankenstein_the_bride', 'onMinionAffected', theBrideOnPowerCounterChanged, { baseScoped: false });
 
     registerAbility('super_spies_moon_zero_three', 'special', superSpiesMoonZeroThreeSpecial);
     registerAbility('super_spies_moon_zero_three', 'talent', superSpiesMoonZeroThreeTalent);
@@ -3722,7 +3762,7 @@ export function registerTitanAbilities(): void {
     });
     registerInterceptor('vampires_ancient_lord', (state, event) => buildAncientLordBonusCounterEvents(state, event));
 
-    registerTrigger('vampires_ancient_lord', 'onPowerCounterChanged', vampireAncientLordOnPowerCounterChanged, {
+    registerTrigger('vampires_ancient_lord', 'onMinionAffected', vampireAncientLordOnPowerCounterChanged, {
         global: true,
         optional: true,
         baseScoped: false,
@@ -4774,12 +4814,20 @@ export function registerTitanInteractionHandlers(): void {
         const interaction = createSimpleChoice(
             `titan_mega_troopers_megabot_move_${next.titanUid}_${timestamp}`,
             next.controllerId,
-            `Megabot: move to ${getBaseDef(continuation.scoringBaseDefId)?.name ?? `Base ${continuation.scoringBaseIndex + 1}`} before it scores?`,
+            'ui.titan_megabot_move_title',
             [
-                { id: 'move', label: '移动到该基地', value: { move: true }, displayMode: 'button' as const },
-                { id: 'stay', label: '鐣欏湪鍘熷湴', value: { move: false }, displayMode: 'button' as const },
+                { id: 'move', label: '移动到该基地', labelKey: 'ui.move_there', value: { move: true }, displayMode: 'button' as const },
+                { id: 'stay', label: '留在原地', labelKey: 'ui.stay_here', value: { move: false }, displayMode: 'button' as const },
             ],
-            { sourceId: 'titan_mega_troopers_megabot_move', targetType: 'button' },
+            {
+                sourceId: 'titan_mega_troopers_megabot_move',
+                targetType: 'button',
+                titleKey: 'ui.titan_megabot_move_title',
+                titleParams: {
+                    name: 'cards.mega_troopers_megabot.name',
+                    baseName: `cards.${continuation.scoringBaseDefId}.name`,
+                },
+            },
         );
         (interaction.data as {
             continuationContext?: {
@@ -5083,15 +5131,21 @@ export function registerTitanInteractionHandlers(): void {
         const nextInteraction = createSimpleChoice(
             `titan_super_spies_moon_zero_three_resolve_${timestamp}`,
             playerId,
-            `Moon Zero Three: ${getPlayerLabel(selected.targetPlayerId)} top card is ${cardName}. Choose where to put it.`,
+            'ui.titan_moon_zero_three_resolve_title',
             [
-                { id: 'top', label: 'Put it on top', value: { placement: 'top' }, displayMode: 'button' as const },
-                { id: 'bottom', label: 'Put it on bottom', value: { placement: 'bottom' }, displayMode: 'button' as const },
+                { id: 'top', label: '放回牌库顶', labelKey: 'ui.put_it_on_top', value: { placement: 'top' }, displayMode: 'button' as const },
+                { id: 'bottom', label: '放到牌库底', labelKey: 'ui.put_it_on_bottom', value: { placement: 'bottom' }, displayMode: 'button' as const },
             ],
             {
                 sourceId: 'titan_super_spies_moon_zero_three_resolve',
                 targetType: 'button',
                 displayCard: { defId: peek.card.defId },
+                titleKey: 'ui.titan_moon_zero_three_resolve_title',
+                titleParams: {
+                    name: 'cards.super_spies_moon_zero_three.name',
+                    playerLabel: getPlayerLabel(selected.targetPlayerId),
+                    cardName: `cards.${peek.card.defId}.name`,
+                },
             },
         );
         (nextInteraction.data as { continuationContext?: unknown }).continuationContext = {
@@ -5292,12 +5346,19 @@ export function registerTitanInteractionHandlers(): void {
         const interaction = createSimpleChoice(
             `titan_itty_critters_rainboroc_choose_base_${timestamp}`,
             playerId,
-            'Rainboroc: you may move this titan to another base',
+            'ui.titan_rainboroc_choose_base_title',
             [
                 ...buildBaseTargetOptions(baseOptions, state.core),
-                { id: 'skip', label: 'Stay here', value: { skip: true }, displayMode: 'button' as const },
+                { id: 'skip', label: '留在原地', labelKey: 'ui.stay_here', value: { skip: true }, displayMode: 'button' as const },
             ],
-            { sourceId: 'titan_itty_critters_rainboroc_choose_base', targetType: 'base' },
+            {
+                sourceId: 'titan_itty_critters_rainboroc_choose_base',
+                targetType: 'base',
+                titleKey: 'ui.titan_rainboroc_choose_base_title',
+                titleParams: {
+                    name: 'cards.itty_critters_rainboroc.name',
+                },
+            },
         );
         (interaction.data as { continuationContext?: unknown }).continuationContext = continuation;
 

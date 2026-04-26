@@ -67,7 +67,16 @@ export function registerCthulhuAbilities(): void {
     // 疯狂释放（行动卡）：弃任意数量疯狂卡，每?= ??+ 额外行动
     registerAbility('cthulhu_madness_unleashed', 'onPlay', cthulhuMadnessUnleashed);
     // 星之眷族（随从talent）：将手中疯狂卡转给对手
-    registerAbility('cthulhu_star_spawn', 'talent', cthulhuStarSpawn);
+    registerAbility('cthulhu_star_spawn', 'talent', {
+        execute: cthulhuStarSpawn,
+        validateUse: (ctx) => {
+            const player = ctx.state.players[ctx.playerId];
+            const madnessInHand = player.hand.filter(c => c.defId === MADNESS_CARD_DEF_ID);
+            if (madnessInHand.length === 0) return '手中没有疯狂卡';
+            const opponents = ctx.state.turnOrder.filter(pid => pid !== ctx.playerId);
+            return opponents.length > 0 ? null : '当前没有可选择的目标';
+        },
+    });
     // 仆人（随从talent）：消灭自身 + 弃牌堆行动卡放牌库顶
     registerAbility('cthulhu_servitor', 'talent', cthulhuServitor);
 
@@ -223,7 +232,7 @@ function cthulhuCorruption(ctx: AbilityContext): AbilityResult {
         targetOptions,
         {
             sourceId: 'cthulhu_corruption',
-            targetType: 'generic',
+            targetType: 'minion',
             autoRefresh: 'field',
             responseValidationMode: 'live',
         },

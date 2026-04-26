@@ -24,7 +24,7 @@ import type { GamePackageCardState, PendingGamePackageInstall, ResolvedGamePacka
 import {
     createDefaultGamePackageState,
     hasGamePackageUpdateAvailable,
-    hasUsableInstalledGamePackageVersion,
+    hasUsableInstalledGamePackageState,
     normalizeGamePackageVersion,
     toGamePackageCardState,
 } from './types';
@@ -83,6 +83,9 @@ const resolveManifestAvailableVersion = (
     manifest?.assetPackVersion
     ?? manifest?.modulePackVersion,
 );
+
+const PREVIEW_MANIFEST_RETRY_BASE_DELAY_MS = 3000;
+const PREVIEW_MANIFEST_RETRY_MAX_DELAY_MS = 15000;
 
 export const useGamePackageState = ({
     gameId,
@@ -252,9 +255,12 @@ export const useGamePackageState = ({
         }
 
         let isDisposed = false;
+        let retryAttempt = 0;
+        let retryTimer: ReturnType<typeof setTimeout> | null = null;
         setPreviewManifest(null);
 
-        void resolveGamePackageManifest(gameId, normalizedDelivery).then((resolvedManifest) => {
+        const resolvePreviewManifest = async () => {
+            const resolvedManifest = await resolveGamePackageManifest(gameId, normalizedDelivery);
             if (isDisposed) {
                 return;
             }
@@ -262,12 +268,41 @@ export const useGamePackageState = ({
             logMobileRuntime('UseGamePackageState', 'preview-manifest-resolved', {
                 gameId,
                 resolvedManifest,
+                retryAttempt,
             });
             setPreviewManifest(resolvedManifest);
-        });
+
+            if (resolvedManifest.source === 'remote') {
+                retryAttempt = 0;
+                return;
+            }
+
+            const retryDelayMs = Math.min(
+                PREVIEW_MANIFEST_RETRY_BASE_DELAY_MS * (2 ** retryAttempt),
+                PREVIEW_MANIFEST_RETRY_MAX_DELAY_MS,
+            );
+            retryAttempt += 1;
+            logMobileRuntimeCritical('UseGamePackageState', 'preview-manifest-retry-scheduled', {
+                gameId,
+                retryDelayMs,
+                nextRetryAttempt: retryAttempt,
+            });
+            retryTimer = setTimeout(() => {
+                retryTimer = null;
+                if (isDisposed) {
+                    return;
+                }
+                void resolvePreviewManifest();
+            }, retryDelayMs);
+        };
+
+        void resolvePreviewManifest();
 
         return () => {
             isDisposed = true;
+            if (retryTimer !== null) {
+                clearTimeout(retryTimer);
+            }
         };
     }, [gameId, isPackageManaged, normalizedDelivery]);
 
@@ -276,7 +311,12 @@ export const useGamePackageState = ({
             return;
         }
 
-        if (cardState.status !== 'installed' || !hasUsableInstalledGamePackageVersion(cardState.installedVersion)) {
+        if (!hasUsableInstalledGamePackageState(cardState)) {
+            return;
+        }
+
+        const pendingInstallAvailableVersion = resolveManifestAvailableVersion(pendingInstall);
+        if (hasGamePackageUpdateAvailable(cardState.installedVersion, pendingInstallAvailableVersion)) {
             return;
         }
 
@@ -284,7 +324,7 @@ export const useGamePackageState = ({
         setPendingInstall(null);
         confirmInFlightRef.current = false;
         setIsConfirmingInstall(false);
-    }, [cardState.installedVersion, cardState.status, pendingInstall]);
+    }, [cardState.installedVersion, cardState.localAssetBaseUrl, cardState.status, pendingInstall]);
 
     const displayCardState = useMemo(
         () => {

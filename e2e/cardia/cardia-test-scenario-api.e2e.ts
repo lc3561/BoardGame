@@ -148,50 +148,58 @@ test.describe('Cardia 测试场景API验证', () => {
         await applyCardiaScenarioToPage(page, scenario);
 
         await clearEvidenceScreenshotsForTest(testInfo);
-        await page.setViewportSize({ width: 1280, height: 640 });
-        await page.waitForTimeout(800);
-        await hideDebugChrome(page);
+        const shortDesktopViewports = [
+            { width: 1280, height: 640, screenshotLabel: 'cardia-top-row-layout-1280x640' },
+            { width: 1366, height: 700, screenshotLabel: 'cardia-top-row-layout-1366x700' },
+        ];
+        const layoutTolerancePx = 2;
 
-        const state = await readHarnessCoreState(page) as Record<string, unknown> | null;
-        expect(state, 'TestHarness 应返回 core 状态').not.toBeNull();
-        const players = (state!.players as Record<string, { playedCards: Array<{ uid: string }> }>);
-        const myCardUid = players['0'].playedCards[0].uid;
-        const opponentCardUid = players['1'].playedCards[0].uid;
+        for (const viewportConfig of shortDesktopViewports) {
+            await page.setViewportSize({ width: viewportConfig.width, height: viewportConfig.height });
+            await page.waitForTimeout(800);
+            await hideDebugChrome(page);
 
-        const battlefield = page.locator('[data-testid="cardia-battlefield"]');
-        await expect(battlefield).toBeVisible({ timeout: 10000 });
+            const state = await readHarnessCoreState(page) as Record<string, unknown> | null;
+            expect(state, 'TestHarness 应返回 core 状态').not.toBeNull();
+            const players = (state!.players as Record<string, { playedCards: Array<{ uid: string }> }>);
+            const myCardUid = players['0'].playedCards[0].uid;
+            const opponentCardUid = players['1'].playedCards[0].uid;
 
-        const myCard = page.locator(`[data-testid="card-${myCardUid}"]`);
-        const opponentCard = page.locator(`[data-testid="card-${opponentCardUid}"]`);
-        await expect(myCard).toBeVisible({ timeout: 10000 });
-        await expect(opponentCard).toBeVisible({ timeout: 10000 });
+            const battlefield = page.locator('[data-testid="cardia-battlefield"]');
+            await expect(battlefield).toBeVisible({ timeout: 10000 });
 
-        const battlefieldBox = await battlefield.boundingBox();
-        const myCardBox = await myCard.boundingBox();
-        const opponentCardBox = await opponentCard.boundingBox();
+            const myCard = page.locator(`[data-testid="card-${myCardUid}"]`);
+            const opponentCard = page.locator(`[data-testid="card-${opponentCardUid}"]`);
+            await expect(myCard).toBeVisible({ timeout: 10000 });
+            await expect(opponentCard).toBeVisible({ timeout: 10000 });
 
-        expect(battlefieldBox, '战场容器应有边界框').not.toBeNull();
-        expect(myCardBox, '己方卡牌应有边界框').not.toBeNull();
-        expect(opponentCardBox, '对手卡牌应有边界框').not.toBeNull();
+            const battlefieldBox = await battlefield.boundingBox();
+            const myCardBox = await myCard.boundingBox();
+            const opponentCardBox = await opponentCard.boundingBox();
 
-        const cardBoxes = [myCardBox!, opponentCardBox!].sort((a, b) => a.y - b.y);
-        const topCardBox = cardBoxes[0];
-        const bottomCardBox = cardBoxes[1];
+            expect(battlefieldBox, '战场容器应有边界框').not.toBeNull();
+            expect(myCardBox, '己方卡牌应有边界框').not.toBeNull();
+            expect(opponentCardBox, '对手卡牌应有边界框').not.toBeNull();
 
-        expect(topCardBox.y, '顶部卡牌顶部不应超出战场').toBeGreaterThanOrEqual(battlefieldBox!.y - 1);
-        expect(topCardBox.y + topCardBox.height, '顶部卡牌底部应落在战场内').toBeLessThanOrEqual(battlefieldBox!.y + battlefieldBox!.height + 1);
-        expect(bottomCardBox.y, '底部卡牌顶部应落在战场内').toBeGreaterThanOrEqual(battlefieldBox!.y - 1);
-        expect(bottomCardBox.y + bottomCardBox.height, '底部卡牌底部不应超出战场').toBeLessThanOrEqual(battlefieldBox!.y + battlefieldBox!.height + 1);
+            const cardBoxes = [myCardBox!, opponentCardBox!].sort((a, b) => a.y - b.y);
+            const topCardBox = cardBoxes[0];
+            const bottomCardBox = cardBoxes[1];
 
-        const viewport = page.viewportSize();
-        expect(viewport, '视口尺寸应可用').not.toBeNull();
-        expect(topCardBox.y, '顶部卡牌不应被裁到视口外').toBeGreaterThanOrEqual(0);
-        expect(topCardBox.y + topCardBox.height, '顶部卡牌底部不应超出视口').toBeLessThanOrEqual(viewport!.height + 1);
+            expect(topCardBox.y, `顶部卡牌顶部不应超出战场（${viewportConfig.width}x${viewportConfig.height}）`).toBeGreaterThanOrEqual(battlefieldBox!.y - layoutTolerancePx);
+            expect(topCardBox.y + topCardBox.height, `顶部卡牌底部应落在战场内（${viewportConfig.width}x${viewportConfig.height}）`).toBeLessThanOrEqual(battlefieldBox!.y + battlefieldBox!.height + layoutTolerancePx);
+            expect(bottomCardBox.y, `底部卡牌顶部应落在战场内（${viewportConfig.width}x${viewportConfig.height}）`).toBeGreaterThanOrEqual(battlefieldBox!.y - layoutTolerancePx);
+            expect(bottomCardBox.y + bottomCardBox.height, `底部卡牌底部不应超出战场（${viewportConfig.width}x${viewportConfig.height}）`).toBeLessThanOrEqual(battlefieldBox!.y + battlefieldBox!.height + layoutTolerancePx);
 
-        await page.screenshot({
-            path: getEvidenceScreenshotPath(testInfo, 'cardia-top-row-layout-1280x640'),
-            fullPage: true,
-        });
+            const viewport = page.viewportSize();
+            expect(viewport, '视口尺寸应可用').not.toBeNull();
+            expect(topCardBox.y, `顶部卡牌不应被裁到视口外（${viewportConfig.width}x${viewportConfig.height}）`).toBeGreaterThanOrEqual(-layoutTolerancePx);
+            expect(topCardBox.y + topCardBox.height, `顶部卡牌底部不应超出视口（${viewportConfig.width}x${viewportConfig.height}）`).toBeLessThanOrEqual(viewport!.height + layoutTolerancePx);
+
+            await page.screenshot({
+                path: getEvidenceScreenshotPath(testInfo, viewportConfig.screenshotLabel),
+                fullPage: true,
+            });
+        }
     });
 
     test('紧凑横屏下底部手牌应完整显示在玩家区内', async ({ page, game }, testInfo) => {

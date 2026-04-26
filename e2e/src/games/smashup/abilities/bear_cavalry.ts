@@ -98,7 +98,22 @@ export function registerBearCavalryAbilities(): void {
     registerProtection('bear_cavalry_superiority_pod', 'destroy', bearCavalrySuperiorityPodProtection);
     registerProtection('bear_cavalry_superiority_pod', 'move', bearCavalrySuperiorityPodProtection);
     registerProtection('bear_cavalry_superiority_pod', 'affect', bearCavalrySuperiorityPodProtection);
-    registerAbility('bear_cavalry_superiority_pod', 'talent', bearCavalrySuperiorityPodTalent);
+    registerAbility('bear_cavalry_superiority_pod', 'talent', {
+        execute: bearCavalrySuperiorityPodTalent,
+        validateUse: (ctx) => {
+            const base = ctx.state.bases[ctx.baseIndex];
+            if (!base) return '当前没有可选择的目标';
+
+            const playerPowers: { [pid: string]: number } = {};
+            for (const minion of base.minions) {
+                playerPowers[minion.controller] = (playerPowers[minion.controller] || 0) + getMinionPower(ctx.state, minion, ctx.baseIndex);
+            }
+
+            const myPower = playerPowers[ctx.playerId] || 0;
+            const isHighest = Object.entries(playerPowers).every(([pid, power]) => pid === ctx.playerId || power < myPower);
+            return isHighest ? null : '当前没有可选择的目标';
+        },
+    });
     // 制高点 POD：响应式消灭并抽牌
     registerTrigger('bear_cavalry_high_ground_pod', 'onMinionMoved', bearCavalryHighGroundPodTrigger);
 }
@@ -944,14 +959,15 @@ function bearCavalryBearNecessities(ctx: AbilityContext): AbilityResult {
     }
     const allTargets = [...minionTargets, ...actionTargets];
     if (allTargets.length === 0) return { events: [buildAbilityFeedback(ctx.playerId, 'feedback.no_valid_targets', ctx.now)] };
+
     // 数据驱动：强制效果，单候选自动执行（混合随从和行动卡，用 generic）
     type BearNecessitiesValue = { type: 'minion'; uid: string; defId: string; baseIndex: number; owner: string } | { type: 'action'; uid: string; defId: string; ownerId: string };
-    const options = allTargets.map((t, i) => ({
+    const options = allTargets.map((target, i) => ({
         id: `target-${i}`,
-        label: t.label,
-        value: ('owner' in t
-            ? { type: 'minion' as const, uid: t.uid, defId: t.defId, baseIndex: (t as typeof minionTargets[0]).baseIndex, owner: (t as typeof minionTargets[0]).owner }
-            : { type: 'action' as const, uid: t.uid, defId: t.defId, ownerId: (t as typeof actionTargets[0]).ownerId }) as BearNecessitiesValue,
+        label: target.label,
+        value: ('owner' in target
+            ? { type: 'minion' as const, uid: target.uid, defId: target.defId, baseIndex: (target as typeof minionTargets[0]).baseIndex, owner: (target as typeof minionTargets[0]).owner }
+            : { type: 'action' as const, uid: target.uid, defId: target.defId, ownerId: (target as typeof actionTargets[0]).ownerId }) as BearNecessitiesValue,
     }));
     return resolveOrPrompt<BearNecessitiesValue>(ctx, options, {
         id: 'bear_cavalry_bear_necessities',
@@ -1306,6 +1322,13 @@ export function registerBearCavalryInteractionHandlers(): void {
                     now: timestamp,
                 }),
             };
+        }
+        const actionStillOnBoard = state.core.bases.some(base =>
+            base.ongoingActions.some(action => action.uid === selected.uid)
+            || base.minions.some(minion => minion.attachedActions.some(action => action.uid === selected.uid))
+        );
+        if (!actionStillOnBoard) {
+            return { state, events: [] };
         }
         return { state, events: [{ type: SU_EVENTS.ONGOING_DETACHED, payload: { cardUid: selected.uid, defId: selected.defId, ownerId: selected.ownerId!, reason: 'bear_cavalry_bear_necessities' }, timestamp }] };
     });

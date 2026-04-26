@@ -8,7 +8,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { getAllCardDefs, getAllBaseDefs, getCardDef, getFactionCards, resolveCardName, resolveCardText } from '../data/cards';
-import { resolveI18nKeys } from '../ui/PromptOverlay';
+import { resolveI18nKeys, resolveI18nParams, resolvePromptText } from '../ui/PromptOverlay';
 import { SMASHUP_FACTION_IDS } from '../domain/ids';
 
 describe('SmashUp 卡牌 i18n 完整性', () => {
@@ -212,6 +212,42 @@ describe('SmashUp 卡牌 i18n 完整性', () => {
 
     expect(resolveI18nKeys('cards.base_tortuga.name 路 ui.reaction_timing.afterScoring', zhTranslator)).toBe('托尔图加 路 计分后');
     expect(resolveI18nKeys('cards.ninja_infiltrate_pod.name 路 ui.reaction_timing.onActionPlayed', zhTranslator)).toContain('路 行动打出后');
+  });
+
+  it('resolveI18nParams 会把 labelKey 参数中的 cards key 解析成中文', () => {
+    const zhTranslator = (key: string, opts?: { defaultValue?: string }) => {
+      const resolved = key.split('.').reduce<any>((value, segment) => value?.[segment], zhCN);
+      return typeof resolved === 'string' ? resolved : (opts?.defaultValue ?? key);
+    };
+
+    expect(resolveI18nParams({
+      name: 'cards.base_tortuga.name',
+      baseNumber: 2,
+    }, zhTranslator)).toEqual({
+      name: '托尔图加',
+      baseNumber: 2,
+    });
+  });
+
+  it('resolvePromptText 会把 titleKey 参数中的 cards key 解析成中文', () => {
+    const zhTranslator = (key: string, opts?: { defaultValue?: string; [k: string]: unknown }) => {
+      const resolved = key.split('.').reduce<any>((value, segment) => value?.[segment], zhCN);
+      if (typeof resolved !== 'string') return opts?.defaultValue ?? key;
+      return resolved.replace(/\{\{\s*(\w+)\s*\}\}/g, (_match, name) => {
+        const value = opts?.[name];
+        return value === undefined ? '' : String(value);
+      });
+    };
+
+    expect(resolvePromptText(
+      'fallback title',
+      'ui.titan_megabot_move_title',
+      {
+        name: 'cards.mega_troopers_megabot.name',
+        baseName: 'cards.base_tortuga.name',
+      },
+      zhTranslator,
+    )).toBe('超级佐德：要在该基地计分前移动到托尔图加吗？');
   });
 
   it('Oops 四派系 POD 卡牌的关键中文效果文本已修正', () => {

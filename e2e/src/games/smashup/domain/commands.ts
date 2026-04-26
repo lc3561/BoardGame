@@ -33,6 +33,14 @@ import { getSmashUpReactionWindowContext, hasBlockingLegacyResponseWindow } from
 
 type TitanAbilityKind = 'special' | 'talent' | 'ongoing';
 
+function getAfterScoringSourceBaseIndex(state: MatchState<SmashUpCore>): number | undefined {
+    const session = (state.sys as MatchState<SmashUpCore>['sys'] & {
+        smashupReactionSession?: { responseWindowType?: 'meFirst' | 'afterScoring'; sourceBaseIndex?: number };
+    }).smashupReactionSession;
+    if (session?.responseWindowType !== 'afterScoring') return undefined;
+    return typeof session.sourceBaseIndex === 'number' ? session.sourceBaseIndex : undefined;
+}
+
 function resolveTitanAbilityLabel(kind: TitanAbilityKind): string {
     switch (kind) {
         case 'special':
@@ -452,8 +460,23 @@ export function validate(
                         return { valid: false, error: '无效的基地索引' };
                     }
 
+                    const afterScoringSourceBaseIndex = getAfterScoringSourceBaseIndex(state);
+                    if (
+                        reactionWindow.windowType === 'afterScoring'
+                        && afterScoringSourceBaseIndex !== undefined
+                        && targetBaseIndex !== afterScoringSourceBaseIndex
+                    ) {
+                        console.log('[DEBUG] PLAY_ACTION validation: BLOCKED - wrong afterScoring base', {
+                            targetBaseIndex,
+                            afterScoringSourceBaseIndex,
+                        });
+                        return { valid: false, error: 'afterScoring 只能选择当前正在结算的基地' };
+                    }
+
                     // 使用统一查询函数（优先锁定列表，回退实时计算）
-                    const eligibleIndices = getScoringEligibleBaseIndices(core);
+                    const eligibleIndices = afterScoringSourceBaseIndex !== undefined
+                        ? [afterScoringSourceBaseIndex]
+                        : getScoringEligibleBaseIndices(core);
                     console.log('[DEBUG] PLAY_ACTION validation: eligible bases', {
                         eligibleIndices,
                         targetBaseIndex,
@@ -768,6 +791,7 @@ export function validate(
             if (targetCount !== 1) {
                 return { valid: false, error: '蹇呴』涓旀墜鑳藉彧鑳芥寚瀹氫竴涓壒娈婅兘鍔涚洰鏍?' };
             }
+            const afterScoringSourceBaseIndex = getAfterScoringSourceBaseIndex(state);
             const spBase = core.bases[spBaseIndex];
             if (!spBase) return { valid: false, error: '无效的基地索引' };
             if (spTitanUid) {
@@ -780,6 +804,12 @@ export function validate(
                     return titanValidation;
                 }
                 if (phase === 'scoreBases') {
+                    if (
+                        afterScoringSourceBaseIndex !== undefined
+                        && spBaseIndex !== afterScoringSourceBaseIndex
+                    ) {
+                        return { valid: false, error: 'afterScoring 只能选择当前正在结算的基地' };
+                    }
                     const eligibleIndices = getScoringEligibleBaseIndices(core);
                     if (!eligibleIndices.includes(spBaseIndex)) {
                         return { valid: false, error: '鍙兘鍦ㄨ揪鍒颁复鐣岀偣鐨勫熀鍦颁笂婵€娲昏鍒嗗墠鐗规畩鑳藉姏' };
@@ -816,6 +846,12 @@ export function validate(
             }
             // scoreBases 阶段额外验证：只能在达标基地上激活
             if (phase === 'scoreBases') {
+                if (
+                    afterScoringSourceBaseIndex !== undefined
+                    && spBaseIndex !== afterScoringSourceBaseIndex
+                ) {
+                    return { valid: false, error: 'afterScoring 只能选择当前正在结算的基地' };
+                }
                 const eligibleIndices = getScoringEligibleBaseIndices(core);
                 if (!eligibleIndices.includes(spBaseIndex)) {
                     return { valid: false, error: '只能在达到临界点的基地上激活计分前特殊能力' };

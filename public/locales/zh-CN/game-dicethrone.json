@@ -478,7 +478,9 @@
   "attackShowcase": {
     "title": "对方发动进攻",
     "attackerLabel": "{{name}} 使用了技能",
-    "continue": "开始防御"
+    "continue": "开始防御",
+    "previewTitle": "对方选中了技能",
+    "previewContinue": "继续"
   },
   "response": {
     "waitingOpponent": "等待对手响应...",
@@ -1870,7 +1872,7 @@
     },
     "covert-fire": {
       "name": "隐秘射击",
-      "description": "3弓+3月触发：施加锁定，然后造成4伤害",
+      "description": "3弓+2月触发：施加锁定，然后造成4伤害",
       "effects": {
         "inflictTargeted": "施加1个锁定标记",
         "damage4": "造成4点伤害"

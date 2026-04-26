@@ -2,7 +2,7 @@ export type SmashUpHandPromptUiMode = 'none' | 'direct' | 'overlay';
 export type SmashUpPromptSurface = 'none' | 'hand' | 'board' | 'overlay';
 
 type HandPromptLike = {
-    playerId?: string | null;
+    playerId?: unknown;
     multi?: unknown;
 } | null | undefined;
 
@@ -18,6 +18,19 @@ type ResolveHandInteractionModeInput = {
     activePromptSurface: SmashUpPromptSurface;
 };
 
+type ResolvePromptOwnershipInput = {
+    currentPrompt: HandPromptLike;
+    playerID: string | null | undefined;
+};
+
+export function isSmashUpPromptOwnedByPlayer({
+    currentPrompt,
+    playerID,
+}: ResolvePromptOwnershipInput): boolean {
+    if (!currentPrompt || !playerID || currentPrompt.playerId == null) return false;
+    return String(currentPrompt.playerId) === String(playerID);
+}
+
 /**
  * 手牌类交互要先区分“由手牌区直接承接”还是“仍由 PromptOverlay 承接”：
  * - direct: 单选 hand prompt，手牌区直接点击选牌
@@ -29,7 +42,7 @@ export function resolveSmashUpHandPromptUiMode({
     playerID,
     targetType,
 }: ResolveHandPromptUiModeInput): SmashUpHandPromptUiMode {
-    if (!currentPrompt || !playerID || currentPrompt.playerId !== playerID) return 'none';
+    if (!isSmashUpPromptOwnedByPlayer({ currentPrompt, playerID })) return 'none';
     if (targetType !== 'hand') return 'none';
     return currentPrompt.multi ? 'overlay' : 'direct';
 }

@@ -13,7 +13,6 @@ import { useTokenRefresh } from './hooks/useTokenRefresh';
 import { ModalStackProvider } from './contexts/ModalStackContext';
 import { ToastProvider } from './contexts/ToastContext';
 import { EngineNotificationListener } from './components/system/EngineNotificationListener';
-import { SocketCompatibilityToastListener } from './components/system/SocketCompatibilityToastListener';
 import { ViewportDebugProbe } from './components/system/ViewportDebugProbe';
 import { Toaster } from 'react-hot-toast';
 import { GlobalErrorBoundary } from './components/system/GlobalErrorBoundary';
@@ -117,7 +116,7 @@ const AppContent = () => {
 
   const playRouteFallback = (
     <LoadingScreen
-      description={t('matchRoom.loadingResources')}
+      description={t('matchRoom.preparingMatch')}
       progressText={t('matchRoom.loadingProgress.loadingGameModule')}
     />
   );
@@ -280,7 +279,6 @@ const AppContent = () => {
                     {isNativeAndroid ? <AndroidNativeUpdateManager /> : null}
                     {isNativeAndroid ? <AndroidLiveUpdateManager /> : null}
                     <EngineNotificationListener />
-                    <SocketCompatibilityToastListener />
                     <GamePageRescueGate />
                 </MobileOrientationGuard>
                 </BrowserCompatibilityGate>

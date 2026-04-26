@@ -60,7 +60,15 @@ export function registerFrankensteinAbilities(): void {
             return (minion?.powerCounters ?? 0) >= 1 ? null : '该随从当前无法发动天赋：没有+1力量指示物';
         },
     });
-    registerAbility('frankenstein_herr_doktor', 'talent', frankensteinHerrDoktor);
+    registerAbility('frankenstein_herr_doktor', 'talent', {
+        execute: frankensteinHerrDoktor,
+        validateUse: (ctx) => {
+            const hasOtherOwnMinion = ctx.state.bases.some(base =>
+                base.minions.some(minion => minion.controller === ctx.playerId && minion.uid !== ctx.cardUid),
+            );
+            return hasOtherOwnMinion ? null : '当前没有可选择的目标';
+        },
+    });
     registerAbility('frankenstein_igor', 'onDestroy', frankensteinIgorOnDestroy);
 
     // 行动卡能力

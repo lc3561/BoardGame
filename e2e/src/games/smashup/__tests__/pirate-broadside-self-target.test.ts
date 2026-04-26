@@ -13,6 +13,7 @@ import { runCommand } from './testRunner';
 import { makeState, makePlayer, makeCard, makeBase, makeMinion, makeMatchState } from './helpers';
 import { SU_COMMANDS } from '../domain/types';
 import type { RandomFn } from '../../../engine/types';
+import { INTERACTION_COMMANDS } from '../../../engine/systems/InteractionSystem';
 
 beforeAll(() => {
     initAllAbilities();
@@ -58,10 +59,21 @@ describe('侧翼开炮可以选择自己', () => {
         // 验证交互存在
         const interaction = result.finalState.sys.interaction?.current;
         expect(interaction).toBeDefined();
-        expect(interaction?.data.title).toContain('选择基地和玩家');
+        expect(interaction?.data.sourceId).toBe('pirate_broadside_choose_base');
+        expect(interaction?.data.title).toContain('选择一个你有随从的基地');
+
+        const baseSelection = runCommand(result.finalState, {
+            type: INTERACTION_COMMANDS.RESPOND,
+            playerId: '0',
+            payload: { optionId: 'base-0' },
+            timestamp: 1001,
+        } as any, defaultRandom);
+        const playerInteraction = baseSelection.finalState.sys.interaction?.current;
+        expect(playerInteraction).toBeDefined();
+        expect(playerInteraction?.data.sourceId).toBe('pirate_broadside_choose_player');
 
         // 验证选项包含所有玩家（包括自己）
-        const options = (interaction?.data as any)?.options;
+        const options = (playerInteraction?.data as any)?.options;
         expect(options).toBeDefined();
         expect(options.length).toBeGreaterThanOrEqual(2); // 至少2个选项（自己+对手）
 
@@ -109,11 +121,33 @@ describe('侧翼开炮可以选择自己', () => {
         const interaction = result.finalState.sys.interaction?.current;
         expect(interaction).toBeDefined();
 
+        const baseSelection = runCommand(result.finalState, {
+            type: INTERACTION_COMMANDS.RESPOND,
+            playerId: '0',
+            payload: { optionId: 'base-0' },
+            timestamp: 1001,
+        } as any, defaultRandom);
+        const playerInteraction = baseSelection.finalState.sys.interaction?.current;
+        expect(playerInteraction?.data.sourceId).toBe('pirate_broadside_choose_player');
+
         // 验证选项中包含自己
-        const options = (interaction?.data as any)?.options;
+        const options = (playerInteraction?.data as any)?.options;
         const selfOption = options.find((opt: any) => opt.value?.targetPlayerId === '0');
         expect(selfOption).toBeDefined();
         expect(selfOption.label).toContain('2个弱随从'); // m2 和 m3
+
+        const resolveSelfTarget = runCommand(baseSelection.finalState, {
+            type: INTERACTION_COMMANDS.RESPOND,
+            playerId: '0',
+            payload: { optionId: selfOption.id },
+            timestamp: 1002,
+        } as any, defaultRandom);
+
+        const remainingMinions = resolveSelfTarget.finalState.core.bases[0].minions;
+        expect(remainingMinions.find(m => m.uid === 'm1')).toBeDefined();
+        expect(remainingMinions.find(m => m.uid === 'm2')).toBeUndefined();
+        expect(remainingMinions.find(m => m.uid === 'm3')).toBeUndefined();
+        expect(remainingMinions.find(m => m.uid === 'm4')).toBeDefined();
     });
 
     it('可以选择对手并消灭对手的弱随从', () => {
@@ -149,11 +183,32 @@ describe('侧翼开炮可以选择自己', () => {
         const interaction = result.finalState.sys.interaction?.current;
         expect(interaction).toBeDefined();
 
+        const baseSelection = runCommand(result.finalState, {
+            type: INTERACTION_COMMANDS.RESPOND,
+            playerId: '0',
+            payload: { optionId: 'base-0' },
+            timestamp: 1001,
+        } as any, defaultRandom);
+        const playerInteraction = baseSelection.finalState.sys.interaction?.current;
+        expect(playerInteraction?.data.sourceId).toBe('pirate_broadside_choose_player');
+
         // 验证选项中包含对手
-        const options = (interaction?.data as any)?.options;
+        const options = (playerInteraction?.data as any)?.options;
         const opponentOption = options.find((opt: any) => opt.value?.targetPlayerId === '1');
         expect(opponentOption).toBeDefined();
         expect(opponentOption.label).toContain('2个弱随从'); // m2 和 m3
+
+        const resolveOpponentTarget = runCommand(baseSelection.finalState, {
+            type: INTERACTION_COMMANDS.RESPOND,
+            playerId: '0',
+            payload: { optionId: opponentOption.id },
+            timestamp: 1002,
+        } as any, defaultRandom);
+
+        const remainingMinions = resolveOpponentTarget.finalState.core.bases[0].minions;
+        expect(remainingMinions.find(m => m.uid === 'm1')).toBeDefined();
+        expect(remainingMinions.find(m => m.uid === 'm2')).toBeUndefined();
+        expect(remainingMinions.find(m => m.uid === 'm3')).toBeUndefined();
     });
 
     it('没有己方随从的基地不会出现在选项中', () => {
@@ -191,6 +246,7 @@ describe('侧翼开炮可以选择自己', () => {
         // 验证交互存在
         const interaction = result.finalState.sys.interaction?.current;
         expect(interaction).toBeDefined();
+        expect(interaction?.data.sourceId).toBe('pirate_broadside_choose_base');
 
         // 验证选项中只包含基地1
         const options = (interaction?.data as any)?.options;
@@ -199,5 +255,96 @@ describe('侧翼开炮可以选择自己', () => {
         
         expect(base1Options.length).toBeGreaterThan(0);
         expect(base2Options.length).toBe(0);
+    });
+
+    it('粗鲁少妇打出后会触发交互并能消灭本基地的弱随从', () => {
+        const state = makeState({
+            players: {
+                '0': makePlayer('0', {
+                    hand: [makeCard('saucy1', 'pirate_saucy_wench', 'minion', '0')],
+                    minionsPlayed: 0,
+                    minionLimit: 1,
+                }),
+                '1': makePlayer('1'),
+            },
+            bases: [
+                makeBase('test_base', [
+                    makeMinion('m1', 'test_minion', '0', 3),
+                    makeMinion('m2', 'test_minion', '1', 2),
+                ]),
+            ],
+        });
+
+        const ms = makeMatchState(state);
+
+        const result = runCommand(ms, {
+            type: SU_COMMANDS.PLAY_MINION,
+            playerId: '0',
+            payload: { cardUid: 'saucy1', baseIndex: 0 },
+            timestamp: 1000,
+        } as any, defaultRandom);
+
+        const interaction = result.finalState.sys.interaction?.current;
+        expect(interaction).toBeDefined();
+        expect(interaction?.data.sourceId).toBe('pirate_saucy_wench');
+
+        const options = (interaction?.data as any)?.options ?? [];
+        const targetOption = options.find((opt: any) => opt.value?.minionUid === 'm2');
+        expect(targetOption).toBeDefined();
+
+        const resolveTarget = runCommand(result.finalState, {
+            type: INTERACTION_COMMANDS.RESPOND,
+            playerId: '0',
+            payload: { optionId: targetOption.id },
+            timestamp: 1001,
+        } as any, defaultRandom);
+
+        const remainingMinions = resolveTarget.finalState.core.bases[0].minions;
+        expect(remainingMinions.find(m => m.uid === 'm2')).toBeUndefined();
+        expect(remainingMinions.find(m => m.uid === 'saucy1')).toBeDefined();
+    });
+
+    it('粗鲁少妇应能消灭对手学徒（wizard_neophyte）', () => {
+        const state = makeState({
+            players: {
+                '0': makePlayer('0', {
+                    hand: [makeCard('saucy1', 'pirate_saucy_wench', 'minion', '0')],
+                    minionsPlayed: 0,
+                    minionLimit: 1,
+                }),
+                '1': makePlayer('1'),
+            },
+            bases: [
+                makeBase('test_base', [
+                    makeMinion('ally-strong', 'test_minion', '0', 3),
+                    makeMinion('enemy-apprentice', 'wizard_neophyte', '1', 2),
+                ]),
+            ],
+        });
+
+        const ms = makeMatchState(state);
+        const played = runCommand(ms, {
+            type: SU_COMMANDS.PLAY_MINION,
+            playerId: '0',
+            payload: { cardUid: 'saucy1', baseIndex: 0 },
+            timestamp: 2000,
+        } as any, defaultRandom);
+
+        const interaction = played.finalState.sys.interaction?.current;
+        expect(interaction?.data.sourceId).toBe('pirate_saucy_wench');
+        const options = (interaction?.data as any)?.options ?? [];
+        const apprenticeOption = options.find((opt: any) => opt.value?.minionUid === 'enemy-apprentice');
+        expect(apprenticeOption).toBeDefined();
+
+        const resolved = runCommand(played.finalState, {
+            type: INTERACTION_COMMANDS.RESPOND,
+            playerId: '0',
+            payload: { optionId: apprenticeOption.id },
+            timestamp: 2001,
+        } as any, defaultRandom);
+
+        const remainingMinions = resolved.finalState.core.bases[0].minions;
+        expect(remainingMinions.find((m) => m.uid === 'enemy-apprentice')).toBeUndefined();
+        expect(remainingMinions.find((m) => m.uid === 'saucy1')).toBeDefined();
     });
 });

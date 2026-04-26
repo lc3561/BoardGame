@@ -273,9 +273,9 @@ function handleSimpleChoiceRespond<TCore>(
     }
 
     const newState = resolveInteraction(state);
-    const interactionDataForEvent = responseValidationMode === 'live'
-        ? { ...current.data, options: availableOptions }
-        : current.data;
+    // live 校验只用于“当前是否还能选这个 option”的判断；
+    // 事件里仍需携带原始交互快照，避免下游系统把刷新后的 options 误判成“不是同一个 blocker”。
+    const interactionDataForEvent = current.data;
     const isEmergencySkip = Boolean(
         resolvedValue
         && typeof resolvedValue === 'object'

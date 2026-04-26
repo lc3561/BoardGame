@@ -32,7 +32,13 @@ const DEFAULT_RANDOM: any = {
 
 export function registerAncientEgyptiansAbilities(): void {
     registerAbility('ancient_egyptians_pyramid_engineer', 'onPlay', ancientEgyptiansPyramidEngineerOnPlay);
-    registerAbility('ancient_egyptians_pyramid_engineer', 'talent', ancientEgyptiansPyramidEngineerTalent);
+    registerAbility('ancient_egyptians_pyramid_engineer', 'talent', {
+        execute: ancientEgyptiansPyramidEngineerTalent,
+        validateUse: (ctx) => {
+            const player = ctx.state.players[ctx.playerId];
+            return player && player.hand.length > 0 ? null : '手牌为空，无法发动此天赋';
+        },
+    });
     registerAbility('ancient_egyptians_lost_knowledge', 'onPlay', ancientEgyptiansLostKnowledge);
     registerAbility('ancient_egyptians_lost_knowledge', 'special', ancientEgyptiansLostKnowledge);
     registerAbility('ancient_egyptians_you_can_take_it_with_you', 'onPlay', ancientEgyptiansBurySelfOnPlay);

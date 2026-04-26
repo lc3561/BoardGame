@@ -5,6 +5,7 @@ import { render, waitFor, fireEvent } from '@testing-library/react';
 import { DICETHRONE_STATUS_ATLAS_IDS, TOKEN_IDS } from '../domain/ids';
 import { registerDiceDefinition } from '../domain/diceRegistry';
 import { moonElfDiceDefinition } from '../heroes/moon_elf/diceConfig';
+import { GUNSLINGER_SFX_BOUNTY } from '../heroes/gunslinger/abilities';
 import { getVisualMetaById } from '../domain/statusEffects';
 import { Dice3D } from '../ui/Dice3D';
 import {
@@ -56,7 +57,7 @@ describe('StatusEffectsIcons', () => {
 
         expect(meta?.frameId).toBe(TOKEN_IDS.BOUNTY);
         expect(meta?.iconPath).toBe('dicethrone/images/gunslinger/icons/赏金');
-        expect(meta?.sfxKey).toBe('ui.general.ui_menu_sound_fx_pack_vol.signals.update.update_chime_a');
+        expect(meta?.sfxKey).toBe(GUNSLINGER_SFX_BOUNTY);
     });
 
     it('武士 token 视觉元数据应暴露专属 sfxKey，供动画冲击音优先使用', () => {

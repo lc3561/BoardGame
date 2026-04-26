@@ -606,6 +606,23 @@ describe('Feature: incremental-state-sync', () => {
       client.disconnect();
     });
 
+    it('sendBatch includes expectedStateID precondition after sync', () => {
+      const { client } = createConnectedClient();
+
+      simulateSync({ core: { hp: 100 } }, [{ id: 0 }], 7);
+      mockSocket.clearEmitted();
+
+      client.sendBatch('batch-expected-state', [{ type: 'attack', payload: {} }]);
+
+      const batchEmits = mockSocket.findEmitted('batch');
+      expect(batchEmits).toHaveLength(1);
+      expect(batchEmits[0]?.args[0]).toBe('test-match');
+      expect(batchEmits[0]?.args[1]).toBe('batch-expected-state');
+      expect(batchEmits[0]?.args[4]).toEqual({ expectedStateID: 7 });
+
+      client.disconnect();
+    });
+
     /**
      * 需求 8.3：回滚广播全量 state:update
      *

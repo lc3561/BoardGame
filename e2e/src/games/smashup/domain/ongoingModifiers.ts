@@ -13,7 +13,7 @@
 import type { PlayerId } from '../../../engine/types';
 import type { SmashUpCore, MinionOnBase, BaseInPlay, TitanState } from './types';
 import { getBaseDef, getCardDef } from '../data/cards';
-import { getSuppressionFilteredStateForSource, isCardSuppressed } from './ongoingEffects';
+import { getSuppressionFilteredStateForSource, isBaseAbilitySuppressed, isCardSuppressed } from './ongoingEffects';
 
 // ============================================================================
 // 类型定义
@@ -614,13 +614,37 @@ export function getPlayerEffectivePowerOnBase(
     baseIndex: number,
     playerId: PlayerId
 ): number {
+    const currentPlayerId = state.turnOrder[state.currentPlayerIndex];
+    const opposingSirens = base.minions.filter((minion) =>
+        minion.controller !== playerId
+        && normalizeDefId(minion.defId) === 'mermaids_siren'
+        && !isCardSuppressed(state, minion.uid),
+    ).length;
+    const reefPenalty = (
+        base.defId === 'base_mermaid_reef'
+        && currentPlayerId
+        && playerId !== currentPlayerId
+        && !isBaseAbilitySuppressed(state, baseIndex)
+    ) ? 1 : 0;
     const minionPower = base.minions
         .filter(m => m.controller === playerId)
-        .reduce((sum, m) => sum + getEffectivePower(state, m, baseIndex), 0);
+        .reduce((sum, m) => {
+            const effectivePower = getEffectivePower(state, m, baseIndex);
+            let contribution = effectivePower;
+
+            const charmedTurn = Number(m.metadata?.mermaidsCharmedSuppressedTurn ?? -1);
+            const charmedActive = charmedTurn === state.turnNumber;
+            const desertIslandActive = base.ongoingActions.some(action => normalizeDefId(action.defId) === 'mermaids_desert_island');
+            if (charmedActive || desertIslandActive) {
+                contribution = 0;
+            }
+
+            return sum + contribution;
+        }, 0);
     const ongoingCardPower = getOngoingCardPowerContribution(base, playerId);
     const titanPower = getTitanPowerContribution(state, baseIndex, playerId);
     const basePowerBonus = getBasePowerModifiers(state, baseIndex, playerId);
-    return minionPower + ongoingCardPower + titanPower + basePowerBonus;
+    return minionPower + ongoingCardPower + titanPower + basePowerBonus - opposingSirens - reefPenalty;
 }
 
 /**

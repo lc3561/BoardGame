@@ -11,7 +11,7 @@ import type { SmashUpEvent, MinionCardDef, SmashUpCore } from '../domain/types';
 import { createSimpleChoice, queueInteraction } from '../../../engine/systems/InteractionSystem';
 import type { InteractionDescriptor } from '../../../engine/systems/InteractionSystem';
 import { registerInteractionHandler } from '../domain/abilityInteractionHandlers';
-import type { MatchState } from '../../../engine/types';
+import type { MatchState, RandomFn } from '../../../engine/types';
 import { getCardDef, getBaseDef } from '../data/cards';
 import { registerTrigger, isMinionProtected } from '../domain/ongoingEffects';
 import type { TriggerContext, TriggerResult } from '../domain/ongoingEffects';
@@ -48,6 +48,8 @@ export function registerPirateAbilities(): void {
     // 海盗（海盗）：被消灭时移动到其他基地而非进入弃牌堆
     registerTrigger('pirate_buccaneer', 'onMinionDestroyed', buccaneerOnDestroyed, { phase: 'replacement' });
     registerInteractionHandler('pirate_buccaneer_move', buccaneerMoveHandler);
+    registerInteractionHandler('pirate_broadside_choose_base', pirateBroadsideChooseBaseHandler);
+    registerInteractionHandler('pirate_broadside_choose_player', pirateBroadsideChoosePlayerHandler);
 }
 
 /** 粗鲁少妇 onPlay：消灭本基地一个力量≤2的随从*/
@@ -76,57 +78,130 @@ function pirateSaucyWench(ctx: AbilityContext): AbilityResult {
     return { events: [], matchState: queueInteraction(ctx.matchState, interaction) };
 }
 
-/** 侧翼开路?onPlay：选择一个效果对手?一个你有随从的基地，消灭该对手在该基地所有力量≤2的随从*/
+function collectPirateBroadsideTargetPlayers(
+    state: SmashUpCore,
+    playerId: string,
+    baseIndex: number,
+): Array<{ targetPlayerId: string; count: number; label: string }> {
+    const base = state.bases[baseIndex];
+    if (!base) return [];
+    if (!base.minions.some(m => m.controller === playerId)) return [];
+
+    const playerCounts = new Map<string, number>();
+    for (const minion of base.minions) {
+        if (getMinionPower(state, minion, baseIndex) <= 2) {
+            playerCounts.set(minion.controller, (playerCounts.get(minion.controller) || 0) + 1);
+        }
+    }
+
+    return Array.from(playerCounts.entries()).map(([targetPlayerId, count]) => ({
+        targetPlayerId,
+        count,
+        label: `${targetPlayerId === playerId ? '你自己' : getOpponentLabel(targetPlayerId)}（${count}个弱随从）`,
+    }));
+}
+
+function buildPirateBroadsideChoosePlayerInteraction(
+    state: SmashUpCore,
+    playerId: string,
+    baseIndex: number,
+    now: number,
+): InteractionDescriptor | undefined {
+    const base = state.bases[baseIndex];
+    if (!base) return undefined;
+    const candidates = collectPirateBroadsideTargetPlayers(state, playerId, baseIndex);
+    if (candidates.length === 0) return undefined;
+
+    const interaction = createSimpleChoice(
+        `pirate_broadside_choose_player_${baseIndex}_${now}`,
+        playerId,
+        '选择该基地上的一个玩家，消灭其所有力量≤2的随从',
+        buildPlayerTargetOptions(
+            candidates.map((candidate, index) => ({
+                id: `target-player-${index}`,
+                label: candidate.label,
+                targetPlayerId: candidate.targetPlayerId,
+                value: {
+                    baseIndex,
+                    baseDefId: base.defId,
+                },
+                displayMode: 'button',
+            })),
+            {
+                sourcePlayerId: playerId,
+                effectIntent: 'destroy',
+            },
+        ),
+        { sourceId: 'pirate_broadside_choose_player', targetType: 'player', autoResolveIfSingle: false },
+    );
+
+    return interaction;
+}
+
+/** 侧翼开炮 onPlay：先选一个你有随从的基地，再选该基地上的一个玩家，消灭其所有力量≤2的随从 */
 function pirateBroadside(ctx: AbilityContext): AbilityResult {
-    // 收集所有可能的 (基地, 玩家) 组合
-    const candidates: { baseIndex: number; targetPlayerId: string; count: number; label: string }[] = [];
+    const candidates: { baseIndex: number; label: string }[] = [];
     for (let i = 0; i < ctx.state.bases.length; i++) {
-        const base = ctx.state.bases[i];
-        // 必须有己方随从
-        if (!base.minions.some(m => m.controller === ctx.playerId)) continue;
+        const playerCandidates = collectPirateBroadsideTargetPlayers(ctx.state, ctx.playerId, i);
+        if (playerCandidates.length === 0) continue;
 
-        // 统计每个玩家（包括自己）在该基地的弱随从数量
-        const playerCounts = new Map<string, number>();
-        for (const m of base.minions) {
-            if (getMinionPower(ctx.state, m, i) <= 2) {
-                playerCounts.set(m.controller, (playerCounts.get(m.controller) || 0) + 1);
-            }
-        }
-
-        const baseDef = getBaseDef(base.defId);
-        const baseName = baseDef?.name ?? `基地 ${i + 1}`;
-        for (const [pid, count] of playerCounts) {
-            const playerLabel = pid === ctx.playerId ? '你自己' : getOpponentLabel(pid);
-            candidates.push({
-                baseIndex: i,
-                targetPlayerId: pid,
-                count,
-                label: `${baseName}（${playerLabel}，${count}个弱随从）`
-            });
-        }
+        const baseDef = getBaseDef(ctx.state.bases[i].defId);
+        candidates.push({
+            baseIndex: i,
+            label: baseDef?.name ?? `基地 ${i + 1}`,
+        });
     }
 
     if (candidates.length === 0) return { events: [buildAbilityFeedback(ctx.playerId, 'feedback.no_valid_targets', ctx.now)] };
 
-    const options = buildPlayerTargetOptions(
-        candidates.map((c, i) => ({
-            id: `target-${i}`,
-            label: c.label,
-            targetPlayerId: c.targetPlayerId,
-            value: { baseIndex: c.baseIndex },
-        })),
-        {
-            sourcePlayerId: ctx.playerId,
-            effectIntent: 'destroy',
-        },
-    );
     const interaction = createSimpleChoice(
-        `pirate_broadside_${ctx.now}`, ctx.playerId,
-        '选择基地和玩家，消灭该玩家所有力量≤2的随从',
-        options,
-        { sourceId: 'pirate_broadside', targetType: 'generic' },
+        `pirate_broadside_choose_base_${ctx.now}`,
+        ctx.playerId,
+        '选择一个你有随从的基地',
+        buildBaseTargetOptions(candidates, ctx.state),
+        { sourceId: 'pirate_broadside_choose_base', targetType: 'base', autoResolveIfSingle: false },
     );
     return { events: [], matchState: queueInteraction(ctx.matchState, interaction) };
+}
+
+function pirateBroadsideChooseBaseHandler(
+    state: MatchState<SmashUpCore>,
+    playerId: string,
+    value: unknown,
+    _iData: unknown,
+    _random: RandomFn,
+    timestamp: number,
+) {
+    const { baseIndex } = value as { baseIndex?: number };
+    if (baseIndex === undefined) return undefined;
+
+    const next = buildPirateBroadsideChoosePlayerInteraction(state.core, playerId, baseIndex, timestamp);
+    if (!next) return { state, events: [] };
+    return { state: queueInteraction(state, next), events: [] };
+}
+
+function pirateBroadsideChoosePlayerHandler(
+    state: MatchState<SmashUpCore>,
+    playerId: string,
+    value: unknown,
+    _iData: unknown,
+    _random: RandomFn,
+    timestamp: number,
+) {
+    const { baseIndex, targetPlayerId } = value as { baseIndex?: number; targetPlayerId?: string };
+    if (baseIndex === undefined || !targetPlayerId) return undefined;
+
+    const base = state.core.bases[baseIndex];
+    if (!base) return undefined;
+
+    const events: SmashUpEvent[] = [];
+    for (const minion of base.minions) {
+        if (minion.controller === targetPlayerId && getMinionPower(state.core, minion, baseIndex) <= 2) {
+            events.push(destroyMinion(minion.uid, minion.defId, baseIndex, minion.owner, playerId, 'pirate_broadside', timestamp));
+        }
+    }
+
+    return { state, events };
 }
 
 /** 加农炮 onPlay：消灭至多两个力量≤2的随从（点击式交互）*/
@@ -541,6 +616,12 @@ function pirateSeaDogs(ctx: AbilityContext): AbilityResult {
     return { events: [], matchState: queueInteraction(ctx.matchState, interaction) };
 }
 
+function buildSeaDogsFactionSubtitle(factionId: string | undefined): string | undefined {
+    if (!factionId) return undefined;
+    const factionLabel = FACTION_DISPLAY_NAMES[factionId] || factionId;
+    return `已选种族：${factionLabel}`;
+}
+
 /** 炸药桶?onPlay：消灭己方随从，然后消灭同基地所有力量≤被消灭随从的随从 */
 function piratePowderkeg(ctx: AbilityContext): AbilityResult {
     // 收集所有己方随从
@@ -624,20 +705,6 @@ export function registerPirateInteractionHandlers(): void {
         const target = base.minions.find(m => m.uid === minionUid);
         if (!target) return undefined;
         return { state, events: [destroyMinion(target.uid, target.defId, baseIndex, target.owner, playerId, 'pirate_saucy_wench', timestamp)] };
-    });
-
-    // 侧翼开炮：选择基地+玩家后执行
-    registerInteractionHandler('pirate_broadside', (state, playerId, value, _iData, _random, timestamp) => {
-        const { baseIndex, targetPlayerId } = value as { baseIndex: number; targetPlayerId: string };
-        const base = state.core.bases[baseIndex];
-        if (!base) return undefined;
-        const events: SmashUpEvent[] = [];
-        for (const m of base.minions) {
-            if (m.controller === targetPlayerId && getMinionPower(state.core, m, baseIndex) <= 2) {
-                events.push(destroyMinion(m.uid, m.defId, baseIndex, m.owner, playerId, 'pirate_broadside', timestamp));
-            }
-        }
-        return { state, events };
     });
 
     // 加农炮第一步：消灭第一个目标，显示第二个选择（带跳过）
@@ -742,7 +809,15 @@ export function registerPirateInteractionHandlers(): void {
         }
         if (candidates.length === 0) return { state, events: [] };
         const next = createSimpleChoice(
-            `pirate_sea_dogs_from_${timestamp}`, playerId, '选择来源基地（移动该派系所有对手随从）', buildBaseTargetOptions(candidates, state.core), { sourceId: 'pirate_sea_dogs_choose_from', targetType: 'base' }
+            `pirate_sea_dogs_from_${timestamp}`,
+            playerId,
+            '选择来源基地（移动该派系所有对手随从）',
+            buildBaseTargetOptions(candidates, state.core),
+            {
+                sourceId: 'pirate_sea_dogs_choose_from',
+                targetType: 'base',
+                subtitle: buildSeaDogsFactionSubtitle(factionId),
+            },
         );
         (next.data as any).continuationContext = { factionId };
         return { state: queueInteraction(state, next), events: [] };
@@ -761,7 +836,15 @@ export function registerPirateInteractionHandlers(): void {
         }
         if (destCandidates.length === 0) return { state, events: [] };
         const next = createSimpleChoice(
-            `pirate_sea_dogs_to_${timestamp}`, playerId, '选择目标基地', buildBaseTargetOptions(destCandidates, state.core), { sourceId: 'pirate_sea_dogs_choose_to', targetType: 'base' }
+            `pirate_sea_dogs_to_${timestamp}`,
+            playerId,
+            '选择目标基地',
+            buildBaseTargetOptions(destCandidates, state.core),
+            {
+                sourceId: 'pirate_sea_dogs_choose_to',
+                targetType: 'base',
+                subtitle: buildSeaDogsFactionSubtitle(ctx.factionId),
+            },
         );
         (next.data as any).continuationContext = { factionId: ctx.factionId, fromBase };
         return { state: queueInteraction(state, next), events: [] };

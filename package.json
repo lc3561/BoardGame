@@ -131,11 +131,12 @@
     "dev:game:lite": "cross-env NODE_ENV=development USE_PERSISTENT_STORAGE=false node scripts/infra/dev-bundle-runner.mjs --label game-lite --entry server.ts --outfile temp/dev-bundles/game-lite/server.mjs --tsconfig tsconfig.server.json"
   },
   "simple-git-hooks": {
-    "pre-commit": "npx lint-staged --concurrent 1 --no-stash && npm run quality:changed:pre-commit"
+    "pre-commit": "npx lint-staged --concurrent 1 --no-stash && QUALITY_GATE_SKIP_LINT=1 npm run quality:changed:pre-commit",
+    "pre-push": "npm run quality:changed:pre-push"
   },
   "lint-staged": {
     "*.{ts,tsx}": [
-      "cross-env NODE_OPTIONS=--max-old-space-size=4096 eslint --max-warnings 999"
+      "node scripts/infra/eslint-safe-staged.mjs"
     ]
   },
   "dependencies": {

@@ -1,6 +1,36 @@
+import { Capacitor } from '@capacitor/core';
+
 const CAPACITOR_FILE_PREFIX = '/_capacitor_file_';
 
 const trimTrailingSlashes = (value: string) => value.replace(/\/+$/, '');
+const isCapacitorFileUrl = (value: string) => (
+    /^https?:\/\/[^/]+\/_capacitor_file_\//i.test(value)
+    || value.startsWith(CAPACITOR_FILE_PREFIX)
+);
+
+const isNativeCapacitorRuntime = () => {
+    try {
+        if (Capacitor?.isNativePlatform?.()) {
+            return true;
+        }
+    } catch {
+        // Fall through to the window bridge check below.
+    }
+
+    try {
+        return Boolean(globalThis.window?.Capacitor?.isNativePlatform?.());
+    } catch {
+        return false;
+    }
+};
+
+const normalizeConvertedCapacitorFileUrl = (value?: string) => {
+    if (typeof value !== 'string') {
+        return undefined;
+    }
+    const trimmed = trimTrailingSlashes(value.trim());
+    return trimmed && isCapacitorFileUrl(trimmed) ? trimmed : undefined;
+};
 
 export const normalizeNativeAssetRootPath = (assetRootPath?: string) => {
     if (!assetRootPath) {
@@ -28,7 +58,7 @@ export const normalizeNativeAssetRootPath = (assetRootPath?: string) => {
 };
 
 const toCapacitorFileUrl = (value: string) => {
-    if (/^https?:\/\/[^/]+\/_capacitor_file_\//i.test(value)) {
+    if (isCapacitorFileUrl(value)) {
         return trimTrailingSlashes(value);
     }
 
@@ -39,10 +69,26 @@ const toCapacitorFileUrl = (value: string) => {
     if (value.startsWith('/data/')
         || value.startsWith('/storage/')
         || value.startsWith('/sdcard/')) {
+        if (isNativeCapacitorRuntime()) {
+            const converted = normalizeConvertedCapacitorFileUrl(
+                Capacitor.convertFileSrc(`file://${value}`),
+            );
+            if (converted) {
+                return converted;
+            }
+        }
         return trimTrailingSlashes(`${CAPACITOR_FILE_PREFIX}${value}`);
     }
 
     if (value.startsWith('file:///')) {
+        if (isNativeCapacitorRuntime()) {
+            const converted = normalizeConvertedCapacitorFileUrl(
+                Capacitor.convertFileSrc(value),
+            );
+            if (converted) {
+                return converted;
+            }
+        }
         return trimTrailingSlashes(`${CAPACITOR_FILE_PREFIX}${value.replace(/^file:\/+/, '/')}`);
     }
 

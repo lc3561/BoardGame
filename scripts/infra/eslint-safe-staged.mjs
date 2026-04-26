@@ -1,0 +1,72 @@
+import { spawn } from 'node:child_process';
+import path from 'node:path';
+
+const rootDir = process.cwd();
+const eslintCli = path.join(rootDir, 'node_modules', 'eslint', 'bin', 'eslint.js');
+
+const allFiles = process.argv.slice(2);
+const INITIAL_BATCH_SIZE = 20;
+function chunkFiles(files, batchSize) {
+    const batches = [];
+    for (let index = 0; index < files.length; index += batchSize) {
+        batches.push(files.slice(index, index + batchSize));
+    }
+    return batches;
+}
+
+function runEslint(files) {
+    return new Promise((resolve) => {
+        const child = spawn(
+            process.execPath,
+            [eslintCli, '--max-warnings', '999', ...files],
+            {
+                cwd: rootDir,
+                env: {
+                    ...process.env,
+                    NODE_OPTIONS: '--max-old-space-size=4096',
+                },
+                stdio: 'inherit',
+            },
+        );
+
+        child.on('exit', (code, signal) => {
+            resolve({
+                code: code ?? 1,
+                signal,
+            });
+        });
+    });
+}
+
+async function runBatch(files) {
+    if (files.length === 0) {
+        return true;
+    }
+
+    const result = await runEslint(files);
+    if (result.code === 0) {
+        return true;
+    }
+
+    if (files.length === 1) {
+        return false;
+    }
+
+    const midpoint = Math.ceil(files.length / 2);
+    const leftOk = await runBatch(files.slice(0, midpoint));
+    if (!leftOk) {
+        return false;
+    }
+    return runBatch(files.slice(midpoint));
+}
+
+async function main() {
+    for (const batch of chunkFiles(allFiles, INITIAL_BATCH_SIZE)) {
+        const ok = await runBatch(batch);
+        if (!ok) {
+            process.exit(1);
+        }
+    }
+}
+
+await main();

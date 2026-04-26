@@ -1051,9 +1051,10 @@ const MinionCard: React.FC<{
 
     const seed = minion.uid.charCodeAt(0) + index;
     const rotation = (seed % 6) - 3;
+    const selectionStackOffset = Math.max(layout.minionStackOffset * 0.2, -1.2);
     const stackStyle = {
-        marginTop: index === 0 ? 0 : `${layout.minionStackOffset}vw`,
-        zIndex: index + 1,
+        marginTop: index === 0 ? 0 : `${isMinionSelectMode ? selectionStackOffset : layout.minionStackOffset}vw`,
+        zIndex: isMinionSelectMode ? 100 + index : index + 1,
         width: `${layout.minionCardWidth}vw`,
     };
     const {
@@ -1076,9 +1077,21 @@ const MinionCard: React.FC<{
         },
     });
 
-    const handleClick = useCallback((e: React.MouseEvent) => {
+    const handleSelectCapture = useCallback((e: React.MouseEvent) => {
+        if (!isMinionSelectMode || !onMinionSelect) return;
+        const blocked = shouldBlockMinionClick(`minion-${minion.uid}`);
+        if (blocked) return;
+        e.preventDefault();
         e.stopPropagation();
-        if (shouldBlockMinionClick(`minion-${minion.uid}`)) return;
+        clearArmedActivation();
+        onMinionSelect(minion.uid, baseIndex);
+    }, [isMinionSelectMode, onMinionSelect, shouldBlockMinionClick, minion.uid, clearArmedActivation, baseIndex]);
+
+    const handleClick = useCallback((e: React.MouseEvent) => {
+        if (e.defaultPrevented) return;
+        e.stopPropagation();
+        const blocked = shouldBlockMinionClick(`minion-${minion.uid}`);
+        if (blocked) return;
         // 随从选择模式：点击随从附着 ongoing 行动卡
         if (isMinionSelectMode && onMinionSelect) {
             clearArmedActivation();
@@ -1126,7 +1139,7 @@ const MinionCard: React.FC<{
             : 'cursor-pointer'
     }`;
     const minionFrameClassName = `relative w-full h-full bg-white p-[0.2vw] rounded-[0.2vw] border-[0.15vw] transition-shadow duration-200
-        ${isDimmed ? 'opacity-40 grayscale' : 'hover:scale-110'}
+        ${isDimmed ? 'opacity-40 grayscale' : isSelectableMinion ? '' : 'hover:scale-110'}
         ${isMultiSelected
             ? 'border-green-400 ring-2 ring-green-400 shadow-[0_0_15px_rgba(74,222,128,0.58),0_0_30px_rgba(74,222,128,0.26)]'
             : isSelectableMinion
@@ -1147,13 +1160,13 @@ const MinionCard: React.FC<{
         }`;
 
     const rotationAnimate = isSelectableMinion
-        ? { rotate: [rotation - 1, rotation + 1, rotation - 1] }
+        ? { rotate: 0 }
         : canActivate
             ? { rotate: [rotation - 2, rotation + 2, rotation - 2] }
             : { rotate: rotation };
 
     const rotationTransition = isSelectableMinion
-        ? { rotate: { repeat: Infinity, duration: 1.2, ease: 'easeInOut' } }
+        ? { type: 'spring', stiffness: 320, damping: 26 }
         : canActivate
             ? { rotate: { repeat: Infinity, duration: 1.5, ease: 'easeInOut' } }
             : { type: 'spring', stiffness: 320, damping: 26 };
@@ -1167,6 +1180,7 @@ const MinionCard: React.FC<{
             data-attached-actions-visible={hasAttachedActions ? (shouldShowAttachedActions ? 'true' : 'false') : 'none'}
             data-activation-armed={isMinionActivationArmed ? 'true' : 'false'}
             {...getMinionTouchInspectProps(`minion-${minion.uid}`, undefined)}
+            onClickCapture={handleSelectCapture}
             onClick={handleClick}
             className={minionContainerClassName}
             style={stackStyle}

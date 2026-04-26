@@ -99,13 +99,35 @@ const buildApiError = (status: number, text: string, fallbackStatusText: string)
 };
 
 async function apiPost<T = unknown>(url: string, body: unknown, extraHeaders?: Record<string, string>): Promise<T> {
-    const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...extraHeaders },
-        body: JSON.stringify(body),
-    });
+    let response: Response;
+    try {
+        response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...extraHeaders },
+            body: JSON.stringify(body),
+        });
+    } catch (error) {
+        console.error('[matchApi] POST fetch failed', {
+            url,
+            method: 'POST',
+            baseUrl: baseUrl(),
+            errorName: error instanceof Error ? error.name : typeof error,
+            errorMessage: error instanceof Error ? error.message : String(error),
+            bodyKeys: body && typeof body === 'object' && !Array.isArray(body)
+                ? Object.keys(body as Record<string, unknown>)
+                : [],
+        });
+        throw error;
+    }
     if (!response.ok) {
         const text = await response.text().catch(() => '');
+        console.error('[matchApi] POST response not ok', {
+            url,
+            method: 'POST',
+            status: response.status,
+            statusText: response.statusText,
+            details: text,
+        });
         // 401 仅上抛给调用方处理，避免业务接口误判时提前清空登录态
         if (response.status === 401) {
             console.warn('[matchApi] 401 Unauthorized');
@@ -116,9 +138,28 @@ async function apiPost<T = unknown>(url: string, body: unknown, extraHeaders?: R
 }
 
 async function apiGet<T = unknown>(url: string): Promise<T> {
-    const response = await fetch(url);
+    let response: Response;
+    try {
+        response = await fetch(url);
+    } catch (error) {
+        console.error('[matchApi] GET fetch failed', {
+            url,
+            method: 'GET',
+            baseUrl: baseUrl(),
+            errorName: error instanceof Error ? error.name : typeof error,
+            errorMessage: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+    }
     if (!response.ok) {
         const text = await response.text().catch(() => '');
+        console.error('[matchApi] GET response not ok', {
+            url,
+            method: 'GET',
+            status: response.status,
+            statusText: response.statusText,
+            details: text,
+        });
         // 401 仅上抛给调用方处理，避免业务接口误判时提前清空登录态
         if (response.status === 401) {
             console.warn('[matchApi] 401 Unauthorized');

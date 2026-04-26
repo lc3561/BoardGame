@@ -534,6 +534,41 @@ describe('蒸汽朋克 ongoing 能力', () => {
             expect(hasCancelOption).toBe(true);
         });
 
+        test('反馈 69a2f027：附着到随从上的 ongoing 不应进入机械师候选，也不应被 handler 接受', () => {
+            const base = makeBase({
+                minions: [makeMinion({ uid: 'm-1', defId: 'test_minion_target' })],
+            });
+            const state = makeState([base]);
+            state.players['0'].discard = [
+                makeCard('dis-base', 'steampunk_escape_hatch', 'action', '0', SMASHUP_FACTION_IDS.STEAMPUNKS),
+                makeCard('dis-minion-a', 'ninja_smoke_bomb', 'action', '0', SMASHUP_FACTION_IDS.NINJAS),
+                makeCard('dis-minion-b', 'ninja_assassination', 'action', '0', SMASHUP_FACTION_IDS.NINJAS),
+            ];
+            const ms = { core: state, sys: { phase: 'playCards', interaction: { current: undefined, queue: [] } } } as any;
+
+            const executor = resolveAbility('steampunk_mechanic', 'onPlay')!;
+            const result = executor({
+                state, matchState: ms, playerId: '0', cardUid: 'mech-1', defId: 'steampunk_mechanic',
+                baseIndex: 0, random: dummyRandom, now: 1000,
+            });
+
+            const current = (result.matchState?.sys as any)?.interaction?.current;
+            expect(current).toBeDefined();
+            const cardUids = (current?.data?.options ?? []).map((opt: any) => opt.value?.cardUid).filter(Boolean);
+            expect(cardUids).toEqual(['dis-base']);
+
+            const handler = getInteractionHandler('steampunk_mechanic');
+            expect(handler).toBeDefined();
+            const events = callHandler(handler!, {
+                state,
+                playerId: '0',
+                selectedValue: { cardUid: 'dis-minion-a', defId: 'ninja_smoke_bomb' },
+                random: dummyRandom,
+                now: 1000,
+            });
+            expect(events).toHaveLength(0);
+        });
+
         test('无合法基地时不应把受 playConstraint 限制的 ongoing 列为候选', () => {
             const base = makeBase();
             const state = makeState([base]);

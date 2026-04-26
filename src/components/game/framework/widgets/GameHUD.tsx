@@ -157,6 +157,7 @@ export const GameHUD = ({
     const isOnline = mode === 'online';
     const isLocal = mode === 'local';
     const isTutorial = mode === 'tutorial';
+    const undoRequestPayload = undoState?.isLocalMode ? { localAutoApprove: true } : undefined;
     const isNativeAndroid = isNativeAndroidRuntime();
     const isSmashUp = _gameId === 'smashup';
     const isSpectator = isOnline && (myPlayerId === null || myPlayerId === undefined);
@@ -888,7 +889,7 @@ export const GameHUD = ({
                         <button
                             onClick={() => {
                                 if (isWaiting) undoState.dispatch(UNDO_COMMANDS.CANCEL_UNDO);
-                                else undoState.dispatch(UNDO_COMMANDS.REQUEST_UNDO);
+                                else undoState.dispatch(UNDO_COMMANDS.REQUEST_UNDO, undoRequestPayload);
                             }}
                             className={`w-full py-2 rounded font-bold text-xs transition-colors ${isWaiting
                                 ? 'bg-amber-500/20 text-amber-400 border border-amber-500/50 hover:bg-amber-500/40'

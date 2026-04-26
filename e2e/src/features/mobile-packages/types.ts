@@ -38,9 +38,13 @@ export interface ResolvedGamePackageManifest {
     modulePackUrl?: string;
     assetPackUrl?: string;
     sharedAudioPackUrl?: string;
+    assetPackFileIndexUrl?: string;
+    sharedAudioPackFileIndexUrl?: string;
     modulePackChecksum?: string;
     assetPackChecksum?: string;
     sharedAudioPackChecksum?: string;
+    assetPackFileIndexChecksum?: string;
+    sharedAudioPackFileIndexChecksum?: string;
     modulePackBytes?: number;
     assetPackBytes?: number;
     sharedAudioPackBytes?: number;
@@ -108,6 +112,17 @@ export const hasUsableInstalledGamePackageVersion = (value?: string) => {
     return !INVALID_INSTALLED_VERSION_PLACEHOLDERS.has(normalized.toLowerCase());
 };
 
+export const hasUsableInstalledGamePackageAssetBaseUrl = (value?: string) =>
+    typeof value === 'string' && value.trim().length > 0;
+
+export const hasUsableInstalledGamePackageState = (
+    state: Pick<StoredGamePackageState, 'status' | 'installedVersion' | 'localAssetBaseUrl'>,
+) => (
+    state.status === 'installed'
+    && hasUsableInstalledGamePackageVersion(state.installedVersion)
+    && hasUsableInstalledGamePackageAssetBaseUrl(state.localAssetBaseUrl)
+);
+
 export const hasGamePackageUpdateAvailable = (
     installedVersion?: string,
     availableVersion?: string,
@@ -167,6 +182,7 @@ export const toGamePackageCardState = (state: StoredGamePackageState): GamePacka
     modulePackBytes: state.modulePackBytes,
     assetPackBytes: state.assetPackBytes,
     installedVersion: state.installedVersion,
+    localAssetBaseUrl: state.localAssetBaseUrl,
     errorCode: state.errorCode,
     errorMessage: state.errorMessage,
     availableVersion: undefined,

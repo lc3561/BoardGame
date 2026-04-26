@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { validate } from '../domain/commands';
 import { registerAbility } from '../domain/abilityRegistry';
 import { makeBase, makeCard, makeMatchState, makeMinion, makePlayer, makeState } from './helpers';
 import { SU_COMMANDS } from '../domain/types';
 import type { SmashUpReactionSession, TitanState } from '../domain/types';
+import { initAllAbilities } from '../abilities';
 
 function makeTitan(overrides: Partial<TitanState> & Pick<TitanState, 'uid' | 'defId' | 'faction' | 'ownerId' | 'controllerId'>): TitanState {
     return {
@@ -32,6 +33,10 @@ function attachReactionSession(
     };
     return session;
 }
+
+beforeAll(() => {
+    initAllAbilities();
+});
 
 describe('SmashUp command validation', () => {
     it('should return error when command type is missing', () => {
@@ -98,8 +103,15 @@ describe('SmashUp command validation', () => {
     });
 
     it('supports titan talent validation through titanUid', () => {
-        registerAbility('vampires_ancient_lord', 'talent', () => ({ events: [] }));
         const core = makeState({
+            bases: [
+                makeBase({
+                    defId: 'test_base',
+                    minions: [
+                        makeMinion('vampire-minion-1', 'vampires_teeny_cathulu', '0', 3, { powerCounters: 1 }),
+                    ],
+                }),
+            ],
             titans: [
                 makeTitan({
                     uid: 'titan-vampire',
@@ -254,6 +266,54 @@ describe('SmashUp command validation', () => {
         expect(result.valid).toBe(true);
     });
 
+    it('afterScoring 响应窗口中的 special 只能指向当前正在结算的基地', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0'),
+                '1': makePlayer('1'),
+            },
+            bases: [
+                makeBase({
+                    defId: 'base_a',
+                    minions: [makeMinion('acolyte-0', 'ninja_acolyte', '1', 2)],
+                }),
+                makeBase({
+                    defId: 'base_b',
+                    minions: [makeMinion('acolyte-1', 'ninja_acolyte', '1', 2)],
+                }),
+            ],
+            scoringEligibleBaseIndices: [0, 1],
+            currentPlayerIndex: 0,
+        });
+        const ms = attachReactionSession(makeMatchState(core), {
+            frameId: 'score-after:0:test',
+            frameKind: 'score-after',
+            phase: 'optional',
+            activePlayerId: '1',
+            currentPlayerId: '0',
+            consecutivePasses: 0,
+            sourceBaseIndex: 0,
+            responseWindowType: 'afterScoring',
+        });
+
+        const wrongBaseResult = validate(ms, {
+            type: SU_COMMANDS.ACTIVATE_SPECIAL,
+            playerId: '1',
+            payload: { minionUid: 'acolyte-1', baseIndex: 1 },
+        } as any);
+        expect(wrongBaseResult).toEqual({
+            valid: false,
+            error: 'afterScoring 只能选择当前正在结算的基地',
+        });
+
+        const correctBaseResult = validate(ms, {
+            type: SU_COMMANDS.ACTIVATE_SPECIAL,
+            playerId: '1',
+            payload: { minionUid: 'acolyte-0', baseIndex: 0 },
+        } as any);
+        expect(correctBaseResult.valid).toBe(true);
+    });
+
     it('still blocks scoreBases special activation behind a legacy response window', () => {
         const core = makeState({
             bases: [
@@ -286,5 +346,361 @@ describe('SmashUp command validation', () => {
         } as any);
 
         expect(result.valid).toBe(false);
+    });
+
+    it('rejects ninja_acolyte_pod talent on the same turn it was played', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0', { minionsPlayed: 1 }),
+                '1': makePlayer('1'),
+            },
+            bases: [
+                makeBase({
+                    defId: 'test_base',
+                    minions: [makeMinion('acolyte-pod-1', 'ninja_acolyte_pod', '0', 2)],
+                }),
+            ],
+        });
+
+        const result = validate(makeMatchState(core), {
+            type: SU_COMMANDS.USE_TALENT,
+            playerId: '0',
+            payload: { minionUid: 'acolyte-pod-1', baseIndex: 0 },
+        } as any);
+
+        expect(result.valid).toBe(false);
+        expect((result as any).error).toContain('已打出过随从');
+    });
+
+    it('rejects giant_ant_soldier talent without a +1 power counter', () => {
+        const core = makeState({
+            bases: [
+                makeBase({
+                    defId: 'test_base',
+                    minions: [
+                        makeMinion('soldier-1', 'giant_ant_soldier', '0', 3, { powerCounters: 0 }),
+                        makeMinion('ally-1', 'ninja_master', '0', 5),
+                    ],
+                }),
+            ],
+        });
+
+        const result = validate(makeMatchState(core), {
+            type: SU_COMMANDS.USE_TALENT,
+            playerId: '0',
+            payload: { minionUid: 'soldier-1', baseIndex: 0 },
+        } as any);
+
+        expect(result.valid).toBe(false);
+        expect((result as any).error).toContain('没有+1力量指示物');
+    });
+
+    it('rejects giant_ant_soldier_pod talent when no friendly minion has a +1 power counter', () => {
+        const core = makeState({
+            bases: [
+                makeBase({
+                    defId: 'test_base',
+                    minions: [
+                        makeMinion('soldier-pod-1', 'giant_ant_soldier_pod', '0', 3, { powerCounters: 0 }),
+                    ],
+                }),
+            ],
+        });
+
+        const result = validate(makeMatchState(core), {
+            type: SU_COMMANDS.USE_TALENT,
+            playerId: '0',
+            payload: { minionUid: 'soldier-pod-1', baseIndex: 0 },
+        } as any);
+
+        expect(result.valid).toBe(false);
+        expect((result as any).error).toContain('力量指示物');
+    });
+
+    it('rejects giant_ant_killer_queen talent before another minion is played here this turn', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0', { minionsPlayedPerBase: {} }),
+                '1': makePlayer('1'),
+            },
+            bases: [
+                makeBase({
+                    defId: 'test_base',
+                    minions: [
+                        makeMinion('queen-1', 'giant_ant_killer_queen', '0', 4),
+                        makeMinion('worker-1', 'giant_ant_worker', '0', 2),
+                    ],
+                }),
+            ],
+        });
+
+        const result = validate(makeMatchState(core), {
+            type: SU_COMMANDS.USE_TALENT,
+            playerId: '0',
+            payload: { minionUid: 'queen-1', baseIndex: 0 },
+        } as any);
+
+        expect(result.valid).toBe(false);
+        expect((result as any).error).toContain('此基地');
+    });
+
+    it('rejects ancient_egyptians_pyramid_engineer talent when hand is empty', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0', { hand: [] }),
+                '1': makePlayer('1'),
+            },
+            bases: [
+                makeBase({
+                    defId: 'test_base',
+                    minions: [makeMinion('engineer-1', 'ancient_egyptians_pyramid_engineer', '0', 2)],
+                }),
+            ],
+        });
+
+        const result = validate(makeMatchState(core), {
+            type: SU_COMMANDS.USE_TALENT,
+            playerId: '0',
+            payload: { minionUid: 'engineer-1', baseIndex: 0 },
+        } as any);
+
+        expect(result.valid).toBe(false);
+        expect((result as any).error).toContain('手牌为空');
+    });
+
+    it('rejects frankenstein_herr_doktor talent when no other friendly minion exists', () => {
+        const core = makeState({
+            bases: [
+                makeBase({
+                    defId: 'test_base',
+                    minions: [makeMinion('doktor-1', 'frankenstein_herr_doktor', '0', 4)],
+                }),
+            ],
+        });
+
+        const result = validate(makeMatchState(core), {
+            type: SU_COMMANDS.USE_TALENT,
+            playerId: '0',
+            payload: { minionUid: 'doktor-1', baseIndex: 0 },
+        } as any);
+
+        expect(result.valid).toBe(false);
+        expect((result as any).error).toContain('没有可选择的目标');
+    });
+
+    it('rejects cthulhu_star_spawn talent when no Madness is in hand', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0', { hand: [makeCard('normal-1', 'ninja_master', '0')] }),
+                '1': makePlayer('1'),
+            },
+            bases: [
+                makeBase({
+                    defId: 'test_base',
+                    minions: [makeMinion('star-spawn-1', 'cthulhu_star_spawn', '0', 3)],
+                }),
+            ],
+        });
+
+        const result = validate(makeMatchState(core), {
+            type: SU_COMMANDS.USE_TALENT,
+            playerId: '0',
+            payload: { minionUid: 'star-spawn-1', baseIndex: 0 },
+        } as any);
+
+        expect(result.valid).toBe(false);
+        expect((result as any).error).toContain('疯狂卡');
+    });
+
+    it('rejects vikings_huscarl talent when hand is empty', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0', { hand: [] }),
+                '1': makePlayer('1'),
+            },
+            bases: [
+                makeBase({
+                    defId: 'test_base',
+                    minions: [makeMinion('huscarl-1', 'vikings_huscarl', '0', 3)],
+                }),
+            ],
+        });
+
+        const result = validate(makeMatchState(core), {
+            type: SU_COMMANDS.USE_TALENT,
+            playerId: '0',
+            payload: { minionUid: 'huscarl-1', baseIndex: 0 },
+        } as any);
+
+        expect(result.valid).toBe(false);
+        expect((result as any).error).toContain('手牌为空');
+    });
+
+    it('rejects innsmouth_sacred_circle talent when hand has no matching minion', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0', { hand: [makeCard('normal-3', 'ninja_master', 'minion', '0')] }),
+                '1': makePlayer('1'),
+            },
+            bases: [
+                makeBase({
+                    defId: 'test_base',
+                    minions: [makeMinion('deep-one-1', 'innsmouth_the_locals', '0', 2)],
+                    ongoingActions: [{ uid: 'circle-1', defId: 'innsmouth_sacred_circle', ownerId: '0', talentUsed: false } as any],
+                }),
+            ],
+        });
+
+        const result = validate(makeMatchState(core), {
+            type: SU_COMMANDS.USE_TALENT,
+            playerId: '0',
+            payload: { ongoingCardUid: 'circle-1', baseIndex: 0 },
+        } as any);
+
+        expect(result.valid).toBe(false);
+        expect((result as any).error).toContain('没有可选择的目标');
+    });
+
+    it('rejects killer_plant_venus_man_trap talent when deck has no minion with power 2 or less', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0', {
+                    deck: [makeCard('big-minion-1', 'ninja_master', 'minion', '0')],
+                }),
+                '1': makePlayer('1'),
+            },
+            bases: [
+                makeBase({
+                    defId: 'test_base',
+                    minions: [makeMinion('venus-1', 'killer_plant_venus_man_trap', '0', 3)],
+                }),
+            ],
+        });
+
+        const result = validate(makeMatchState(core), {
+            type: SU_COMMANDS.USE_TALENT,
+            playerId: '0',
+            payload: { minionUid: 'venus-1', baseIndex: 0 },
+        } as any);
+
+        expect(result.valid).toBe(false);
+        expect((result as any).error).toContain('力量 2 或更低');
+    });
+
+    it('rejects miskatonic_professor_pod talent when no Madness is in hand', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0', { hand: [makeCard('normal-2', 'ninja_master', '0')] }),
+                '1': makePlayer('1'),
+            },
+            bases: [
+                makeBase({
+                    defId: 'test_base',
+                    minions: [makeMinion('professor-pod-1', 'miskatonic_professor_pod', '0', 5)],
+                }),
+            ],
+        });
+
+        const result = validate(makeMatchState(core), {
+            type: SU_COMMANDS.USE_TALENT,
+            playerId: '0',
+            payload: { minionUid: 'professor-pod-1', baseIndex: 0 },
+        } as any);
+
+        expect(result.valid).toBe(false);
+        expect((result as any).error).toContain('疯狂卡');
+    });
+
+    it('rejects bear_cavalry_superiority_pod talent when not highest power on that base', () => {
+        const core = makeState({
+            bases: [
+                makeBase({
+                    defId: 'test_base',
+                    minions: [
+                        makeMinion('my-minion-1', 'ninja_master', '0', 2),
+                        makeMinion('enemy-minion-1', 'ninja_master', '1', 5),
+                    ],
+                    ongoingActions: [{ uid: 'superiority-pod-1', defId: 'bear_cavalry_superiority_pod', ownerId: '0', talentUsed: false } as any],
+                }),
+            ],
+        });
+
+        const result = validate(makeMatchState(core), {
+            type: SU_COMMANDS.USE_TALENT,
+            playerId: '0',
+            payload: { ongoingCardUid: 'superiority-pod-1', baseIndex: 0 },
+        } as any);
+
+        expect(result.valid).toBe(false);
+        expect((result as any).error).toContain('没有可选择的目标');
+    });
+
+    it('rejects trickster_hideout_pod talent when hand and deck have no base ongoing action', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0', {
+                    hand: [makeCard('normal-action-1', 'ninja_disguise', 'action', '0')],
+                    deck: [makeCard('normal-minion-1', 'ninja_master', 'minion', '0')],
+                }),
+                '1': makePlayer('1'),
+            },
+            bases: [
+                makeBase({
+                    defId: 'test_base',
+                    ongoingActions: [{ uid: 'hideout-pod-1', defId: 'trickster_hideout_pod', ownerId: '0', talentUsed: false } as any],
+                }),
+            ],
+        });
+
+        const result = validate(makeMatchState(core), {
+            type: SU_COMMANDS.USE_TALENT,
+            playerId: '0',
+            payload: { ongoingCardUid: 'hideout-pod-1', baseIndex: 0 },
+        } as any);
+
+        expect(result.valid).toBe(false);
+        expect((result as any).error).toContain('条件不满足');
+    });
+
+    it('rejects steampunk_zeppelin talent when no friendly minion can be moved', () => {
+        const core = makeState({
+            bases: [
+                makeBase({
+                    defId: 'test_base',
+                    minions: [],
+                    ongoingActions: [{ uid: 'zeppelin-1', defId: 'steampunk_zeppelin', ownerId: '0', talentUsed: false } as any],
+                }),
+            ],
+        });
+
+        const result = validate(makeMatchState(core), {
+            type: SU_COMMANDS.USE_TALENT,
+            playerId: '0',
+            payload: { ongoingCardUid: 'zeppelin-1', baseIndex: 0 },
+        } as any);
+
+        expect(result.valid).toBe(false);
+        expect((result as any).error).toContain('没有可选择的目标');
+    });
+
+    it('rejects world_champs_high_speed_chase talent when its base has no friendly minion', () => {
+        const core = makeState({
+            bases: [
+                makeBase({
+                    defId: 'test_base',
+                    minions: [makeMinion('enemy-1', 'ninja_master', '1', 5)],
+                    ongoingActions: [{ uid: 'chase-1', defId: 'world_champs_high_speed_chase', ownerId: '0', talentUsed: false } as any],
+                }),
+            ],
+        });
+
+        const result = validate(makeMatchState(core), {
+            type: SU_COMMANDS.USE_TALENT,
+            playerId: '0',
+            payload: { ongoingCardUid: 'chase-1', baseIndex: 0 },
+        } as any);
+
+        expect(result.valid).toBe(false);
+        expect((result as any).error).toContain('没有可选择的目标');
     });
 });

@@ -1,9 +1,9 @@
 /**
  * SmashUp 专用作弊适配器
  *
- * 为 CheatSystem 提供 SmashUp 游戏状态的资源读写和发牌操作。
- * SmashUp 的 CardInstance 使用 defId 而非 spriteIndex，
- * 因此 dealCardByAtlasIndex / dealCardToDiscard 按 defId 匹配。
+ * 为 CheatSystem 提供 SmashUp 游戏状态的资源读写和 deck-only 发牌操作。
+ * SmashUp 的调试面板只允许操作当前剩余牌库，不支持按完整卡池直接补牌。
+ * 旧 atlas 相关接口仅为兼容占位，不提供完整卡池注入能力。
  */
 
 import type { CheatResourceModifier } from '../../engine/systems/CheatSystem';

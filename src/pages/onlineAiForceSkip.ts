@@ -12,6 +12,7 @@ export {
     resolveForceEndTurnFollowUpAfterConfirmation,
     resolveForceEndTurnForStalledAi,
     resolveForceSkippableHiddenAiInteraction,
+    shouldSilentlyRetryOnlineAiBatchRejection,
     type AiAutoRecoveryAttemptTracker,
     type ForceEndTurnStalledAiResolution,
     type ForceSkippableHiddenAiInteraction,

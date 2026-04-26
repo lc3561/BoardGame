@@ -83,14 +83,20 @@ const joinMatchAsGuest = async (page: Page, matchId: string, gameId = 'smashup')
 const ensureGameServerAvailable = async (page: Page) => {
   const gameServerBaseURL = getGameServerBaseURL();
   const candidates = ['/games', `${gameServerBaseURL}/games`];
-  for (const url of candidates) {
-    try {
-      const response = await page.request.get(url);
-      if (response.ok()) return true;
-    } catch {
-      // ignore
+  const deadline = Date.now() + 45000;
+
+  while (Date.now() < deadline) {
+    for (const url of candidates) {
+      try {
+        const response = await page.request.get(url);
+        if (response.ok()) return true;
+      } catch {
+        // ignore
+      }
     }
+    await page.waitForTimeout(1000);
   }
+
   return false;
 };
 
@@ -122,6 +128,7 @@ const openSmashUpModal = async (page: Page) => {
 
 test.describe('大杀四方大厅 E2E', () => {
   test('3 人房间可加入且大厅会显示座位状态', async ({ browser }, testInfo) => {
+    test.setTimeout(120000);
     const baseURL = testInfo.project.use.baseURL as string | undefined;
 
     const hostContext = await browser.newContext({ baseURL });

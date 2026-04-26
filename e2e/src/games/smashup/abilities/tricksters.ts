@@ -219,7 +219,24 @@ function registerTricksterPodAbilities(): void {
     registerAbility('trickster_mark_of_sleep_pod', 'onPlay', tricksterMarkOfSleepPod);
     registerAbility('trickster_pixie_pod', 'onPlay', tricksterPixiePodOnPlay);
     registerAbility('trickster_enshrouding_mist_pod', 'talent', tricksterEnshroudingMistPodTalent);
-    registerAbility('trickster_hideout_pod', 'talent', tricksterHideoutPodTalent);
+    registerAbility('trickster_hideout_pod', 'talent', {
+        execute: tricksterHideoutPodTalent,
+        validateUse: (ctx) => {
+            const owner = ctx.state.players[ctx.playerId];
+            if (!owner) return '当前条件不满足';
+
+            const isPlayOnBaseOngoing = (defId: string) => {
+                const def = getCardDef(defId);
+                return def?.type === 'action' && def.subtype === 'ongoing' && ((def.ongoingTarget ?? 'base') === 'base');
+            };
+
+            const hasCandidate =
+                owner.hand.some(card => card.type === 'action' && isPlayOnBaseOngoing(card.defId)) ||
+                owner.deck.some(card => card.type === 'action' && isPlayOnBaseOngoing(card.defId));
+
+            return hasCandidate ? null : '当前条件不满足';
+        },
+    });
     registerAbility('trickster_gnome_pod', 'special', tricksterGnomePodSpecial);
     registerAbility('trickster_gremlin_pod', 'onDestroy', () => ({ events: [] }));
     registerTricksterPodOngoingEffects();

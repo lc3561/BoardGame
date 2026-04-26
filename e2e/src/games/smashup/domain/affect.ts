@@ -42,6 +42,8 @@ export interface AffectRecord {
     triggerMinion?: MinionOnBase;
     triggerMinionUid?: string;
     triggerMinionDefId?: string;
+    counterChangeKind?: 'added' | 'removed';
+    counterDelta?: number;
 }
 
 interface CardSourceMeta {
@@ -268,26 +270,32 @@ export function buildAffectRecords(
             if (payload.amount === 0) return [];
             const minion = core.bases[payload.baseIndex]?.minions.find(candidate => candidate.uid === payload.minionUid);
             if (!minion) return [];
-            return [buildMinionAffectRecord(
+            const record = buildMinionAffectRecord(
                 minion,
                 payload.baseIndex,
                 'power_change',
                 payload.reason,
                 resolveSourceMeta(payload as unknown as Record<string, unknown>, fallbackSourcePlayerId),
-            )];
+            );
+            record.counterChangeKind = 'added';
+            record.counterDelta = payload.amount;
+            return [record];
         }
         case SU_EVENTS.POWER_COUNTER_REMOVED: {
             const payload = (event as PowerCounterRemovedEvent).payload;
             if (payload.amount === 0) return [];
             const minion = core.bases[payload.baseIndex]?.minions.find(candidate => candidate.uid === payload.minionUid);
             if (!minion) return [];
-            return [buildMinionAffectRecord(
+            const record = buildMinionAffectRecord(
                 minion,
                 payload.baseIndex,
                 'power_change',
                 payload.reason,
                 resolveSourceMeta(payload as unknown as Record<string, unknown>, fallbackSourcePlayerId),
-            )];
+            );
+            record.counterChangeKind = 'removed';
+            record.counterDelta = -Math.abs(payload.amount);
+            return [record];
         }
         case SU_EVENTS.TEMP_POWER_ADDED: {
             const payload = (event as TempPowerAddedEvent).payload;

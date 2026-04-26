@@ -273,9 +273,32 @@ export function registerGiantAntAbilities(): void {
     // 基础版
     registerAbility('giant_ant_worker', 'onPlay', giantAntWorker);
     registerAbility('giant_ant_soldier', 'onPlay', giantAntSoldierOnPlay);
-    registerAbility('giant_ant_soldier', 'talent', giantAntSoldierTalent);
+    registerAbility('giant_ant_soldier', 'talent', {
+        execute: giantAntSoldierTalent,
+        validateUse: (ctx) => {
+            const soldier = ctx.state.bases[ctx.baseIndex]?.minions.find(m => m.uid === ctx.cardUid);
+            if (!soldier || soldier.controller !== ctx.playerId) return '当前无法发动此天赋';
+            if (soldier.powerCounters < 1) return '该随从当前无法发动天赋：没有+1力量指示物';
+            const hasOtherMinion = ctx.state.bases.some(base =>
+                base.minions.some(minion => minion.uid !== ctx.cardUid),
+            );
+            return hasOtherMinion ? null : '当前没有可选择的目标';
+        },
+    });
     registerAbility('giant_ant_drone', 'onPlay', giantAntDroneOnPlay);
-    registerAbility('giant_ant_killer_queen', 'talent', giantAntKillerQueenTalent);
+    registerAbility('giant_ant_killer_queen', 'talent', {
+        execute: giantAntKillerQueenTalent,
+        validateUse: (ctx) => {
+            const self = ctx.state.bases[ctx.baseIndex]?.minions.find(m => m.uid === ctx.cardUid);
+            if (!self || self.controller !== ctx.playerId) return '当前无法发动此天赋';
+            const playedHere = (ctx.state.players[ctx.playerId]?.minionsPlayedPerBase?.[ctx.baseIndex] ?? 0) > 0;
+            if (!playedHere) return '本回合你还没有在此基地打出过其它随从';
+            const hasTarget = ctx.state.bases[ctx.baseIndex]?.minions.some(
+                minion => minion.controller === ctx.playerId && minion.playedThisTurn && minion.uid !== ctx.cardUid,
+            ) ?? false;
+            return hasTarget ? null : '当前没有可选择的目标';
+        },
+    });
 
     registerAbility('giant_ant_who_wants_to_live_forever', 'onPlay', giantAntWhoWantsToLiveForever);
     registerAbility('giant_ant_a_kind_of_magic', 'onPlay', giantAntAKindOfMagic);
@@ -288,9 +311,24 @@ export function registerGiantAntAbilities(): void {
     // POD 版本
     registerAbility('giant_ant_worker_pod', 'onPlay', giantAntWorker); // 复用基础版
     registerAbility('giant_ant_soldier_pod', 'onPlay', giantAntSoldierPodOnPlay);
-    registerAbility('giant_ant_soldier_pod', 'talent', giantAntSoldierPodTalent);
+    registerAbility('giant_ant_soldier_pod', 'talent', {
+        execute: giantAntSoldierPodTalent,
+        validateUse: (ctx) => {
+            const sources = collectOwnMinionsWithCounters(ctx.state, ctx.playerId);
+            if (sources.length === 0) return '当前没有带有+1力量指示物的己方随从';
+            const allOwn = collectOwnMinions(ctx.state, ctx.playerId);
+            return allOwn.length > 1 ? null : '当前没有可选择的目标';
+        },
+    });
     registerAbility('giant_ant_drone_pod', 'onPlay', giantAntDroneOnPlay); // 复用基础版
-    registerAbility('giant_ant_drone_pod', 'talent', giantAntDronePodTalent);
+    registerAbility('giant_ant_drone_pod', 'talent', {
+        execute: giantAntDronePodTalent,
+        validateUse: (ctx) => {
+            const drone = ctx.state.bases[ctx.baseIndex]?.minions.find(m => m.uid === ctx.cardUid);
+            if (!drone || drone.controller !== ctx.playerId) return '当前无法发动此天赋';
+            return drone.powerCounters >= 1 ? null : '该随从当前无法发动天赋：没有+1力量指示物';
+        },
+    });
     registerAbility('giant_ant_killer_queen_pod', 'talent', giantAntKillerQueenPodTalent);
     registerAbility('giant_ant_who_wants_to_live_forever_pod', 'onPlay', giantAntWhoWantsToLiveForeverPod);
     registerAbility('giant_ant_a_kind_of_magic_pod', 'onPlay', giantAntAKindOfMagicPod);

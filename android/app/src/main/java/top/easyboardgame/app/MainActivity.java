@@ -1,9 +1,11 @@
 package top.easyboardgame.app;
 
 import android.content.pm.ActivityInfo;
+import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Log;
 import android.view.Window;
 import android.webkit.WebView;
 import androidx.core.view.WindowCompat;
@@ -29,10 +31,14 @@ public class MainActivity extends BridgeActivity {
 
     private static final String ORIENTATION_MAP_ASSET = "game-orientation-map.json";
     private static final String ANDROID_BUILD_META_ASSET = "public/android-build-meta.json";
+    private static final String TAG = "MainActivity";
     private static final long URL_POLL_INTERVAL_MS = 400L;
     private static final String PLAY_SEGMENT = "play";
     private static final String ORIENTATION_LANDSCAPE = "landscape";
     private static final String ORIENTATION_PORTRAIT = "portrait";
+    private static final String CAPGO_NEXT_VERSION_PREF = "nextVersion";
+    private static final String CAPGO_FALLBACK_VERSION_PREF = "pastVersion";
+    private static final String CAPGO_BUILTIN_BUNDLE_ID = "builtin";
     private static final String APP_HIDDEN_EVENT_SCRIPT =
         "(function(){try{" +
         "window.dispatchEvent(new CustomEvent('bg-shell-app-hidden'));" +
@@ -61,12 +67,17 @@ public class MainActivity extends BridgeActivity {
     private boolean lastNeedsImmersiveWindow = false;
     private boolean orientationPolling = false;
     private boolean homeV2DraftEnabledByBuild = false;
+    private boolean forceBuiltinBundleByBuild = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         WebView.setWebContentsDebuggingEnabled(true);
         gameOrientations.putAll(loadOrientationMap());
         homeV2DraftEnabledByBuild = loadHomeV2DraftFlag();
+        forceBuiltinBundleByBuild = loadForceBuiltinBundleFlag();
+        if (forceBuiltinBundleByBuild) {
+            forceBuiltinCapgoBundleSelection();
+        }
         registerPlugin(GamePackagePlugin.class);
         bridgeBuilder.addWebViewListener(
             new WebViewListener() {
@@ -163,6 +174,10 @@ public class MainActivity extends BridgeActivity {
             return ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE;
         }
 
+        if (isHomeEntryRoute(url)) {
+            return ActivityInfo.SCREEN_ORIENTATION_PORTRAIT;
+        }
+
         String gameId = extractGameId(url);
         if (gameId == null) {
             return ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
@@ -181,9 +196,7 @@ public class MainActivity extends BridgeActivity {
         }
 
         android.net.Uri uri = android.net.Uri.parse(url);
-        List<String> segments = uri.getPathSegments();
-        boolean isRootPath = segments.isEmpty() || (segments.size() == 1 && "index.html".equals(segments.get(0)));
-        if (!isRootPath) {
+        if (!isHomeEntryRoute(uri)) {
             return false;
         }
 
@@ -193,6 +206,24 @@ public class MainActivity extends BridgeActivity {
         }
 
         return homeV2DraftEnabledByBuild;
+    }
+
+    private boolean isHomeEntryRoute(String url) {
+        if (url == null || url.isEmpty()) {
+            return false;
+        }
+
+        return isHomeEntryRoute(android.net.Uri.parse(url));
+    }
+
+    private boolean isHomeEntryRoute(android.net.Uri uri) {
+        if (uri == null) {
+            return false;
+        }
+
+        List<String> segments = uri.getPathSegments();
+        boolean isRootPath = segments.isEmpty() || (segments.size() == 1 && "index.html".equals(segments.get(0)));
+        return isRootPath;
     }
 
     private String extractGameId(String url) {
@@ -233,6 +264,33 @@ public class MainActivity extends BridgeActivity {
             return json.optBoolean("homeV2DraftEnabled", false);
         } catch (IOException | JSONException ignored) {
             return false;
+        }
+    }
+
+    private boolean loadForceBuiltinBundleFlag() {
+        try (InputStream inputStream = getAssets().open(ANDROID_BUILD_META_ASSET)) {
+            String raw = readAll(inputStream);
+            JSONObject json = new JSONObject(raw);
+            return json.optBoolean("forceBuiltinBundle", false);
+        } catch (IOException | JSONException ignored) {
+            return false;
+        }
+    }
+
+    private void forceBuiltinCapgoBundleSelection() {
+        try {
+            SharedPreferences prefs = getSharedPreferences(
+                com.getcapacitor.plugin.WebView.WEBVIEW_PREFS_NAME,
+                MODE_PRIVATE
+            );
+            prefs.edit()
+                .putString(com.getcapacitor.plugin.WebView.CAP_SERVER_PATH, "public")
+                .putString(CAPGO_FALLBACK_VERSION_PREF, CAPGO_BUILTIN_BUNDLE_ID)
+                .remove(CAPGO_NEXT_VERSION_PREF)
+                .apply();
+            Log.i(TAG, "forceBuiltinCapgoBundleSelection applied");
+        } catch (Exception error) {
+            Log.w(TAG, "forceBuiltinCapgoBundleSelection failed", error);
         }
     }
 

@@ -190,8 +190,12 @@ export interface InteractionDescriptor<TData = unknown> {
  */
 export interface SimpleChoiceData<T = unknown> {
     title: string;
+    titleKey?: string;
+    titleParams?: Record<string, string | number>;
     /** 标题下方的补充说明（可选） */
     subtitle?: string;
+    subtitleKey?: string;
+    subtitleParams?: Record<string, string | number>;
     options: PromptOption<T>[];
     sourceId?: string;
     timeout?: number;
@@ -218,13 +222,13 @@ export interface SimpleChoiceData<T = unknown> {
      * 动态选项生成器（可选）。
      * 当交互从队列弹出时，调用此函数基于当前最新状态生成选项列表。
      * 用于解决"同时触发多个交互时，后续交互看到过期状态"的问题。
-     * 
+     *
      * 使用场景：
      * - 连续弃牌（幽灵 + 鬼屋）：第二次弃牌时应该看到第一次弃牌后的手牌
      * - 连续选择场上单位：第一次选择后单位可能已被消灭/移动
-     * 
+     *
      * 如果提供了 optionsGenerator，则 options 字段会在交互弹出时被覆盖。
-     * 
+     *
      * @param state - 当前最新的游戏状态
      * @param data - 交互数据（包含 continuationContext 等上下文信息）
      */
@@ -436,7 +440,11 @@ export const INTERACTION_EVENTS = {
  * createSimpleChoice 的配置参数
  */
 export interface SimpleChoiceConfig {
+    titleKey?: string;
+    titleParams?: Record<string, string | number>;
     subtitle?: string;
+    subtitleKey?: string;
+    subtitleParams?: Record<string, string | number>;
     sourceId?: string;
     timeout?: number;
     multi?: PromptMultiConfig;
@@ -448,13 +456,13 @@ export interface SimpleChoiceConfig {
      * 是否自动添加取消选项，默认 false
      * - true: 自动在选项列表末尾添加取消选项 { id: '__cancel__', label: '取消', value: { __cancel__: true } }
      * - false: 不添加取消选项
-     * 
+     *
      * 取消选项的 value 会包含 __cancel__: true 标记，handler 可以检查此标记来跳过执行
      */
     autoCancelOption?: boolean;
     /**
      * 自动刷新选项来源（opt-in 模式）
-     * 
+     *
      * 显式声明后，框架层会在状态更新时自动过滤失效的选项：
      * - 'hand': 检查 cardUid 是否仍在手牌中
      * - 'discard': 检查 cardUid 是否仍在弃牌堆中
@@ -464,7 +472,7 @@ export interface SimpleChoiceConfig {
      * - 'ongoing': 检查 cardUid 是否仍附着在场上
      * - 'buried': 检查 cardUid 是否仍埋葬在指定基地
      * - undefined: 不自动刷新（默认，向后兼容）
-     * 
+     *
      * 注意：
      * - 如果提供了 optionsGenerator，autoRefresh 会被忽略（optionsGenerator 优先级更高）
      * - 对于复杂场景（如从多个来源选择、基于数量生成选项），应使用 optionsGenerator
@@ -495,7 +503,7 @@ export function createSimpleChoice<T>(
     const config: SimpleChoiceConfig = typeof sourceIdOrConfig === 'string'
         ? { sourceId: sourceIdOrConfig, timeout, multi }
         : { ...sourceIdOrConfig, timeout: sourceIdOrConfig?.timeout ?? timeout, multi: sourceIdOrConfig?.multi ?? multi };
-    
+
     // 自动添加取消选项
     let finalOptions = options;
     if (config.autoCancelOption) {
@@ -506,7 +514,7 @@ export function createSimpleChoice<T>(
         };
         finalOptions = [...options, cancelOption];
     }
-    
+
     // 运行时检查：防止创建空选项交互（会导致玩家卡死）
     if (finalOptions.length === 0) {
         console.error(`[InteractionSystem] 创建了空选项交互！id=${id}, sourceId=${config.sourceId}, title=${title}`);
@@ -514,14 +522,18 @@ export function createSimpleChoice<T>(
         console.trace(); // 打印调用栈
     }
     finalOptions = ensureResolvableSimpleChoiceOptions(finalOptions, { multi: config.multi });
-    
+
     return {
         id,
         kind: 'simple-choice',
         playerId,
         data: {
             title,
+            titleKey: config.titleKey,
+            titleParams: config.titleParams,
             subtitle: config.subtitle,
+            subtitleKey: config.subtitleKey,
+            subtitleParams: config.subtitleParams,
             options: finalOptions,
             sourceId: config.sourceId,
             timeout: config.timeout,
@@ -675,23 +687,23 @@ export function createMultistepChoice<TStep, TResult>(
 
 /**
  * 将交互加入队列（替代旧 queuePrompt）
- * 
+ *
  * 如果交互有 optionsGenerator：
  * - 成为 current 时：立即基于当前状态生成选项
  * - 加入 queue 时：保留生成器，延迟到 resolveInteraction 时生成
- * 
+ *
  * 自动 optionsGenerator 注入（面向100个游戏）：
  * - 如果交互选项包含 cardUid 字段，自动生成 optionsGenerator
  * - 确保后续交互看到最新的手牌/场上单位状态
  */
 /**
  * 将交互加入队列
- * 
+ *
  * 如果当前没有交互，新交互立即成为 current。
  * 否则加入队列末尾（或头部，如果标记为 urgent）。
- * 
+ *
  * urgent 用于链式交互的后续步骤，确保不被其他交互插队。
- * 
+ *
  * 注意：
  * - 如果交互有 optionsGenerator，会在成为 current 时立即生成选项
  * - 确保后续交互看到最新的手牌/场上单位状态
@@ -734,7 +746,7 @@ export function queueInteraction<TCore>(
     // 否则加入队列（选项生成延迟到 resolveInteraction 时）
     // urgent 交互插入队列头部，确保链式交互不被打断
     const newQueue = options?.urgent ? [interaction, ...queue] : [...queue, interaction];
-    
+
     return syncActiveResolutionWithInteraction(writeInteractionState(state, {
         ...state.sys.interaction,
         queue: newQueue,
@@ -793,7 +805,7 @@ export function resolveInteraction<TCore>(
             const autoRefresh = (data as any).autoRefresh as 'hand' | 'discard' | 'hand_or_discard' | 'deck' | 'field' | 'base' | 'ongoing' | 'buried' | undefined;
             freshOptions = refreshOptionsGeneric(state, next, data.options, autoRefresh);
         }
-        
+
         freshOptions = normalizeFreshSimpleChoiceOptions(freshOptions, data);
 
         // 智能处理 multi.min 限制
@@ -1079,15 +1091,15 @@ export function refreshInteractionOptions<TCore>(
     state: MatchState<TCore>,
 ): MatchState<TCore> {
     const currentInteraction = state.sys.interaction?.current;
-    
+
     // 没有当前交互，直接返回
     if (!currentInteraction) return state;
-    
+
     // 只处理 simple-choice 类型
     if (currentInteraction.kind !== 'simple-choice') return state;
-    
+
     const data = currentInteraction.data as SimpleChoiceData;
-    
+
     // 优先使用手动提供的 optionsGenerator
     let freshOptions: PromptOption[];
     if (data.optionsGenerator) {
@@ -1097,7 +1109,7 @@ export function refreshInteractionOptions<TCore>(
         const autoRefresh = (data as any).autoRefresh as 'hand' | 'discard' | 'hand_or_discard' | 'deck' | 'field' | 'base' | 'ongoing' | 'buried' | undefined;
         freshOptions = refreshOptionsGeneric(state, currentInteraction, data.options, autoRefresh);
     }
-    
+
     freshOptions = normalizeFreshSimpleChoiceOptions(freshOptions, data);
 
     // 智能处理 multi.min 限制
@@ -1108,7 +1120,7 @@ export function refreshInteractionOptions<TCore>(
     if (data.multi?.min && freshOptions.length > 0 && freshOptions.length < data.multi.min && !hasEmergencySkip) {
         return state;
     }
-    
+
     // 更新交互选项
     return writeInteractionState(state, {
         ...state.sys.interaction,

@@ -52,6 +52,8 @@
 
 ## 结论
 
-- **结论：resolved**。
-- 当前代码与当前线上发布源都已具备可用的 Android 游戏包下载链路，未再观察到“没有可下载包”或“包地址不存在”的现象。
-- **推断**：这条反馈更像是当时某次发布源未就绪、对象尚未上传完成、或旧版本 App 在下载链路上的瞬时问题；截至 `2026-04-11` 的复核结果，当前生产态已不再满足该故障现象。
+- **2026-04-11 的旧结论已失效**。
+- 失效原因：这份排查只证明了“manifest / zip 对象存在”，没有覆盖“已发布 Android 壳是否支持新的增量安装桥接方法”。
+- `2026-04-26` 的补充排查已确认：线上 manifest 可能返回 `assetPack.fileIndexUrl`，网页层会尝试走增量安装；但老 Android 壳不一定存在 `GamePackage.installGamePackageIncremental` 原生方法，失败点会发生在**安装状态机 dispatch 到原生桥接**这一段，而不是 manifest / zip 对象不存在。
+- 后续修复与最新证据见：
+  - `evidence/_shared/android-feedback-69d8869f70d52ddbd0c190ae-preload-package-download-fix-2026-04-26.md`

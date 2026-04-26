@@ -30,6 +30,10 @@ public class AndroidDownloadForegroundService extends Service {
     static final String EXTRA_PACKAGE_VERSION = "packageVersion";
     static final String EXTRA_SOURCE_URL = "sourceUrl";
     static final String EXTRA_CHECKSUM = "checksum";
+    static final String EXTRA_INSTALL_MODE = "installMode";
+    static final String EXTRA_ASSET_BASE_URL = "assetBaseUrl";
+    static final String EXTRA_FILE_INDEX_URL = "fileIndexUrl";
+    static final String EXTRA_FILE_INDEX_CHECKSUM = "fileIndexChecksum";
     static final String EXTRA_DESTINATION_PATH = "destinationPath";
     static final String EXTRA_PARTIAL_PATH = "partialPath";
     static final String EXTRA_TASK_ID = "taskId";
@@ -52,6 +56,10 @@ public class AndroidDownloadForegroundService extends Service {
         String packageVersion,
         String sourceUrl,
         String checksum,
+        String installMode,
+        String assetBaseUrl,
+        String fileIndexUrl,
+        String fileIndexChecksum,
         String destinationPath,
         String partialPath
     ) {
@@ -65,6 +73,10 @@ public class AndroidDownloadForegroundService extends Service {
         intent.putExtra(EXTRA_PACKAGE_VERSION, packageVersion);
         intent.putExtra(EXTRA_SOURCE_URL, sourceUrl);
         intent.putExtra(EXTRA_CHECKSUM, checksum);
+        intent.putExtra(EXTRA_INSTALL_MODE, installMode);
+        intent.putExtra(EXTRA_ASSET_BASE_URL, assetBaseUrl);
+        intent.putExtra(EXTRA_FILE_INDEX_URL, fileIndexUrl);
+        intent.putExtra(EXTRA_FILE_INDEX_CHECKSUM, fileIndexChecksum);
         intent.putExtra(EXTRA_DESTINATION_PATH, destinationPath);
         intent.putExtra(EXTRA_PARTIAL_PATH, partialPath);
         return intent;
@@ -138,6 +150,10 @@ public class AndroidDownloadForegroundService extends Service {
             nullable(intent.getStringExtra(EXTRA_PACKAGE_VERSION)),
             safe(intent.getStringExtra(EXTRA_SOURCE_URL), ""),
             nullable(intent.getStringExtra(EXTRA_CHECKSUM)),
+            nullable(intent.getStringExtra(EXTRA_INSTALL_MODE)),
+            nullable(intent.getStringExtra(EXTRA_ASSET_BASE_URL)),
+            nullable(intent.getStringExtra(EXTRA_FILE_INDEX_URL)),
+            nullable(intent.getStringExtra(EXTRA_FILE_INDEX_CHECKSUM)),
             nullable(intent.getStringExtra(EXTRA_DESTINATION_PATH)),
             nullable(intent.getStringExtra(EXTRA_PARTIAL_PATH))
         );

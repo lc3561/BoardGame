@@ -218,6 +218,52 @@ describe('Reaction queue ordering (Wiki-style)', () => {
     expect(trigger.frameId).toBe(`minion-affected-frame:${SU_EVENTS.MINION_MOVED}:moved1:move:0:0:0:9`);
   });
 
+  it('processAffectTriggers 为 POWER_COUNTER 变化透传 counterChangeKind/counterDelta', () => {
+    registerTrigger('test_affect_watcher', 'onMinionAffected', () => []);
+
+    const core = baseCore({
+      bases: [
+        makeBase('test_base_1', [
+          makeMinion('moved1', 'test_minion', '0', 2),
+          makeMinion('watcher1', 'test_affect_watcher', '0', 3),
+        ]),
+        makeBase('test_base_2'),
+      ],
+    });
+
+    const added = processAffectTriggers([{
+      type: SU_EVENTS.POWER_COUNTER_ADDED,
+      payload: {
+        minionUid: 'moved1',
+        baseIndex: 0,
+        amount: 2,
+        reason: 'test_counter_added',
+      },
+      timestamp: 12,
+    } as any], makeMatchState(core), '0', { shuffle: (a: any[]) => a } as any, 12);
+
+    const addedTrigger = (added.events.find((event: any) => event.type === SU_EVENTS.TRIGGER_QUEUED) as any)?.payload?.triggers?.[0];
+    expect(addedTrigger).toBeDefined();
+    expect(addedTrigger.counterChangeKind).toBe('added');
+    expect(addedTrigger.counterDelta).toBe(2);
+
+    const removed = processAffectTriggers([{
+      type: SU_EVENTS.POWER_COUNTER_REMOVED,
+      payload: {
+        minionUid: 'moved1',
+        baseIndex: 0,
+        amount: 1,
+        reason: 'test_counter_removed',
+      },
+      timestamp: 13,
+    } as any], makeMatchState(core), '0', { shuffle: (a: any[]) => a } as any, 13);
+
+    const removedTrigger = (removed.events.find((event: any) => event.type === SU_EVENTS.TRIGGER_QUEUED) as any)?.payload?.triggers?.[0];
+    expect(removedTrigger).toBeDefined();
+    expect(removedTrigger.counterChangeKind).toBe('removed');
+    expect(removedTrigger.counterDelta).toBe(-1);
+  });
+
   it('processDeckInspectionTriggers stamps queued onDeckInspected reactions with explicit frame ids', () => {
     registerTrigger('test_inspect_watcher', 'onDeckInspected', () => []);
 

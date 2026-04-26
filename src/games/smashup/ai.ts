@@ -273,6 +273,7 @@ const hasPendingScoreBasesSpecialActivation = (state: SmashUpState, playerId: Pl
 
 const canAdvancePhase = (state: SmashUpState, playerId: PlayerId): boolean => {
     if (state.sys.interaction?.current) return false;
+    if (state.sys.interaction?.isBlocked === true) return false;
     if (state.sys.responseWindow?.current) return false;
     if (state.sys.phase === 'scoreBases' && hasPendingScoreBasesSpecialActivation(state, playerId)) {
         return false;

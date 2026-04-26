@@ -377,6 +377,8 @@ export const DiceThroneBoard: React.FC<DiceThroneBoardProps> = ({ G: rawG, dispa
     const {
         isShowcaseVisible: isAttackShowcaseVisible,
         showcaseData: attackShowcaseData,
+        mode: attackShowcaseMode,
+        autoDismissMs: attackShowcaseAutoDismissMs,
         dismissShowcase: dismissAttackShowcase,
     } = useAttackShowcase({
         currentPhase,
@@ -435,13 +437,14 @@ export const DiceThroneBoard: React.FC<DiceThroneBoardProps> = ({ G: rawG, dispa
             const config = meta.dieModifyConfig as DiceModifyConfig | undefined;
             const isManualConfirmMode = config?.mode === 'any' || config?.mode === 'adjust';
             const originalData = sysInteraction.data as Record<string, unknown>;
+            const selectCount = Number(meta.selectCount) || 1;
             return {
                 ...sysInteraction,
                 data: {
                     ...sysInteraction.data,
                     localReducer: (current: unknown, step: unknown) =>
-                        diceModifyReducer(current as DiceModifyState, step as DiceModifyStep, config),
-                    toCommands: diceModifyToCommands,
+                        diceModifyReducer(current as DiceModifyState, step as DiceModifyStep, config, selectCount),
+                    toCommands: (result: DiceModifyState) => diceModifyToCommands(result, selectCount),
                     // any/adjust 模式：手动确认，禁用 auto-confirm
                     maxSteps: isManualConfirmMode ? undefined : originalData.maxSteps,
                     minSteps: isManualConfirmMode ? 1 : originalData.minSteps,
@@ -1484,8 +1487,10 @@ export const DiceThroneBoard: React.FC<DiceThroneBoardProps> = ({ G: rawG, dispa
                 {isAttackShowcaseVisible && attackShowcaseData && (
                     <AttackShowcaseOverlay
                         data={attackShowcaseData}
+                        mode={attackShowcaseMode}
                         locale={locale}
                         opponentName={opponentName}
+                        autoDismissMs={attackShowcaseAutoDismissMs}
                         onDismiss={dismissAttackShowcase}
                     />
                 )}

@@ -149,6 +149,30 @@ watchdog 是最后兜底，不是第一修法。
 3. ResponseWindow/InteractionSystem 能自动收口
 4. 最后才是 watchdog 对异常循环做强制恢复
 
+### 原则 5：AI 动作延迟要“只延迟可见动作”
+
+默认口径（当前仓库）：
+
+- `minimumActionDelayMs` 只决定“延迟时长”，不决定“哪些动作延迟”
+- “是否给下一步加延迟”由 `LocalGameProvider` 的动作类型门控决定
+- 静默动作（例如卖牌/跳过 token/纯阶段推进）默认不应累计延迟
+
+实现落点（必须同步 `src` 与 `e2e/src`）：
+
+- `src/engine/transport/react.tsx`
+- `e2e/src/engine/transport/react.tsx`
+- 关键常量/函数：
+  - `FAST_AI_COMMAND_TYPES`（本步快速放行）
+  - `NO_FOLLOW_UP_DELAY_ACTION_KINDS`（本步执行后不应给下一步上 gate）
+  - `shouldSkipFollowUpActionDelay()`
+
+收口判定（必须带日志证据）：
+
+- 用 `[LOCAL_AI_PERF] scheduled/dispatched/command-progress` 验证：
+  - 静默动作 `gateDelayMs=0`
+  - 需要节奏感的可见动作才出现 `gateDelayMs≈minimumActionDelayMs`
+- 禁止只看“体感快慢”不看日志字段就宣称完成
+
 ---
 
 ## 常见卡死类型清单（每次都要逐项过）

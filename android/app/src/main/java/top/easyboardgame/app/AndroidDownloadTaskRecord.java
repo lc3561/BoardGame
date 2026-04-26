@@ -24,6 +24,10 @@ final class AndroidDownloadTaskRecord {
     String packageVersion;
     String sourceUrl;
     String checksum;
+    String installMode;
+    String assetBaseUrl;
+    String fileIndexUrl;
+    String fileIndexChecksum;
     String destinationPath;
     String partialPath;
     String status;
@@ -45,6 +49,10 @@ final class AndroidDownloadTaskRecord {
         String packageVersion,
         String sourceUrl,
         String checksum,
+        String installMode,
+        String assetBaseUrl,
+        String fileIndexUrl,
+        String fileIndexChecksum,
         String destinationPath,
         String partialPath,
         long now
@@ -59,6 +67,10 @@ final class AndroidDownloadTaskRecord {
         record.packageVersion = packageVersion;
         record.sourceUrl = sourceUrl;
         record.checksum = checksum;
+        record.installMode = installMode;
+        record.assetBaseUrl = assetBaseUrl;
+        record.fileIndexUrl = fileIndexUrl;
+        record.fileIndexChecksum = fileIndexChecksum;
         record.destinationPath = destinationPath;
         record.partialPath = partialPath;
         record.status = STATUS_QUEUED;
@@ -83,6 +95,10 @@ final class AndroidDownloadTaskRecord {
         record.packageVersion = optNullableString(payload, "packageVersion");
         record.sourceUrl = payload.optString("sourceUrl", "");
         record.checksum = optNullableString(payload, "checksum");
+        record.installMode = optNullableString(payload, "installMode");
+        record.assetBaseUrl = optNullableString(payload, "assetBaseUrl");
+        record.fileIndexUrl = optNullableString(payload, "fileIndexUrl");
+        record.fileIndexChecksum = optNullableString(payload, "fileIndexChecksum");
         record.destinationPath = optNullableString(payload, "destinationPath");
         record.partialPath = optNullableString(payload, "partialPath");
         record.status = payload.optString("status", STATUS_QUEUED);
@@ -107,6 +123,10 @@ final class AndroidDownloadTaskRecord {
         putNullable(payload, "packageVersion", packageVersion);
         payload.put("sourceUrl", safeString(sourceUrl));
         putNullable(payload, "checksum", checksum);
+        putNullable(payload, "installMode", installMode);
+        putNullable(payload, "assetBaseUrl", assetBaseUrl);
+        putNullable(payload, "fileIndexUrl", fileIndexUrl);
+        putNullable(payload, "fileIndexChecksum", fileIndexChecksum);
         putNullable(payload, "destinationPath", destinationPath);
         putNullable(payload, "partialPath", partialPath);
         payload.put("status", safeString(status));
@@ -128,6 +148,10 @@ final class AndroidDownloadTaskRecord {
 
     boolean isActive() {
         return STATUS_RUNNING.equals(status) || STATUS_VERIFYING.equals(status);
+    }
+
+    boolean isIncrementalInstall() {
+        return "incremental".equals(installMode);
     }
 
     boolean matchesTarget(String targetKind, String targetLogicalId) {

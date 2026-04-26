@@ -27,6 +27,7 @@ import type {
   StunModeState, HypnoticLureModeState, TelekinesisTargetModeState,
 } from './modeTypes';
 import type { PromptOption } from '../../../engine/systems/InteractionSystem';
+import { findActivatedAbilityDirectionOptionByPosition } from './systemInteractionAdapter';
 
 const INTERACTIVE_EVENT_BASE_IDS = new Set<string>([
   CARD_IDS.NECRO_HELLFIRE_BLADE,
@@ -405,14 +406,13 @@ export function useEventCardModes({
     const destinations = swInteraction.options
       .map((option) => {
         const value = option.value as {
-          targetPosition?: CellCoord;
           moveRow?: number;
           moveCol?: number;
         } | undefined;
-        const position = value?.targetPosition;
-        if (!position || typeof value?.moveRow !== 'number' || typeof value?.moveCol !== 'number') return null;
+        const match = typeof option.id === 'string' ? option.id.match(/^pos:(\d+),(\d+)$/) : null;
+        if (!match || typeof value?.moveRow !== 'number' || typeof value?.moveCol !== 'number') return null;
         return {
-          position,
+          position: { row: Number(match[1]), col: Number(match[2]) },
           moveRow: value.moveRow,
           moveCol: value.moveCol,
         };
@@ -780,8 +780,17 @@ export function useEventCardModes({
           || (swInteraction?.type === 'activated_ability_target'
             && (swInteraction.meta.step === 'selectDirection'))
         ) {
-          const optionId = findInteractionOptionId((option) => option.id === `pos:${gameRow},${gameCol}`);
-          respondInteractionOption(optionId);
+          if (swInteraction?.type === 'activated_ability_target') {
+            const option = findActivatedAbilityDirectionOptionByPosition(
+              swInteraction,
+              telekinesisTargetMode.abilityId,
+              { row: gameRow, col: gameCol },
+            );
+            respondInteractionOption(option?.id ?? null);
+          } else {
+            const optionId = findInteractionOptionId((option) => option.id === `pos:${gameRow},${gameCol}`);
+            respondInteractionOption(optionId);
+          }
         } else {
           dispatch(SW_COMMANDS.ACTIVATE_ABILITY, {
             abilityId: telekinesisTargetMode.abilityId,

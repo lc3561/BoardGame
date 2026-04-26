@@ -76,6 +76,21 @@
     "card_placeholder": "卡牌",
     "me_first_title": "⚡ 先手响应！",
     "after_scoring_title": "计分后响应",
+    "reaction_choose_mandatory_title": "选择先结算的强制效果",
+    "reaction_choose_optional_title": "选择一个反应动作",
+    "reaction_choose_play_to_base": "{{name}} -> 基地 {{baseNumber}}",
+    "reaction_choose_activate_special": "{{name}} 特殊能力",
+    "move_there": "移动到该基地",
+    "stay_here": "留在原地",
+    "play_this_titan": "打出这个泰坦",
+    "put_it_on_top": "放回牌库顶",
+    "put_it_on_bottom": "放到牌库底",
+    "destroy_titan_and_gain_extra_minion_play": "消灭它并获得额外随从机会",
+    "titan_very_large_boulder_move_title": "{{name}}：要移动到{{baseName}}吗？",
+    "titan_megabot_move_title": "{{name}}：要在该基地计分前移动到{{baseName}}吗？",
+    "titan_rainboroc_play_replacement_title": "{{name}}：要把这个泰坦打到替换基地吗？",
+    "titan_rainboroc_choose_base_title": "{{name}}：你可以把这个泰坦移动到另一个基地",
+    "titan_moon_zero_three_resolve_title": "{{name}}：{{playerLabel}}牌库顶是{{cardName}}。选择放回位置。",
     "reaction_timing": {
       "onMinionPlayed": "随从打出后",
       "onActionPlayed": "行动打出后",
@@ -149,6 +164,7 @@
   },
   "feedback": {
     "deck_search_no_match": "牌库中未找到符合条件的卡牌，已重洗牌库",
+    "deck_search_no_match_no_shuffle": "牌库中未找到符合条件的卡牌。",
     "deck_search_skipped": "跳过选择，已重洗牌库",
     "no_valid_targets": "场上没有符合条件的目标",
     "discard_empty": "弃牌堆中没有符合条件的卡牌",
@@ -3047,7 +3063,7 @@
       "abilityText": "持续： 当此处你的随从参 斗时向上添加1赦+1战力 棘记。"
     },
     "cowboys_sheriff": {
-      "name": "警长",
+      "name": "治安官",
       "abilityText": "特殊： 本基地计分前。此随从 可与处其他玩家的一个随 从决斗。消灭失败的随从。"
     },
     "cowboys_stagecoach": {
@@ -3394,191 +3410,191 @@
       "type": "cards.*.type"
     },
     "mermaids_ultimate_song": {
-      "name": "终极歌声",
-      "effectText": "将你此基地的一个随从移动到另一个基地。然后在该基地打出一张额外行动卡。"
+      "name": "最后的歌声",
+      "effectText": "选择一个你有仆从的基地。每个其他玩家必须在那里打出一个3或更少力量的仆从作为额外仆从，或展示手牌证明没有符合要求的仆从。取消那些仆从的能力直到回合结束。你可以在那里打出一个额外的仆从和/或一个行动。"
     },
     "mermaids_captive_audience": {
-      "name": "俘虏观众",
-      "effectText": "将另一位玩家在此基地的一个随从移动到你选择的另一个基地。"
+      "name": "迷倒观众",
+      "effectText": "选择一个基地。那里每有一个你不拥有的仆从，一个你在那里的仆从获得+1力量直到回合结束。打出一张额外的行动。"
     },
     "mermaids_becalmed_shores": {
-      "name": "静风海岸",
-      "effectText": "打出到基地上。持续：此基地上其他玩家的随从在你的回合中力量 -1。天赋：将你在此基地的一个随从移动到另一个基地。"
+      "name": "安静的海岸",
+      "effectText": "打出到基地上。持续：其他玩家在这里的仆从获得-1力量。天赋：转移这个行动到另一个基地。"
     },
     "mermaids_siren_song": {
-      "name": "海妖之歌",
-      "effectText": "选择一个基地。将该基地的一张随从移动到另一个基地。"
+      "name": "塞壬的歌声",
+      "effectText": "选择一个基地。移动每个其他玩家在那里的一个仆从到另一个有你仆从的基地。"
     },
     "mermaids_toll_bay": {
-      "name": "过路湾",
-      "effectText": "选择一个基地。其他玩家在那里每有一个随从，你抽一张牌。"
+      "name": "死亡海湾",
+      "effectText": "选择一个基地。其他玩家在那里每有一个仆从，你抽一张牌。"
     },
     "mermaids_shipwreck_cove": {
       "name": "沉船湾",
-      "effectText": "打出到基地上。特殊：在此基地计分后，你可以在替换基地上额外打出一个随从。"
+      "effectText": "打出到基地上。持续：你在这里的仆从获得+1力量。特殊：这个基地计分后，你可以转移这个行动到另一个基地。"
     },
     "mermaids_charmed": {
-      "name": "蛊惑",
-      "effectText": "打出到一个随从上。本回合内它不为其控制者提供力量。"
+      "name": "魅惑",
+      "effectText": "选择一个力量3或更少的仆从。你可以移动它到另一个你有仆从的基地。它不能把它的力量添加到它控制者的总力量中直到回合结束。打出一个额外的行动。"
     },
     "mermaids_desert_island": {
-      "name": "荒岛",
-      "effectText": "打出到基地上。持续：每位玩家在此基地至多保留一个随从，其余被移回拥有者手牌。"
+      "name": "无人岛",
+      "effectText": "打出到基地上。持续：这里的仆从不能把它们的力量添加到它们控制者的总力量中。你的回合开始前摧毁这张牌。"
     },
     "mermaids_siren": {
-      "name": "海妖",
-      "abilityText": "持续：在你的回合中，此基地其他玩家的随从力量 -1。"
+      "name": "塞壬",
+      "abilityText": "持续：其他玩家在这里的仆从获得-1力量在他们控制者的总力量中。"
     },
     "mermaids_charmer": {
-      "name": "魅惑者",
-      "abilityText": "天赋：将另一位玩家在此基地的一个随从移动到另一个基地。"
+      "name": "迷人的人",
+      "abilityText": "天赋：你可以移动这个仆从到另一个基地。然后你可以移动另一个玩家3或更少力量的仆从到相同的基地。"
     },
     "mermaids_temptress": {
       "name": "诱惑者",
-      "abilityText": "持续：你在此基地每有一个其他随从，本随从力量 +1。"
+      "abilityText": "持续：如果一个或多个其他玩家的仆从本回合移动到这里，这个仆从获得+2力量直到回合结束。"
     },
     "mermaids_mermaid_queen": {
-      "name": "美人鱼女王",
-      "abilityText": "你可以将此基地的一张对手随从移动到另一个基地。"
+      "name": "人鱼女王",
+      "abilityText": "移动其他玩家的一个仆从到这里或选择一个这里的仆从。如果它有3或更少的力量，获得它的控制权直到回合结束。"
     },
     "skeletons_gravestones": {
-      "name": "墓碑群",
-      "effectText": "打出到基地上。特殊：此基地计分后，你可以在替换基地埋葬一张你弃牌堆中的力量3或以下随从。"
+      "name": "墓碑",
+      "effectText": "打出到一个基地上。持续：这里的一个仆从被挖掘后，你可以放置一枚 +1 力量指示器到那个仆从身上。特殊：这个基地计分后，埋葬这张牌到另一个基地。"
     },
     "skeletons_burst_forth": {
-      "name": "破土而出",
-      "effectText": "特殊：在基地计分前，你可以揭示并打出你埋葬在该基地的一张随从。"
+      "name": "墓地爆发",
+      "effectText": "特殊：一个基地计分前，挖掘一张你在那里埋葬的牌。"
     },
     "skeletons_dig_em_up": {
-      "name": "挖出来",
-      "effectText": "从你任意基地揭示一张埋葬牌并将其打出。"
+      "name": "他们出来了",
+      "effectText": "选择一个基地。挖掘至多三张你埋葬在那里的牌。"
     },
     "skeletons_place_em_down": {
-      "name": "埋下去",
-      "effectText": "从你手牌选择一张力量3或以下随从并埋葬到一个基地。"
+      "name": "往下埋",
+      "effectText": "从你的弃牌堆埋葬至多三个力量总和6或更少的仆从。"
     },
     "skeletons_graveyard": {
       "name": "墓园",
-      "effectText": "打出到基地上。天赋：将你弃牌堆的一张力量3或以下随从埋葬到此基地。"
+      "effectText": "打出到一个基地上。天赋：挖掘一张你在这里的埋葬牌。如果它是仆从，你可以放置一枚+1力量指示器到那个仆从身上。"
     },
     "skeletons_hearse_fleet": {
-      "name": "灵车舰队",
-      "effectText": "在你有随从的一个基地，埋葬你弃牌堆中至多两张力量3或以下随从。"
+      "name": "灵车队伍",
+      "effectText": "移动任意数量的埋葬牌从一个基地到另一个基地。特殊：你可以在基地计分前打出这张牌，来移动至多两张你埋葬的牌从这个基地到另一个基地，或从一个基地到这里。"
     },
     "skeletons_spooky_scary": {
-      "name": "阴森可怖……",
-      "effectText": "将另一位玩家在一个基地的一张力量3或以下随从移入弃牌堆。"
+      "name": "诡异。可怕。",
+      "effectText": "从你的弃牌堆埋葬一个力量3或更少的仆从。抽一张牌。"
     },
     "skeletons_grave_goods": {
-      "name": "陪葬品",
-      "effectText": "将一张力量3或以下随从从你的弃牌堆加入手牌。"
+      "name": "殉葬品",
+      "effectText": "从你手中埋葬一张牌，然后你可以弃一张牌来额外埋葬一张，或挖掘一张你的埋葬牌。如果它是仆从，你可以放置两枚+1力量指示器到那个仆从身上。"
     },
     "skeletons_returned_one": {
-      "name": "归来者",
-      "abilityText": "你可以将一张力量3或以下随从从手牌埋葬到此基地。"
+      "name": "轮回者",
+      "abilityText": "你可以埋葬这个仆从到这里。特殊：这张牌被挖掘后，你可以挖掘一张你埋葬在这里的其他牌。"
     },
     "skeletons_revenant": {
-      "name": "亡灵",
-      "abilityText": "特殊：每回合一次，当你力量3或以下的随从从另一基地进入弃牌堆时，你可将其埋葬到任意基地。"
+      "name": "复仇者",
+      "abilityText": "特殊：到你的回合，你可以从你的弃牌堆埋葬这张牌。复仇者的能力每回合只能使用一次。"
     },
     "skeletons_gravetender": {
       "name": "守墓人",
-      "abilityText": "持续：你在此基地每有一张埋葬牌，本随从力量 +1。"
+      "abilityText": "持续：每回合一次，一张你的其他牌被埋葬或挖掘后，抽一张牌。"
     },
     "skeletons_lord_of_bones": {
-      "name": "白骨领主",
-      "abilityText": "持续：你在此基地每有一个力量3或以下随从，本随从力量 +1。天赋：将一张力量3或以下随从从弃牌堆埋葬到此基地。"
+      "name": "骸骨之王",
+      "abilityText": "持续：其他的仆从被挖掘后，你可以放置一枚+1力量指示器到那个仆从身上。天赋：从你的手中埋葬一张牌到这里，或挖掘这里的一张牌。"
     },
     "world_champs_sheriff": {
-      "name": "治安官",
-      "abilityText": "特殊：此基地计分前，你可与此处另一位玩家的一张随从决斗。落败随从被消灭。"
+      "name": "警长",
+      "abilityText": "特殊：这个基地计分前，这个仆从可以决斗其他玩家在这里的一个仆从。摧毁失败的仆从。"
     },
     "world_champs_aramis": {
-      "name": "阿拉米斯",
-      "abilityText": "持续：每回合一次，当你打出直接影响此随从的行动后，你可额外打出另一张同样直接影响它的行动。"
+      "name": "阿拉密斯",
+      "abilityText": "持续：你的回合一次，你打出一张行动影响这个仆从后，你可以打出一张影响这个仆从的行动作为额外行动。"
     },
     "world_champs_stoneford": {
-      "name": "斯通福德",
-      "abilityText": "从牌库搜寻一张行动卡加入手牌，然后洗牌。"
+      "name": "斯坦福",
+      "abilityText": "搜索你的牌库找一张行动，然后放在你的手中。"
     },
     "world_champs_akye_the_turtle": {
       "name": "海龟阿凯",
-      "abilityText": "你可以将一张手牌交给另一位玩家以抽两张牌。"
+      "abilityText": "你可以从你的手上放置一张牌到其他玩家手上来抽两张牌。"
     },
     "world_champs_diva": {
-      "name": "迪娃",
-      "abilityText": "持续：每回合一次，当标准行动直接影响你在此处的其他随从时，你可令此随从受到同样影响。"
+      "name": "女主角",
+      "abilityText": "持续：每轮一次，当一个通常行动直接影响你在这里的一个或多个其他仆从时，你可以选择这个仆从受到同样的影响。"
     },
     "world_champs_shield_maiden": {
-      "name": "盾女",
-      "abilityText": "展示另一位玩家牌库顶。若为行动卡或力量3及以下随从，则加入你手牌，否则放回。"
+      "name": "盾牌少女",
+      "abilityText": "展示一名其他玩家牌库顶的牌。如果是行动或力量3或更少的仆从，放置它到自己手中，否则，返回它。"
     },
     "world_champs_calicoin": {
-      "name": "卡利科因",
-      "abilityText": "你可在此处另一张随从上放置1个+1力量指示物。"
+      "name": "金币猫",
+      "abilityText": "你可以放置一枚+1力量指示器到这里的一个其他仆从身上。"
     },
     "world_champs_mummy": {
       "name": "木乃伊",
-      "abilityText": "持续：此基地计分后，你可将本随从埋葬到另一基地。"
+      "abilityText": "持续：这个基地计分后，你可以埋葬这个仆从到另一个基地。"
     },
     "world_champs_rainbow_girl": {
       "name": "彩虹女孩",
-      "abilityText": "你在此基地的其他随从在本回合结束前力量 +1。"
+      "abilityText": "你在这里的其他仆从获得+1力量直到回合结束。"
     },
     "world_champs_samurai_chan": {
-      "name": "武士酱",
-      "abilityText": "持续：当本随从从场上进入弃牌堆后，抽一张牌。"
+      "name": "武士 陈",
+      "abilityText": "持续：这个仆从从场上进入弃牌堆后，抽一张牌。"
     },
     "world_champs_bewitched": {
-      "name": "蛊惑附体",
-      "effectText": "打出到一个随从上。持续：该随从力量 +2。若其离场，将本行动转移到另一随从。"
+      "name": "着魔",
+      "effectText": "打出到一个仆从身上。持续：这个仆从获得+2力量。如果这个仆从离开游戏，转移这张行动到另一个仆从身上。"
     },
     "world_champs_eh": {
       "name": "嗯？",
-      "effectText": "特殊：在你本回合首次打出行动后，可额外打出此卡。令你的一个随从本回合力量 +1，并可将此卡返回手牌而非弃牌堆。"
+      "effectText": "特殊：每回合你打出第一个行动后，你可以打出这张牌作为额外的行动。一个你的仆从将+1力量直到回合结束，然后你可以放置这张牌到你的手上来代替进入弃牌堆。"
     },
     "world_champs_fast_as_lightning": {
       "name": "快如闪电",
-      "effectText": "选择一个随从。本回合其力量 +2，且若将进入弃牌堆则改为回到其拥有者手牌。"
+      "effectText": "选择一个仆从。直到回合结束，它获得+2力量，然后如果它将要进入弃牌堆，将它返回拥有者的手上代替。"
     },
     "world_champs_fighting_spirit_prize": {
-      "name": "斗志奖杯",
-      "effectText": "抽两张牌，并将总计2个+1力量指示物分配到你的随从上。"
+      "name": "战斗精神奖",
+      "effectText": "抽两张牌然后放置总计两个+1力量指示器在你的仆从身上。"
     },
     "world_champs_high_speed_chase": {
       "name": "高速追逐",
-      "effectText": "打出到基地上。天赋：将此行动转移到另一基地，把你一个随从从这里移到那里，并使其本回合力量 +3。"
+      "effectText": "打出到基地上。天赋：转移这个行动到另一个基地，来移动一个你的仆从从这里到该基地。这个仆从获得+3力量直到回合结束。"
     },
     "world_champs_its_blitzin_time": {
-      "name": "冲锋时刻！",
-      "effectText": "令你的一个随从本回合力量 +3。"
+      "name": "现在是闪电时间！",
+      "effectText": "一个你的仆从获得+3力量直到回合结束。"
     },
     "world_champs_kaiju_conflict": {
-      "name": "怪兽冲突",
-      "effectText": "额外打出两张行动卡。"
+      "name": "怪兽冲击",
+      "effectText": "打出两个额外的行动。"
     },
     "world_champs_mouse_bird_and_sausage": {
-      "name": "鼠、鸟与香肠",
-      "effectText": "选择同一基地至多两张同派系随从，使其各在本回合获得 +2 力量。"
+      "name": "老鼠、鸟和香肠",
+      "effectText": "选择一个基地上至多两个相同派系的仆从。它们获得+2力量直到回合结束。"
     },
     "world_champs_shark_tattoo": {
       "name": "鲨鱼纹身",
-      "effectText": "打出到你的一个随从上。先放置1个+1力量指示物。持续：在你回合开始时，若它是你在此唯一随从，再放置1个+1力量指示物。"
+      "effectText": "打出到一个你的仆从身上。放置一枚+1力量指示器到它身上。持续：你的回合开始时，如果你仅有一个仆从在这里，放置一枚+1力量指示器到它身上。"
     },
     "world_champs_smart_set_up": {
-      "name": "聪明布局",
-      "effectText": "打出到另一位玩家的随从上。持续：每回合首次有随从打到此基地后，抽一张牌。"
+      "name": "聪明Set-Up",
+      "effectText": "打出到一个其他玩家的仆从身上。持续：每回合第一次有仆从打出到这里后，抽一张牌。"
     },
     "base_mermaid_pool": {
-      "name": "美人鱼池",
+      "name": "人鱼水池",
       "abilityText": "在你的回合中，若你在此有随从，你可将另一位玩家的一张随从移动到这里。"
     },
     "base_mermaid_reef": {
-      "name": "美人鱼礁",
+      "name": "人鱼暗礁",
       "abilityText": "在你的回合中，此基地其他玩家随从对其控制者贡献力量 -1。"
     },
     "base_boneyard": {
-      "name": "白骨场",
+      "name": "埋骨地",
       "abilityText": "每回合一次，当你力量3或以下随从从另一基地进入弃牌堆后，你可将其埋葬到这里。"
     },
     "base_ossuary": {

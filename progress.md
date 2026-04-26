@@ -488,3 +488,81 @@
     - `final-wiki-code-comparison.mjs` 已补单双引号解析、弯直引号归一化、报告“仅校验 name/count”声明；
     - 复核：`scrape skeletons -> 12/20`，`final compare -> 1 正确/0 问题（仅 name/count）`，`eslint` 0 errors。
   - Next: 继续推进 Skeletons 整派系语义重录审计批次（不再只做单卡修补）。
+
+- **[2026-04-25 23:48:00] Action**: 重写 `newFactionAbilities` 的 Skeletons 专项断言为新语义
+  - Result: 已替换 `describe('Skeletons abilities')` 全段，覆盖 Returned One / Place ’em Down / Dig ’em Up / Graveyard / Lord of Bones / Grave Goods / Spooky, Scary... / Hearse Fleet / Revenant / Gravestones / Gravetender 的新语义链路；定向运行 `-t "Skeletons abilities"` 通过（`13 passed`）。
+  - Next: 同步 generic targetType 审计映射并跑 audit suite。
+
+- **[2026-04-26 00:12:00] Action**: 修复 Skeletons 新 sourceId 的 targetType 审计缺口
+  - Result: 更新 `interactionTargetTypeAudit.test.ts` 的 `APPROVED_GENERIC_SOURCE_REASONS`（新增 `skeletons_*` 多个 sourceId，移除失效项）；并将 `skeletons_hearse_fleet_special_mode` 的动态 `sourceId` 改为字面量分支，消除 `unknown` generic；审计复跑 `7 passed`。
+  - Next: 继续推进 Skeletons 全量套件复跑与证据文档回写。
+
+- **[2026-04-26 00:15:00] Action**: 质量门禁复核
+  - Result: `eslint`（三文件）0 errors（warnings 存量），`npm run i18n:check` 通过。
+  - Next: 持续推进三派系审计与 Skeletons 全链路回归，不中途收口。
+
+- **[2026-04-26 08:02:00] Action**: 复跑三派系主能力与四项审计门禁
+  - Result:
+    - `newFactionAbilities`: `178 passed / 1 skipped`
+    - `interactionTargetTypeAudit + interactionDefIdAudit + abilityBehaviorAudit + interactionCompletenessAudit`: `36 passed`
+    - `npm run i18n:check`: 通过（仅 dynamic-key warning）
+  - Next: 继续复核横幅端到端并回写审计证据。
+
+- **[2026-04-26 08:06:00] Action**: 复跑 SmashUp 大厅 E2E 并核图三派系统一横幅
+  - Result: `npm run test:e2e:ci -- e2e/smashup/smashup.e2e.ts` 为 `2 passed / 1 failed`；横幅目标用例通过并已核对共享截图，失败项是“3 人房间座位状态”在第三访客 join `page.goto` 超时（30s）。
+  - Next: 将本轮结果回写 evidence，并在后续批次单独收敛该 E2E 稳定性问题。
+
+- **[2026-04-26 08:22:00] Action**: 修复 3 人房 E2E 超时并复跑整文件
+  - Result: 在 `e2e/smashup/smashup.e2e.ts` 的“3 人房间可加入且大厅会显示座位状态”用例增加 `test.setTimeout(120000)`；`npx eslint e2e/smashup/smashup.e2e.ts` 通过；`npm run test:e2e:ci -- e2e/smashup/smashup.e2e.ts` 结果 `3 passed`。
+  - Next: 回写审计证据并继续三派系下一批审计推进。
+
+- **[2026-04-26 08:26:00] Action**: 追加 SmashUp smoke 复核
+  - Result: `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/smashup.smoke.test.ts --configLoader native --maxWorkers 1` 通过（`124 passed`）。
+  - Next: 继续维持三派系审计与门禁同步口径。
+
+- **[2026-04-26 08:32:00] Action**: 追加全量 SmashUp 回归探测
+  - Result: `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup --configLoader native --maxWorkers 1` 失败（`14 failed`）。
+    - 失败簇：`afterScoring-rescoring.test.ts`（2）、`commandsValidation.test.ts`（1）、`onDestroyAbilities.test.ts`（11）。
+  - Next: 进入失败簇分批排查（先 afterScoring/response-window，再 onDestroy 链路），逐批补证据后继续收敛。
+
+- **[2026-04-26 09:13:00] Action**: 收敛遗留 2 条失败（`newFactionAbilities`）
+  - Result:
+    - `bear_cavalry_bear_necessities` 回归断言已对齐卡面权威语义（目标应包含“对手随从 + 已打出的行动卡”）。
+    - `bear_cavalry_bear_necessities` 交互 handler 增加 stale 目标校验：目标行动卡已离场时不再发 `ONGOING_DETACHED`。
+    - 定向验证：`newFactionAbilities.test.ts` 通过（`174 passed / 1 skipped`）。
+  - Next: 复跑全量 `src/games/smashup`，确认 14 条失败簇全部清零。
+
+- **[2026-04-26 09:22:00] Action**: 全量 SmashUp 回归复跑（稳定参数）
+  - Result:
+    - 命令：`node scripts/infra/vitest-cli-safe.mjs run src/games/smashup --configLoader native --pool threads --maxWorkers 1 --no-file-parallelism`
+    - 结果：`146 files passed / 9 skipped`，`2016 passed / 19 skipped`（失败簇清零）。
+    - 本轮相关文件 `eslint` 已跑（0 errors，warnings 存量未扩大）。
+  - Next: 持续推进三派系审计批次与证据回写，不中断执行。
+
+- **[2026-04-26 09:26:00] Action**: 追加复跑三派系四审计套件（D1-D49 门禁对应静态审计）
+  - Result:
+    - 命令：`node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/interactionTargetTypeAudit.test.ts src/games/smashup/__tests__/interactionDefIdAudit.test.ts src/games/smashup/__tests__/abilityBehaviorAudit.test.ts src/games/smashup/__tests__/interactionCompletenessAudit.test.ts --config vitest.config.audit.ts --configLoader native --maxWorkers 1`
+    - 结果：`4 files passed`，`36 passed`。
+  - Next: 继续三派系审计证据回写与长期任务收口准备。
+
+- **[2026-04-26 09:44:00] Action**: 横幅 E2E 稳态修复与整文件复跑
+  - Result:
+    - 修复：`e2e/smashup/smashup.e2e.ts`、`e2e/smashup.e2e.ts` 的 `ensureGameServerAvailable` 改为 `45s` 轮询探活（`/games`），避免服务冷启动瞬间误判 `skip`。
+    - `npx eslint e2e/smashup/smashup.e2e.ts e2e/smashup.e2e.ts`：0 errors。
+    - `npm run test:e2e:ci:file -- e2e/smashup/smashup.e2e.ts "派系选择页应显示 10 周年三派系与统一斜向实施中横幅"`：通过（`1 passed`）。
+    - `npm run test:e2e:ci -- e2e/smashup/smashup.e2e.ts`：通过（`3 passed`）。
+    - `npm run i18n:check`：通过（仅既有 `dynamic-key` warning）。
+  - Next: 继续三派系审计文档补全与最终汇总准备。
+
+- **[2026-04-26 10:12:00] Action**: World Champs L3 玩法补证（斗志奖杯 + 鼠、鸟与香肠）
+  - Result:
+    - 更新 `e2e/smashup/smashup-robot-hoverbot-new.e2e.ts`：
+      - 新增 `鼠、鸟与香肠` 真实入口二段交互 E2E；
+      - 修正 `斗志奖杯` 多选提交为 `optionIds[]`，消除多选态抖动导致的假失败。
+    - `npx eslint e2e/smashup/smashup-robot-hoverbot-new.e2e.ts`：0 errors（warnings 存量）。
+    - `$env:BG_BYPASS_GLOBAL_HEAVY_BUDGET='1'; npm run test:e2e:ci:file -- e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "斗志奖杯打出后应抽两张并给两个己方随从各放一个"`：`1 passed`。
+    - `$env:BG_BYPASS_GLOBAL_HEAVY_BUDGET='1'; npm run test:e2e:ci:file -- e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "鼠、鸟与香肠应先选锚点再给同基地同派系至多两个随从"`：`1 passed`。
+    - `npm run i18n:check`：通过（仅既有 `dynamic-key` warning）。
+    - 新增证据文档：`evidence/smashup/smashup-world-champs-fighting-spirit-mouse-bird-e2e-2026-04-26.md`。
+    - 已回写主审计：`evidence/smashup/smashup-10th-anniversary-factions-audit-20260419.md`（L3 补证（三））。
+  - Next: 继续推进三派系整包剩余审计与最终收口判定（保持“仍有残余范围”口径，直到整包证据满足发布级门禁）。

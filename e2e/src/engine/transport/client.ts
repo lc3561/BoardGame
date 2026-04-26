@@ -16,6 +16,7 @@ import type {
     ClientToServerEvents,
     StateUpdateMeta,
     RandomSyncMeta,
+    BatchDispatchMeta,
 } from './protocol';
 import { applyPatches } from './patch';
 
@@ -328,6 +329,9 @@ export class GameTransportClient {
             batchId,
             commands,
             this.config.credentials,
+            ({
+                expectedStateID: this._lastReceivedStateID ?? undefined,
+            } satisfies BatchDispatchMeta),
         );
     }
 

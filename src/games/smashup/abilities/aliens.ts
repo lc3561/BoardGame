@@ -661,52 +661,42 @@ export function registerAlienInteractionHandlers(): void {
         return { state, events };
     });
 
-    // 探测第一步（多对手时）：选择目标玩家后，直接创建选择随从的交互
+    // 探测第一步（多对手时）：选择目标玩家后，展示其整手牌并仅允许选择随从
     registerInteractionHandler('alien_probe_choose_target', (state, playerId, value, _iData, _random, timestamp) => {
         const { targetPlayerId } = value as { targetPlayerId: string };
         const targetPlayer = state.core.players[targetPlayerId];
 
-        // 从手牌中筛选随从卡
-        const minionCards = targetPlayer.hand.filter(c => c.type === 'minion');
-
-        if (minionCards.length === 0) {
+        if (!targetPlayer) return { state, events: [] };
+        const hasMinion = targetPlayer.hand.some(c => c.type === 'minion');
+        if (!hasMinion) {
             // 没有随从卡，效果结束
             return { state, events: [buildAbilityFeedback(playerId, 'feedback.no_minions_in_hand', timestamp)] };
         }
 
-        // 创建交互：直接展示随从选项，不发送 REVEAL_HAND 事件
-        const minionOptions = minionCards.map(card => {
-            const def = getMinionDef(card.defId);
+        const buildHandOptions = (hand: typeof targetPlayer.hand) => hand.map(card => {
+            const isMinion = card.type === 'minion';
+            const def = getCardDef(card.defId);
             return {
                 id: card.uid,
                 label: def?.name ?? card.defId,
                 value: { cardUid: card.uid, defId: card.defId, targetPlayerId },
                 _source: 'hand' as const,
-                    displayMode: 'card' as const,
+                displayMode: 'card' as const,
+                disabled: !isMinion,
             };
         });
 
         const next = createSimpleChoice(
             `alien_probe_${timestamp}`, playerId,
             '选择对手手牌中的一张随从，让其弃掉',
-            minionOptions,
+            buildHandOptions(targetPlayer.hand),
             { sourceId: 'alien_probe', targetType: 'generic' },
         );
 
         // 添加自定义 optionsGenerator，确保刷新时检查对手的手牌而不是当前玩家的手牌
         (next.data as any).optionsGenerator = (state: any) => {
-            const targetPlayer = state.core.players[targetPlayerId];
-            const currentMinionCards = targetPlayer.hand.filter((c: any) => c.type === 'minion');
-            return currentMinionCards.map((card: any) => {
-                const def = getMinionDef(card.defId);
-                return {
-                    id: card.uid,
-                    label: def?.name ?? card.defId,
-                    value: { cardUid: card.uid, defId: card.defId, targetPlayerId },
-                    _source: 'hand' as const,
-                    displayMode: 'card' as const,
-                };
-            });
+            const nextTargetPlayer = state.core.players[targetPlayerId];
+            return nextTargetPlayer ? buildHandOptions(nextTargetPlayer.hand) : [];
         };
 
         return { state: queueInteraction(state, next), events: [] };

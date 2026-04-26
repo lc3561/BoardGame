@@ -551,6 +551,8 @@ export interface TriggerInstance {
     destroyerId?: PlayerId;
     reason?: string;
     affectType?: import('./ongoingEffects').AffectType;
+    counterChangeKind?: 'added' | 'removed';
+    counterDelta?: number;
     rankings?: { playerId: PlayerId; power: number; vp: number }[];
     triggerBaseControllersAtTrigger?: PlayerId[];
     actionTargetBaseIndex?: number;
@@ -992,6 +994,8 @@ export interface MinionPlayedEvent extends GameEvent<'su:minion_played'> {
         consumesNormalLimit?: boolean;
         /** 允许隐式来源：跳过卡牌位置检查（用于动态牌源如"亡者崛起"的临时牌源） */
         allowImplicitSource?: boolean;
+        /** 强制打出但不触发 onPlay（如最后的歌声） */
+        skipOnPlayAbility?: boolean;
     };
     /** 来源命令类型（用于去重：只有来自 PLAY_MINION 命令的事件才在 pipeline 步骤 4.5 触发 onPlay） */
     sourceCommandType?: string;

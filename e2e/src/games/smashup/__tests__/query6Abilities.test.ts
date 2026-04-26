@@ -596,6 +596,46 @@ describe('巫师派系能力（第6批）', () => {
         expect(current?.data?.sourceId).toBe('wizard_scry');
     });
 
+    it('wizard_scry: refresh 后仍应从当前牌库重新生成行动卡候选', () => {
+        const state = makeState({
+            players: {
+                '0': makePlayer('0', {
+                    hand: [makeCard('a1', 'wizard_scry', 'action', '0')],
+                    deck: [
+                        makeCard('old-action', 'test_a', 'action', '0'),
+                        makeCard('old-minion', 'test_m', 'minion', '0'),
+                    ],
+                }),
+                '1': makePlayer('1'),
+            },
+        });
+
+        const { matchState } = execPlayAction(state, '0', 'a1');
+        const refreshedState = refreshInteractionOptions({
+            ...matchState,
+            core: {
+                ...matchState.core,
+                players: {
+                    ...matchState.core.players,
+                    '0': {
+                        ...matchState.core.players['0'],
+                        deck: [
+                            makeCard('fresh-action', 'test_a2', 'action', '0'),
+                            makeCard('fresh-action-2', 'test_a3', 'action', '0'),
+                            makeCard('fresh-minion', 'test_m2', 'minion', '0'),
+                        ],
+                    },
+                },
+            },
+        });
+
+        const current = (refreshedState.sys as any).interaction?.current;
+        expect(current?.data?.sourceId).toBe('wizard_scry');
+        const optionUids = (current?.data?.options ?? []).map((option: any) => option.value?.cardUid).filter(Boolean);
+        expect(optionUids).toEqual(['fresh-action', 'fresh-action-2']);
+        expect(optionUids).not.toContain('old-action');
+    });
+
     it('wizard_scry: 牌库无行动卡时无事件', () => {
         const state = makeState({
             players: {

@@ -271,6 +271,70 @@ describe('base_the_field_of_honor: 消灭者获1VP', () => {
         expect(vpEvents[0].payload.amount).toBe(1);
     });
 
+    it('robot_microbot_guard 在荣耀之地消灭 1 个随从时只给 1VP', () => {
+        const core = makeState({
+            players: {
+                '0': {
+                    id: '0',
+                    vp: 0,
+                    hand: [makeCard('guard', '0', 'robot_microbot_guard')],
+                    deck: [],
+                    discard: [],
+                    minionsPlayed: 0,
+                    minionLimit: 1,
+                    actionsPlayed: 0,
+                    actionLimit: 1,
+                    factions: [SMASHUP_FACTION_IDS.ROBOTS, SMASHUP_FACTION_IDS.WIZARDS],
+                },
+                '1': {
+                    id: '1',
+                    vp: 0,
+                    hand: [],
+                    deck: [],
+                    discard: [],
+                    minionsPlayed: 0,
+                    minionLimit: 1,
+                    actionsPlayed: 0,
+                    actionLimit: 1,
+                    factions: [SMASHUP_FACTION_IDS.ROBOTS, SMASHUP_FACTION_IDS.WIZARDS],
+                },
+            },
+            bases: [{
+                defId: 'base_the_field_of_honor',
+                minions: [
+                    makeMinion('ally-a', '0', 1, 'robot_microbot_alpha'),
+                    makeMinion('ally-b', '0', 1, 'robot_microbot_beta'),
+                    makeMinion('enemy-target', '1', 2, 'robot_microbot_reclaimer'),
+                ],
+                ongoingActions: [],
+            }],
+        });
+
+        const played = runCommand(
+            makeMatchState(core),
+            { type: SU_COMMANDS.PLAY_MINION, playerId: '0', payload: { cardUid: 'guard', baseIndex: 0 } },
+            defaultTestRandom,
+        );
+
+        const prompt = getInteractionsFromMS(played.finalState)[0] as any;
+        expect(prompt?.data?.sourceId).toBe('robot_microbot_guard');
+        const targetOption = prompt.data.options.find((option: any) => option.value?.minionUid === 'enemy-target');
+        expect(targetOption).toBeDefined();
+
+        const resolved = runCommand(
+            played.finalState,
+            { type: INTERACTION_COMMANDS.RESPOND, playerId: '0', payload: { optionId: targetOption.id } },
+            defaultTestRandom,
+        );
+
+        const vpEvents = resolved.events.filter(event => event.type === SU_EVENTS.VP_AWARDED);
+        expect(vpEvents).toHaveLength(1);
+        expect((vpEvents[0] as any).payload.playerId).toBe('0');
+        expect((vpEvents[0] as any).payload.amount).toBe(1);
+        expect(resolved.finalState.core.players['0'].vp).toBe(1);
+        expect(resolved.finalState.core.players['1'].vp).toBe(0);
+    });
+
     it('集成路径：destroyerId 缺失时，VP 仍应判给当前操作者控制的随从一侧', () => {
         const victim = {
             uid: 'victim',
@@ -615,7 +679,7 @@ describe('base_the_workshop: 额外行动额度', () => {
         expect((events[0] as any).payload.delta).toBe(1);
     });
 
-    it('打到工坊随从上的战术仍应给予额外战术额度', () => {
+    it('打到工坊随从上的战术不应给予额外战术额度', () => {
         const ctx: BaseAbilityContext = {
             state: makeState({
                 bases: [{
@@ -633,11 +697,7 @@ describe('base_the_workshop: 额外行动额度', () => {
         };
 
         const { events } = triggerBaseAbility('base_the_workshop', 'onActionPlayed', ctx);
-        expect(events).toHaveLength(1);
-        expect(events[0].type).toBe(SU_EVENTS.LIMIT_MODIFIED);
-        expect((events[0] as any).payload.playerId).toBe('0');
-        expect((events[0] as any).payload.limitType).toBe('action');
-        expect((events[0] as any).payload.delta).toBe(1);
+        expect(events).toHaveLength(0);
     });
 });
 

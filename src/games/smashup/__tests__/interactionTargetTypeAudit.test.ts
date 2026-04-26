@@ -17,7 +17,7 @@ import {
     inferDirectTargetTypeFromOptions,
     isCreateSimpleChoiceCall,
 } from './helpers/simpleChoiceAst';
-import { resolveSmashUpHandInteractionMode, resolveSmashUpHandPromptUiMode } from '../ui/interactionMode';
+import { isSmashUpPromptOwnedByPlayer, resolveSmashUpHandInteractionMode, resolveSmashUpHandPromptUiMode } from '../ui/interactionMode';
 
 interface TargetTypeIssue {
     file: string;
@@ -64,7 +64,7 @@ const REQUIRED_SOURCE_CONFIGS: Record<string, { targetType?: string; autoRefresh
     bear_cavalry_commission_choose_minion: { targetType: 'hand' },
     cthulhu_recruit_by_force: { targetType: 'generic' },
     cthulhu_it_begins_again: { targetType: 'generic' },
-    cthulhu_corruption: { targetType: 'generic', autoRefresh: 'field', responseValidationMode: 'live' },
+    cthulhu_corruption: { targetType: 'minion', autoRefresh: 'field', responseValidationMode: 'live' },
     cthulhu_madness_unleashed: { targetType: 'hand' },
     cthulhu_chosen_confirm: { targetType: 'minion' },
     cthulhu_star_spawn: { targetType: 'generic' },
@@ -74,7 +74,8 @@ const REQUIRED_SOURCE_CONFIGS: Record<string, { targetType?: string; autoRefresh
     elder_thing_elder_thing_choice: { targetType: 'button' },
     elder_thing_shoggoth_opponent: { targetType: 'button' },
     elder_thing_mi_go: { targetType: 'button' },
-    pirate_broadside: { targetType: 'generic' },
+    pirate_broadside_choose_base: { targetType: 'base' },
+    pirate_broadside_choose_player: { targetType: 'player' },
     pirate_buccaneer_move: { targetType: 'base' },
     pirate_king_move: { targetType: 'minion' },
     pirate_sea_dogs_choose_faction: { targetType: 'generic' },
@@ -136,7 +137,6 @@ const APPROVED_GENERIC_SOURCE_REASONS: Record<string, string> = {
     base_inventors_salon: '候选项是抽象奖励分支，不是单一棋盘实体直点。',
     base_wizard_academy: '牌库顶揭示后的处理分支，依赖展示卡牌上下文而不是棋盘实体。',
     cthulhu_it_begins_again: '多选弃牌堆行动卡，来源为 discard，不能映射为单选 hand/board 直选。',
-    cthulhu_corruption: '候选项由 buildActionMinionTargetOptions 生成，可能混合随从与持续行动卡，单一 minion/base 直点语义不足。',
     cthulhu_recruit_by_force: '多选弃牌堆随从卡，来源为 discard 卡面而不是棋盘实体。',
     cthulhu_servitor: '从弃牌堆行动卡中选回牌库的目标，来源为 discard 卡面。',
     cthulhu_star_spawn: '同时涉及目标玩家与疯狂卡转移，不能压缩成单一实体语义。',
@@ -148,15 +148,24 @@ const APPROVED_GENERIC_SOURCE_REASONS: Record<string, string> = {
     killer_plant_sprout_search: '牌库搜索结果卡面选择，需要 autoRefresh/live 重验而非棋盘直点。',
     killer_plant_venus_man_trap_search: '牌库搜索结果卡面选择，需要 autoRefresh/live 重验而非棋盘直点。',
     miskatonic_book_of_iter_the_unseen: '候选项来自特殊卡牌池/效果分支，不是棋盘实体直选。',
-    pirate_broadside: '同时选择基地与玩家两个维度，单一 base/minion/hand 语义不足以表达。',
     pirate_sea_dogs_choose_faction: '选择的是派系标识，而不是棋盘或手牌实体。',
     robot_hoverbot: '牌库顶揭示后的处理分支，不对应棋盘实体。',
     robot_microbot_reclaimer: '多选弃牌堆 microbot 卡，来源为 discard 卡面。',
     steampunk_mechanic: '候选项是复合效果分支，不能压成单一实体语义。',
     steampunk_scrap_diving: '从弃牌堆行动卡中选择回收目标，来源为 discard 卡面。',
-    skeletons_dig_em_up: '候选项是玩家已埋葬牌的快照，需同时保留 buried card 与原基地上下文。',
     skeletons_burst_forth: '候选项是当前基地已埋葬牌快照，需保留 buried card 与基地上下文。',
-    skeletons_returned_one: '候选项混合“手牌低力量随从”与“本体自埋葬（buriedFrom=play）”两类语义，不能压缩成单一 hand/minion 直选。',
+    skeletons_dig_em_up_cards: '候选项是指定基地中已埋葬牌的多选快照，需保留 buried card 与原基地上下文。',
+    skeletons_grave_goods_uncover: '候选项是玩家已埋葬牌快照，挖掘时必须保留 buried card 与原基地上下文。',
+    skeletons_graveyard: '候选项是基地埋葬区中的卡牌快照，需保留 buried card 与原基地上下文。',
+    skeletons_hearse_fleet_cards: '候选项是跨基地埋葬牌搬运目标，必须保留 buried card 与原基地上下文。',
+    skeletons_hearse_fleet_special_from: '计分前特殊移出分支需要选择固定基地中的埋葬牌快照，需保留原基地上下文。',
+    skeletons_hearse_fleet_special_into: '计分前特殊移入分支需要选择非固定基地埋葬牌快照，需保留原基地上下文。',
+    skeletons_lord_of_bones_uncover: '天赋挖掘分支选择的是基地埋葬区卡牌快照，需保留 buried card 与原基地上下文。',
+    skeletons_place_em_down_cards: '候选项来自弃牌堆卡牌快照，后续还要校验总力量并串联基地埋葬上下文。',
+    skeletons_returned_one: '候选项混合“本体自埋葬（buriedFrom=play）”与跳过分支，保留 generic 以承载复合语义。',
+    skeletons_returned_one_uncover: '被翻开后的追击选择来自同基地埋葬区快照，需保留 buried card 与基地上下文。',
+    skeletons_revenant_card: '同回合多张 Revenant 时先选弃牌堆卡面，再串联基地选择，需保留复合上下文。',
+    skeletons_spooky_scary_card: '候选项来自弃牌堆低力量随从卡面，后续还要串联基地埋葬与抽牌结算。',
     trickster_hideout_pod_swap: '候选项混合手牌与牌库中的持续战术卡面，不能映射为单一 hand/deck 直选。',
     vampire_fledgling_vampire_pod_bury_source: '候选项混合手牌与弃牌堆来源，且后续还要串联基地选择。',
     vampire_wolf_pact_pod_action: '从弃牌堆静态卡面中选择洗回牌库的目标，来源为 discard 卡面。',
@@ -841,6 +850,17 @@ describe('SmashUp Interaction targetType 审计', () => {
     it('hand targetType 的交互必须先按 direct / overlay 分流，再决定是否允许拖拽', () => {
         expect(resolveSmashUpHandPromptUiMode({
             currentPrompt: { playerId: '0', multi: undefined },
+            playerID: '0',
+            targetType: 'hand',
+        })).toBe('direct');
+
+        expect(isSmashUpPromptOwnedByPlayer({
+            currentPrompt: { playerId: 0, multi: undefined } as any,
+            playerID: '0',
+        })).toBe(true);
+
+        expect(resolveSmashUpHandPromptUiMode({
+            currentPrompt: { playerId: 0, multi: undefined } as any,
             playerID: '0',
             targetType: 'hand',
         })).toBe('direct');

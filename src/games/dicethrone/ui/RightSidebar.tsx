@@ -103,11 +103,12 @@ export const RightSidebar = ({
         if (meta.dtType === 'modifyDie') {
             const config = meta.dieModifyConfig;
             const isManualConfirmMode = config?.mode === 'any' || config?.mode === 'adjust';
+            const selectCount = typeof meta.selectCount === 'number' ? meta.selectCount : 1;
             hydratedData = {
                 ...data,
                 initialResult: data.initialResult ?? { modifications: {}, modCount: 0, totalAdjustment: 0 },
-                localReducer: (current: any, step: any) => diceModifyReducer(current, step, config),
-                toCommands: diceModifyToCommands as any,
+                localReducer: (current: any, step: any) => diceModifyReducer(current, step, config, selectCount),
+                toCommands: ((result: any) => diceModifyToCommands(result, selectCount)) as any,
                 maxSteps: isManualConfirmMode ? undefined : data.maxSteps,
                 minSteps: isManualConfirmMode ? 1 : data.minSteps,
             };

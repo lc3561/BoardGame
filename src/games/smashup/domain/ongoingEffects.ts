@@ -169,6 +169,10 @@ export interface TriggerContext {
     reason?: string;
     /** 影响类型（仅 onMinionAffected） */
     affectType?: AffectType;
+    /** 指示物变化类型（仅 onMinionAffected + power_change） */
+    counterChangeKind?: 'added' | 'removed';
+    /** 指示物变化量（added 为正，removed 为负） */
+    counterDelta?: number;
     /** 基地计分排名（仅 afterScoring） */
     rankings?: { playerId: PlayerId; power: number; vp: number }[];
     /** 埋葬/翻开相关卡牌 UID */
@@ -445,6 +449,8 @@ function createTriggerInstance(
         destroyerId: ctx.destroyerId,
         reason: ctx.reason,
         affectType: ctx.affectType,
+        counterChangeKind: ctx.counterChangeKind,
+        counterDelta: ctx.counterDelta,
         rankings: ctx.rankings,
         triggerBaseControllersAtTrigger,
         buriedCardUid: (ctx as any).buriedCardUid,
@@ -1000,7 +1006,7 @@ export function isOperationRestricted(
                     // 闂佸憡甯楅悷銉ㄣ亹閸欏顩烽柕澶涢檮閿熴儵鎮峰▎蹇旑棏闁逞屽墯缁楊摰wer闂? 婵炴垶鎸哥粔纾嬨亹閺屻儱绠ラ柟鎯у暱濮ｅ鏌嶉妷锔剧畼婵炲牊鍨垮浠嬪箛椤掆偓閻撴垿鏌?
                     if (baseDef.id === 'base_tsars_palace') {
                         const hasBaseInfiltrate = base.ongoingActions.some(o =>
-                            o.ownerId === playerId && o.defId.startsWith('ninja_infiltrate'),
+                            o.ownerId === playerId && o.defId === 'ninja_infiltrate',
                         );
                         if (hasBaseInfiltrate) {
                             continue;
@@ -1034,7 +1040,7 @@ export function isOperationRestricted(
                     // 闂佸吋鐪归崕鎵礊濮椻偓瀹曠兘濡搁…鎴濇畽闂佺硶鏅涢幖顐耿鐎涙鈻斿┑鐘插暞缁犳帡鏌ゆ總澶夌盎缂佽绶氶獮鎺曨槻闁糕晜顨婇幆?Infiltrate闂佹寧绋戝绌昦y-on-base 闁荤偞绋戦懟顖涙叏閳哄懏鏅鑸电〒缁€澶愭煕閹烘挾鎳佺紓宥嗭耿瀹曪綁顢涘▎搴ｉ瀺闂婎偄娲ㄩ弲顐﹀汲閹邦喗瀚氶柕澶嗘櫆椤庢瑩鏌涢幒鏇犲牚闁?
                     if (baseDef.id === 'base_antarctic_base') {
                         const hasBaseInfiltrate = base.ongoingActions.some(o =>
-                            o.ownerId === playerId && o.defId.startsWith('ninja_infiltrate'),
+                            o.ownerId === playerId && o.defId === 'ninja_infiltrate',
                         );
                         if (hasBaseInfiltrate) {
                             continue;

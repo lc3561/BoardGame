@@ -104,6 +104,82 @@ describe('expansion base extra timing regression coverage', () => {
     });
 });
 
+describe('10th Anniversary bases', () => {
+    it('base_mermaid_pool 在你于此有仆从时，会提供把对手仆从移动到这里的交互', () => {
+        const result = triggerBaseAbilityWithMS('base_mermaid_pool', 'onTurnStart', makeCtx({
+            state: makeState({
+                bases: [
+                    makeBase('base_mermaid_pool', {
+                        minions: [makeMinion('ally-1', '0', 3)],
+                    }),
+                    makeBase('other_base', {
+                        minions: [makeMinion('enemy-1', '1', 4)],
+                    }),
+                ],
+            }),
+            baseDefId: 'base_mermaid_pool',
+            baseIndex: 0,
+        }));
+
+        const interactions = getInteractionsFromResult(result);
+        expect(interactions).toHaveLength(1);
+        expect(interactions[0].data.sourceId).toBe('base_mermaid_pool');
+
+        const handler = getInteractionHandler('base_mermaid_pool');
+        const resolved = handler!(
+            makeMatchState(result.matchState?.core ?? makeState({
+                bases: [
+                    makeBase('base_mermaid_pool', { minions: [makeMinion('ally-1', '0', 3)] }),
+                    makeBase('other_base', { minions: [makeMinion('enemy-1', '1', 4)] }),
+                ],
+            })),
+            '0',
+            { minionUid: 'enemy-1', minionDefId: 'd1', fromBaseIndex: 1 },
+            { continuationContext: { targetBaseIndex: 0 } },
+            dummyRandom,
+            1000,
+        );
+
+        const moveEvent = resolved.events.find(event => event.type === SU_EVENTS.MINION_MOVED) as any;
+        expect(moveEvent).toBeTruthy();
+        expect(moveEvent.payload.fromBaseIndex).toBe(1);
+        expect(moveEvent.payload.toBaseIndex).toBe(0);
+    });
+
+    it('base_ossuary 在回合开始时可从弃牌堆埋葬力量 3 或以下仆从到这里', () => {
+        const core = makeState({
+            bases: [makeBase('base_ossuary')],
+            players: {
+                '0': makePlayer('0', {
+                    discard: [makeCard('minion-1', 'skeletons_returned_one', 'minion')],
+                }),
+                '1': makePlayer('1'),
+            },
+        });
+        const result = triggerBaseAbilityWithMS('base_ossuary', 'onTurnStart', makeCtx({
+            state: core,
+            baseDefId: 'base_ossuary',
+            baseIndex: 0,
+        }));
+
+        const interactions = getInteractionsFromResult(result);
+        expect(interactions).toHaveLength(1);
+        expect(interactions[0].data.sourceId).toBe('base_ossuary');
+
+        const handler = getInteractionHandler('base_ossuary');
+        const resolved = handler!(
+            makeMatchState(core),
+            '0',
+            { cardUid: 'minion-1', defId: 'skeletons_returned_one' },
+            { continuationContext: { targetBaseIndex: 0 } },
+            dummyRandom,
+            1000,
+        );
+
+        expect(resolved.events.some(event => event.type === SU_EVENTS.CARD_BURIED)).toBe(true);
+    });
+});
+
 const dummyRandom: RandomFn = {
     shuffle: (arr: any[]) => [...arr],
     random: () => 0.5,

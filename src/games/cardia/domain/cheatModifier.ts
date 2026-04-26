@@ -1,6 +1,9 @@
 /**
  * Cardia CheatModifier
  * 调试作弊命令，用于测试和开发
+ *
+ * 当前仍是历史残留接口，尚未接入共享 CheatSystem 的稳定 cardId 直接补牌能力。
+ * 在补齐 cardRegistry 与实例构造规则前，Cardia 默认视为不支持完整卡池注入。
  */
 
 import type { CheatModifier } from '../../../engine/systems/CheatSystem';

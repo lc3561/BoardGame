@@ -269,6 +269,32 @@ describe('scoreBases 阶段自动推进', () => {
         expect(result?.playerId).toBe('0');
     });
 
+    it('interaction 仅以 isBlocked 形式存在时，AI 不应错误生成 advance-phase', () => {
+        const state: MatchState<SmashUpCore> = {
+            core: makeMinimalCore({
+                bases: [makeBase('base_pirate_cove')],
+            }),
+            sys: {
+                phase: 'playCards',
+                interaction: {
+                    current: null,
+                    queue: [],
+                    isBlocked: true,
+                },
+                responseWindow: {
+                    current: null,
+                },
+            } as any,
+        };
+
+        const legalActions = buildSmashUpAiLegalActions({
+            playerId: '0',
+            state,
+        });
+
+        expect(legalActions.some((action) => action.kind === 'advance-phase')).toBe(false);
+    });
+
     it('反馈 69beb069：基地已达 breakpoint 且当前玩家仍有额外随从额度时，ADVANCE_PHASE 仍应触发基地计分', () => {
         const initialState: MatchState<SmashUpCore> = {
             core: makeMinimalCore({

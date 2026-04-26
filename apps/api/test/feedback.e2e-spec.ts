@@ -373,6 +373,142 @@ describe('Feedback Module (e2e)', () => {
         expect(docs[0].occurrenceCount).toBe(2);
     });
 
+    it('online-ai-watchdog legal-action-recovered 在同动作下也应按 responseWindow.sourceId 分桶', async () => {
+        const payloadA = {
+            content: '[system][online-ai-watchdog] legal-action-recovered response-window:legal-action:response-pass:response-pass:window-a',
+            source: 'online-ai-watchdog',
+            type: 'bug',
+            severity: 'medium',
+            status: 'resolved',
+            autoReportKind: 'legal-action-recovered',
+            incidentKey: 'legal-window-a',
+            gameName: 'dicethrone',
+            clientContext: {
+                gameId: 'dicethrone',
+                route: 'server-watchdog',
+                mode: 'online',
+            },
+            errorContext: {
+                source: 'online-ai-watchdog',
+                name: 'legal-action-recovered',
+                message: 'response-window:legal-action:response-pass:response-pass:window-a',
+            },
+            stateSnapshot: JSON.stringify({
+                phase: 'defensiveRoll',
+                reason: 'response-window',
+                responseWindow: {
+                    windowType: 'afterAttackResolved',
+                    sourceId: 'attack-1',
+                    responderQueue: ['1'],
+                    currentResponderIndex: 0,
+                },
+            }),
+        };
+        const payloadB = {
+            ...payloadA,
+            content: '[system][online-ai-watchdog] legal-action-recovered response-window:legal-action:response-pass:response-pass:window-b',
+            incidentKey: 'legal-window-b',
+            errorContext: {
+                ...payloadA.errorContext,
+                message: 'response-window:legal-action:response-pass:response-pass:window-b',
+            },
+            stateSnapshot: JSON.stringify({
+                phase: 'defensiveRoll',
+                reason: 'response-window',
+                responseWindow: {
+                    windowType: 'afterAttackResolved',
+                    sourceId: 'attack-2',
+                    responderQueue: ['1'],
+                    currentResponderIndex: 0,
+                },
+            }),
+        };
+
+        const first = await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+            .send(payloadA)
+            .expect(201);
+
+        const second = await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+            .send(payloadB)
+            .expect(201);
+
+        expect(second.body._id).not.toBe(first.body._id);
+
+        const docs = await feedbackModel.find({ source: 'online-ai-watchdog' }).sort({ createdAt: 1 }).lean();
+        expect(docs).toHaveLength(2);
+        expect(String(docs[0].aggregationKey || '')).toContain('attack-1');
+        expect(String(docs[1].aggregationKey || '')).toContain('attack-2');
+    });
+
+    it('online-ai-watchdog force-end-turn-failed 应按交互 sourceId 分桶，避免不同卡死交互混桶', async () => {
+        const payloadA = {
+            content: '[system][online-ai-watchdog] force-end-turn-failed visible-interaction:recover-interaction:blocker_persisted',
+            source: 'online-ai-watchdog',
+            type: 'bug',
+            severity: 'high',
+            autoReportKind: 'force-end-turn-failed',
+            incidentKey: 'force-failed-a',
+            gameName: 'smashup',
+            clientContext: {
+                gameId: 'smashup',
+                route: 'server-watchdog',
+                mode: 'online',
+            },
+            errorContext: {
+                source: 'online-ai-watchdog',
+                name: 'force-end-turn-failed',
+                message: 'visible-interaction:recover-interaction:blocker_persisted',
+            },
+            stateSnapshot: JSON.stringify({
+                phase: 'scoreBases',
+                reason: 'visible-interaction',
+                interaction: {
+                    seat: {
+                        kind: 'simple-choice',
+                        sourceId: 'pirate_first_mate_choose_base',
+                    },
+                },
+            }),
+        };
+        const payloadB = {
+            ...payloadA,
+            incidentKey: 'force-failed-b',
+            stateSnapshot: JSON.stringify({
+                phase: 'scoreBases',
+                reason: 'visible-interaction',
+                interaction: {
+                    seat: {
+                        kind: 'simple-choice',
+                        sourceId: 'smashup_reaction_choose',
+                    },
+                },
+            }),
+        };
+
+        const first = await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+            .send(payloadA)
+            .expect(201);
+
+        const second = await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+            .send(payloadB)
+            .expect(201);
+
+        expect(second.body._id).not.toBe(first.body._id);
+
+        const docs = await feedbackModel.find({ source: 'online-ai-watchdog' }).sort({ createdAt: 1 }).lean();
+        expect(docs).toHaveLength(2);
+        expect(String(docs[0].aggregationKey || '')).toContain('pirate_first_mate_choose_base');
+        expect(String(docs[1].aggregationKey || '')).toContain('smashup_reaction_choose');
+    });
+
     it('online-ai-watchdog 已打开的失败聚合项，不应被后续一次成功恢复自动改成 resolved', async () => {
         const failed = {
             content: '[system][online-ai-watchdog] force-end-turn-failed active-turn:follow-up-advance:command_failed',
@@ -688,6 +824,78 @@ describe('Feedback Module (e2e)', () => {
         expect(second.body._id).toBe(first.body._id);
         expect(String(second.body.incidentKey || '')).toContain(':summonerwars:');
         expect(second.body.gameId).toBe('summonerwars');
+    });
+
+    it('online-ai-watchdog unsatisfiable-interaction-auto-skipped 应按交互 sourceId 分桶，避免不同强制跳过根因混桶', async () => {
+        const basePayload = {
+            content: '[system][online-ai-watchdog] unsatisfiable-interaction-auto-skipped all-options-disabled',
+            source: 'online-ai-watchdog',
+            type: 'bug',
+            severity: 'medium',
+            status: 'resolved',
+            autoReportKind: 'unsatisfiable-interaction-auto-skipped',
+            gameName: 'smashup',
+            clientContext: {
+                gameId: 'smashup',
+                route: 'server-watchdog',
+                mode: 'online',
+            },
+            errorContext: {
+                source: 'online-ai-watchdog',
+                name: 'unsatisfiable-interaction-auto-skipped',
+                message: 'all-options-disabled',
+            },
+        };
+
+        const first = await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+            .send({
+                ...basePayload,
+                incidentKey: 'unsat-a',
+                stateSnapshot: JSON.stringify({
+                    phase: 'playCards',
+                    commandType: 'SYS_INTERACTION_RESPOND',
+                    interaction: {
+                        seat: {
+                            id: 'interaction-a',
+                            kind: 'simple-choice',
+                            sourceId: 'card-alpha',
+                        },
+                    },
+                }),
+            })
+            .expect(201);
+
+        const second = await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+            .send({
+                ...basePayload,
+                incidentKey: 'unsat-b',
+                stateSnapshot: JSON.stringify({
+                    phase: 'playCards',
+                    commandType: 'SYS_INTERACTION_RESPOND',
+                    interaction: {
+                        seat: {
+                            id: 'interaction-b',
+                            kind: 'simple-choice',
+                            sourceId: 'card-beta',
+                        },
+                    },
+                }),
+            })
+            .expect(201);
+
+        expect(second.body._id).not.toBe(first.body._id);
+
+        const docs = await feedbackModel.find({
+            source: 'online-ai-watchdog',
+            autoReportKind: 'unsatisfiable-interaction-auto-skipped',
+        }).sort({ createdAt: 1 }).lean();
+        expect(docs).toHaveLength(2);
+        expect(String(docs[0].incidentKey || '')).toContain('card-alpha');
+        expect(String(docs[1].incidentKey || '')).toContain('card-beta');
     });
 
     it('watchdog 聚合项被管理员 reopen 后应恢复 activeKey 并继续复用同一 canonical', async () => {

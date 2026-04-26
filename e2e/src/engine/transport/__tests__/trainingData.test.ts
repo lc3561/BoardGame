@@ -139,7 +139,10 @@ describe('trainingData', () => {
         const baseDir = await mkdtemp(path.join(os.tmpdir(), 'bg-training-data-'));
         tempDirs.push(baseDir);
 
-        const recorder = new JsonlTrainingDataRecorder({ baseDir });
+        const recorder = new JsonlTrainingDataRecorder({
+            baseDir,
+            now: () => new Date('2026-03-25T12:00:00.000Z'),
+        });
         const sample = buildTrainingDecisionSample({
             rulesVersion: 'test-rules-v1',
             gameId: 'tictactoe',

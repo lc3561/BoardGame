@@ -29,6 +29,10 @@ import { useEventCardModes, requiresEventInteraction } from './useEventCardModes
 import type { PendingBeforeAttack } from './modeTypes';
 import type { InteractionDescriptor, PromptOption } from '../../../engine/systems/InteractionSystem';
 import { INTERACTION_COMMANDS } from '../../../engine/systems/InteractionSystem';
+import {
+  findActivatedAbilityTargetOptionByPosition,
+  type SwSimpleChoiceInteraction,
+} from './systemInteractionAdapter';
 
 // 从 modeTypes 重新导出类型（保持 StatusBanners 等消费方的导入路径兼容）
 export type {
@@ -124,7 +128,7 @@ export function useCellInteraction({
       type: (data.sw as { type?: string }).type ?? '',
       meta: data.sw as Record<string, unknown>,
       options: (data.options ?? []) as PromptOption[],
-    };
+    } satisfies SwSimpleChoiceInteraction;
   }, [interaction, myPlayerId]);
 
   const respondInteractionOption = useCallback((optionId: string | null, optionIds?: string[]) => {
@@ -771,12 +775,41 @@ export function useCellInteraction({
               _noSnapshot: true,
             });
           } else if (abilityMode.abilityId === 'vanish') {
+            if (swInteraction?.type === 'activated_ability_target') {
+              const option = findActivatedAbilityTargetOptionByPosition(
+                swInteraction,
+                'vanish',
+                { row: gameRow, col: gameCol },
+                'selectUnit',
+              );
+              if (option) {
+                dispatch(INTERACTION_COMMANDS.RESPOND, {
+                  interactionId: swInteraction.id,
+                  optionId: option.id,
+                });
+                setAbilityMode(null);
+              }
+              return;
+            }
             dispatch(SW_COMMANDS.ACTIVATE_ABILITY, {
               abilityId: 'vanish',
               sourceUnitId: abilityMode.sourceUnitId,
               targetPosition: { row: gameRow, col: gameCol },
             });
           } else if (abilityMode.abilityId === 'high_telekinesis_instead') {
+            if (swInteraction?.type === 'activated_ability_target') {
+              const option = findActivatedAbilityTargetOptionByPosition(
+                swInteraction,
+                'high_telekinesis_instead',
+                { row: gameRow, col: gameCol },
+                'selectUnit',
+              );
+              if (option) {
+                respondInteractionOption(option.id);
+                setAbilityMode(null);
+              }
+              return;
+            }
             // 高阶念力（代替攻击）：选择目标后计算所有可达终点，进入棋盘点击终点模式
             const htTargetPos = { row: gameRow, col: gameCol };
             const htDests = getForceDestinations(core, htTargetPos, 1);
@@ -790,6 +823,19 @@ export function useCellInteraction({
             });
             return;
           } else if (abilityMode.abilityId === 'telekinesis_instead') {
+            if (swInteraction?.type === 'activated_ability_target') {
+              const option = findActivatedAbilityTargetOptionByPosition(
+                swInteraction,
+                'telekinesis_instead',
+                { row: gameRow, col: gameCol },
+                'selectUnit',
+              );
+              if (option) {
+                respondInteractionOption(option.id);
+                setAbilityMode(null);
+              }
+              return;
+            }
             // 念力（代替攻击）：选择目标后计算所有可达终点，进入棋盘点击终点模式
             const tkTargetPos = { row: gameRow, col: gameCol };
             const tkDests = getForceDestinations(core, tkTargetPos, 1);
@@ -897,6 +943,19 @@ export function useCellInteraction({
     if (abilityMode && abilityMode.step === 'selectPosition') {
       const isValid = validAbilityPositions.some(p => p.row === gameRow && p.col === gameCol);
       if (isValid) {
+        if (abilityMode.abilityId === 'revive_undead' && swInteraction?.type === 'activated_ability_target') {
+          const option = findActivatedAbilityTargetOptionByPosition(
+            swInteraction,
+            'revive_undead',
+            { row: gameRow, col: gameCol },
+            'selectPosition',
+          );
+          if (option) {
+            respondInteractionOption(option.id);
+            setAbilityMode(null);
+          }
+          return;
+        }
         dispatch(SW_COMMANDS.ACTIVATE_ABILITY, {
           abilityId: abilityMode.abilityId,
           sourceUnitId: abilityMode.sourceUnitId,
@@ -918,7 +977,10 @@ export function useCellInteraction({
             isUndeadCard(c)
           );
           if (hasUndeadInDiscard) {
-            setAbilityMode({ abilityId: 'revive_undead', step: 'selectCard', sourceUnitId: clickedUnit.instanceId });
+            dispatch(SW_COMMANDS.ACTIVATE_ABILITY, {
+              abilityId: 'revive_undead',
+              sourceUnitId: clickedUnit.instanceId,
+            });
             return;
           }
         }

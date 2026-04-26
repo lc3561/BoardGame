@@ -68,14 +68,20 @@ const joinMatchAsGuest = async (page: Page, matchId: string, gameId = 'smashup')
 const ensureGameServerAvailable = async (page: Page) => {
   const gameServerBaseURL = getGameServerBaseURL();
   const candidates = ['/games', `${gameServerBaseURL}/games`];
-  for (const url of candidates) {
-    try {
-      const response = await page.request.get(url);
-      if (response.ok()) return true;
-    } catch {
-      // ignore
+  const deadline = Date.now() + 45000;
+
+  while (Date.now() < deadline) {
+    for (const url of candidates) {
+      try {
+        const response = await page.request.get(url);
+        if (response.ok()) return true;
+      } catch {
+        // ignore
+      }
     }
+    await page.waitForTimeout(1000);
   }
+
   return false;
 };
 

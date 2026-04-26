@@ -625,6 +625,7 @@ describe('P1: pirate_sea_dogs（海狗）3步链', () => {
         expect(r2.steps[0]?.success).toBe(true);
         const choice2 = asSimpleChoice(r2.finalState.sys.interaction.current)!;
         expect(choice2.sourceId).toBe('pirate_sea_dogs_choose_from');
+        expect(choice2.subtitle).toBe('已选种族：外星人');
 
         // Step 3: 选 base0 → 选目标基地
         const fromOpt = findOption(choice2, (o: any) => o.value?.baseIndex === 0);
@@ -633,6 +634,7 @@ describe('P1: pirate_sea_dogs（海狗）3步链', () => {
         expect(r3.steps[0]?.success).toBe(true);
         const choice3 = asSimpleChoice(r3.finalState.sys.interaction.current)!;
         expect(choice3.sourceId).toBe('pirate_sea_dogs_choose_to');
+        expect(choice3.subtitle).toBe('已选种族：外星人');
 
         // Step 4: 选 base1 → 批量移动
         const toOpt = findOption(choice3, (o: any) => o.value?.baseIndex === 1);

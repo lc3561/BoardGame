@@ -59,6 +59,11 @@ const createAndroidBuildMetaPlugin = (mode: string, backendUrl: string) => ({
 
     const appId = process.env.VITE_CAPACITOR_APP_ID?.trim() || process.env.CAPACITOR_APP_ID?.trim() || ''
     const appName = process.env.CAPACITOR_APP_NAME?.trim() || ''
+    const forceBuiltinBundle = /^(1|true|yes|on)$/i.test(
+      process.env.VITE_ANDROID_FORCE_BUILTIN_BUNDLE?.trim()
+        || process.env.ANDROID_FORCE_BUILTIN_BUNDLE?.trim()
+        || '',
+    )
 
     this.emitFile({
       type: 'asset',
@@ -71,6 +76,7 @@ const createAndroidBuildMetaPlugin = (mode: string, backendUrl: string) => ({
           appId,
           appName,
           shellType: appId && !isNonReleaseAndroidAppId(appId) ? 'release' : 'non-release',
+          forceBuiltinBundle,
         },
         null,
         2,

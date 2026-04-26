@@ -46,3 +46,13 @@
   - 根因层级
   - AI-only guard
   - 不影响真人的理由
+
+## 6. AI 动作延迟门控（新增）
+
+- [ ] 是否明确区分“延迟时长”和“延迟动作范围”？
+- [ ] `src/engine/transport/react.tsx` 与 `e2e/src/engine/transport/react.tsx` 的延迟门控是否一致？
+- [ ] 静默动作是否已纳入 `NO_FOLLOW_UP_DELAY_ACTION_KINDS`（不再累计下一步 gate）？
+- [ ] 可见动作是否保留节奏延迟（而不是全局都 0）？
+- [ ] 是否用 `[LOCAL_AI_PERF]` 验证并记录：
+  - 静默动作：`gateDelayMs=0`
+  - 可见动作：`gateDelayMs≈minimumActionDelayMs`

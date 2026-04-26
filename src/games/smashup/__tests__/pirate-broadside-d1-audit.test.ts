@@ -98,7 +98,8 @@ describe('pirate_broadside D1 审计：三重条件过滤', () => {
         // 验证：创建了交互
         const interaction = result.finalState.sys.interaction?.current;
         expect(interaction).toBeDefined();
-        expect(interaction?.data?.sourceId).toBe('pirate_broadside');
+        expect(interaction?.data?.sourceId).toBe('pirate_broadside_choose_base');
+        expect(interaction?.data?.targetType).toBe('base');
 
         // 验证：选项中不包含基地0（没有己方随从）
         const options = interaction?.data?.options ?? [];
@@ -143,8 +144,9 @@ describe('pirate_broadside D1 审计：三重条件过滤', () => {
             name: '条件2测试',
             commands: [
                 { type: SU_COMMANDS.PLAY_ACTION, playerId: '0', payload: { cardUid: 'broadside1', baseIndex: 0 } },
-                // 选择第一个选项（对手1的随从）
-                { type: INTERACTION_COMMANDS.RESPOND, playerId: '0', payload: { optionId: 'target-1' } },
+                { type: INTERACTION_COMMANDS.RESPOND, playerId: '0', payload: { optionId: 'base-0' } },
+                // 第二步选择对手1
+                { type: INTERACTION_COMMANDS.RESPOND, playerId: '0', payload: { optionId: 'target-player-1' } },
             ],
         });
 
@@ -193,8 +195,9 @@ describe('pirate_broadside D1 审计：三重条件过滤', () => {
             name: '条件3测试',
             commands: [
                 { type: SU_COMMANDS.PLAY_ACTION, playerId: '0', payload: { cardUid: 'broadside1', baseIndex: 0 } },
-                // 选择对手1的弱随从（target-1，因为 target-0 是己方的弱随从）
-                { type: INTERACTION_COMMANDS.RESPOND, playerId: '0', payload: { optionId: 'target-1' } },
+                { type: INTERACTION_COMMANDS.RESPOND, playerId: '0', payload: { optionId: 'base-0' } },
+                // 选择对手1（target-player-0 是己方，target-player-1 是对手）
+                { type: INTERACTION_COMMANDS.RESPOND, playerId: '0', payload: { optionId: 'target-player-1' } },
             ],
         });
 

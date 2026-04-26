@@ -10,6 +10,23 @@
   - 对象级高优先级玩法 bug；
   - 同时也是旧三派系收口文档的反证，必须连带降级旧汇总结论。
 
+## 2026-04-26 继续重审补记
+
+- 上一节里“`world_champs_stoneford` 缺少浏览器级玩法留证”的说法已失效：
+  - 现有证据：`evidence/smashup/smashup-world-champs-stoneford-e2e-2026-04-26.md`
+- `world_champs_akye_the_turtle` 也已补齐真实入口玩法留证：
+  - 现有证据：`evidence/smashup/smashup-world-champs-akye-the-turtle-e2e-2026-04-26.md`
+- `world_champs_shield_maiden` 也已补齐真实入口玩法留证：
+  - 现有证据：`evidence/smashup/smashup-world-champs-shield-maiden-e2e-2026-04-26.md`
+- 当前卡图优先中文名口径已统一为：
+  - `警长 / 阿拉密斯 / 斯坦福 / 女主角 / 盾牌少女 / 金币猫 / 武士 陈 / 着魔 / 战斗精神奖 / 现在是闪电时间！ / 怪兽冲击 / 老鼠、鸟和香肠 / 聪明Set-Up`
+- `world_champs_stoneford` 当前语义也已修正为：
+  - **检索行动入手，不额外洗牌**
+- `world_champs_mummy` 当前静态/执行口径已修正为：
+  - 静态 `abilityTags: ['ongoing']`
+  - 执行靠 `afterScoring` 触发，不再额外挂 `special` 壳
+- 但当前仍只能说明“关键单卡已有 L3 证据”，**不能外推成整个 `World Champs` 或三派系整包已收口**。
+
 ## 裁定口径
 
 - **直接复用**：语义与现有能力完全一致，仅绑定到新 defId。
@@ -22,12 +39,12 @@
 | --- | --- | --- | --- |
 | `world_champs_sheriff` | 复制改名 | 与牛仔决斗链路相似，但 sourceId/触发来源不同 | 已落地（beforeScoring 触发 + 决斗） |
 | `world_champs_aramis` | 全新实现 | 直接影响同随从后额外行动，现有无等价“同目标复制影响”抽象 | 已落地（onMinionAffected 每回合一次额外行动） |
-| `world_champs_stoneford` | 复制改名 | 与“检索行动卡+洗牌”语义近似，但需保留新卡来源标识 | 已落地 |
+| `world_champs_stoneford` | 复制改名 | 与“检索行动卡入手”语义近似，但当前卡图口径**没有额外洗牌** | 已落地（已去掉错误洗牌） |
 | `world_champs_akye_the_turtle` | 全新实现 | “交牌给对手换抽牌”无现成 handler | 本轮已落地 |
 | `world_champs_diva` | 全新实现 | “同回合同目标复制影响”无现成稳定抽象 | 已落地（拦截复制同基地标准行动影响，每回合一次） |
 | `world_champs_shield_maiden` | 直接复用（逻辑） | 与维京 `shield_maiden` 核心语义一致（揭示顶牌并按条件拿牌） | 已落地（独立 sourceId） |
 | `world_champs_calicoin` | 复制改名 | 单体 +1 指示物语义可复用通用 helper | 已落地 |
-| `world_champs_mummy` | 复制改名 | 与埃及木乃伊同类“计分后转移/埋葬”链路 | 已落地 |
+| `world_champs_mummy` | 复制改名 | 与埃及木乃伊同类“计分后转移/埋葬”链路 | 已落地（`ongoing` 静态口径 + `afterScoring` 执行） |
 | `world_champs_rainbow_girl` | 复制改名 | 同基地己方其他随从临时加成 | 已落地 |
 | `world_champs_samurai_chan` | 复制改名 | “离场进弃牌堆后抽牌”语义已有触发模板 | 已落地 |
 | `world_champs_bewitched` | 全新实现 | 附着 +2 且离场后转附着目标，需新迁移链路 | 已落地（离场转附着交互 + removeFromDiscard） |

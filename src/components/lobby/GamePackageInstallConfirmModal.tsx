@@ -67,8 +67,9 @@ export const GamePackageInstallConfirmModal = ({
         || state.status === 'downloading'
         || state.status === 'verifying';
     const isFailed = state.status === 'failed';
-    const isInstalled = state.status === 'installed';
-    const isPreview = state.status === 'not-installed';
+    const isUpdatePreview = state.status === 'installed' && state.isUpdateAvailable === true;
+    const isInstalled = state.status === 'installed' && !isUpdatePreview;
+    const isPreview = state.status === 'not-installed' || isUpdatePreview;
     const modalTitle = isPreview
         ? t('packageManager.confirmTitle', { game: gameName })
         : isFailed

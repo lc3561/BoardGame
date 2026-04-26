@@ -134,8 +134,11 @@ export const SmashUpDebugConfig: React.FC<SmashUpDebugConfigProps> = ({ G, dispa
 
             {/* 发牌调试 */}
             <div className="bg-green-50 p-3 rounded-lg border border-green-200" data-testid="su-debug-deal">
-                <h4 className="text-[10px] font-black text-green-600 uppercase tracking-widest mb-3">发牌调试 (牌库索引)</h4>
+                <h4 className="text-[10px] font-black text-green-600 uppercase tracking-widest mb-3">发牌调试 (剩余牌库索引)</h4>
                 <div className="space-y-2">
+                    <div className="text-[9px] text-green-700 bg-green-100 p-2 rounded">
+                        这里只操作当前剩余牌库，不会从完整卡池直接补牌到手牌。
+                    </div>
                     <div className="flex gap-2">
                         <select value={dealPlayer} onChange={(e) => setDealPlayer(e.target.value)} className="flex-1 px-2 py-1.5 text-xs border border-green-300 rounded bg-white text-gray-900">
                             <option value="0">P0 (牌库 {core?.players?.['0']?.deck?.length ?? 0} 张)</option>
@@ -176,7 +179,7 @@ export const SmashUpDebugConfig: React.FC<SmashUpDebugConfigProps> = ({ G, dispa
                         className="w-full px-3 py-1.5 bg-green-500 text-white rounded text-xs font-bold hover:bg-green-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
                         data-testid="su-debug-deal-apply"
                     >
-                        🎴 发指定牌 (索引 {deckIndex})
+                        🎴 从剩余牌库发牌 (索引 {deckIndex})
                     </button>
                 </div>
             </div>

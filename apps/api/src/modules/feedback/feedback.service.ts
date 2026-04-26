@@ -34,6 +34,8 @@ type WatchdogAggregationPlan = {
     retentionPolicy: 'windowed-counter-aggregate';
 };
 
+type WatchdogSnapshotRecord = Record<string, unknown>;
+
 @Injectable()
 export class FeedbackService {
     constructor(
@@ -283,8 +285,8 @@ export class FeedbackService {
             dto.autoReportKind ?? dto.errorContext?.name,
         );
         const normalizedReason = this.normalizeWatchdogReason(
-            dto.errorContext?.message
-            ?? dto.content.replace(/^\[system\]\[online-ai-watchdog\]\s+/i, ''),
+            dto,
+            autoReportFamily,
         );
         const normalizedRoute = this.normalizeAggregationSegment(dto.clientContext?.route, 'unknown-route');
         const normalizedMode = this.normalizeAggregationSegment(dto.clientContext?.mode, 'unknown-mode');
@@ -330,7 +332,12 @@ export class FeedbackService {
         return normalized;
     }
 
-    private normalizeWatchdogReason(value?: string | null): string {
+    private normalizeWatchdogReason(
+        dto: CreateSystemFeedbackDto,
+        autoReportFamily: string,
+    ): string {
+        const value = dto.errorContext?.message
+            ?? dto.content.replace(/^\[system\]\[online-ai-watchdog\]\s+/i, '');
         if (typeof value !== 'string') {
             return 'unknown';
         }
@@ -340,6 +347,12 @@ export class FeedbackService {
             .replace(/:steps=\d+\b/g, ':steps')
             .replace(/\s+/g, ' ')
             || 'unknown';
+        if (['unsatisfiable-interaction-auto-skipped', 'force-end-turn', 'legal-action-recovered'].includes(autoReportFamily)) {
+            const fingerprint = this.buildWatchdogAggregationFingerprint(autoReportFamily, dto.stateSnapshot);
+            if (fingerprint) {
+                return `${normalized}:${fingerprint}`;
+            }
+        }
         const segments = normalized.split(':').filter(Boolean);
         if (segments.length >= 2 && ['recover-interaction', 'follow-up-advance'].includes(segments[1])) {
             return `${segments[0]}:${segments[1]}`;
@@ -348,6 +361,161 @@ export class FeedbackService {
             return `${segments[0]}:${segments[1]}:${segments[2]}`;
         }
         return normalized;
+    }
+
+    private buildWatchdogAggregationFingerprint(
+        autoReportFamily: string,
+        stateSnapshot?: string | null,
+    ): string | null {
+        const snapshot = this.parseWatchdogStateSnapshot(stateSnapshot);
+        if (!snapshot) {
+            return null;
+        }
+        const explicitFingerprint = this.normalizeAggregationSegment(
+            typeof snapshot.blockerFingerprint === 'string' ? snapshot.blockerFingerprint : undefined,
+            '',
+        );
+        if (explicitFingerprint) {
+            return explicitFingerprint;
+        }
+        if (autoReportFamily === 'unsatisfiable-interaction-auto-skipped') {
+            return this.buildUnsatisfiableInteractionAggregationFingerprintFromSnapshot(snapshot);
+        }
+        if (autoReportFamily === 'force-end-turn' || autoReportFamily === 'legal-action-recovered') {
+            return this.buildOnlineAiRecoveryAggregationFingerprint(snapshot);
+        }
+        return null;
+    }
+
+    private buildUnsatisfiableInteractionAggregationFingerprint(
+        stateSnapshot?: string | null,
+    ): string | null {
+        const snapshot = this.parseWatchdogStateSnapshot(stateSnapshot);
+        if (!snapshot) {
+            return null;
+        }
+        return this.buildUnsatisfiableInteractionAggregationFingerprintFromSnapshot(snapshot);
+    }
+
+    private buildUnsatisfiableInteractionAggregationFingerprintFromSnapshot(
+        snapshot: WatchdogSnapshotRecord,
+    ): string | null {
+        const interaction = this.toRecord(snapshot.interaction);
+        const seatInteraction = this.toRecord(interaction?.seat);
+        const phase = this.normalizeAggregationSegment(
+            typeof snapshot.phase === 'string' ? snapshot.phase : undefined,
+            'unknown-phase',
+        );
+        const commandType = this.normalizeAggregationSegment(
+            typeof snapshot.commandType === 'string' ? snapshot.commandType : undefined,
+            'unknown-command',
+        );
+        const interactionKind = this.normalizeAggregationSegment(
+            typeof seatInteraction?.kind === 'string' ? seatInteraction.kind : undefined,
+            'unknown-kind',
+        );
+        const sourceId = this.normalizeAggregationSegment(
+            typeof seatInteraction?.sourceId === 'string'
+                ? seatInteraction.sourceId
+                : typeof seatInteraction?.id === 'string'
+                    ? seatInteraction.id
+                    : undefined,
+            'unknown-source',
+        );
+        return `${phase}:${interactionKind}:${sourceId}:${commandType}`;
+    }
+
+    private buildOnlineAiRecoveryAggregationFingerprint(
+        snapshot: WatchdogSnapshotRecord,
+    ): string | null {
+        const phase = this.normalizeAggregationSegment(
+            typeof snapshot.phase === 'string' ? snapshot.phase : undefined,
+            'unknown-phase',
+        );
+        const reason = this.normalizeAggregationSegment(
+            typeof snapshot.reason === 'string' ? snapshot.reason : undefined,
+            'unknown-reason',
+        );
+        const interaction = this.toRecord(snapshot.interaction);
+        const seatInteraction = this.toRecord(interaction?.seat);
+        const sharedInteraction = this.toRecord(interaction?.shared);
+        const effectiveInteraction = seatInteraction ?? sharedInteraction;
+        if (effectiveInteraction) {
+            const interactionKind = this.normalizeAggregationSegment(
+                typeof effectiveInteraction.kind === 'string' ? effectiveInteraction.kind : undefined,
+                'unknown-kind',
+            );
+            const sourceId = this.normalizeAggregationSegment(
+                typeof effectiveInteraction.sourceId === 'string'
+                    ? effectiveInteraction.sourceId
+                    : typeof effectiveInteraction.id === 'string'
+                        ? effectiveInteraction.id
+                        : undefined,
+                'unknown-source',
+            );
+            return `${phase}:${reason}:interaction:${interactionKind}:${sourceId}`;
+        }
+
+        const responseWindow = this.toRecord(snapshot.responseWindow);
+        if (responseWindow) {
+            const responderQueue = Array.isArray(responseWindow.responderQueue)
+                ? responseWindow.responderQueue.filter((value): value is string => typeof value === 'string')
+                : [];
+            const responderIndex = typeof responseWindow.currentResponderIndex === 'number'
+                ? responseWindow.currentResponderIndex
+                : 0;
+            const responderId = this.normalizeAggregationSegment(
+                typeof responderQueue[responderIndex] === 'string' ? responderQueue[responderIndex] : undefined,
+                'unknown-responder',
+            );
+            const windowType = this.normalizeAggregationSegment(
+                typeof responseWindow.windowType === 'string' ? responseWindow.windowType : undefined,
+                'unknown-window',
+            );
+            const sourceId = this.normalizeAggregationSegment(
+                typeof responseWindow.sourceId === 'string' ? responseWindow.sourceId : undefined,
+                'unknown-source',
+            );
+            return `${phase}:${reason}:response-window:${windowType}:${sourceId}:${responderId}`;
+        }
+
+        const pendingDamage = this.toRecord(snapshot.pendingDamage);
+        if (pendingDamage) {
+            const responseType = this.normalizeAggregationSegment(
+                typeof pendingDamage.responseType === 'string' ? pendingDamage.responseType : undefined,
+                'unknown-response',
+            );
+            const sourceAbilityId = this.normalizeAggregationSegment(
+                typeof pendingDamage.sourceAbilityId === 'string' ? pendingDamage.sourceAbilityId : undefined,
+                'unknown-source-ability',
+            );
+            const responderId = this.normalizeAggregationSegment(
+                typeof pendingDamage.responderId === 'string' ? pendingDamage.responderId : undefined,
+                'unknown-responder',
+            );
+            return `${phase}:${reason}:pending-damage:${responseType}:${sourceAbilityId}:${responderId}`;
+        }
+
+        return null;
+    }
+
+    private parseWatchdogStateSnapshot(stateSnapshot?: string | null): WatchdogSnapshotRecord | null {
+        if (typeof stateSnapshot !== 'string' || !stateSnapshot.trim()) {
+            return null;
+        }
+        try {
+            const parsed = JSON.parse(stateSnapshot);
+            return this.toRecord(parsed);
+        } catch {
+            return null;
+        }
+    }
+
+    private toRecord(value: unknown): WatchdogSnapshotRecord | null {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) {
+            return null;
+        }
+        return value as WatchdogSnapshotRecord;
     }
 
     private pickMoreSevereSeverity(

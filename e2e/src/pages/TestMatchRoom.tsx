@@ -220,7 +220,7 @@ export const TestMatchRoom: React.FC = () => {
     }
 
     if (!isGameNamespaceReady) {
-        return <LoadingScreen description={t('matchRoom.loadingResources')} />;
+        return <LoadingScreen description={t('matchRoom.preparingMatch')} progressText={t('matchRoom.loadingProgress.loadingGameModule')} />;
     }
 
     if (loading) {

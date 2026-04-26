@@ -22,11 +22,11 @@ export const CHEAT_COMMANDS = {
     SET_PHASE: 'SYS_CHEAT_SET_PHASE',
     /** 抽取指定卡牌 */
     DRAW_SPECIFIC_CARD: 'SYS_CHEAT_DRAW_SPECIFIC_CARD',
-    /** 根据图集索引发牌 */
+    /** 兼容旧教程/旧面板的 deck-only atlas 发牌；atlas 不是跨游戏稳定主键 */
     DEAL_CARD_BY_ATLAS_INDEX: 'SYS_CHEAT_DEAL_CARD_BY_ATLAS_INDEX',
-    /** 根据 cardId 直接补牌到手牌 */
+    /** 根据稳定 cardId 直接补牌到手牌（不依赖当前剩余牌库） */
     ADD_CARD_TO_HAND_BY_CARD_ID: 'SYS_CHEAT_ADD_CARD_TO_HAND_BY_CARD_ID',
-    /** 根据索引发牌（从牌库指定位置发牌到手牌） */
+    /** 根据索引发牌（只从当前剩余牌库指定位置移动到手牌） */
     DEAL_CARD_BY_INDEX: 'SYS_CHEAT_DEAL_CARD_BY_INDEX',
     /** 根据图集索引将牌库卡牌移入弃牌堆 */
     DEAL_CARD_TO_DISCARD: 'SYS_CHEAT_DEAL_CARD_TO_DISCARD',
@@ -103,12 +103,13 @@ export interface DealCardByIndexPayload {
 
 export interface DealCardByAtlasIndexPayload {
     playerId: PlayerId;
-    /** 图集索引 */
+    /** 图集索引。仅用于兼容 deck-only atlas helper，不应当作稳定身份键。 */
     atlasIndex: number;
 }
 
 export interface AddCardToHandByCardIdPayload {
     playerId: PlayerId;
+    /** 游戏层稳定 cardId。若游戏不支持完整卡池注入，UI 必须显式降级为 deck-only。 */
     cardId: string;
 }
 
@@ -146,11 +147,11 @@ export interface CheatResourceModifier<TCore> {
     setToken?: (core: TCore, playerId: PlayerId, tokenId: string, amount: number) => TCore;
     /** 设置状态效果数量（可选） */
     setStatus?: (core: TCore, playerId: PlayerId, statusId: string, amount: number) => TCore;
-    /** 根据索引发牌（可选） */
+    /** 根据索引发牌（可选，deck-only） */
     dealCardByIndex?: (core: TCore, playerId: PlayerId, deckIndex: number) => TCore;
-    /** 根据图集索引发牌（可选） */
+    /** 根据图集索引发牌（可选，兼容旧教程的 deck-only atlas helper） */
     dealCardByAtlasIndex?: (core: TCore, playerId: PlayerId, atlasIndex: number) => TCore;
-    /** 根据 cardId 直接补牌到手牌（可选） */
+    /** 根据稳定 cardId 直接补牌到手牌（可选，不依赖当前剩余牌库） */
     addCardToHandByCardId?: (core: TCore, playerId: PlayerId, cardId: string) => TCore;
     /** 根据图集索引将牌库卡牌移入弃牌堆（可选） */
     dealCardToDiscard?: (core: TCore, playerId: PlayerId, atlasIndex: number) => TCore;

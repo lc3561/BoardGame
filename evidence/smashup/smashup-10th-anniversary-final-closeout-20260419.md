@@ -6,12 +6,15 @@
   - 本文档结尾“`三派系实施、审计门禁、E2E 证据、资源链路均已完成收口`”。
 - 失效原因：
   - 本文档引用的 E2E 证据只覆盖“派系选择页应显示 10 周年三派系与统一斜向实施中横幅”，属于展示证据，不是玩法链路证据。
-  - 本文档没有给出 `World Champs` 关键 onPlay / ongoing / special 能力的真实入口玩法留证；`Stoneford` 等能力没有浏览器级“真实打出后触发并结算”的证据。
+  - 本文档在 2026-04-25 重审时没有给出 `World Champs` 关键 onPlay / ongoing / special 能力的真实入口玩法留证；当时 `斯坦福` 等能力没有浏览器级“真实打出后触发并结算”的证据。
   - 因而旧“最终收口”建立在假阳性证据组合上：结构审计 + 单测 + 展示 E2E + 资源回查，而不是发布级玩法收口。
 - 重审后的当前等级：
   - **仍有残余范围**
 - 当前残余范围：
-  - `World Champs` 真实入口玩法验证不足，至少 `world_champs_stoneford` 需单独补真实打出链路验证。
+  - `斯坦福` 的浏览器级真实打出链路已于 2026-04-26 补齐，见 `evidence/smashup/smashup-world-champs-stoneford-e2e-2026-04-26.md`。
+  - `海龟阿凯` 的浏览器级真实打出链路也已于 2026-04-26 补齐，见 `evidence/smashup/smashup-world-champs-akye-the-turtle-e2e-2026-04-26.md`。
+  - `盾牌少女` 的浏览器级真实打出链路也已于 2026-04-26 补齐，见 `evidence/smashup/smashup-world-champs-shield-maiden-e2e-2026-04-26.md`。
+  - 但 `World Champs` 仍缺整派系级真实入口玩法覆盖，不能把 `斯坦福` 单卡证据外推成三派系最终收口。
   - 在补齐真实入口玩法证据前，本文档不得再被引用为“三派系玩法已完成最终收口”的证明材料。
 
 ## 范围
@@ -62,6 +65,6 @@
   - `https://assets.easyboardgame.top/official/i18n/zh-CN/smashup/cards/compressed/wangling.webp` -> 200
   - `https://assets.easyboardgame.top/official/i18n/zh-CN/smashup/base/compressed/wangling_base.webp` -> 200
 
-## 结论
-- 三派系实施、审计门禁、E2E 证据、资源链路均已完成收口；选择页“实施中”横幅已统一为斜向样式，文案收敛为“实施中”。
-- 历史审计债已从“阻断态”转为“显式基线治理态”，后续新增漂移会被自动拦截。
+## 2026-04-19 历史结论（已失效）
+- 2026-04-19 写下的“`三派系实施、审计门禁、E2E 证据、资源链路均已完成收口`”已被 2026-04-25 / 2026-04-26 的卡图优先重审明确推翻，不得再引用为当前收口证明。
+- 当时真正成立的，只是：三派系已完成一轮实施与结构门禁治理；这不等于玩法链路已经发布级收口。

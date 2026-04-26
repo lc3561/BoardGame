@@ -24,6 +24,7 @@ import { getCardDef, getBaseDef, resolveCardName } from '../data/cards';
 import type { CardPreviewRef } from '../../../core';
 import { useHorizontalDragScroll } from '../../../hooks/ui/useHorizontalDragScroll';
 import { useToast } from '../../../contexts/ToastContext';
+import { isSmashUpPromptOwnedByPlayer } from './interactionMode';
 
 interface Props {
     interaction: InteractionDescriptor | undefined;
@@ -121,6 +122,35 @@ export function resolveI18nKeys(text: string, t: (key: string, opts?: any) => st
     });
 }
 
+export function resolveI18nParams(
+    params: Record<string, string | number> | undefined,
+    t: (key: string, opts?: any) => string,
+): Record<string, string | number> | undefined {
+    if (!params) return undefined;
+
+    return Object.fromEntries(
+        Object.entries(params).map(([key, value]) => [
+            key,
+            typeof value === 'string' ? resolveI18nKeys(value, t) : value,
+        ]),
+    );
+}
+
+export function resolvePromptText(
+    text: string,
+    key: string | undefined,
+    params: Record<string, string | number> | undefined,
+    t: (key: string, opts?: any) => string,
+): string {
+    if (typeof key === 'string') {
+        return t(key, {
+            ...(resolveI18nParams(params, t) ?? {}),
+            defaultValue: resolveI18nKeys(text, t),
+        });
+    }
+    return resolveI18nKeys(text, t);
+}
+
 interface PromptSliderConfig {
     min: number;
     max: number;
@@ -178,7 +208,7 @@ export const PromptOverlay: React.FC<Props> = ({ interaction, dispatch, playerID
     const toast = useToast();
 
     // 所有 hooks 必须在条件返回之前调用（React hooks 规则）
-    const isMyPrompt = !!prompt && prompt.playerId === playerID;
+    const isMyPrompt = isSmashUpPromptOwnedByPlayer({ currentPrompt: prompt, playerID });
     const isMulti = !!prompt?.multi; // 多选功能不应该依赖 isMyPrompt
     const minSelections = isMulti ? (prompt?.multi?.min ?? 0) : 0;
     const maxSelections = isMulti ? prompt?.multi?.max : undefined;
@@ -252,11 +282,19 @@ export const PromptOverlay: React.FC<Props> = ({ interaction, dispatch, playerID
     // 少量选项 + 非卡牌模式 → 内联面板
     const useInlineMode = !isMulti && !useCardMode && hasOptions && (prompt?.options?.length ?? 0) <= 3;
 
+    const promptTitleKey = (prompt as { titleKey?: string } | undefined)?.titleKey;
+    const promptTitleParams = (prompt as { titleParams?: Record<string, string | number> } | undefined)?.titleParams;
+
     // 解析标题中的 i18n key（使用 useMemo 确保响应式更新）
     const title = useMemo(() => {
         if (!prompt) return '';
-        return resolveI18nKeys(prompt.title, t);
-    }, [prompt?.title, t]);
+        return resolvePromptText(
+            prompt.title,
+            promptTitleKey,
+            promptTitleParams,
+            t,
+        );
+    }, [prompt?.title, promptTitleKey, promptTitleParams, t]);
 
     // 解析所有选项 label 中的 i18n key
     const resolvedOptions = useMemo(() => {
@@ -265,7 +303,7 @@ export const PromptOverlay: React.FC<Props> = ({ interaction, dispatch, playerID
             ...opt,
             label: typeof (opt as { labelKey?: unknown }).labelKey === 'string'
                 ? t((opt as { labelKey: string }).labelKey, {
-                    ...((opt as { labelParams?: Record<string, string | number> }).labelParams ?? {}),
+                    ...(resolveI18nParams((opt as { labelParams?: Record<string, string | number> }).labelParams, t) ?? {}),
                     defaultValue: resolveI18nKeys(opt.label, t),
                 })
                 : resolveI18nKeys(opt.label, t),

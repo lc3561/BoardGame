@@ -30,7 +30,23 @@ export function registerSteampunkAbilities(): void {
     // 换场（行动卡）：取回一张己?ongoing 行动卡到手牌 + 额外行动
     registerAbility('steampunk_change_of_venue', 'onPlay', steampunkChangeOfVenue);
     // 亚哈船长（talent）：移动到有己方行动卡的基地
-    registerAbility('steampunk_captain_ahab', 'talent', steampunkCaptainAhab);
+    registerAbility('steampunk_captain_ahab', 'talent', {
+        execute: steampunkCaptainAhab,
+        validateUse: (ctx) => {
+            let currentBaseIndex = -1;
+            for (let i = 0; i < ctx.state.bases.length; i++) {
+                if (ctx.state.bases[i].minions.some(m => m.uid === ctx.cardUid)) {
+                    currentBaseIndex = i;
+                    break;
+                }
+            }
+            if (currentBaseIndex === -1) return '当前没有可选择的目标';
+            const hasCandidateBase = ctx.state.bases.some((base, index) =>
+                index !== currentBaseIndex && base.ongoingActions.some(action => action.ownerId === ctx.playerId),
+            );
+            return hasCandidateBase ? null : '当前没有可选择的目标';
+        },
+    });
 
     // === ongoing 效果注册 ===
     // steam_queen: 己方 ongoing 行动卡不受对手影响?
@@ -43,7 +59,23 @@ export function registerSteampunkAbilities(): void {
     // escape_hatch: 随从被消灭时回手牌
     registerTrigger('steampunk_escape_hatch', 'onMinionDestroyed', steampunkEscapeHatchTrigger, { phase: 'replacement' });
     // zeppelin: 天赋 - 移动随从到此基地或从此基地移动?
-    registerAbility('steampunk_zeppelin', 'talent', steampunkZeppelin);
+    registerAbility('steampunk_zeppelin', 'talent', {
+        execute: steampunkZeppelin,
+        validateUse: (ctx) => {
+            let zepBaseIndex = -1;
+            for (let i = 0; i < ctx.state.bases.length; i++) {
+                if (ctx.state.bases[i].ongoingActions.some(o => o.uid === ctx.cardUid)) {
+                    zepBaseIndex = i;
+                    break;
+                }
+            }
+            if (zepBaseIndex === -1) return '当前没有可选择的目标';
+            const hasCandidateMinion = ctx.state.bases.some(base =>
+                base.minions.some(minion => minion.controller === ctx.playerId),
+            );
+            return hasCandidateMinion ? null : '当前没有可选择的目标';
+        },
+    });
 }
 
 /** 废物利用 onPlay：从弃牌堆取回一张行动卡到手牌*/
@@ -252,23 +284,10 @@ export function steampunkEscapeHatchTrigger(ctx: TriggerContext): SmashUpEvent[]
 function steampunkMechanic(ctx: AbilityContext): AbilityResult {
     const player = ctx.state.players[ctx.playerId];
     // 机械师只能选择“打出到基地上的持续行动卡”（不包括：打到随从上的 ongoing、非 ongoing 行动卡、以及无合法基地可打出的卡）
-    const actionsInDiscard = player.discard.filter(c => {
-        if (c.type !== 'action' || c.uid === ctx.cardUid) return false;
-        const def = getCardDef(c.defId) as ActionCardDef | undefined;
-        if (def?.subtype !== 'ongoing') return false;
-        if ((def.ongoingTarget ?? 'base') !== 'base') return false;
-
-        // 若该 ongoing 由于 playConstraint / 基地限制等原因在任何基地都不可打出，则不列为候选
-        for (let baseIndex = 0; baseIndex < ctx.state.bases.length; baseIndex++) {
-            const ok = validateActionPlaySemantics(ctx.state, ctx.playerId, {
-                defId: c.defId,
-                targetBaseIndex: baseIndex,
-                effectiveHandSize: player.hand.length + 1, // 从弃牌堆恢复到手牌后再打出
-            });
-            if (ok.valid) return true;
-        }
-        return false;
-    });
+    const actionsInDiscard = player.discard.filter(c =>
+        c.uid !== ctx.cardUid
+        && isMechanicReplayableDiscardAction(ctx.state, ctx.playerId, c.defId, player.hand.length + 1),
+    );
     if (actionsInDiscard.length === 0) {
         return { events: [buildAbilityFeedback(ctx.playerId, 'feedback.no_valid_targets', ctx.now)] };
     }
@@ -484,11 +503,12 @@ export function registerSteampunkInteractionHandlers(): void {
         const { cardUid, defId } = value as { cardUid: string; defId?: string };
         const card = state.core.players[playerId].discard.find(c => c.uid === cardUid);
         const cardDefId = defId ?? card?.defId ?? '';
-        const def = getCardDef(cardDefId) as ActionCardDef | undefined;
         // 若所选行动已不在弃牌堆，或不是“打到基地上的 ongoing”，则不处理
-        if (!card || card.type !== 'action') return { state, events: [] };
-        if (def?.subtype !== 'ongoing') return { state, events: [] };
-        if ((def.ongoingTarget ?? 'base') !== 'base') return { state, events: [] };
+        if (!card) return { state, events: [] };
+        if (!isMechanicReplayableDiscardAction(state.core, playerId, cardDefId, (state.core.players[playerId]?.hand.length ?? 0) + 1)) {
+            return { state, events: [] };
+        }
+        const def = getCardDef(cardDefId) as ActionCardDef | undefined;
 
         // ongoing 卡需要选择附着目标基地 → 创建后续交互
         if (def?.subtype === 'ongoing') {
@@ -738,6 +758,28 @@ export function registerSteampunkInteractionHandlers(): void {
         }
         return { state, events };
     });
+}
+
+function isMechanicReplayableDiscardAction(
+    core: SmashUpCore,
+    playerId: string,
+    defId: string,
+    effectiveHandSize: number,
+): boolean {
+    const def = getCardDef(defId) as ActionCardDef | undefined;
+    if (!def || def.type !== 'action') return false;
+    if (def.subtype !== 'ongoing') return false;
+    if ((def.ongoingTarget ?? 'base') !== 'base') return false;
+
+    for (let baseIndex = 0; baseIndex < core.bases.length; baseIndex++) {
+        const ok = validateActionPlaySemantics(core, playerId, {
+            defId,
+            targetBaseIndex: baseIndex,
+            effectiveHandSize,
+        });
+        if (ok.valid) return true;
+    }
+    return false;
 }
 
 

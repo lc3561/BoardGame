@@ -9,7 +9,7 @@ import {
     type GameMobileBannerKind,
 } from '../../games/mobileSupport';
 import { useRuntimeViewport } from '../../hooks/ui/useRuntimeViewport';
-import { isHomeV2PreviewRoute } from '../../lib/homeV2Routing';
+import { isHomeEntryRoute, isHomeV2PreviewRoute } from '../../lib/homeV2Routing';
 
 type GameMobileEntry = Pick<
     GameManifestEntry,
@@ -162,6 +162,7 @@ export function MobileOrientationGuard({ children }: { children: React.ReactNode
 
     const gameId = extractGameIdFromPlayPath(location.pathname);
     const isHomeV2Route = isHomeV2PreviewRoute(location.pathname);
+    const isHomeRoute = isHomeEntryRoute(location.pathname);
     const builtInGameConfig = gameId ? GAME_MANIFEST_BY_ID[gameId] : undefined;
     const gameConfig = builtInGameConfig ?? dynamicGameConfig;
     const preferredOrientation = gameId
@@ -171,7 +172,9 @@ export function MobileOrientationGuard({ children }: { children: React.ReactNode
         ? (preferredOrientation === 'landscape' ? 'landscape' : 'portrait')
         : isHomeV2Route
             ? 'landscape'
-            : null;
+            : isHomeRoute
+                ? 'portrait'
+                : null;
     const bannerKind = getGameMobileBannerKind(gameConfig, viewport.width, viewport.height);
     const bannerKey = bannerKind ? `${location.pathname}:${bannerKind}` : null;
     const shouldSuppressBannerInAppShell = nativeAppShell && Boolean(gameId);

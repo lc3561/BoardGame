@@ -81,7 +81,7 @@ import { resolveRuntimeLayoutScaleMetrics } from '../mobileSupport';
 import { getEventStreamEntries } from '../../engine/systems/EventStreamSystem';
 import { RevealOverlay } from './ui/RevealOverlay';
 import { useSmashUpOverlay } from './ui/SmashUpOverlayContext';
-import { resolveSmashUpHandInteractionMode, resolveSmashUpHandPromptUiMode } from './ui/interactionMode';
+import { isSmashUpPromptOwnedByPlayer, resolveSmashUpHandInteractionMode, resolveSmashUpHandPromptUiMode } from './ui/interactionMode';
 import { useMobileViewport } from '../../hooks/ui/useMobileViewport';
 import { useRuntimeViewport } from '../../hooks/ui/useRuntimeViewport';
 import { getSmashUpReactionWindowPresentation } from './domain/reactionWindowState';
@@ -488,6 +488,9 @@ const SmashUpBoard: FC<Props> = ({ G, dispatch, playerID: rawPlayerID, reset, ma
     const currentInteraction = G?.sys?.interaction?.current;
     const currentPrompt = useMemo(() => asSimpleChoice(currentInteraction), [currentInteraction]);
     const currentPromptTargetType = (currentInteraction?.data as Record<string, unknown> | undefined)?.targetType;
+    const isCurrentPromptForPlayer = useMemo(() => {
+        return isSmashUpPromptOwnedByPlayer({ currentPrompt, playerID });
+    }, [currentPrompt, playerID]);
     const handPromptUiMode = useMemo(() => {
         return resolveSmashUpHandPromptUiMode({
             currentPrompt,
@@ -540,12 +543,12 @@ const SmashUpBoard: FC<Props> = ({ G, dispatch, playerID: rawPlayerID, reset, ma
 
     // 基地选择交互检测：当前 interaction 的选项包含有效 baseIndex 时，用基地区直接点击选择
     const isBaseSelectPrompt = useMemo(() => {
-        if (!currentPrompt || currentPrompt.playerId !== playerID) return false;
+        if (!isCurrentPromptForPlayer || !currentPrompt) return false;
         // 多选交互不走棋盘点击模式，交给 PromptOverlay 卡牌多选面板处理
         if (currentPrompt.multi) return false;
         const data = currentInteraction?.data as Record<string, unknown> | undefined;
         return data?.targetType === 'base';
-    }, [currentPrompt, playerID, currentInteraction]);
+    }, [currentInteraction, currentPrompt, isCurrentPromptForPlayer]);
 
     const _baseSelectPromptTitle = isBaseSelectPrompt && currentPrompt ? currentPrompt.title : '';
 
@@ -580,7 +583,7 @@ const SmashUpBoard: FC<Props> = ({ G, dispatch, playerID: rawPlayerID, reset, ma
 
     // 埋葬牌选择交互检测：generic 交互中的卡牌选项全部映射到场上的埋葬牌
     const isBuriedSelectPrompt = useMemo(() => {
-        if (!currentPrompt || currentPrompt.playerId !== playerID) return false;
+        if (!isCurrentPromptForPlayer || !currentPrompt) return false;
         const data = currentInteraction?.data as Record<string, unknown> | undefined;
         if (data?.targetType !== 'generic') return false;
 
@@ -600,7 +603,7 @@ const SmashUpBoard: FC<Props> = ({ G, dispatch, playerID: rawPlayerID, reset, ma
         }
 
         return buriedOptionCount > 0;
-    }, [coreBases, currentPrompt, currentInteraction, playerID]);
+    }, [coreBases, currentInteraction, currentPrompt, isCurrentPromptForPlayer]);
 
     const buriedPromptOptionsByUid = useMemo(() => {
         const optionsByUid = new Map<string, { optionId: string; disabled: boolean }>();
@@ -644,10 +647,10 @@ const SmashUpBoard: FC<Props> = ({ G, dispatch, playerID: rawPlayerID, reset, ma
 
     // 随从选择交互检测：targetType === 'minion' 或有随从选项（跳过选项不影响判断）
     const isMinionSelectPrompt = useMemo(() => {
-        if (!currentPrompt || currentPrompt.playerId !== playerID) return false;
+        if (!isCurrentPromptForPlayer || !currentPrompt) return false;
         const data = currentInteraction?.data as Record<string, unknown> | undefined;
         return data?.targetType === 'minion';
-    }, [currentPrompt, playerID, currentInteraction]);
+    }, [currentInteraction, currentPrompt, isCurrentPromptForPlayer]);
 
     // 可选随从 UID 集合（只高亮候选随从，排除跳过选项）
     const selectableMinionUids = useMemo<Set<string>>(() => {
@@ -718,10 +721,10 @@ const SmashUpBoard: FC<Props> = ({ G, dispatch, playerID: rawPlayerID, reset, ma
 
     // 持续行动卡选择交互检测：targetType === 'ongoing'
     const isOngoingSelectPrompt = useMemo(() => {
-        if (!currentPrompt || currentPrompt.playerId !== playerID) return false;
+        if (!isCurrentPromptForPlayer || !currentPrompt) return false;
         const data = currentInteraction?.data as Record<string, unknown> | undefined;
         return data?.targetType === 'ongoing';
-    }, [currentPrompt, playerID, currentInteraction]);
+    }, [currentInteraction, currentPrompt, isCurrentPromptForPlayer]);
 
     // 可选持续行动卡 UID 集合（高亮候选行动卡）
     const selectableOngoingUids = useMemo<Set<string>>(() => {
@@ -771,13 +774,13 @@ const SmashUpBoard: FC<Props> = ({ G, dispatch, playerID: rawPlayerID, reset, ma
 
     // 弃牌堆随从选择交互检测（僵尸领主等）：targetType === 'discard_minion'
     const isDiscardMinionPrompt = useMemo(() => {
-        if (!currentPrompt || currentPrompt.playerId !== playerID) return false;
+        if (!isCurrentPromptForPlayer || !currentPrompt) return false;
         const data = currentInteraction?.data as Record<string, unknown> | undefined;
         return data?.targetType === 'discard_minion';
-    }, [currentPrompt, playerID, currentInteraction]);
+    }, [currentInteraction, currentPrompt, isCurrentPromptForPlayer]);
 
     const activePromptSurface = useMemo<'none' | 'hand' | 'board' | 'overlay'>(() => {
-        if (!currentPrompt || currentPrompt.playerId !== playerID) return 'none';
+        if (!isCurrentPromptForPlayer || !currentPrompt) return 'none';
         if (isDirectHandSelectPrompt) return 'hand';
         if (isBaseSelectPrompt || isBuriedSelectPrompt || isMinionSelectPrompt || isOngoingSelectPrompt || isDiscardMinionPrompt) {
             return 'board';
@@ -791,7 +794,7 @@ const SmashUpBoard: FC<Props> = ({ G, dispatch, playerID: rawPlayerID, reset, ma
         isDirectHandSelectPrompt,
         isMinionSelectPrompt,
         isOngoingSelectPrompt,
-        playerID,
+        isCurrentPromptForPlayer,
     ]);
 
     const shouldLockNormalHandInteraction = activePromptSurface !== 'none' && activePromptSurface !== 'hand';
@@ -1370,8 +1373,9 @@ const SmashUpBoard: FC<Props> = ({ G, dispatch, playerID: rawPlayerID, reset, ma
     // 事件流条目（统一获取，避免重复调用）
     const eventStreamEntries = getEventStreamEntries(G);
     const spotlightViewerId = isMultiplayer ? playerID : null;
+    const revealViewerId = isMultiplayer ? playerID : rootPid;
 
-    const { queue: spotlightQueue, dismiss: dismissSpotlight } = useCardSpotlightQueue<{ defId: string }>({
+    const { queue: spotlightQueue, dismiss: dismissSpotlight, dismissAll: dismissAllSpotlight } = useCardSpotlightQueue<{ defId: string }>({
         entries: eventStreamEntries,
         currentPlayerId: spotlightViewerId,
         // 联机时对手页依赖服务端确认事件驱动特写，不能在 reconcile 时静默吞掉。
@@ -1380,6 +1384,11 @@ const SmashUpBoard: FC<Props> = ({ G, dispatch, playerID: rawPlayerID, reset, ma
         extractCard: extractActionCard,
         maxQueue: 5,
     });
+
+    useEffect(() => {
+        if (!currentPrompt || !isCurrentPromptForPlayer) return;
+        dismissAllSpotlight();
+    }, [currentPrompt, dismissAllSpotlight, isCurrentPromptForPlayer]);
 
     // 行动卡特写渲染
     const renderSpotlightCard = useCallback((item: SpotlightItem<{ defId: string }>) => {
@@ -2363,7 +2372,7 @@ const SmashUpBoard: FC<Props> = ({ G, dispatch, playerID: rawPlayerID, reset, ma
     // 防御性检查：HMR 或 client 重建时 core 可能不完整
     if (!core.turnOrder || !core.bases) {
         return (
-            <UndoProvider value={{ G, dispatch, playerID, isGameOver: !!isGameOver, isLocalMode: false }}>
+            <UndoProvider value={{ G, dispatch, playerID, isGameOver: !!isGameOver, isLocalMode: !isMultiplayer }}>
                 <LoadingScreen
                     anchor="container"
                     description={t('ui.loading', { defaultValue: '加载中...' })}
@@ -2376,7 +2385,7 @@ const SmashUpBoard: FC<Props> = ({ G, dispatch, playerID: rawPlayerID, reset, ma
     // EARLY RETURN: Faction Selection
     if (phase === 'factionSelect' && core.factionSelection) {
         return (
-            <UndoProvider value={{ G, dispatch, playerID, isGameOver: !!isGameOver, isLocalMode: false }}>
+            <UndoProvider value={{ G, dispatch, playerID, isGameOver: !!isGameOver, isLocalMode: !isMultiplayer }}>
                 <TutorialSelectionGate
                     isTutorialMode={isTutorialMode}
                     isTutorialActive={isTutorialActive}
@@ -2396,7 +2405,7 @@ const SmashUpBoard: FC<Props> = ({ G, dispatch, playerID: rawPlayerID, reset, ma
     }
 
     return (
-        <UndoProvider value={{ G, dispatch, playerID, isGameOver: !!isGameOver, isLocalMode: false }}>
+        <UndoProvider value={{ G, dispatch, playerID, isGameOver: !!isGameOver, isLocalMode: !isMultiplayer }}>
             {/* BACKGROUND: A warm, dark wooden table texture. */}
             <div className="relative w-full h-full bg-[#3e2723] overflow-hidden font-sans select-none"
             >
@@ -3331,7 +3340,7 @@ const SmashUpBoard: FC<Props> = ({ G, dispatch, playerID: rawPlayerID, reset, ma
                 {/* 卡牌展示浮层（非阻塞，点击关闭） */}
                 <RevealOverlay
                     entries={eventStreamEntries}
-                    currentPlayerId={rootPid}
+                    currentPlayerId={revealViewerId}
                 />
 
                 {/* PREVIEW OVERLAY */}

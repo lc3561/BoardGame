@@ -1745,6 +1745,79 @@ describe('androidLiveUpdates', () => {
             expect(prepareMock).toHaveBeenCalledTimes(1);
         });
     });
+
+    it('游戏包增量安装方法在老 Android 壳不可用时，回退到全量下载', async () => {
+        vi.resetModules();
+
+        const installGamePackageIncremental = vi.fn().mockRejectedValue(
+            new Error('GamePackage.installGamePackageIncremental() is not implemented on android'),
+        );
+        const installGamePackage = vi.fn().mockResolvedValue({
+            gameId: 'dicethrone',
+            runtimeChannel: 'stable',
+            status: 'installed',
+            assetPackVersion: '0.5.61-dicethrone-pkg-2026-04-25T15-35-05-209Z',
+            assetRootPath: '/data/user/0/top.easyboardgame.app/files/game-packages/dicethrone/current/assets',
+            installedAt: 123456,
+        });
+
+        vi.doMock('@capacitor/core', async (importOriginal) => {
+            const actual = await importOriginal<typeof import('@capacitor/core')>();
+            return {
+                ...actual,
+                Capacitor: {
+                    ...actual.Capacitor,
+                    isNativePlatform: () => true,
+                    getPlatform: () => 'android',
+                },
+                registerPlugin: vi.fn(() => ({
+                    addListener: vi.fn().mockResolvedValue({
+                        remove: async () => undefined,
+                    }),
+                    ensureNotificationPermission: vi.fn().mockResolvedValue({
+                        required: false,
+                        granted: true,
+                        canPrompt: false,
+                        state: 'granted',
+                    }),
+                    installGamePackageIncremental,
+                    installGamePackage,
+                })),
+            };
+        });
+        vi.doMock('../mobile/androidRuntime', () => ({
+            isNativeAndroidRuntime: () => true,
+        }));
+
+        const { createNativeGamePackageInstallHandle } = await import('../../features/mobile-packages/nativeGamePackagePlugin');
+
+        const handle = await createNativeGamePackageInstallHandle({
+            gameId: 'dicethrone',
+            runtimeChannel: 'stable',
+            assetPackId: 'dicethrone',
+            assetPackVersion: '0.5.61-dicethrone-pkg-2026-04-25T15-35-05-209Z',
+            assetPackUrl: 'https://assets.easyboardgame.top/official/mobile-packages/android/stable/bundles/dicethrone/0.5.61-dicethrone-pkg-2026-04-25T15-35-05-209Z.zip',
+            assetPackChecksum: '05c4067df2ba9f44824a6d6caf477397606ebc104c93601a91a83273b6f20790',
+            assetPackFileIndexUrl: 'https://assets.easyboardgame.top/official/mobile-packages/android/stable/file-index/dicethrone/0.5.61-dicethrone-pkg-2026-04-25T15-35-05-209Z.json',
+            assetPackFileIndexChecksum: '26754117a37bb3dcd2f9c9c5b1e369e9ec907ba68fe26634ee78f9d94a612c41',
+            source: 'remote',
+        }, {
+            onStateChange: vi.fn(),
+            onInstalledAssetBaseUrl: vi.fn(),
+        });
+
+        expect(handle).not.toBeNull();
+
+        const state = await handle!.finished;
+
+        expect(installGamePackageIncremental).toHaveBeenCalledTimes(1);
+        expect(installGamePackage).toHaveBeenCalledTimes(1);
+        expect(state).toMatchObject({
+            status: 'installed',
+            installedVersion: '0.5.61-dicethrone-pkg-2026-04-25T15-35-05-209Z',
+            localAssetBaseUrl: '/_capacitor_file_/data/user/0/top.easyboardgame.app/files/game-packages/dicethrone/current/assets',
+        });
+    });
 });
 
 describe('socketConnectionConfig', () => {

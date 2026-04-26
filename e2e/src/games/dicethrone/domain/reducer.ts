@@ -671,6 +671,7 @@ const handleDieModified: EventHandler<Extract<DiceThroneEvent, { type: 'DIE_MODI
     event
 ) => {
     const { dieId, newValue, playerId } = event.payload;
+    const didDieValueChange = state.dice.some(d => d.id === dieId && d.value !== newValue);
     const newDice = state.dice.map(d => {
         if (d.id !== dieId) return d;
         const face = getDieFaceByDefinition(d.definitionId, newValue);
@@ -678,7 +679,7 @@ const handleDieModified: EventHandler<Extract<DiceThroneEvent, { type: 'DIE_MODI
     });
 
     const rollerId = getRollerId(state);
-    const rollConfirmed = (playerId === rollerId && state.rollConfirmed) ? false : state.rollConfirmed;
+    const rollConfirmed = (playerId === rollerId && state.rollConfirmed && didDieValueChange) ? false : state.rollConfirmed;
 
     return { ...state, dice: newDice, rollConfirmed };
 };
@@ -695,6 +696,7 @@ const handleDieRerolled: EventHandler<Extract<DiceThroneEvent, { type: 'DIE_RERO
     event
 ) => {
     const { dieId, newValue, playerId } = event.payload;
+    const didDieValueChange = state.dice.some(d => d.id === dieId && d.value !== newValue);
     const newDice = state.dice.map(d => {
         if (d.id !== dieId) return d;
         const face = getDieFaceByDefinition(d.definitionId, newValue);
@@ -702,7 +704,7 @@ const handleDieRerolled: EventHandler<Extract<DiceThroneEvent, { type: 'DIE_RERO
     });
 
     const rollerId = getRollerId(state);
-    const rollConfirmed = (playerId === rollerId && state.rollConfirmed) ? false : state.rollConfirmed;
+    const rollConfirmed = (playerId === rollerId && state.rollConfirmed && didDieValueChange) ? false : state.rollConfirmed;
 
     return { ...state, dice: newDice, rollConfirmed };
 };

@@ -38,7 +38,10 @@ import {
 } from '../../engine/ai';
 import { LoadingScreen } from '../system/LoadingScreen';
 import { useGamePackageState } from '../../features/mobile-packages/useGamePackageState';
-import { hasUsableInstalledGamePackageVersion } from '../../features/mobile-packages/types';
+import {
+    hasUsableInstalledGamePackageState,
+    hasUsableInstalledGamePackageVersion,
+} from '../../features/mobile-packages/types';
 import { isNativeAndroidRuntime } from '../../lib/mobile/androidRuntime';
 import { prefetchOnlineMatchRoute } from '../../lib/prefetchPlayRoute';
 
@@ -137,8 +140,7 @@ export const GameDetailsModal = ({ isOpen, onClose, gameId, titleKey, descriptio
         enabled: isNativeAndroidCapacitorRuntime,
     });
     const isAppUpdateRequiredForMobileGame = isPackageManagedMobileGame && gameManifest?.mobileDelivery?.requiresAppUpdate === true;
-    const hasInstalledPackageForMobileGame = packageInstallCardState.status === 'installed'
-        && hasUsableInstalledGamePackageVersion(packageInstallCardState.installedVersion);
+    const hasInstalledPackageForMobileGame = hasUsableInstalledGamePackageState(packageInstallCardState);
     const hasMobilePackageUpdateAvailable = hasInstalledPackageForMobileGame
         && packageInstallCardState.isUpdateAvailable === true;
     const installedPackageVersionLabel = hasInstalledPackageForMobileGame
@@ -1090,6 +1092,14 @@ export const GameDetailsModal = ({ isOpen, onClose, gameId, titleKey, descriptio
             }
         } catch (error) {
             console.error('Failed to create match:', error);
+            logMobileRuntimeCritical('GameDetailsModal', 'create-room-api-failed', {
+                gameId,
+                gameServerUrl: GAME_SERVER_URL,
+                errorName: error instanceof Error ? error.name : typeof error,
+                errorMessage: error instanceof Error ? error.message : String(error),
+                errorCode: resolveCreateRoomErrorCode(error),
+                errorStatus: resolveCreateRoomErrorStatus(error),
+            });
             appendMatchLoadTrace({
                 stage: 'create-room-api-failed',
                 gameId,

@@ -2,15 +2,18 @@
  * 大杀四方 - 印斯茅斯“本地人”展示测试
  */
 
+import { join } from 'node:path';
 import { test, expect } from '../framework';
 import { getMatchState, injectMatchState } from '../helpers/state-injection';
 import {
     cleanupTwoPlayerMatch,
     completeFactionSelectionCustom,
     FACTION,
+    initContext,
     setupTwoPlayerMatch,
     waitForHandArea,
 } from './smashup-helpers';
+import { SU_EVENTS } from '../../src/games/smashup/domain/types';
 
 
 type __ThreeAxeGameMarker = {
@@ -96,6 +99,45 @@ async function injectInnsmouthRevealScene(matchId: string, page: any, deck: stri
     await injectMatchState(matchId, nextState, page);
 }
 
+async function injectPrivateRevealVisibilityScene(matchId: string, page: any): Promise<void> {
+    const currentState = await getMatchState(matchId, page);
+    const existingEntries = Array.isArray(currentState.sys?.eventStream?.entries)
+        ? currentState.sys.eventStream.entries
+        : [];
+    const nextId = typeof currentState.sys?.eventStream?.nextId === 'number'
+        ? currentState.sys.eventStream.nextId
+        : existingEntries.length + 1;
+
+    const nextState = normalizeInjectedMatchState(matchId, {
+        ...currentState,
+        sys: {
+            ...currentState.sys,
+            eventStream: {
+                ...(currentState.sys?.eventStream ?? {}),
+                entries: [
+                    ...existingEntries,
+                    {
+                        id: nextId,
+                        event: {
+                            type: SU_EVENTS.REVEAL_HAND,
+                            payload: {
+                                targetPlayerId: '1',
+                                viewerPlayerId: '1',
+                                cards: [{ uid: 'private-reveal-1', defId: 'pirate_first_mate' }],
+                                reason: 'private_reveal_visibility_regression',
+                            },
+                            timestamp: Date.now(),
+                        },
+                    },
+                ],
+                nextId: nextId + 1,
+            },
+        },
+    });
+
+    await injectMatchState(matchId, nextState, page);
+}
+
 async function withOnlineMatch(browser: any, baseURL: string | undefined, run: (setup: any) => Promise<void>): Promise<void> {
     const setup = await setupTwoPlayerMatch(browser, baseURL);
     if (!setup) {
@@ -118,6 +160,15 @@ async function withOnlineMatch(browser: any, baseURL: string | undefined, run: (
     }
 }
 
+async function dismissRevealOverlay(page: any): Promise<void> {
+    const overlay = page.getByTestId('reveal-overlay');
+    await overlay.click({
+        force: true,
+        position: { x: 16, y: 16 },
+    });
+    await expect(overlay).toBeHidden({ timeout: 3000 });
+}
+
 test.describe('印斯茅斯“本地人”展示功能', () => {
     test('打出“本地人”后，两个玩家都能看到展示 UI', async ({ browser }, testInfo) => {
         await withOnlineMatch(browser, testInfo.project.use.baseURL as string | undefined, async ({ hostPage, guestPage, matchId }) => {
@@ -134,13 +185,12 @@ test.describe('印斯茅斯“本地人”展示功能', () => {
                 expect(hostPage.getByTestId('reveal-overlay')).toBeVisible({ timeout: 5000 }),
                 expect(guestPage.getByTestId('reveal-overlay')).toBeVisible({ timeout: 5000 }),
             ]);
-            await expect(hostPage.locator('[data-testid="reveal-overlay"] [data-card-preview]')).toHaveCount(3);
-            await expect(guestPage.locator('[data-testid="reveal-overlay"] [data-card-preview]')).toHaveCount(3);
+            await expect(hostPage.locator('[data-testid="reveal-overlay"] [data-testid="reveal-card"]')).toHaveCount(3);
+            await expect(guestPage.locator('[data-testid="reveal-overlay"] [data-testid="reveal-card"]')).toHaveCount(3);
 
-            await hostPage.getByTestId('reveal-overlay').click({ force: true });
             await Promise.all([
-                expect(hostPage.getByTestId('reveal-overlay')).toBeHidden({ timeout: 3000 }),
-                expect(guestPage.getByTestId('reveal-overlay')).toBeHidden({ timeout: 3000 }),
+                dismissRevealOverlay(hostPage),
+                dismissRevealOverlay(guestPage),
             ]);
 
             const finalState = await getMatchState(matchId, hostPage);
@@ -165,16 +215,50 @@ test.describe('印斯茅斯“本地人”展示功能', () => {
                 expect(hostPage.getByTestId('reveal-overlay')).toBeVisible({ timeout: 5000 }),
                 expect(guestPage.getByTestId('reveal-overlay')).toBeVisible({ timeout: 5000 }),
             ]);
-            await expect(hostPage.locator('[data-testid="reveal-overlay"] [data-card-preview]')).toHaveCount(3);
+            await expect(hostPage.locator('[data-testid="reveal-overlay"] [data-testid="reveal-card"]')).toHaveCount(3);
 
-            await hostPage.getByTestId('reveal-overlay').click({ force: true });
-            await expect(hostPage.getByTestId('reveal-overlay')).toBeHidden({ timeout: 3000 });
+            await dismissRevealOverlay(hostPage);
 
             const finalState = await getMatchState(matchId, hostPage);
             const handLocals = finalState.core.players['0'].hand.filter((card: any) => card.defId === 'innsmouth_the_locals').length;
             const baseLocals = finalState.core.bases[0].minions.filter((minion: any) => minion.defId === 'innsmouth_the_locals' && minion.controller === '0').length;
             expect(handLocals).toBe(0);
             expect(baseLocals).toBe(1);
+        });
+    });
+
+    test('私有展示只应显示给归属玩家，旁观页不应误判为 0 号位', async ({ browser }, testInfo) => {
+        await withOnlineMatch(browser, testInfo.project.use.baseURL as string | undefined, async ({ hostPage, guestPage, matchId }) => {
+            const spectatorContext = await initContext(await browser.newContext());
+            const spectatorPage = await spectatorContext.newPage();
+            const sharedDir = join(process.cwd(), 'test-results', 'evidence-screenshots', '_shared');
+
+            try {
+                await spectatorPage.goto(`/play/smashup/match/${matchId}`, { waitUntil: 'domcontentloaded' });
+                await waitForHandArea(spectatorPage);
+
+                await injectPrivateRevealVisibilityScene(matchId, hostPage);
+
+                await expect(guestPage.getByTestId('reveal-overlay')).toBeVisible({ timeout: 5000 });
+                await expect(guestPage.locator('[data-testid="reveal-overlay"] [data-testid="reveal-card"]')).toHaveCount(1);
+                await expect(hostPage.locator('[data-testid="reveal-overlay"]')).toHaveCount(0);
+                await expect(spectatorPage.locator('[data-testid="reveal-overlay"]')).toHaveCount(0);
+
+                await guestPage.screenshot({
+                    path: join(sharedDir, 'smashup-feedback-69a435761eb921c6091f113b-guest-private-reveal-visible.png'),
+                    fullPage: false,
+                });
+                await hostPage.screenshot({
+                    path: join(sharedDir, 'smashup-feedback-69a435761eb921c6091f113b-host-private-reveal-hidden.png'),
+                    fullPage: false,
+                });
+                await spectatorPage.screenshot({
+                    path: join(sharedDir, 'smashup-feedback-69a435761eb921c6091f113b-spectator-private-reveal-hidden.png'),
+                    fullPage: false,
+                });
+            } finally {
+                await spectatorContext.close();
+            }
         });
     });
 });

@@ -108,6 +108,14 @@ export function applyAiAutoRecoveryRejection<T extends AiAutoRecoveryAttemptTrac
     };
 }
 
+const SILENT_ONLINE_AI_BATCH_REJECTION_REASONS = new Set([
+    'stale_state',
+]);
+
+export function shouldSilentlyRetryOnlineAiBatchRejection(reason: string): boolean {
+    return SILENT_ONLINE_AI_BATCH_REJECTION_REASONS.has(reason);
+}
+
 export function resolveCurrentPlayerId(sharedState: MatchState<unknown> | null | undefined): string | null {
     const phase = typeof sharedState?.sys?.phase === 'string' ? sharedState.sys.phase : '';
     const core = sharedState?.core as {

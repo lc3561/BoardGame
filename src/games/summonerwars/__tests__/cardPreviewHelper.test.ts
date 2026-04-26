@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import { getSummonerWarsCardPreviewMeta, getSummonerWarsCardPreviewRef } from '../ui/cardPreviewHelper';
 import { SPRITE_INDEX as NECRO_SPRITE_INDEX } from '../config/factions/necromancer';
-import { resolveMagicPhaseClickRoute } from '../ui/HandArea';
+import { resolveHandCardMagnifyPresentation, resolveMagicPhaseClickRoute } from '../ui/HandArea';
 
 describe('SummonerWars cardPreviewHelper', () => {
   it('支持带后缀的卡牌 ID 解析预览', () => {
@@ -66,5 +66,33 @@ describe('SummonerWars HandArea 魔力阶段点击路由', () => {
     });
 
     expect(route).toBeNull();
+  });
+});
+
+describe('SummonerWars HandArea 触屏放大入口', () => {
+  it('触屏下仅为选中的手牌保留显式放大按钮', () => {
+    const presentation = resolveHandCardMagnifyPresentation({
+      isCoarsePointer: true,
+      isSelected: true,
+      hasMagnifyAction: true,
+    });
+
+    expect(presentation).toEqual({
+      showTouchMagnifyButton: true,
+      suppressMagnifyButton: false,
+    });
+  });
+
+  it('触屏下未选中手牌继续只走长按放大，避免遮挡主点击', () => {
+    const presentation = resolveHandCardMagnifyPresentation({
+      isCoarsePointer: true,
+      isSelected: false,
+      hasMagnifyAction: true,
+    });
+
+    expect(presentation).toEqual({
+      showTouchMagnifyButton: false,
+      suppressMagnifyButton: true,
+    });
   });
 });

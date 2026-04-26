@@ -123,6 +123,16 @@ type NativeGamePackagePlugin = {
         body?: string;
         contentType?: string;
     }>;
+    readInstalledAsset(options: {
+        gameId: string;
+        relativePath: string;
+    }): Promise<{
+        gameId?: string;
+        relativePath?: string;
+        mimeType?: string;
+        base64?: string;
+        size?: number;
+    }>;
     cancelInstall(options: { gameId: string }): Promise<void>;
     addListener(
         eventName: 'installStateChanged',
@@ -157,6 +167,12 @@ export interface NativeRemoteJsonResponse {
     status?: number;
     body?: string;
     contentType?: string;
+}
+
+export interface NativeInstalledAssetBlobUrlResult {
+    blobUrl: string;
+    mimeType?: string;
+    size?: number;
 }
 
 export interface NativeGamePackageInstallStateSnapshot {
@@ -391,6 +407,79 @@ export const fetchRemoteJsonThroughNativePlugin = async (
     } catch (error) {
         logMobileRuntimeCritical('NativeGamePackagePlugin', 'fetch-remote-json-failed', {
             url,
+            error: error instanceof Error ? error.message : String(error),
+        });
+        return null;
+    }
+};
+
+const decodeBase64ToBlob = (base64: string, mimeType?: string) => {
+    const binary = globalThis.atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+        bytes[index] = binary.charCodeAt(index);
+    }
+    return new Blob([bytes], {
+        type: mimeType?.trim() || 'application/octet-stream',
+    });
+};
+
+export const readInstalledGamePackageAssetBlobUrl = async (
+    gameId: string,
+    relativePath: string,
+): Promise<NativeInstalledAssetBlobUrlResult | null> => {
+    const plugin = getNativePlugin();
+    const normalizedGameId = gameId.trim();
+    const normalizedRelativePath = relativePath.trim();
+    if (!plugin || !normalizedGameId || !normalizedRelativePath) {
+        logMobileRuntimeCritical('NativeGamePackagePlugin', 'read-installed-asset-invalid-input', {
+            gameId,
+            relativePath,
+            hasPlugin: Boolean(plugin),
+        });
+        return null;
+    }
+
+    try {
+        const result = await withTimeout(
+            plugin.readInstalledAsset({
+                gameId: normalizedGameId,
+                relativePath: normalizedRelativePath,
+            }),
+            8000,
+            `读取已安装游戏素材超时: ${normalizedGameId}/${normalizedRelativePath}`,
+        );
+        const base64 = typeof result.base64 === 'string' ? result.base64.trim() : '';
+        if (!base64) {
+            logMobileRuntimeCritical('NativeGamePackagePlugin', 'read-installed-asset-empty', {
+                gameId: normalizedGameId,
+                relativePath: normalizedRelativePath,
+                result,
+            });
+            return null;
+        }
+
+        const blob = decodeBase64ToBlob(base64, result.mimeType);
+        const blobUrl = URL.createObjectURL(blob);
+        logMobileRuntimeCritical('NativeGamePackagePlugin', 'read-installed-asset-success', {
+            gameId: normalizedGameId,
+            relativePath: normalizedRelativePath,
+            mimeType: result.mimeType ?? blob.type ?? null,
+            size: typeof result.size === 'number' && Number.isFinite(result.size)
+                ? result.size
+                : blob.size,
+        });
+        return {
+            blobUrl,
+            mimeType: result.mimeType?.trim() || blob.type || undefined,
+            size: typeof result.size === 'number' && Number.isFinite(result.size)
+                ? result.size
+                : blob.size,
+        };
+    } catch (error) {
+        logMobileRuntimeCritical('NativeGamePackagePlugin', 'read-installed-asset-failed', {
+            gameId: normalizedGameId,
+            relativePath: normalizedRelativePath,
             error: error instanceof Error ? error.message : String(error),
         });
         return null;

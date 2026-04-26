@@ -264,15 +264,17 @@ describe('忍者 ongoing/special 能力', () => {
             expect(isMinionProtected(state, minion, 0, '1', 'affect')).toBe(true);
         });
 
-        test('POD 版渗透附着后也会提供保护', () => {
+        test('POD 版渗透不会继承基础版渗透的保护语义', () => {
             const minion = makeMinion({
                 defId: 'ninja_a', uid: 'n-inf-pod-1', controller: '0',
-                attachedActions: [{ uid: 'inf-pod-1', defId: 'ninja_infiltrate_pod', ownerId: '0' }],
             });
-            const base = makeBase({ minions: [minion] });
+            const base = makeBase({
+                minions: [minion],
+                ongoingActions: [{ uid: 'inf-pod-1', defId: 'ninja_infiltrate_pod', ownerId: '0' }],
+            });
             const state = makeState([base]);
 
-            expect(isMinionProtected(state, minion, 0, '1', 'affect')).toBe(true);
+            expect(isMinionProtected(state, minion, 0, '1', 'affect')).toBe(false);
         });
 
         test('渗透只能消灭基地上的战术，不能消灭随从上的战术', () => {
@@ -334,6 +336,45 @@ describe('忍者 ongoing/special 能力', () => {
             expect(current?.data?.sourceId).toBe('ninja_infiltrate_destroy');
             expect(current?.data?.targetType).toBe('ongoing');
             expect(current?.data?.options).toHaveLength(2);
+        });
+
+        test('POD 版渗透只会给出基地上的战术目标，不会把随从或附着战术当目标', () => {
+            const minion = makeMinion({
+                uid: 'm-pod-1',
+                defId: 'test_minion',
+                controller: '1',
+                owner: '1',
+                attachedActions: [{ uid: 'poison-pod', defId: 'ninja_poison_pod', ownerId: '1' }],
+            });
+            const base = makeBase({
+                minions: [minion],
+                ongoingActions: [{ uid: 'ongoing-pod-1', defId: 'zombie_overrun', ownerId: '1' }],
+            });
+            const state = makeState([base]);
+            const matchState = { core: state, sys: { interaction: { current: undefined, queue: [] } } } as any;
+
+            const executor = resolveAbility('ninja_infiltrate_pod', 'onPlay')!;
+            const result = executor({
+                state,
+                matchState,
+                playerId: '0',
+                cardUid: 'infiltrate-pod-1',
+                defId: 'ninja_infiltrate_pod',
+                baseIndex: 0,
+                random: dummyRandom,
+                now: 1001,
+            });
+
+            expect(result.events).toHaveLength(0);
+            const current = (result.matchState?.sys as any)?.interaction?.current;
+            expect(current?.data?.sourceId).toBe('ninja_infiltrate_pod_destroy');
+            expect(current?.data?.targetType).toBe('ongoing');
+            expect(current?.data?.options).toHaveLength(2);
+
+            const cardOptions = current.data.options.filter((option: any) => option.value?.cardUid);
+            expect(cardOptions).toHaveLength(1);
+            expect(cardOptions[0].value.cardUid).toBe('ongoing-pod-1');
+            expect(cardOptions[0].value.defId).toBe('zombie_overrun');
         });
 
         test('只有一个基地战术时自动消灭，不创建交互', () => {
@@ -475,6 +516,51 @@ describe('忍者 ongoing/special 能力', () => {
         test('special 能力已注册', () => {
             const executor = resolveAbility('ninja_hidden_ninja', 'special');
             expect(executor).toBeDefined();
+        });
+
+        test('会把手牌中所有随从都放入选择交互', () => {
+            const state = makeState([makeBase({ minions: [] })], {
+                '0': {
+                    id: '0',
+                    vp: 0,
+                    hand: [
+                        makeCard('hidden', 'ninja_hidden_ninja', 'action', '0', SMASHUP_FACTION_IDS.NINJAS),
+                        makeCard('acolyte', 'ninja_acolyte', 'minion', '0', SMASHUP_FACTION_IDS.NINJAS),
+                        makeCard('shinobi', 'ninja_shinobi', 'minion', '0', SMASHUP_FACTION_IDS.NINJAS),
+                        makeCard('pirate', 'pirate_first_mate', 'minion', '0', SMASHUP_FACTION_IDS.PIRATES),
+                        makeCard('action', 'test_action', 'action', '0', SMASHUP_FACTION_IDS.NINJAS),
+                    ],
+                    deck: [],
+                    discard: [],
+                    minionsPlayed: 0,
+                    minionLimit: 1,
+                    actionsPlayed: 0,
+                    actionLimit: 1,
+                    factions: [SMASHUP_FACTION_IDS.NINJAS, SMASHUP_FACTION_IDS.PIRATES] as [string, string],
+                },
+            });
+            const matchState = makeMatchState(state);
+            const executor = resolveAbility('ninja_hidden_ninja', 'special')!;
+
+            const result = executor({
+                state,
+                matchState,
+                playerId: '0',
+                cardUid: 'hidden',
+                defId: 'ninja_hidden_ninja',
+                baseIndex: 0,
+                random: dummyRandom,
+                now: 1000,
+            });
+
+            const current = result.matchState?.sys.interaction?.current as any;
+            expect(current?.data?.sourceId).toBe('ninja_hidden_ninja');
+            expect(current?.data?.targetType).toBe('hand');
+            expect(current?.data?.options).toEqual(expect.arrayContaining([
+                expect.objectContaining({ value: expect.objectContaining({ cardUid: 'acolyte', defId: 'ninja_acolyte' }) }),
+                expect.objectContaining({ value: expect.objectContaining({ cardUid: 'shinobi', defId: 'ninja_shinobi' }) }),
+                expect.objectContaining({ value: expect.objectContaining({ cardUid: 'pirate', defId: 'pirate_first_mate' }) }),
+            ]));
         });
 
         test('同基地已使用忍者 special 时被阻止', () => {

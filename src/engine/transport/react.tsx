@@ -52,14 +52,16 @@ import {
     resolveLocalPregameControlledPlayerId,
 } from './followCurrentTurnPlayer';
 import {
-    resolveAiMinimumActionDelayMs,
+    resolveLocalAiActionDelayPlan,
     resolveNextAiAction,
     getAiSeatIds,
+    getGameAiRuntime,
     type AiSeatController,
 } from '../ai';
+import { resolveLocalAiActionVisibility } from '../ai/actionVisibility';
 import { persistLocalMatchSnapshot, readLocalMatchSnapshot } from './localSession';
 import { onAppVisible } from '../../lib/mobile/appVisibility';
-import { buildAiProgressMarker } from './onlineAiRecovery';
+import { buildAiProgressMarker, shouldSilentlyRetryOnlineAiBatchRejection } from './onlineAiRecovery';
 import { resolveSetupPlayerIds } from './setupPlayerOrder';
 import { createScopedLogger } from '../../lib/logger';
 
@@ -71,14 +73,6 @@ import { setUndoAiSeatIds } from '../systems/UndoSystem';
 export { filterPlayedEvents };
 export { buildAiProgressMarker };
 
-const FAST_AI_COMMAND_TYPES = new Set([
-    'ADVANCE_PHASE',
-    'sw:end_phase',
-    'RESPONSE_PASS',
-    'REROLL_BONUS_DIE',
-    'SKIP_BONUS_DICE_REROLL',
-]);
-
 const localAiPerfLogger = createScopedLogger('LOCAL_AI_PERF');
 function emitLocalAiPerf(stage: string, payload: Record<string, unknown>): void {
     console.log('[LOCAL_AI_PERF]', { stage, ...payload });
@@ -86,16 +80,6 @@ function emitLocalAiPerf(stage: string, payload: Record<string, unknown>): void 
 const aiRuntimeTruthLogger = createScopedLogger('AI_RUNTIME_TRUTH');
 function emitAiRuntimeTruth(stage: string, payload: Record<string, unknown>): void {
     console.log('[AI_RUNTIME_TRUTH]', { stage, ...payload });
-}
-
-function shouldUseFastAiDelay(action: { kind?: string; commands?: Array<{ type?: string }> }): boolean {
-    if (action.kind === 'advance-phase' || action.kind === 'response-pass') {
-        return true;
-    }
-    if (!Array.isArray(action.commands) || action.commands.length === 0) {
-        return false;
-    }
-    return action.commands.every((command) => typeof command.type === 'string' && FAST_AI_COMMAND_TYPES.has(command.type));
 }
 
 function summarizeSeatControllerTypes(seatControllers: Record<string, AiSeatController>): Record<string, string> {
@@ -110,7 +94,19 @@ function resolveCoreCurrentPlayerId(core: unknown): string | null {
     if (!core || typeof core !== 'object') {
         return null;
     }
-    const typedCore = core as { currentPlayer?: unknown; turnOrder?: unknown; currentPlayerIndex?: unknown };
+    const typedCore = core as {
+        activePlayerId?: unknown;
+        currentPlayerId?: unknown;
+        currentPlayer?: unknown;
+        turnOrder?: unknown;
+        currentPlayerIndex?: unknown;
+    };
+    if (typeof typedCore.activePlayerId === 'string') {
+        return typedCore.activePlayerId;
+    }
+    if (typeof typedCore.currentPlayerId === 'string') {
+        return typedCore.currentPlayerId;
+    }
     if (typeof typedCore.currentPlayer === 'string') {
         return typedCore.currentPlayer;
     }
@@ -307,6 +303,7 @@ export function GameProvider({
             'invalid_phase',
             'cannot_advance_phase',
             'player_mismatch',
+            'stale_state',
         ]),
         [],
     );
@@ -378,7 +375,7 @@ export function GameProvider({
                     const batchId = `b-${++batchSeqRef.current}`;
                     client.sendBatch(batchId, commands, undefined, (reason) => {
                         recoverFromRejectedCommand(reason);
-                        if (reason !== 'command_failed') {
+                        if (reason !== 'command_failed' && !shouldSilentlyRetryOnlineAiBatchRejection(reason)) {
                             onErrorRef.current?.(reason);
                         }
                     });
@@ -750,10 +747,18 @@ export function LocalGameProvider({
     const randomRef = useRef<LocalProviderRandom>(initialRandom);
     const onCommandRejectedRef = useRef(onCommandRejected);
     const lastAiAttemptKeyRef = useRef<string | null>(null);
-    const aiDelayGateBySeatRef = useRef<Record<string, number>>({});
+    const lastVisibleAiActionAtBySeatRef = useRef<Record<string, number | null>>({});
     const aiCommandEffectByTokenRef = useRef<Record<string, { hasStateDelta: boolean; markerProgressed: boolean }>>({});
     const [aiRetryVersion, setAiRetryVersion] = useState(0);
     const aiActivePhaseRef = useRef<{ key: string; startedAt: number } | null>(null);
+    const aiTurnTimelineBySeatRef = useRef<Record<string, {
+        turnKey: string;
+        turnStartedAt: number;
+        decisionReadyAt: number | null;
+        firstVisibleCommandLogged: boolean;
+        rollCount: number;
+        lastRollAt: number | null;
+    }>>({});
     const aiRuntimeTruthKeyRef = useRef<string | null>(null);
 
     useEffect(() => {
@@ -888,13 +893,40 @@ export function LocalGameProvider({
         stateRef.current = state;
     }, [state]);
 
+    const ensureAiTurnTimeline = useCallback((playerId: string, matchState: MatchState<unknown>) => {
+        const phase = matchState.sys?.phase ?? 'unknown';
+        const turnNumber = matchState.sys?.turnNumber ?? 'no-turn';
+        const nextId = matchState.sys?.eventStream?.nextId ?? 'no-event';
+        const turnKey = `${playerId}:${turnNumber}`;
+        const existingTimeline = aiTurnTimelineBySeatRef.current[playerId];
+        if (existingTimeline?.turnKey === turnKey) {
+            return existingTimeline;
+        }
+        const nextTimeline = {
+            turnKey,
+            turnStartedAt: Date.now(),
+            decisionReadyAt: null,
+            firstVisibleCommandLogged: false,
+            rollCount: 0,
+            lastRollAt: null,
+        };
+        aiTurnTimelineBySeatRef.current[playerId] = nextTimeline;
+        const turnBeginPayload = {
+            gameId: config.gameId,
+            matchId: `local:${config.gameId}:${seed}`,
+            playerId,
+            phase,
+            turnNumber,
+            turnKey,
+            eventStreamNextId: nextId,
+        };
+        localAiPerfLogger.info('ai-turn-begin', turnBeginPayload);
+        emitLocalAiPerf('ai-turn-begin', turnBeginPayload);
+        return nextTimeline;
+    }, [config.gameId, seed]);
+
     useEffect(() => {
-        const core = state.core as { currentPlayer?: unknown; turnOrder?: unknown; currentPlayerIndex?: unknown };
-        const currentPlayerId = typeof core.currentPlayer === 'string'
-            ? core.currentPlayer
-            : (Array.isArray(core.turnOrder) && typeof core.currentPlayerIndex === 'number'
-                ? (core.turnOrder as string[])[core.currentPlayerIndex]
-                : undefined);
+        const currentPlayerId = resolveCoreCurrentPlayerId(state.core);
         if (!currentPlayerId || seatControllers[currentPlayerId]?.type === 'human') {
             aiActivePhaseRef.current = null;
             return;
@@ -906,7 +938,8 @@ export function LocalGameProvider({
         if (aiActivePhaseRef.current?.key !== key) {
             aiActivePhaseRef.current = { key, startedAt: Date.now() };
         }
-    }, [seatControllers, state]);
+        ensureAiTurnTimeline(currentPlayerId, state);
+    }, [ensureAiTurnTimeline, seatControllers, state]);
 
     const localPregameControlledPlayerId = useMemo(
         () => resolveLocalPregameControlledPlayerId({
@@ -965,7 +998,8 @@ export function LocalGameProvider({
                 return;
             }
             lastAiAttemptKeyRef.current = null;
-            aiDelayGateBySeatRef.current = {};
+            lastVisibleAiActionAtBySeatRef.current = {};
+            aiCommandEffectByTokenRef.current = {};
             setAiRetryVersion((version) => version + 1);
         });
     }, [localPregameControlledPlayerId, seatControllers]);
@@ -978,11 +1012,23 @@ export function LocalGameProvider({
             const tutorialOverrideId = typeof payloadRecord?.__tutorialPlayerId === 'string'
                 ? payloadRecord.__tutorialPlayerId
                 : undefined;
+            const aiTraceToken = typeof payloadRecord?.__aiTraceToken === 'string'
+                ? payloadRecord.__aiTraceToken
+                : undefined;
             // AI 命令标记：命令失败时不触发 onCommandRejected（避免教程中 AI 操作弹 toast）
             const isTutorialAiCommand = payloadRecord?.__tutorialAiCommand === true;
-            const normalizedPayload = payloadRecord && ('__tutorialPlayerId' in payloadRecord || '__tutorialAiCommand' in payloadRecord)
+            const normalizedPayload = payloadRecord && (
+                '__tutorialPlayerId' in payloadRecord
+                || '__tutorialAiCommand' in payloadRecord
+                || '__aiTraceToken' in payloadRecord
+            )
                 ? (() => {
-                    const { __tutorialPlayerId: _ignored, __tutorialAiCommand: _ignored2, ...rest } = payloadRecord;
+                    const {
+                        __tutorialPlayerId: _ignored,
+                        __tutorialAiCommand: _ignored2,
+                        __aiTraceToken: _ignored3,
+                        ...rest
+                    } = payloadRecord;
                     return rest;
                 })()
                 : payload;
@@ -1047,6 +1093,12 @@ export function LocalGameProvider({
 
             if (!result.success) {
                 console.warn('[LocalGame] 命令执行失败:', type, result.error);
+                if (aiTraceToken) {
+                    aiCommandEffectByTokenRef.current[aiTraceToken] = {
+                        hasStateDelta: false,
+                        markerProgressed: false,
+                    };
+                }
                 const rejectedPayload = {
                     gameId: config.gameId,
                     matchId: `local:${config.gameId}:${seed}`,
@@ -1095,12 +1147,20 @@ export function LocalGameProvider({
                 })();
                 const markerBefore = buildAiProgressMarker(prev);
                 const markerAfter = buildAiProgressMarker(refreshedState);
+                const markerProgressed = markerBefore !== markerAfter;
+                const hasStateDelta = markerProgressed
+                    || handCountBefore !== handCountAfter
+                    || cpBefore !== cpAfter
+                    || (typeof prev.sys?.phase === 'string' ? prev.sys.phase : null) !== (typeof refreshedState.sys?.phase === 'string' ? refreshedState.sys.phase : null)
+                    || (typeof prev.sys?.eventStream?.nextId === 'number' ? prev.sys.eventStream.nextId : null)
+                        !== (typeof refreshedState.sys?.eventStream?.nextId === 'number' ? refreshedState.sys.eventStream.nextId : null);
                 const appliedPayload = {
                     gameId: config.gameId,
                     matchId: `local:${config.gameId}:${seed}`,
                     commandType: type,
                     playerId: resolvedPlayerId,
-                    progressed: markerBefore !== markerAfter,
+                    progressed: markerProgressed,
+                    hasStateDelta,
                     phaseBefore: typeof prev.sys?.phase === 'string' ? prev.sys.phase : null,
                     phaseAfter: typeof refreshedState.sys?.phase === 'string' ? refreshedState.sys.phase : null,
                     turnBefore: typeof prev.sys?.turnNumber === 'number' ? prev.sys.turnNumber : null,
@@ -1112,6 +1172,12 @@ export function LocalGameProvider({
                     markerBefore,
                     markerAfter,
                 };
+                if (aiTraceToken) {
+                    aiCommandEffectByTokenRef.current[aiTraceToken] = {
+                        hasStateDelta,
+                        markerProgressed,
+                    };
+                }
                 localAiPerfLogger.info('command-applied', appliedPayload);
                 emitLocalAiPerf('command-applied', appliedPayload);
             }
@@ -1136,13 +1202,17 @@ export function LocalGameProvider({
         const hasAiSeat = Object.values(seatControllers).some((controller) => controller.type !== 'human');
         if (!hasAiSeat) {
             lastAiAttemptKeyRef.current = null;
-            aiDelayGateBySeatRef.current = {};
+            lastVisibleAiActionAtBySeatRef.current = {};
+            aiCommandEffectByTokenRef.current = {};
+            aiTurnTimelineBySeatRef.current = {};
             return;
         }
 
         if (localPregameControlledPlayerId) {
             lastAiAttemptKeyRef.current = null;
-            aiDelayGateBySeatRef.current = {};
+            lastVisibleAiActionAtBySeatRef.current = {};
+            aiCommandEffectByTokenRef.current = {};
+            aiTurnTimelineBySeatRef.current = {};
             return;
         }
 
@@ -1188,17 +1258,39 @@ export function LocalGameProvider({
                 return;
             }
 
-            const fastTrackActionDelay = shouldUseFastAiDelay(resolution.action);
-            const actionDelayTargetMs = fastTrackActionDelay
-                ? 0
-                : resolveAiMinimumActionDelayMs(controller);
-            const delayGateUntil = aiDelayGateBySeatRef.current[resolution.playerId] ?? 0;
-            const gateDelayMs = Math.max(0, delayGateUntil - Date.now());
-            const remainingDelayMs = gateDelayMs;
+            const runtime = getGameAiRuntime(config.gameId);
+            const actionVisibility = resolveLocalAiActionVisibility(resolution.action, runtime);
+            const delayPlan = resolveLocalAiActionDelayPlan({
+                controller,
+                actionVisibility,
+                now: decisionResolvedAt,
+                lastVisibleActionAt: lastVisibleAiActionAtBySeatRef.current[resolution.playerId] ?? null,
+            });
             const commandTypes = resolution.action.commands.map((command) => command.type);
             const activePhaseElapsedMs = aiActivePhaseRef.current
                 ? decisionResolvedAt - aiActivePhaseRef.current.startedAt
                 : null;
+            const turnTimeline = ensureAiTurnTimeline(resolution.playerId, stateRef.current);
+            if (turnTimeline) {
+                turnTimeline.decisionReadyAt = decisionResolvedAt;
+            }
+            const decisionReadyPayload = {
+                gameId: config.gameId,
+                matchId: `local:${config.gameId}:${seed}`,
+                playerId: resolution.playerId,
+                source: resolution.source,
+                actionKind: resolution.action.kind,
+                commandTypes,
+                decisionElapsedMs,
+                turnKey: turnTimeline?.turnKey ?? null,
+                turnStartedElapsedMs: turnTimeline
+                    ? decisionResolvedAt - turnTimeline.turnStartedAt
+                    : null,
+                activePhaseElapsedMs,
+                ...delayPlan,
+            };
+            localAiPerfLogger.info('ai-decision-ready', decisionReadyPayload);
+            emitLocalAiPerf('ai-decision-ready', decisionReadyPayload);
 
             localAiPerfLogger.info('scheduled', {
                 gameId: config.gameId,
@@ -1210,11 +1302,7 @@ export function LocalGameProvider({
                 commandTypes,
                 decisionElapsedMs,
                 activePhaseElapsedMs,
-                fastTrackActionDelay,
-                actionDelayTargetMs,
-                delayGateUntil,
-                gateDelayMs,
-                remainingDelayMs,
+                ...delayPlan,
             });
             emitLocalAiPerf('scheduled', {
                 gameId: config.gameId,
@@ -1226,19 +1314,15 @@ export function LocalGameProvider({
                 commandTypes,
                 decisionElapsedMs,
                 activePhaseElapsedMs,
-                fastTrackActionDelay,
-                actionDelayTargetMs,
-                delayGateUntil,
-                gateDelayMs,
-                remainingDelayMs,
+                ...delayPlan,
             });
 
-            if (remainingDelayMs > 0) {
+            if (delayPlan.remainingDelayMs > 0) {
                 await new Promise<void>((resolve) => {
                     delayTimer = setTimeout(() => {
                         delayTimer = null;
                         resolve();
-                    }, remainingDelayMs);
+                    }, delayPlan.remainingDelayMs);
                 });
             }
 
@@ -1271,11 +1355,26 @@ export function LocalGameProvider({
                 const eventStreamNextIdBefore = typeof stateRef.current.sys?.eventStream?.nextId === 'number'
                     ? stateRef.current.sys.eventStream.nextId
                     : null;
+                const aiTraceToken = `${resolution.attemptKey}:${commandIndex}:${Date.now()}`;
                 dispatch(command.type, {
                     ...normalizedPayload,
                     __tutorialPlayerId: resolution.playerId,
                     __tutorialAiCommand: true,
+                    __aiTraceToken: aiTraceToken,
                 });
+                let commandEffect = aiCommandEffectByTokenRef.current[aiTraceToken];
+                if (!commandEffect) {
+                    for (let retry = 0; retry < 3; retry += 1) {
+                        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+                        commandEffect = aiCommandEffectByTokenRef.current[aiTraceToken];
+                        if (commandEffect) {
+                            break;
+                        }
+                    }
+                }
+                if (commandEffect) {
+                    delete aiCommandEffectByTokenRef.current[aiTraceToken];
+                }
                 const markerAfterCommand = buildAiProgressMarker(stateRef.current);
                 const playerAfter = (stateRef.current.core as {
                     players?: Record<string, { hand?: unknown; resources?: Record<string, unknown> }>;
@@ -1295,12 +1394,14 @@ export function LocalGameProvider({
                 const eventStreamNextIdAfter = typeof stateRef.current.sys?.eventStream?.nextId === 'number'
                     ? stateRef.current.sys.eventStream.nextId
                     : null;
-                const progressed = markerAfterCommand !== markerBeforeCommand;
-                const hasStateDelta = progressed
+                const progressed = commandEffect?.markerProgressed ?? (markerAfterCommand !== markerBeforeCommand);
+                const hasStateDelta = commandEffect?.hasStateDelta ?? (
+                    progressed
                     || handCountBefore !== handCountAfter
                     || cpBefore !== cpAfter
                     || phaseBeforeCommand !== phaseAfterCommand
-                    || eventStreamNextIdBefore !== eventStreamNextIdAfter;
+                    || eventStreamNextIdBefore !== eventStreamNextIdAfter
+                );
                 if (hasStateDelta) {
                     hasAnyCommandEffect = true;
                 }
@@ -1327,6 +1428,58 @@ export function LocalGameProvider({
                     markerAfter: markerAfterCommand,
                 };
                 if (hasStateDelta) {
+                    const now = Date.now();
+                    const timeline = aiTurnTimelineBySeatRef.current[resolution.playerId];
+                    if (actionVisibility === 'visible' && timeline && !timeline.firstVisibleCommandLogged) {
+                        timeline.firstVisibleCommandLogged = true;
+                        const firstVisiblePayload = {
+                            gameId: config.gameId,
+                            matchId: `local:${config.gameId}:${seed}`,
+                            playerId: resolution.playerId,
+                            source: resolution.source,
+                            actionKind: resolution.action.kind,
+                            commandType: command.type,
+                            commandIndex,
+                            turnKey: timeline.turnKey,
+                            turnStartedElapsedMs: now - timeline.turnStartedAt,
+                            decisionReadyToVisibleMs: timeline.decisionReadyAt === null
+                                ? null
+                                : now - timeline.decisionReadyAt,
+                            phaseBefore: phaseBeforeCommand,
+                            phaseAfter: phaseAfterCommand,
+                        };
+                        localAiPerfLogger.info('ai-first-visible-command', firstVisiblePayload);
+                        emitLocalAiPerf('ai-first-visible-command', firstVisiblePayload);
+                    }
+                    if (command.type === 'ROLL_DICE') {
+                        const rollPayload = {
+                            gameId: config.gameId,
+                            matchId: `local:${config.gameId}:${seed}`,
+                            playerId: resolution.playerId,
+                            source: resolution.source,
+                            actionKind: resolution.action.kind,
+                            commandType: command.type,
+                            turnKey: timeline?.turnKey ?? null,
+                            rollOrdinal: timeline ? timeline.rollCount + 1 : 1,
+                            gapFromPreviousRollMs: timeline?.lastRollAt === null || timeline?.lastRollAt === undefined
+                                ? null
+                                : now - timeline.lastRollAt,
+                            turnStartedElapsedMs: timeline
+                                ? now - timeline.turnStartedAt
+                                : null,
+                            decisionReadyToVisibleMs: timeline?.decisionReadyAt === null || timeline?.decisionReadyAt === undefined
+                                ? null
+                                : now - timeline.decisionReadyAt,
+                            phaseBefore: phaseBeforeCommand,
+                            phaseAfter: phaseAfterCommand,
+                        };
+                        if (timeline) {
+                            timeline.rollCount += 1;
+                            timeline.lastRollAt = now;
+                        }
+                        localAiPerfLogger.info('ai-roll-command', rollPayload);
+                        emitLocalAiPerf('ai-roll-command', rollPayload);
+                    }
                     localAiPerfLogger.info('command-progress', commandProgressPayload);
                     emitLocalAiPerf('command-progress', commandProgressPayload);
                     continue;
@@ -1335,10 +1488,8 @@ export function LocalGameProvider({
                 emitLocalAiPerf('command-no-progress', commandProgressPayload);
             }
 
-            if (actionDelayTargetMs > 0 && !fastTrackActionDelay && hasAnyCommandEffect) {
-                aiDelayGateBySeatRef.current[resolution.playerId] = Date.now() + actionDelayTargetMs;
-            } else {
-                delete aiDelayGateBySeatRef.current[resolution.playerId];
+            if (actionVisibility === 'visible' && hasAnyCommandEffect) {
+                lastVisibleAiActionAtBySeatRef.current[resolution.playerId] = Date.now();
             }
 
             const totalElapsedMs = Date.now() - startedAt;
@@ -1351,8 +1502,7 @@ export function LocalGameProvider({
                 commandTypes,
                 decisionElapsedMs,
                 hasAnyCommandEffect,
-                delayGateUntil,
-                gateDelayMs,
+                ...delayPlan,
                 activePhaseElapsedMs: aiActivePhaseRef.current
                     ? Date.now() - aiActivePhaseRef.current.startedAt
                     : null,
@@ -1367,8 +1517,7 @@ export function LocalGameProvider({
                 commandTypes,
                 decisionElapsedMs,
                 hasAnyCommandEffect,
-                delayGateUntil,
-                gateDelayMs,
+                ...delayPlan,
                 activePhaseElapsedMs: aiActivePhaseRef.current
                     ? Date.now() - aiActivePhaseRef.current.startedAt
                     : null,
@@ -1386,11 +1535,8 @@ export function LocalGameProvider({
                     activePhaseElapsedMs: aiActivePhaseRef.current
                         ? Date.now() - aiActivePhaseRef.current.startedAt
                         : null,
-                    actionDelayTargetMs,
                     hasAnyCommandEffect,
-                    delayGateUntil,
-                    gateDelayMs,
-                    remainingDelayMs,
+                    ...delayPlan,
                     totalElapsedMs,
                 });
                 emitLocalAiPerf('slow-step', {
@@ -1404,11 +1550,8 @@ export function LocalGameProvider({
                     activePhaseElapsedMs: aiActivePhaseRef.current
                         ? Date.now() - aiActivePhaseRef.current.startedAt
                         : null,
-                    actionDelayTargetMs,
                     hasAnyCommandEffect,
-                    delayGateUntil,
-                    gateDelayMs,
-                    remainingDelayMs,
+                    ...delayPlan,
                     totalElapsedMs,
                 });
             }
@@ -1437,7 +1580,7 @@ export function LocalGameProvider({
                 delayTimer = null;
             }
         };
-    }, [aiRetryVersion, config, dispatch, localPregameControlledPlayerId, seatControllers, seed, state]);
+    }, [aiRetryVersion, config, dispatch, ensureAiTurnTimeline, localPregameControlledPlayerId, seatControllers, seed, state]);
 
     const reset = useCallback(() => {
         randomRef.current = createLocalProviderRandom(seed);

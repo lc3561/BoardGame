@@ -30,6 +30,7 @@ import {
     drawMadnessCards,
     findMinionOnBases,
 } from './abilityHelpers';
+import { buildBuryCardEvents } from './bury';
 import { createSimpleChoice, queueInteraction, type PromptOption } from '../../../engine/systems/InteractionSystem';
 import { registerInteractionHandler } from './abilityInteractionHandlers';
 import { registerBaseAbility, registerExtended as registerExtendedBase } from './baseAbilities';
@@ -61,6 +62,94 @@ function getDeferredPostScoringEvents(
 
 /** 注册扩展包基地能力*/
 export function registerExpansionBaseAbilities(): void {
+    // ── 人鱼水池（Mermaid Pool）─────────────────────────────────
+    registerBaseAbility('base_mermaid_pool', 'onTurnStart', (ctx) => {
+        const base = ctx.state.bases[ctx.baseIndex];
+        if (!base || !ctx.matchState) return { events: [] };
+        const hasOwnMinionHere = base.minions.some(minion => minion.controller === ctx.playerId);
+        if (!hasOwnMinionHere) return { events: [] };
+
+        const candidates: Array<{ minionUid: string; minionDefId: string; fromBaseIndex: number; label: string }> = [];
+        ctx.state.bases.forEach((candidateBase, baseIndex) => {
+            if (baseIndex === ctx.baseIndex) return;
+            const baseName = getBaseDef(candidateBase.defId)?.name ?? `基地 ${baseIndex + 1}`;
+            candidateBase.minions
+                .filter(minion => minion.controller !== ctx.playerId)
+                .forEach((minion) => {
+                    const minionName = getCardDef(minion.defId)?.name ?? minion.defId;
+                    candidates.push({
+                        minionUid: minion.uid,
+                        minionDefId: minion.defId,
+                        fromBaseIndex: baseIndex,
+                        label: `${minionName} @ ${baseName}`,
+                    });
+                });
+        });
+        if (candidates.length === 0) return { events: [] };
+
+        const options: PromptOption<Record<string, unknown>>[] = [
+            { id: 'skip', label: '跳过', value: { skip: true }, displayMode: 'button' as const },
+            ...candidates.map((candidate, index) => ({
+                id: `minion-${index}`,
+                label: candidate.label,
+                value: candidate,
+                _source: 'field' as const,
+                displayMode: 'card' as const,
+            })),
+        ];
+        const interaction = createSimpleChoice(
+            `base_mermaid_pool_${ctx.now}`,
+            ctx.playerId,
+            '人鱼水池：你可以移动另一位玩家的一个仆从到这里',
+            options,
+            { sourceId: 'base_mermaid_pool', targetType: 'minion' },
+        );
+        return {
+            events: [],
+            matchState: queueInteraction(ctx.matchState, {
+                ...interaction,
+                data: { ...interaction.data, continuationContext: { targetBaseIndex: ctx.baseIndex } },
+            }),
+        };
+    });
+
+    // ── 藏骨堂（Ossuary）──────────────────────────────────────
+    registerBaseAbility('base_ossuary', 'onTurnStart', (ctx) => {
+        const player = ctx.state.players[ctx.playerId];
+        if (!player || !ctx.matchState) return { events: [] };
+        const discardMinions = player.discard.filter(card => {
+            if (card.type !== 'minion') return false;
+            const def = getCardDef(card.defId);
+            return !!def && def.type === 'minion' && def.power <= 3;
+        });
+        if (discardMinions.length === 0) return { events: [] };
+
+        const options: PromptOption<Record<string, unknown>>[] = [
+            { id: 'skip', label: '跳过', value: { skip: true }, displayMode: 'button' as const },
+            ...discardMinions.map((card, index) => ({
+                id: `discard-${index}`,
+                label: getCardDef(card.defId)?.name ?? card.defId,
+                value: { cardUid: card.uid, defId: card.defId },
+                _source: 'discard' as const,
+                displayMode: 'card' as const,
+            })),
+        ];
+        const interaction = createSimpleChoice(
+            `base_ossuary_${ctx.now}`,
+            ctx.playerId,
+            '藏骨堂：你可以从弃牌堆埋葬一个力量 3 或更少的仆从到这里',
+            options,
+            { sourceId: 'base_ossuary', targetType: 'discard' },
+        );
+        return {
+            events: [],
+            matchState: queueInteraction(ctx.matchState, {
+                ...interaction,
+                data: { ...interaction.data, continuationContext: { targetBaseIndex: ctx.baseIndex } },
+            }),
+        };
+    });
+
     // ── 竞技场（Arena）───────────────────────────────────────────
     // 第一次在此基地打出随从后，可选：额外打行动 或 抽一张牌
     registerBaseAbility('base_arena', 'onMinionPlayed', (ctx) => {
@@ -138,7 +227,7 @@ export function registerExpansionBaseAbilities(): void {
 
         // Infiltrate：只让拥有者自己忽略（不影响其他玩家）
         const ignoredByOwner = base?.ongoingActions?.some(o =>
-            o.ownerId === ownerId && o.defId.startsWith('ninja_infiltrate'),
+            o.ownerId === ownerId && o.defId === 'ninja_infiltrate',
         ) ?? false;
         if (ignoredByOwner) return { events: [] };
 
@@ -547,7 +636,7 @@ export function registerExpansionBaseAbilities(): void {
         const eggBase = ctx.state.bases[eggIndex];
         // Infiltrate：该随从控制者若选择忽略，则其随从不再受保护
         const ignored = eggBase.ongoingActions?.some(o =>
-            o.ownerId === ctx.targetMinion.controller && o.defId.startsWith('ninja_infiltrate'),
+            o.ownerId === ctx.targetMinion.controller && o.defId === 'ninja_infiltrate',
         ) ?? false;
         if (ignored) return false;
         // 仅“+1 power counters”（力量指示物）提供保护
@@ -690,6 +779,54 @@ export function registerExpansionBaseAbilities(): void {
 
 /** 注册扩展包基地能力的交互解决处理函数 */
 export function registerExpansionBaseInteractionHandlers(): void {
+    registerInteractionHandler('base_mermaid_pool', (state, _playerId, value, iData, _random, timestamp) => {
+        const selected = value as {
+            skip?: boolean;
+            minionUid?: string;
+            minionDefId?: string;
+            fromBaseIndex?: number;
+        };
+        if (selected.skip) return { state, events: [] };
+        const ctx = getContinuationContext<{ targetBaseIndex: number }>(iData);
+        if (!ctx || !selected.minionUid || !selected.minionDefId || selected.fromBaseIndex === undefined) {
+            return { state, events: [] };
+        }
+        return {
+            state,
+            events: buildValidatedMoveEvents(state, {
+                minionUid: selected.minionUid,
+                minionDefId: selected.minionDefId,
+                fromBaseIndex: selected.fromBaseIndex,
+                toBaseIndex: ctx.targetBaseIndex,
+                reason: 'base_mermaid_pool',
+                now: timestamp,
+            }),
+        };
+    });
+
+    registerInteractionHandler('base_ossuary', (state, playerId, value, iData, random, timestamp) => {
+        const selected = value as { skip?: boolean; cardUid?: string; defId?: string };
+        if (selected.skip) return { state, events: [] };
+        const ctx = getContinuationContext<{ targetBaseIndex: number }>(iData);
+        if (!ctx || !selected.cardUid || !selected.defId) return { state, events: [] };
+        return {
+            state,
+            events: buildBuryCardEvents({
+                core: state.core,
+                matchState: state,
+                playerId,
+                cardUid: selected.cardUid,
+                defId: selected.defId,
+                baseIndex: ctx.targetBaseIndex,
+                trueOwnerId: playerId,
+                buriedFrom: 'discard',
+                reason: 'base_ossuary',
+                random,
+                now: timestamp,
+            }),
+        };
+    });
+
     registerInteractionHandler('base_arena', (state, playerId, value, _iData, random, timestamp) => {
         const selected = value as { skip?: boolean; choice?: 'extra_action' | 'draw_card' };
         if (selected.skip) return { state, events: [] };

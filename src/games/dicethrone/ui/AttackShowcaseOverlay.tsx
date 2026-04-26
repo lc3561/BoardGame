@@ -24,10 +24,14 @@ import type { AttackShowcaseData } from '../hooks/useAttackShowcase';
 interface AttackShowcaseOverlayProps {
     /** 特写数据 */
     data: AttackShowcaseData;
+    /** 展示模式 */
+    mode?: 'defensive-entry' | 'offensive-preview' | null;
     /** 语言 */
     locale?: string;
     /** 对手名称 */
     opponentName: string;
+    /** 自动关闭时长，null 表示仅手动关闭 */
+    autoDismissMs?: number | null;
     /** 关闭回调 */
     onDismiss: () => void;
 }
@@ -79,8 +83,10 @@ const AbilitySlotCrop: React.FC<{
 
 export const AttackShowcaseOverlay: React.FC<AttackShowcaseOverlayProps> = ({
     data,
+    mode = 'defensive-entry',
     locale,
     opponentName: _opponentName,
+    autoDismissMs = null,
     onDismiss,
 }) => {
     const { t } = useTranslation('game-dicethrone');
@@ -101,6 +107,18 @@ export const AttackShowcaseOverlay: React.FC<AttackShowcaseOverlayProps> = ({
         : isUltimate
             ? { width: '28vw', aspectRatio: String(slotAspect) }
             : { width: '16vw', aspectRatio: String(slotAspect) };
+    const title = mode === 'offensive-preview'
+        ? t('attackShowcase.previewTitle')
+        : t('attackShowcase.title');
+    const dismissLabel = mode === 'offensive-preview'
+        ? t('attackShowcase.previewContinue')
+        : t('attackShowcase.continue');
+
+    React.useEffect(() => {
+        if (!autoDismissMs || autoDismissMs <= 0) return;
+        const timer = window.setTimeout(() => onDismiss(), autoDismissMs);
+        return () => window.clearTimeout(timer);
+    }, [autoDismissMs, onDismiss]);
 
     return (
         <HudPortal>
@@ -129,7 +147,7 @@ export const AttackShowcaseOverlay: React.FC<AttackShowcaseOverlayProps> = ({
                         <div className="flex items-center gap-[0.6vw] text-red-400">
                             <Swords className="w-[1.8vw] h-[1.8vw]" />
                             <span className="text-[1.4vw] font-black tracking-wider uppercase">
-                                {t('attackShowcase.title')}
+                                {title}
                             </span>
                             <Swords className="w-[1.8vw] h-[1.8vw] scale-x-[-1]" />
                         </div>
@@ -168,7 +186,7 @@ export const AttackShowcaseOverlay: React.FC<AttackShowcaseOverlayProps> = ({
                             onClick={onDismiss}
                             className="mt-[0.5vw] text-[1vw] px-[3vw] py-[0.8vw]"
                         >
-                            {t('attackShowcase.continue')}
+                            {dismissLabel}
                         </GameButton>
                     </motion.div>
                 </motion.div>

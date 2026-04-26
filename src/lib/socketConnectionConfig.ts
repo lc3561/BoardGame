@@ -1,63 +1,31 @@
 /**
  * 统一管理 socket.io 的握手策略。
- * 生产环境默认优先 websocket，避免慢链路上重连风暴。
- * 开发/测试环境允许 polling 回退，但仍优先 websocket，避免不必要的长轮询延迟。
+ * 所有环境都优先使用 websocket，但始终允许 polling 自动回退。
+ * 这样在 websocket 被网络拦截时可以继续连上；网络恢复后，engine.io 会继续优先 websocket / 尝试升级回 websocket。
  */
 export const SOCKET_CONNECT_TIMEOUT_MS = 30_000;
 export const SOCKET_COMPATIBILITY_MODE_STORAGE_KEY = 'boardgame.socketCompatibilityMode';
 
 export type SocketIoTransport = 'websocket' | 'polling';
 
-const SOCKET_IO_TRANSPORTS_DEFAULT: SocketIoTransport[] = ['websocket'];
-const SOCKET_IO_TRANSPORTS_COMPATIBILITY: SocketIoTransport[] = ['websocket', 'polling'];
-const SOCKET_IO_TRANSPORTS_DEV_FALLBACK: SocketIoTransport[] = ['websocket', 'polling'];
-
-const metaEnv = (import.meta as { env?: Record<string, string | boolean | undefined> }).env ?? {};
-const isDev = metaEnv.DEV === true;
-const mode = typeof metaEnv.MODE === 'string' ? metaEnv.MODE : '';
-const isAndroidShellBuild = mode === 'android';
-const allowPollingOverride = metaEnv.VITE_SOCKET_ALLOW_POLLING === 'true';
-const allowPollingByEnvironment = isDev || mode === 'test' || isAndroidShellBuild || allowPollingOverride;
-
-const canUseStorage = () => typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
+const SOCKET_IO_TRANSPORTS_AUTOMATIC: SocketIoTransport[] = ['websocket', 'polling'];
 
 /**
- * 开发/测试、Android 壳和显式 env 覆盖始终允许 polling，便于调试或规避 WebView / 代理链路不稳定。
- * 纯 Web 生产环境保留本地兼容模式开关，用于 websocket-only 被网络拦截时的降级。
+ * 兼容模式切换已废弃，改为统一自动回退。
+ * 保留这些导出以兼容旧引用，但它们不再驱动任何用户可见开关。
  */
-export const canToggleSocketCompatibilityMode = () => !allowPollingByEnvironment;
+export const canToggleSocketCompatibilityMode = () => false;
 
 export const isSocketCompatibilityModeEnabled = (): boolean => {
-    if (allowPollingByEnvironment) {
-        return true;
-    }
-    if (!canUseStorage()) {
-        return false;
-    }
-    return window.localStorage.getItem(SOCKET_COMPATIBILITY_MODE_STORAGE_KEY) === 'true';
+    return true;
 };
 
-export const setSocketCompatibilityModeEnabled = (enabled: boolean): void => {
-    if (!canUseStorage() || allowPollingByEnvironment) {
-        return;
-    }
-
-    if (enabled) {
-        window.localStorage.setItem(SOCKET_COMPATIBILITY_MODE_STORAGE_KEY, 'true');
-        return;
-    }
-
-    window.localStorage.removeItem(SOCKET_COMPATIBILITY_MODE_STORAGE_KEY);
+export const setSocketCompatibilityModeEnabled = (_enabled: boolean): void => {
+    // Compatibility mode is now always handled automatically by the transport order.
 };
 
 export const getSocketIoTransports = (): SocketIoTransport[] => {
-    if (allowPollingByEnvironment) {
-        return [...SOCKET_IO_TRANSPORTS_DEV_FALLBACK];
-    }
-
-    return isSocketCompatibilityModeEnabled()
-        ? [...SOCKET_IO_TRANSPORTS_COMPATIBILITY]
-        : [...SOCKET_IO_TRANSPORTS_DEFAULT];
+    return [...SOCKET_IO_TRANSPORTS_AUTOMATIC];
 };
 
-export const shouldTryAllSocketTransports = (): boolean => getSocketIoTransports().length > 1;
+export const shouldTryAllSocketTransports = (): boolean => true;

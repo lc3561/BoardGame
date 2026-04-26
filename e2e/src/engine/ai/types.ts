@@ -73,6 +73,7 @@ export interface AiInteractionOptionSnapshot {
     label?: string;
     value?: unknown;
     disabled?: boolean;
+    disabledReason?: string;
     displayMode?: string;
     _ai?: AiHint;
 }
@@ -88,6 +89,7 @@ export interface AiInteractionSnapshot {
 
 export interface AiResponseWindowSnapshot {
     windowType?: string;
+    sourceId?: string;
     currentResponderIndex?: number;
     responderQueue?: string[];
     allowedCommands?: string[];
@@ -104,6 +106,11 @@ export interface AiActionStrategyMetadata {
      * @deprecated 旧的 Smash Up 专用字段，读取仍兼容；新代码应优先写入 strategyTags。
      */
     cardStrategyTags?: string[];
+    visibleStepDelayPolicy?: 'hidden' | 'visible';
+    /**
+     * @deprecated 旧的“后续 gate”语义；读取仍兼容为 visible/hidden，可逐步迁移到 visibleStepDelayPolicy。
+     */
+    followUpDelayPolicy?: 'skip' | 'delay';
 }
 
 export type AiActionMetadata = Record<string, unknown> & AiActionStrategyMetadata;
@@ -196,6 +203,21 @@ export interface BuildGameAiFeatureSnapshotArgs {
 
 export type OnlineAiDecisionVisibility = 'shared' | 'private-required';
 
+export type LocalAiActionVisibility = 'hidden' | 'visible';
+
+export interface LocalAiVisibleStepDelayConfig {
+    mode: 'whitelist';
+    actionKinds: string[];
+}
+
+/**
+ * @deprecated 旧命名；保留为 LocalAiVisibleStepDelayConfig 的兼容别名。
+ */
+export interface LocalAiFollowUpDelayConfig {
+    mode: 'whitelist';
+    actionKinds: string[];
+}
+
 export interface GameAiRuntime {
     gameId: string;
     buildLegalActions(args: BuildGameAiLegalActionsArgs): AiLegalAction[];
@@ -205,6 +227,11 @@ export interface GameAiRuntime {
         sharedState: MatchState<unknown>;
         privateOverlay: MatchState<unknown> | null;
     }): OnlineAiDecisionVisibility | null | undefined;
+    localVisibleStepDelayConfig?: LocalAiVisibleStepDelayConfig;
+    /**
+     * @deprecated 旧命名；读取仍兼容，建议迁移到 localVisibleStepDelayConfig。
+     */
+    localFollowUpDelayConfig?: LocalAiFollowUpDelayConfig;
     localPolicies?: Record<string, LocalAiPolicy>;
     defaultLocalPolicyId?: string;
     shouldUseRemoteDecision?: (

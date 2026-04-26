@@ -17,6 +17,8 @@ import { shadowThiefDiceDefinition } from '../heroes/shadow_thief/diceConfig';
 import { SHADOW_THIEF_RESOURCES } from '../heroes/shadow_thief/resourceConfig';
 import { CHARACTER_DATA_MAP } from '../domain/characters';
 import { DiceThroneDomain } from '../domain';
+import { buildDiceThroneAiLegalActions } from '../ai';
+import { buildDiceThroneAiLegalActions } from '../ai';
 import { TOKEN_IDS, STATUS_IDS, SHADOW_THIEF_DICE_FACE_IDS, DICETHRONE_CARD_ATLAS_IDS } from '../domain/ids';
 import { RESOURCE_IDS } from '../domain/resources';
 import { INITIAL_HEALTH, INITIAL_CP } from '../domain/types';
@@ -619,6 +621,80 @@ describe('暗影刺客 - 双防御技能选择流程', () => {
         });
 
         expect(result.assertionErrors).toHaveLength(0);
+    });
+
+    it('防御技能已选且已掷骰后，AI 合法动作应收敛为确认骰面（不再反复 SELECT_ABILITY）', () => {
+        const runner = new GameTestRunner({
+            domain: DiceThroneDomain,
+            systems: testSystems,
+            playerIds: ['0', '1'],
+            random: fixedRandom,
+            setup: createShadowThiefSetup(),
+            assertFn: assertState,
+            silent: true,
+        });
+
+        const result = runner.run({
+            name: '双防御技能 - 已选技能且已掷骰时 AI 动作收敛',
+            commands: [
+                ...enterDefensiveRollCommands,
+                cmd('SELECT_ABILITY', '1', { abilityId: 'fearless-riposte' }),
+                cmd('ROLL_DICE', '1'),
+            ],
+            expect: {
+                turnPhase: 'defensiveRoll',
+                roll: { count: 1, confirmed: false },
+            },
+        });
+
+        expect(result.assertionErrors).toHaveLength(0);
+        expect(result.finalState.core.pendingAttack?.defenseAbilityId).toBe('fearless-riposte');
+
+        const aiActions = buildDiceThroneAiLegalActions({
+            playerId: '1',
+            state: result.finalState,
+        });
+        const actionKinds = aiActions.map((action) => action.kind);
+
+        expect(actionKinds).toContain('confirm-roll');
+        expect(actionKinds).not.toContain('select-ability');
+    });
+
+    it('防御技能已选且已掷骰后，AI 合法动作应收敛为确认骰面（不再反复 SELECT_ABILITY）', () => {
+        const runner = new GameTestRunner({
+            domain: DiceThroneDomain,
+            systems: testSystems,
+            playerIds: ['0', '1'],
+            random: fixedRandom,
+            setup: createShadowThiefSetup(),
+            assertFn: assertState,
+            silent: true,
+        });
+
+        const result = runner.run({
+            name: '双防御技能 - 已选技能且已掷骰时 AI 动作收敛',
+            commands: [
+                ...enterDefensiveRollCommands,
+                cmd('SELECT_ABILITY', '1', { abilityId: 'fearless-riposte' }),
+                cmd('ROLL_DICE', '1'),
+            ],
+            expect: {
+                turnPhase: 'defensiveRoll',
+                roll: { count: 1, confirmed: false },
+            },
+        });
+
+        expect(result.assertionErrors).toHaveLength(0);
+        expect(result.finalState.core.pendingAttack?.defenseAbilityId).toBe('fearless-riposte');
+
+        const aiActions = buildDiceThroneAiLegalActions({
+            playerId: '1',
+            state: result.finalState,
+        });
+        const actionKinds = aiActions.map((action) => action.kind);
+
+        expect(actionKinds).toContain('confirm-roll');
+        expect(actionKinds).not.toContain('select-ability');
     });
 });
 

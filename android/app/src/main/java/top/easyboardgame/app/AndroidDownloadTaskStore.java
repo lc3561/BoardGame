@@ -55,6 +55,10 @@ final class AndroidDownloadTaskStore {
         String packageVersion,
         String sourceUrl,
         String checksum,
+        String installMode,
+        String assetBaseUrl,
+        String fileIndexUrl,
+        String fileIndexChecksum,
         String destinationPath,
         String partialPath
     ) {
@@ -78,6 +82,10 @@ final class AndroidDownloadTaskStore {
                 packageVersion,
                 sourceUrl,
                 checksum,
+                installMode,
+                assetBaseUrl,
+                fileIndexUrl,
+                fileIndexChecksum,
                 destinationPath,
                 partialPath,
                 now

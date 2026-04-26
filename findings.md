@@ -551,3 +551,106 @@
   - `node scripts/final-wiki-code-comparison.mjs` -> `1 正确 / 0 问题（仅 name/count）`
   - `npx eslint scripts/scrape-wiki-with-descriptions.mjs scripts/final-wiki-code-comparison.mjs` -> 0 errors
 - 结论：工具链“漏派系 + 引号误判”问题已修复；`Skeletons` 语义错配结论不变，仍需整派系重录与实现。
+
+## 2026-04-25 Skeletons 整派系重录实施（进行中）
+- 已将 `newFactionAbilities.test.ts` 的 Skeletons 区块（原 7064-7604）整体替换为新语义断言，覆盖：
+  - Returned One 自埋 + 翻开后再翻一张；
+  - Place ’em Down / Dig ’em Up 的基地-卡牌双段交互；
+  - Graveyard / Grave Goods / Lord of Bones 的“挖掘+指示物/手埋”语义；
+  - Spooky, Scary... 的“弃牌堆埋葬 + 抽 1”；
+  - Hearse Fleet 的埋葬牌搬运；
+  - Revenant 回合内弃牌堆自埋且每回合一次；
+  - Gravestones 计分后自埋到他基地；
+  - Gravetender 每回合首次埋/挖触发抽牌。
+- 定向验证通过：
+  - `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/newFactionAbilities.test.ts -t "Skeletons abilities" --configLoader native --maxWorkers 1`
+  - 结果：`13 passed`（Skeletons 子集全绿）。
+- `interactionTargetTypeAudit` 已按新 sourceId 完成门禁同步：
+  - 新增/调整 `APPROVED_GENERIC_SOURCE_REASONS`（`skeletons_*_cards/uncover/...`）；
+  - 修复 `unknown` generic 来源（`handleSkeletonsHearseFleetSpecialMode` 改为字面量 sourceId 分支）；
+  - 移除失效登记项 `skeletons_dig_em_up`，改为 `skeletons_dig_em_up_cards`。
+- 审计验证通过：
+  - `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/interactionTargetTypeAudit.test.ts --config vitest.config.audit.ts --configLoader native --maxWorkers 1`
+  - 结果：`7 passed`。
+- 质量门禁：
+  - `npx eslint src/games/smashup/abilities/skeletons.ts src/games/smashup/__tests__/newFactionAbilities.test.ts src/games/smashup/__tests__/interactionTargetTypeAudit.test.ts`：0 error（warnings 存量未扩大）；
+  - `npm run i18n:check`：通过（仅动态 key 警告）。
+
+## 2026-04-26 SmashUp 三派系审计续跑 Findings
+- `interactionCompletenessAudit` 的孤儿误报根因已确认是 `_pod` alias 引用不对称；在 `createOrphanHandlerCheck` 做 alias 对称映射后，审计恢复稳定通过。
+- `Mermaids` 两条争议用例已对齐当前实现语义：
+  - `mermaids_desert_island` 校验“控制者总力量压制”而非“强制退回随从”；
+  - `mermaids_charmed` 校验完整交互链与压制元数据，不再误用 `tempPowerModifier=-2` 旧口径。
+- 最新门禁口径：`newFactionAbilities 178 passed / 1 skipped`，四审计套件 `36 passed`，`i18n:check` 通过（仅 dynamic-key warning）。
+- E2E 本轮状态：横幅目标用例通过并完成核图；同文件存在 1 条 join 超时失败（3 人房座位状态），需后续单独稳态化。
+
+## 2026-04-26 SmashUp 横幅 E2E 稳态化补记
+- 本轮 `smashup.e2e.ts` 失败不是横幅逻辑回归，而是“3 人房间”用例在第三访客 join 时触发默认 30s 测试超时。
+- 已在 `e2e/smashup/smashup.e2e.ts` 对该用例显式提升超时为 `120000ms`，保留原业务断言不变。
+- 修复后复跑结果：`npm run test:e2e:ci -- e2e/smashup/smashup.e2e.ts` 为 `3 passed`，横幅用例继续通过。
+
+## 2026-04-26 SmashUp smoke 追加复核
+- 在完成三派系审计 + 横幅 E2E 收敛后，补跑 `smashup.smoke.test.ts`，结果 `124 passed`。
+- 结论：本轮 `_pod` 审计修复、Mermaids 语义对齐与 E2E 超时稳态化未引入 SmashUp 主流程烟测回归。
+
+## 2026-04-26 全量 SmashUp 回归探测 Findings
+- 三派系目标门禁（`newFactionAbilities` + 4 审计 + 横幅 E2E + smoke）本轮均已通过；但全量 `src/games/smashup` 复跑仍报 `14` 条失败。
+- 当前失败主要集中在两条链路：
+  1) `afterScoring` 响应窗口会话收口（2 条）；
+  2) `onDestroy` 事件链期望（11 条）与 1 条命令校验。
+- 这批失败不在本轮“横幅统一样式 + 三派系审计门禁”直接改动面内，但已构成继续推进的阻塞项，需下一批进入定向排查与修复。
+
+## 2026-04-26 全量 SmashUp 失败簇收敛（14 → 2 → 0）
+- 14 条失败簇先收敛到 2 条后，最终剩余均位于 `newFactionAbilities.test.ts` 的 `bear_cavalry_bear_necessities`：
+  1) 断言把目标限制成“仅行动卡”；
+  2) stale 目标离场后仍可能发出 `ONGOING_DETACHED`。
+- 根因分类：
+  - **测试语义漂移**：卡面/i18n 权威语义明确是“消灭一个随从或在基地上打出的一张战术卡”，旧断言过度收窄。
+  - **交互 stale 防护缺口**：`bear_cavalry_bear_necessities` handler 对行动卡分支缺少“目标仍在场”校验。
+- 修复：
+  - 对齐回归断言为“目标包含对手随从 + 已打出的行动卡”；
+  - 在 `registerInteractionHandler('bear_cavalry_bear_necessities')` 增加 `actionStillOnBoard` 校验，离场则返回空事件。
+- 验证：
+  - `newFactionAbilities.test.ts`：`174 passed / 1 skipped`；
+  - 全量回归：`node scripts/infra/vitest-cli-safe.mjs run src/games/smashup --configLoader native --pool threads --maxWorkers 1 --no-file-parallelism`
+    - `146 files passed / 9 skipped`
+    - `2016 passed / 19 skipped`
+
+## 2026-04-26 三派系审计套件复核（收敛后再次确认）
+- 失败簇清零后，复跑四项审计套件：
+  - `interactionTargetTypeAudit`
+  - `interactionDefIdAudit`
+  - `abilityBehaviorAudit`
+  - `interactionCompletenessAudit`
+- 命令：
+  - `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/interactionTargetTypeAudit.test.ts src/games/smashup/__tests__/interactionDefIdAudit.test.ts src/games/smashup/__tests__/abilityBehaviorAudit.test.ts src/games/smashup/__tests__/interactionCompletenessAudit.test.ts --config vitest.config.audit.ts --configLoader native --maxWorkers 1`
+- 结果：`4 files passed`，`36 passed`。
+- 结论：三派系审计门禁在“14→0”修复后仍保持全绿，没有被回归修复反向打破。
+
+## 2026-04-26 横幅 E2E 稳态化（服务冷启动防抖）
+- 现象：`派系选择页应显示 10 周年三派系与统一斜向实施中横幅` 用例在 managed runtime 冷启动窗口偶发 `skip`，根因是探活仅单次请求，服务尚未 ready 即判定不可用。
+- 修复：
+  - `e2e/smashup/smashup.e2e.ts`
+  - `e2e/smashup.e2e.ts`
+  - `ensureGameServerAvailable` 改为 45 秒轮询探活（每秒一次）。
+- 验证：
+  1. `npm run test:e2e:ci:file -- e2e/smashup/smashup.e2e.ts "派系选择页应显示 10 周年三派系与统一斜向实施中横幅"` → `1 passed`
+  2. `npm run test:e2e:ci -- e2e/smashup/smashup.e2e.ts` → `3 passed`
+  3. `npm run i18n:check` → 通过（仅既有 `dynamic-key` warning）
+- 关键截图（绝对路径）：
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-selection.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-mermaids-banner.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-skeletons-banner.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-world-champs-banner.png`
+
+## 2026-04-26 World Champs 关键链路补证（三）
+- 新增 `world_champs_mouse_bird_and_sausage` 的浏览器级真实入口证据：覆盖“锚点选择 -> 同基地同派系二段多选 -> +2 生效”完整链路。
+- 修正 `world_champs_fighting_spirit_prize` 的 E2E 多选提交方式：将“UI 局部点击 + confirm”改成 `SYS_INTERACTION_RESPOND(optionIds[])` 一次性提交，避免多选态在不同渲染模式下不稳定导致的假阴性。
+- 结论变化：
+  - `World Champs` 的 L3 证据从 `Stoneford / 海龟阿凯 / 盾女` 扩展为 `Stoneford / 海龟阿凯 / 盾女 / 斗志奖杯 / 鼠、鸟与香肠`。
+  - 这仍是“关键样本扩展”，不是“三派系整包发布收口”；主口径继续保持“仍有残余范围”。
+- 本轮关键截图（绝对路径）：
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\smashup\smashup-robot-hoverbot-new.e2e\斗志奖杯打出后应抽两张并给两个己方随从各放一个-+1-指示物\fighting-spirit-prize-prompt-visible.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\smashup\smashup-robot-hoverbot-new.e2e\斗志奖杯打出后应抽两张并给两个己方随从各放一个-+1-指示物\fighting-spirit-prize-resolved.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\smashup\smashup-robot-hoverbot-new.e2e\鼠、鸟与香肠应先选锚点再给同基地同派系至多两个随从-+2\mouse-bird-sausage-targets-prompt.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\smashup\smashup-robot-hoverbot-new.e2e\鼠、鸟与香肠应先选锚点再给同基地同派系至多两个随从-+2\mouse-bird-sausage-resolved.png`

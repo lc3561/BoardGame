@@ -260,39 +260,24 @@ function registerAncientEgyptiansModifiers(): void {
 }
 
 function registerSkeletonsModifiers(): void {
-    // 守墓人：你在此基地每有一张埋葬牌，本随从 +1 力量
-    registerPowerModifier('skeletons_gravetender', (ctx: PowerModifierContext) => {
-        if (!matchesDefId(ctx.minion, 'skeletons_gravetender')) return 0;
-        return (ctx.base.buriedCards ?? []).filter(card => card.controllerId === ctx.minion.controller).length;
-    });
-
-    // 白骨领主：你在此基地每有一个力量 3 或以下随从，本随从 +1 力量
-    registerPowerModifier('skeletons_lord_of_bones', (ctx: PowerModifierContext) => {
-        if (!matchesDefId(ctx.minion, 'skeletons_lord_of_bones')) return 0;
-        return ctx.base.minions.filter((minion) => {
-            if (minion.controller !== ctx.minion.controller) return false;
-            const def = getCardDef(minion.defId);
-            return !!def && def.type === 'minion' && def.power <= 3;
-        }).length;
-    });
+    // Skeletons 的持续能力本轮已按卡图重裁定：
+    // - 守墓人：每回合一次，其他牌被埋葬/挖掘后抽牌
+    // - 骸骨之王：其他仆从被挖掘后放置 +1 指示物
+    // 以上都不是静态力量修正，故不再注册 power modifier。
 }
 
 function registerMermaidsModifiers(): void {
-    // 海妖：在你的回合中，此基地其他玩家的随从力量 -1
-    registerPowerModifier('mermaids_siren', (ctx: PowerModifierContext) => {
-        const currentPlayerId = ctx.state.turnOrder[ctx.state.currentPlayerIndex];
-        if (!currentPlayerId) return 0;
-        if (ctx.minion.controller === currentPlayerId) return 0;
-        const sirenCount = ctx.base.minions.filter(minion =>
-            minion.controller === currentPlayerId && matchesDefId(minion, 'mermaids_siren'),
-        ).length;
-        return sirenCount > 0 ? -sirenCount : 0;
-    });
+    // 安静的海岸：基地上其他玩家的仆从 -1 力量
+    registerOngoingPowerModifier('mermaids_becalmed_shores', 'base', 'opponentMinions', -1);
 
-    // 诱惑者：你在此基地每有一个其他随从，本随从力量 +1
+    // 沉船湾：基地上拥有者的仆从 +1 力量
+    registerOngoingPowerModifier('mermaids_shipwreck_cove', 'base', 'ownerMinions', 1);
+
+    // 诱惑者：如果本回合有其他玩家仆从移动到这里，则 +2 力量
     registerPowerModifier('mermaids_temptress', (ctx: PowerModifierContext) => {
         if (!matchesDefId(ctx.minion, 'mermaids_temptress')) return 0;
-        return ctx.base.minions.filter(minion => minion.controller === ctx.minion.controller && minion.uid !== ctx.minion.uid).length;
+        const movedOpponentHereThisTurn = ctx.state.movedToBasesThisTurn?.[ctx.baseIndex] ?? false;
+        return movedOpponentHereThisTurn ? 2 : 0;
     });
 }
 

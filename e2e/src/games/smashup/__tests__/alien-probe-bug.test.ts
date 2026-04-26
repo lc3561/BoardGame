@@ -233,7 +233,10 @@ describe('Bug: alien_probe（探究）效果错误', () => {
                     factions: ['aliens', 'dinosaurs'] as [string, string],
                 }),
                 '1': makePlayer('1', {
-                    hand: [makeCard('h1-1', 'pirate_first_mate', 'minion', '1')],
+                    hand: [
+                        makeCard('h1-1', 'pirate_first_mate', 'minion', '1'),
+                        makeCard('h1-2', 'pirate_broadside', 'action', '1'),
+                    ],
                     factions: ['pirates', 'minions_of_cthulhu'] as [string, string],
                 }),
                 '2': makePlayer('2', {
@@ -267,5 +270,18 @@ describe('Bug: alien_probe（探究）效果错误', () => {
         
         // 断言：应该有 2 个对手可选
         expect(interaction?.options.length).toBe(2);
+
+        const result2 = runCommand(result.finalState, {
+            type: INTERACTION_COMMANDS.RESPOND,
+            playerId: '0',
+            payload: { optionId: interaction?.options[0]?.id ?? 'player-0' },
+        });
+
+        expect(result2.success).toBe(true);
+        const handInteraction = asSimpleChoice(result2.finalState.sys.interaction?.current);
+        expect(handInteraction?.sourceId).toBe('alien_probe');
+        expect(handInteraction?.options.length).toBe(2);
+        expect(handInteraction?.options.find(opt => opt.id === 'h1-1')?.disabled).toBeFalsy();
+        expect(handInteraction?.options.find(opt => opt.id === 'h1-2')?.disabled).toBe(true);
     });
 });

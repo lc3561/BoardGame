@@ -20,6 +20,47 @@ import {
     buildCardRegistry,
     groupCardsByType,
 } from '../config/cardRegistry';
+import { summonerWarsCheatModifier } from '../game';
+import type { Card, PlayerId, SummonerWarsCore } from '../domain/types';
+import { getBaseCardId } from '../domain/ids';
+
+const createEmptyBoard = () => Array.from({ length: 6 }, () => Array.from({ length: 8 }, () => ({})));
+
+const createPlayerState = (id: PlayerId) => ({
+    id,
+    magic: 0,
+    hand: [] as Card[],
+    deck: [] as Card[],
+    discard: [] as Card[],
+    activeEvents: [],
+    summonerId: `summoner-${id}`,
+    moveCount: 0,
+    attackCount: 0,
+    hasAttackedEnemy: false,
+});
+
+const createCheatTestCore = (): SummonerWarsCore => ({
+    board: createEmptyBoard(),
+    players: {
+        '0': createPlayerState('0'),
+        '1': createPlayerState('1'),
+    },
+    phase: 'summon',
+    currentPlayer: '0',
+    startingPlayerId: '0',
+    turnNumber: 1,
+    selectedFactions: {
+        '0': 'necromancer',
+        '1': 'trickster',
+    },
+    readyPlayers: {
+        '0': true,
+        '1': true,
+    },
+    hostPlayerId: '0',
+    hostStarted: true,
+    abilityUsageCount: {},
+});
 
 // ============================================================================
 // resolveFactionId
@@ -172,5 +213,49 @@ describe('createDeckByFactionId 与 resolveFactionId 联动', () => {
 
         const unique = new Set(allStartingUnitIds);
         expect(unique.size).toBe(allStartingUnitIds.length);
+    });
+});
+
+describe('summonerWarsCheatModifier 调试发牌', () => {
+    it('剩余牌库为空时仍可按稳定 cardId 直接补牌到手牌，并生成唯一实例 ID', () => {
+        const elutBar = getCardPoolByFaction('necromancer').find((card) => card.id === 'necro-elut-bar');
+        expect(elutBar).toBeTruthy();
+
+        const core = createCheatTestCore();
+        core.players['0'].hand = [
+            { ...elutBar!, id: 'necro-elut-bar-0-1' },
+        ];
+        core.players['0'].discard = [
+            { ...elutBar!, id: 'necro-elut-bar-0-0' },
+        ];
+
+        const result = summonerWarsCheatModifier.addCardToHandByCardId?.(core, '0', 'necro-elut-bar');
+        expect(result).toBeTruthy();
+
+        const updatedHand = result!.players['0'].hand;
+        expect(updatedHand).toHaveLength(2);
+        expect(updatedHand[1].id).toBe('necro-elut-bar-0-2');
+        expect(getBaseCardId(updatedHand[1].id)).toBe('necro-elut-bar');
+        expect(result!.players['0'].deck).toHaveLength(0);
+    });
+
+    it('atlas 索引冲突时，deck-only atlas helper 不会误把错误卡牌发到手牌', () => {
+        const necromancerDeck = createDeckByFactionId('necromancer').deck;
+        const funeralPyre = necromancerDeck.find((card) => getBaseCardId(card.id) === 'necro-funeral-pyre');
+        const portal = necromancerDeck.find((card) => getBaseCardId(card.id) === 'necro-portal');
+        expect(funeralPyre).toBeTruthy();
+        expect(portal).toBeTruthy();
+        expect(funeralPyre?.spriteIndex).toBe(portal?.spriteIndex);
+
+        const core = createCheatTestCore();
+        core.players['0'].deck = [
+            { ...funeralPyre!, id: 'necro-funeral-pyre-0' },
+            { ...portal!, id: 'necro-portal-0' },
+        ];
+
+        const result = summonerWarsCheatModifier.dealCardByAtlasIndex?.(core, '0', funeralPyre!.spriteIndex!);
+        expect(result).toBe(core);
+        expect(core.players['0'].hand).toHaveLength(0);
+        expect(core.players['0'].deck).toHaveLength(2);
     });
 });

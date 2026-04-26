@@ -126,7 +126,7 @@ test.describe('DiceThrone 调试面板', () => {
         expect(hp).toBe(10);
     });
 
-    test('seat1 调试发牌命中剩余牌库时可成功发牌，发过后会提示该 atlas 已不在剩余牌库', async ({ page, game }, testInfo) => {
+    test('seat1 调试发牌命中剩余牌库后，仍可继续补同 atlas 到手牌', async ({ page, game }, testInfo) => {
         await setupDiceThroneDebugScene(page, game);
 
         const seat1Before = await readSeatDeckSnapshot(page, '1');
@@ -138,7 +138,7 @@ test.describe('DiceThrone 调试面板', () => {
         const dealSection = page.getByText('发牌调试 (图集索引)').locator('xpath=..');
         const playerSelect = dealSection.locator('select');
         const atlasInput = dealSection.locator('input[type="number"]');
-        const dealButton = dealSection.getByRole('button', { name: /发指定牌/ });
+        const dealButton = dealSection.getByRole('button', { name: /发到手牌|补到手牌|发指定牌/ });
 
         await playerSelect.selectOption('1');
         await atlasInput.fill(String(targetEntry!.atlasIndex));
@@ -155,22 +155,40 @@ test.describe('DiceThrone 调试面板', () => {
             return {
                 deckLength: seat1After.deck.length,
                 handLength: seat1After.hand.length,
-                deckHasTarget: seat1After.deck.some((entry) => entry.id === targetEntry!.id),
-                handHasTarget: seat1After.hand.some((entry) => entry.id === targetEntry!.id),
+                deckTargetCount: seat1After.deck.filter((entry) => entry.id === targetEntry!.id).length,
+                handTargetCount: seat1After.hand.filter((entry) => entry.id === targetEntry!.id).length,
             };
         }, { timeout: 5000 }).toMatchObject({
             deckLength: seat1Before.deck.length - 1,
             handLength: seat1Before.hand.length + 1,
-            deckHasTarget: false,
-            handHasTarget: true,
+            deckTargetCount: 0,
+            handTargetCount: 1,
         });
 
         await atlasInput.fill(String(targetEntry!.atlasIndex));
-        await expect(dealSection.getByText('当前不在牌库：手牌 1 张，弃牌堆 0 张', { exact: false })).toBeVisible({ timeout: 5000 });
-        await expect(dealButton).toBeDisabled();
+        await expect(dealSection.getByText('当前不在剩余牌库，可直接补到手牌', { exact: false })).toBeVisible({ timeout: 5000 });
+        await expect(dealButton).toBeEnabled();
 
-        const afterScreenshot = getEvidenceScreenshotPath(testInfo, 'seat1-after-deal-atlas-missing');
-        await page.screenshot({ path: afterScreenshot, fullPage: true });
+        const afterFirstDealScreenshot = getEvidenceScreenshotPath(testInfo, 'seat1-after-first-deal-can-add');
+        await page.screenshot({ path: afterFirstDealScreenshot, fullPage: true });
+
+        await dealButton.click();
+
+        await expect.poll(async () => {
+            const seat1AfterSecondDeal = await readSeatDeckSnapshot(page, '1');
+            return {
+                deckLength: seat1AfterSecondDeal.deck.length,
+                handLength: seat1AfterSecondDeal.hand.length,
+                handTargetCount: seat1AfterSecondDeal.hand.filter((entry) => entry.id === targetEntry!.id).length,
+            };
+        }, { timeout: 5000 }).toMatchObject({
+            deckLength: seat1Before.deck.length - 1,
+            handLength: seat1Before.hand.length + 2,
+            handTargetCount: 2,
+        });
+
+        const afterSecondDealScreenshot = getEvidenceScreenshotPath(testInfo, 'seat1-after-second-deal-direct-add');
+        await page.screenshot({ path: afterSecondDealScreenshot, fullPage: true });
     });
 
 });

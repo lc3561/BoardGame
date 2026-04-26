@@ -14,12 +14,15 @@ export function extractAiInteractionSnapshot(viewState: unknown): AiInteractionS
         sourceId?: unknown;
         playerId?: unknown;
         data?: {
+            sourceId?: unknown;
             options?: Array<{
                 id?: unknown;
                 label?: unknown;
                 value?: unknown;
                 disabled?: unknown;
+                disabledReason?: unknown;
                 displayMode?: unknown;
+                _ai?: unknown;
             }>;
             multi?: unknown;
         };
@@ -37,6 +40,7 @@ export function extractAiInteractionSnapshot(viewState: unknown): AiInteractionS
                 ...(typeof option.label === 'string' ? { label: option.label } : {}),
                 ...(option.value !== undefined ? { value: toJsonSafe(option.value) } : {}),
                 ...(typeof option.disabled === 'boolean' ? { disabled: option.disabled } : {}),
+                ...(typeof option.disabledReason === 'string' ? { disabledReason: option.disabledReason } : {}),
                 ...(typeof option.displayMode === 'string' ? { displayMode: option.displayMode } : {}),
                 ...(option._ai && typeof option._ai === 'object' ? { _ai: toJsonSafe(option._ai as AiHint) } : {}),
             }))
@@ -45,7 +49,15 @@ export function extractAiInteractionSnapshot(viewState: unknown): AiInteractionS
     return {
         id: current.id,
         kind: current.kind,
-        ...(typeof current.sourceId === 'string' ? { sourceId: current.sourceId } : {}),
+        ...((typeof current.sourceId === 'string'
+            ? current.sourceId
+            : typeof current.data?.sourceId === 'string'
+                ? current.data.sourceId
+                : undefined) ? {
+            sourceId: typeof current.sourceId === 'string'
+                ? current.sourceId
+                : current.data?.sourceId as string,
+        } : {}),
         ...(typeof current.playerId === 'string' ? { playerId: current.playerId } : {}),
         options,
         ...(current.data?.multi !== undefined ? { multi: toJsonSafe(current.data.multi) } : {}),
@@ -56,6 +68,7 @@ export function extractAiResponseWindowSnapshot(viewState: unknown): AiResponseW
     const state = viewState as MatchState<unknown> | undefined;
     const current = state?.sys?.responseWindow?.current as {
         windowType?: unknown;
+        sourceId?: unknown;
         currentResponderIndex?: unknown;
         responderQueue?: unknown;
         allowedCommands?: unknown;
@@ -66,6 +79,9 @@ export function extractAiResponseWindowSnapshot(viewState: unknown): AiResponseW
     const snapshot: AiResponseWindowSnapshot = {};
     if (typeof current.windowType === 'string') {
         snapshot.windowType = current.windowType;
+    }
+    if (typeof current.sourceId === 'string') {
+        snapshot.sourceId = current.sourceId;
     }
     if (typeof current.currentResponderIndex === 'number') {
         snapshot.currentResponderIndex = current.currentResponderIndex;

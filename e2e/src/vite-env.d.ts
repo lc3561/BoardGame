@@ -23,6 +23,8 @@ interface ImportMeta {
 declare const __LOCALE_HASHES__: Record<string, string>;
 /** 构建时注入的 public/assets content hash 映射（由 vite-asset-hash 插件生成） */
 declare const __ASSET_HASHES__: Record<string, string>;
+/** 构建时注入的语言化图片存在索引（由 vite-asset-hash 插件生成） */
+declare const __LOCALIZED_IMAGE_INDEX__: Record<string, 1>;
 /** 构建时注入的 public 根目录静态文件 content hash 映射（fonts/logos/game-data） */
 declare const __PUBLIC_FILE_HASHES__: Record<string, string>;
 

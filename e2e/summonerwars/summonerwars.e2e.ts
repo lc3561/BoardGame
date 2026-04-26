@@ -663,11 +663,15 @@ const injectSummonerWarsMobileEvidenceScene = async (page: Page) => {
   }, sceneState);
 };
 
-const openSummonerWarsMobileEvidencePage = async (page: Page) => {
+const openSummonerWarsMobileEvidencePage = async (
+  page: Page,
+  options?: { playerId?: '0' | '1' },
+) => {
   attachPageDiagnostics(page);
   // 该证据页场景依赖 TestHarness 注入状态，因此必须走 /play/:gameId 测试路由，
   // 不能切到 /tutorial 路由；教程路由当前不会注册 TestHarness。
-  await page.goto('/play/summonerwars?skipInitialization=true&numPlayers=2', {
+  const playerIdQuery = options?.playerId ? `&playerID=${options.playerId}` : '';
+  await page.goto(`/play/summonerwars?skipInitialization=true&numPlayers=2${playerIdQuery}`, {
     waitUntil: 'domcontentloaded',
   });
   await page.waitForLoadState('domcontentloaded');
@@ -757,6 +761,33 @@ const applySummonerWarsHarnessState = async (page: Page, state: unknown) => {
     }
     harness.state.set(nextState);
   }, state);
+};
+
+const buildSummonerWarsLocalUndoProbeState = (
+  currentState: Awaited<ReturnType<typeof readSummonerWarsHarnessState>>,
+) => {
+  const previousState = structuredClone(currentState) as typeof currentState;
+  previousState.core.phase = 'summon';
+  previousState.sys.phase = 'summon';
+  previousState.core.currentPlayer = '0';
+  previousState.core.turnNumber = Math.max(previousState.core.turnNumber ?? 0, 3);
+  previousState.sys.turnNumber = Math.max(previousState.sys.turnNumber ?? 0, 3);
+
+  const nextState = structuredClone(previousState) as typeof currentState;
+  nextState.core.phase = 'move';
+  nextState.sys.phase = 'move';
+  nextState.core.currentPlayer = '0';
+  nextState.core.turnNumber = Math.max(previousState.core.turnNumber ?? 0, 3);
+  nextState.sys.turnNumber = Math.max(previousState.sys.turnNumber ?? 0, 3);
+  nextState.sys.undo = {
+    ...nextState.sys.undo,
+    maxSnapshots: 3,
+    snapshots: [previousState],
+    snapshotCursors: [-1],
+    pendingRequest: undefined,
+  };
+
+  return nextState;
 };
 
 const _dismissTutorialOverlayViaDebugState = async (page: Page) => {
@@ -2344,6 +2375,104 @@ test.describe('SummonerWars', () => {
       path: testInfo.outputPath('summonerwars-lobby.png'),
       fullPage: true
     });
+  });
+
+  test('调试面板在目标牌已离开剩余牌库后仍可按稳定 cardId 直接补牌', async ({ browser }, testInfo) => {
+    test.setTimeout(120000);
+    await clearEvidenceScreenshotsForTest(testInfo);
+
+    const baseURL = testInfo.project.use.baseURL as string | undefined;
+    const hostContext = await browser.newContext({ baseURL });
+    const guestContext = await browser.newContext({ baseURL });
+
+    await setChineseLocale(hostContext);
+    await setChineseLocale(guestContext);
+    await resetMatchStorage(hostContext);
+    await resetMatchStorage(guestContext);
+
+    const hostPage = await hostContext.newPage();
+    const guestPage = await guestContext.newPage();
+    attachPageDiagnostics(hostPage);
+    attachPageDiagnostics(guestPage);
+
+    try {
+      if (!await ensureGameServerAvailable(hostPage)) {
+        test.skip(true, 'Game server unavailable for online tests.');
+      }
+
+      const matchId = await createSummonerWarsRoom(hostPage);
+      if (!matchId) {
+        test.skip(true, 'Room creation failed or backend unavailable.');
+      }
+
+      await ensurePlayerIdInUrl(hostPage, '0');
+      await joinMatchAsGuest(guestPage, matchId!);
+      await completeFactionSelection(hostPage, guestPage);
+      await waitForSummonerWarsUI(hostPage, 30000);
+      await waitForSummonerWarsUI(guestPage, 30000);
+
+      const preparedCore = cloneState(await readCoreState(hostPage));
+      const hostPlayer = preparedCore.players?.['0'];
+      if (!hostPlayer) {
+        throw new Error('无法读取玩家 0 的核心状态');
+      }
+
+      const targetDeckCard = hostPlayer.deck.find((card: any) => String(card.id).includes('necro-elut-bar'));
+      if (!targetDeckCard) {
+        throw new Error('未在 Necromancer 牌库中找到 necro-elut-bar');
+      }
+
+      hostPlayer.deck = hostPlayer.deck.filter((card: any) => !String(card.id).includes('necro-elut-bar'));
+      hostPlayer.hand = hostPlayer.hand.filter((card: any) => !String(card.id).includes('necro-elut-bar'));
+      hostPlayer.discard = [
+        ...hostPlayer.discard.filter((card: any) => !String(card.id).includes('necro-elut-bar')),
+        {
+          ...targetDeckCard,
+          id: 'necro-elut-bar-0-0',
+        },
+      ];
+
+      await applyCoreState(hostPage, preparedCore);
+
+      await ensureDebugPanelOpen(hostPage);
+      await hostPage.getByTestId('debug-tab-controls').click();
+
+      const dealPanel = hostPage.getByTestId('sw-debug-deal');
+      await expect(dealPanel).toBeVisible({ timeout: 10000 });
+      await dealPanel.locator('select').nth(0).selectOption('0');
+      await dealPanel.locator('select').nth(1).selectOption('necro-elut-bar');
+
+      const dealButton = dealPanel.getByTestId('sw-debug-deal-apply');
+      await expect(dealButton).toHaveText(/直接补到手牌/);
+
+      const beforeScreenshotPath = getEvidenceScreenshotPath(testInfo, 'debug-stable-cardid-before-apply', {
+        browserName: testInfo.project.name,
+      });
+      await dealPanel.screenshot({ path: beforeScreenshotPath });
+
+      await dealButton.click();
+
+      await expect
+        .poll(async () => {
+          const core = await readCoreState(hostPage);
+          return core.players?.['0']?.hand?.filter((card: any) => String(card.id).includes('necro-elut-bar')).length ?? 0;
+        }, { timeout: 10000, message: '等待 necro-elut-bar 被直接补到手牌' })
+        .toBe(1);
+
+      const afterCore = await readCoreState(hostPage);
+      const injectedCard = afterCore.players?.['0']?.hand?.find((card: any) => String(card.id).includes('necro-elut-bar'));
+      expect(injectedCard).toBeTruthy();
+      expect(String(injectedCard.id)).toBe('necro-elut-bar-0-1');
+      expect(afterCore.players?.['0']?.deck?.some((card: any) => String(card.id).includes('necro-elut-bar'))).toBe(false);
+
+      const afterScreenshotPath = getEvidenceScreenshotPath(testInfo, 'debug-stable-cardid-after-apply', {
+        browserName: testInfo.project.name,
+      });
+      await hostPage.screenshot({ path: afterScreenshotPath, fullPage: true });
+    } finally {
+      await hostContext.close();
+      await guestContext.close();
+    }
   });
 
   test('大厅切换房间需确认并退出当前对局', async ({ browser }, testInfo) => {
@@ -5139,22 +5268,165 @@ test.describe('SummonerWars', () => {
       .locator('[data-testid="sw-hand-area"] [data-card-id][data-can-afford="true"]')
       .last();
     await expect(affordableHandCard).toBeVisible({ timeout: 5000 });
-    await affordableHandCard.click();
-    const selectedHandCard = hostPage.locator('[data-testid="sw-hand-area"] [data-selected="true"]').first();
+    const selectedCardId = await affordableHandCard.getAttribute('data-card-id');
+    if (!selectedCardId) {
+      throw new Error('目标手牌缺少 data-card-id，无法校验放大按钮锚点');
+    }
+    await affordableHandCard.click({ position: { x: 18, y: 18 } });
+    const selectedHandCard = hostPage.locator(
+      `[data-testid="sw-hand-area"] [data-card-id="${selectedCardId}"]`,
+    );
     await expect(selectedHandCard).toBeVisible({ timeout: 5000 });
-    await longPressTouch(selectedHandCard, 650, 33);
+    await expect(selectedHandCard).toHaveAttribute('data-selected', 'true');
+    const selectedMagnifyButton = selectedHandCard.getByTestId('sw-hand-card-magnify');
+    await expect(selectedMagnifyButton).toBeVisible({ timeout: 5000 });
+    const selectedMagnifyVisual = selectedHandCard.getByTestId('sw-hand-card-magnify-visual');
+    await expect(selectedMagnifyVisual).toBeVisible({ timeout: 5000 });
+    const selectedMagnifyVisualBox = await selectedMagnifyVisual.boundingBox();
+    const handAreaBox = await hostPage.getByTestId('sw-hand-area').boundingBox();
+    const selectedHandCardBox = await selectedHandCard.boundingBox();
+    expect(selectedMagnifyVisualBox?.width ?? 0).toBeGreaterThanOrEqual(24);
+    expect(selectedMagnifyVisualBox?.height ?? 0).toBeGreaterThanOrEqual(24);
+    expect(selectedMagnifyVisualBox?.width ?? 0).toBeLessThanOrEqual(34);
+    expect(selectedMagnifyVisualBox?.height ?? 0).toBeLessThanOrEqual(34);
+    if (selectedMagnifyVisualBox && selectedHandCardBox) {
+      const selectedCardRight = selectedHandCardBox.x + selectedHandCardBox.width;
+      const magnifyRight = selectedMagnifyVisualBox.x + selectedMagnifyVisualBox.width;
+      expect(Math.abs(magnifyRight - selectedCardRight)).toBeLessThanOrEqual(24);
+      expect(selectedMagnifyVisualBox.x).toBeGreaterThanOrEqual(selectedHandCardBox.x + selectedHandCardBox.width - 60);
+      expect(selectedMagnifyVisualBox.y).toBeLessThanOrEqual(selectedHandCardBox.y + 20);
+      expect(selectedMagnifyVisualBox.y + selectedMagnifyVisualBox.height).toBeGreaterThanOrEqual(selectedHandCardBox.y - 24);
+    }
+    await hostPage.screenshot({
+      path: getEvidenceScreenshotPath(testInfo, '11a-phone-hand-magnify-button-visible', {
+        filename: '11a-phone-hand-magnify-button-visible.png',
+      }),
+      fullPage: false,
+    });
+    if (handAreaBox && selectedMagnifyVisualBox) {
+      const horizontalPadding = 24;
+      const topPadding = 120;
+      const bottomPadding = 24;
+      const viewport = hostPage.viewportSize();
+      const clipLeft = Math.max(0, Math.min(handAreaBox.x, selectedMagnifyVisualBox.x) - horizontalPadding);
+      const clipTop = Math.max(0, Math.min(handAreaBox.y, selectedMagnifyVisualBox.y) - topPadding);
+      const clipRight = Math.min(
+        viewport?.width ?? Number.MAX_SAFE_INTEGER,
+        Math.max(
+          handAreaBox.x + handAreaBox.width,
+          selectedMagnifyVisualBox.x + selectedMagnifyVisualBox.width,
+        ) + horizontalPadding,
+      );
+      const clipBottom = Math.min(
+        viewport?.height ?? Number.MAX_SAFE_INTEGER,
+        Math.max(
+          handAreaBox.y + handAreaBox.height,
+          selectedMagnifyVisualBox.y + selectedMagnifyVisualBox.height,
+        ) + bottomPadding,
+      );
+      await hostPage.screenshot({
+        path: getEvidenceScreenshotPath(testInfo, '11a-phone-hand-area-with-magnify-button', {
+          filename: '11a-phone-hand-area-with-magnify-button.png',
+        }),
+        clip: {
+          x: clipLeft,
+          y: clipTop,
+          width: Math.max(1, clipRight - clipLeft),
+          height: Math.max(1, clipBottom - clipTop),
+        },
+      });
+    }
+    if (selectedHandCardBox) {
+      const padding = 20;
+      const viewport = hostPage.viewportSize();
+      await hostPage.screenshot({
+        path: getEvidenceScreenshotPath(testInfo, '11a-phone-hand-card-with-magnify-button', {
+          filename: '11a-phone-hand-card-with-magnify-button.png',
+        }),
+        clip: {
+          x: Math.max(0, selectedHandCardBox.x - padding),
+          y: Math.max(0, selectedHandCardBox.y - padding),
+          width: Math.min(
+            (viewport?.width ?? 0) - Math.max(0, selectedHandCardBox.x - padding),
+            selectedHandCardBox.width + padding * 2,
+          ),
+          height: Math.min(
+            (viewport?.height ?? 0) - Math.max(0, selectedHandCardBox.y - padding),
+            selectedHandCardBox.height + padding * 2,
+          ),
+        },
+      });
+    }
+    if (selectedMagnifyVisualBox) {
+      const padding = 16;
+      const viewport = hostPage.viewportSize();
+      if (selectedHandCardBox) {
+        const clipLeft = Math.max(0, Math.min(selectedHandCardBox.x, selectedMagnifyVisualBox.x) - padding);
+        const clipTop = Math.max(0, Math.min(selectedHandCardBox.y, selectedMagnifyVisualBox.y) - padding);
+        const clipRight = Math.min(
+          viewport?.width ?? Number.MAX_SAFE_INTEGER,
+          Math.max(
+            selectedHandCardBox.x + selectedHandCardBox.width,
+            selectedMagnifyVisualBox.x + selectedMagnifyVisualBox.width,
+          ) + padding,
+        );
+        const clipBottom = Math.min(
+          viewport?.height ?? Number.MAX_SAFE_INTEGER,
+          Math.max(
+            selectedHandCardBox.y + selectedHandCardBox.height,
+            selectedMagnifyVisualBox.y + selectedMagnifyVisualBox.height,
+          ) + padding,
+        );
+        await hostPage.screenshot({
+          path: getEvidenceScreenshotPath(testInfo, '11a-phone-hand-card-and-magnify-button-union', {
+            filename: '11a-phone-hand-card-and-magnify-button-union.png',
+          }),
+          clip: {
+            x: clipLeft,
+            y: clipTop,
+            width: Math.max(1, clipRight - clipLeft),
+            height: Math.max(1, clipBottom - clipTop),
+          },
+        });
+      }
+      await hostPage.screenshot({
+        path: getEvidenceScreenshotPath(testInfo, '11a-phone-hand-magnify-button-closeup', {
+          filename: '11a-phone-hand-magnify-button-closeup.png',
+        }),
+        clip: {
+          x: Math.max(0, selectedMagnifyVisualBox.x - padding),
+          y: Math.max(0, selectedMagnifyVisualBox.y - padding),
+          width: Math.min(
+            (viewport?.width ?? 0) - Math.max(0, selectedMagnifyVisualBox.x - padding),
+            selectedMagnifyVisualBox.width + padding * 2,
+          ),
+          height: Math.min(
+            (viewport?.height ?? 0) - Math.max(0, selectedMagnifyVisualBox.y - padding),
+            selectedMagnifyVisualBox.height + padding * 2,
+          ),
+        },
+      });
+    }
+    await selectedMagnifyButton.click();
     await waitForOverlayState(hostPage, 'sw-magnify-overlay', 'open');
     await hostPage.screenshot({
-      path: getEvidenceScreenshotPath(testInfo, '11-phone-hand-magnify-open', {
-        filename: '11-phone-hand-magnify-open.png',
+      path: getEvidenceScreenshotPath(testInfo, '11b-phone-hand-magnify-click-open', {
+        filename: '11b-phone-hand-magnify-click-open.png',
       }),
       fullPage: false,
     });
     await magnifyOverlay.locator('button', { hasText: /关闭|Close/i }).click();
     await waitForOverlayState(hostPage, 'sw-magnify-overlay', 'closed');
-    await expect(selectedHandCard).toBeVisible({ timeout: 5000 });
-    await selectedHandCard.click();
-    await expect(hostPage.locator('[data-testid="sw-hand-area"] [data-selected="true"]')).toHaveCount(0);
+    await longPressTouch(selectedHandCard, 650, 33);
+    await waitForOverlayState(hostPage, 'sw-magnify-overlay', 'open');
+    await hostPage.screenshot({
+      path: getEvidenceScreenshotPath(testInfo, '11c-phone-hand-magnify-long-press-open', {
+        filename: '11c-phone-hand-magnify-long-press-open.png',
+      }),
+      fullPage: false,
+    });
+    await magnifyOverlay.locator('button', { hasText: /关闭|Close/i }).click();
+    await waitForOverlayState(hostPage, 'sw-magnify-overlay', 'closed');
 
     await hostPage.getByTestId('sw-phase-item-build').click();
     const phaseDetailPanel = hostPage.getByTestId('sw-phase-detail-panel');
@@ -5516,6 +5788,112 @@ test.describe('SummonerWars', () => {
     });
 
     await hostContext.close();
+  });
+
+  test('移动横屏：本地同屏撤回应直接回退，不再要求换位审批', async ({ browser }, testInfo) => {
+    test.setTimeout(120000);
+    const baseURL = testInfo.project.use.baseURL as string | undefined;
+    await clearEvidenceScreenshotsForTest(testInfo);
+
+    const hostContext = await browser.newContext({
+      baseURL,
+      viewport: SW_PHONE_LANDSCAPE_VIEWPORT,
+      isMobile: true,
+      hasTouch: true,
+    });
+    await hostContext.addInitScript(() => {
+      (window as Window & { __E2E_SKIP_IMAGE_GATE__?: boolean }).__E2E_SKIP_IMAGE_GATE__ = true;
+      (window as Window & { __BG_FORCE_COARSE_POINTER__?: boolean }).__BG_FORCE_COARSE_POINTER__ = true;
+      (window as Window & { __BG_HIDE_DEBUG_PANEL__?: boolean }).__BG_HIDE_DEBUG_PANEL__ = true;
+      localStorage.removeItem('hud_fab_position');
+      localStorage.removeItem('hud_fab_offset');
+    });
+    await blockAudioRequests(hostContext);
+    await setChineseLocale(hostContext);
+    await resetMatchStorage(hostContext);
+    await disableAudio(hostContext);
+    await disableTutorial(hostContext);
+    const hostPage = await hostContext.newPage();
+
+    try {
+      await openSummonerWarsMobileEvidencePage(hostPage, { playerId: '0' });
+      await waitForSummonerWarsVisualStable(hostPage);
+
+      const baselineState = await readSummonerWarsHarnessState(hostPage);
+      await applySummonerWarsHarnessState(hostPage, buildSummonerWarsLocalUndoProbeState(baselineState));
+      await waitForPhase(hostPage, 'move');
+
+      await hostPage.waitForTimeout(180);
+      const metrics: Record<string, number | boolean | null> = {
+        sameSeatUndoVisible: false,
+        directUndoMs: null,
+        approvalFallbackMs: null,
+      };
+
+      let undoPanel: Locator | null = null;
+      try {
+        undoPanel = await openFabPanel(hostPage, 'undo-request', 'exit');
+        metrics.sameSeatUndoVisible = true;
+      } catch {
+        metrics.sameSeatUndoVisible = false;
+      }
+
+      if (undoPanel) {
+        const requestButton = undoPanel.getByRole('button', { name: /请求撤回|撤回/i }).first();
+        await expect(requestButton).toBeVisible({ timeout: 5000 });
+        await hostPage.evaluate(() => {
+          (window as Window & { __SW_UNDO_UI_PROBE__?: { startedAt: number } }).__SW_UNDO_UI_PROBE__ = {
+            startedAt: performance.now(),
+          };
+        });
+        await requestButton.click();
+        await hostPage.waitForFunction(() => {
+          return document.querySelector('[data-testid="sw-action-banner"]')?.getAttribute('data-phase') === 'summon';
+        }, { timeout: 5000 });
+        await waitForPhase(hostPage, 'summon');
+        metrics.directUndoMs = await hostPage.evaluate(() => {
+          const probe = (window as Window & {
+            __SW_UNDO_UI_PROBE__?: { startedAt: number };
+          }).__SW_UNDO_UI_PROBE__;
+          if (!probe) {
+            return null;
+          }
+          return Math.round(performance.now() - probe.startedAt);
+        });
+      } else {
+        const approvalFallbackStartedAt = Date.now();
+        await openFabPanel(hostPage, 'seat-swap', 'exit');
+        await expect(hostPage.getByTestId('hud-seat-swap-seat-1')).toBeVisible({ timeout: 5000 });
+        await hostPage.getByTestId('hud-seat-swap-seat-1').click();
+
+        const requestPanel = await openFabPanel(hostPage, 'undo-request', 'exit');
+        await requestPanel.getByRole('button', { name: /请求撤回|撤回/i }).first().click();
+
+        await openFabPanel(hostPage, 'seat-swap', 'exit');
+        await expect(hostPage.getByTestId('hud-seat-swap-seat-0')).toBeVisible({ timeout: 5000 });
+        await hostPage.getByTestId('hud-seat-swap-seat-0').click();
+
+        const reviewPanel = await openFabPanel(hostPage, 'undo-review', 'exit');
+        await reviewPanel.getByRole('button', { name: /批准|Approve/i }).click();
+        await waitForPhase(hostPage, 'summon');
+        metrics.approvalFallbackMs = Date.now() - approvalFallbackStartedAt;
+      }
+
+      const postUndoState = await readSummonerWarsHarnessState(hostPage);
+      expect((postUndoState.sys.undo?.snapshots ?? []).length).toBe(0);
+      await hostPage.screenshot({
+        path: getEvidenceScreenshotPath(testInfo, '33-local-fast-undo-restored', {
+          filename: '33-local-fast-undo-restored.png',
+        }),
+        fullPage: false,
+      });
+
+      console.log(`[SW-UNDO-PROBE] ${JSON.stringify(metrics)}`);
+      expect(metrics.sameSeatUndoVisible, `本地同屏当前操作者应直接看到撤回入口: ${JSON.stringify(metrics)}`).toBe(true);
+      expect(metrics.directUndoMs ?? Number.POSITIVE_INFINITY, `本地同屏撤回不应再走换位审批链: ${JSON.stringify(metrics)}`).toBeLessThanOrEqual(1500);
+    } finally {
+      await hostContext.close();
+    }
   });
 
   test('游戏结束：召唤师被摧毁后显示结算界面', async ({ browser }, testInfo) => {

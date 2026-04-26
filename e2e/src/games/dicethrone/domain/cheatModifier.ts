@@ -4,7 +4,8 @@
  */
 
 import type { CheatResourceModifier } from '../../../engine';
-import type { DiceThroneCore } from './types';
+import { HEROES_DATA } from '../heroes';
+import type { AbilityCard, DiceThroneCore } from './types';
 import { getDieFaceByDefinition } from './rules';
 
 const getCardSourceAtlasIndex = (card: { sourceAtlasIndex?: number; previewRef?: { type: string; index?: number } }) => (
@@ -14,6 +15,33 @@ const getCardSourceAtlasIndex = (card: { sourceAtlasIndex?: number; previewRef?:
             ? card.previewRef.index
             : undefined
 );
+
+const cloneAbilityCard = (card: AbilityCard): AbilityCard => ({ ...card });
+
+const getHeroCardPool = (characterId: string | null | undefined): AbilityCard[] => {
+    if (!characterId) return [];
+    return HEROES_DATA[characterId]?.cards ?? [];
+};
+
+const appendCardToHand = (
+    core: DiceThroneCore,
+    playerId: string,
+    card: AbilityCard,
+): DiceThroneCore => {
+    const player = core.players[playerId];
+    if (!player) return core;
+
+    return {
+        ...core,
+        players: {
+            ...core.players,
+            [playerId]: {
+                ...player,
+                hand: [...player.hand, cloneAbilityCard(card)],
+            },
+        },
+    };
+};
 
 export const diceThroneCheatModifier: CheatResourceModifier<DiceThroneCore> = {
     getResource: (core, playerId, resourceId) => {
@@ -119,22 +147,39 @@ export const diceThroneCheatModifier: CheatResourceModifier<DiceThroneCore> = {
         const matchedDeckEntries = player.deck
             .map((card, deckIndex) => ({ card, deckIndex }))
             .filter(({ card }) => getCardSourceAtlasIndex(card) === atlasIndex);
-        if (matchedDeckEntries.length !== 1) return core;
+        if (matchedDeckEntries.length > 1) return core;
+        if (matchedDeckEntries.length === 1) {
+            const newDeck = [...player.deck];
+            const [{ deckIndex }] = matchedDeckEntries;
+            const [card] = newDeck.splice(deckIndex, 1);
 
-        const newDeck = [...player.deck];
-        const [{ deckIndex }] = matchedDeckEntries;
-        const [card] = newDeck.splice(deckIndex, 1);
-
-        return {
-            ...core,
-            players: {
-                ...core.players,
-                [playerId]: {
-                    ...player,
-                    deck: newDeck,
-                    hand: [...player.hand, card],
+            return {
+                ...core,
+                players: {
+                    ...core.players,
+                    [playerId]: {
+                        ...player,
+                        deck: newDeck,
+                        hand: [...player.hand, card],
+                    },
                 },
-            },
-        };
+            };
+        }
+
+        // 调试模式允许从角色完整卡池直接补牌，不受“当前剩余牌库”限制。
+        const matchedPoolCards = getHeroCardPool(player.characterId)
+            .filter((card) => getCardSourceAtlasIndex(card) === atlasIndex);
+        if (matchedPoolCards.length !== 1) return core;
+
+        return appendCardToHand(core, playerId, matchedPoolCards[0]);
+    },
+    addCardToHandByCardId: (core, playerId, cardId) => {
+        const player = core.players[playerId];
+        if (!player) return core;
+
+        const card = getHeroCardPool(player.characterId).find((entry) => entry.id === cardId);
+        if (!card) return core;
+
+        return appendCardToHand(core, playerId, card);
     },
 };

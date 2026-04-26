@@ -49,6 +49,10 @@ interface FeedbackItem {
     source?: string;
     autoReportKind?: string;
     incidentKey?: string;
+    latestIncidentKey?: string;
+    occurrenceCount?: number;
+    firstOccurredAt?: string;
+    lastOccurredAt?: string;
     gameName?: string;
     contactInfo?: string;
     actionLog?: string;
@@ -1258,6 +1262,18 @@ function FeedbackDetailPanel({
                                         )}
                                         {item.incidentKey && (
                                             <p className="break-all">{t('feedback.detail.incidentKey')}: {item.incidentKey}</p>
+                                        )}
+                                        {typeof item.occurrenceCount === 'number' && (
+                                            <p>聚合次数: {item.occurrenceCount}</p>
+                                        )}
+                                        {item.firstOccurredAt && (
+                                            <p>首次出现: {formatAbsoluteTime(item.firstOccurredAt)}</p>
+                                        )}
+                                        {item.lastOccurredAt && (
+                                            <p>最近出现: {formatAbsoluteTime(item.lastOccurredAt)}</p>
+                                        )}
+                                        {item.latestIncidentKey && (
+                                            <p className="break-all">最新 Incident: {item.latestIncidentKey}</p>
                                         )}
                                     </>
                                 )}

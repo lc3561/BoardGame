@@ -170,6 +170,14 @@ const appendAction = (
     actions.push(action);
 };
 
+const withVisibleStepDelayPolicy = (
+    metadata: Record<string, unknown>,
+    visibleStepDelayPolicy: 'hidden' | 'visible',
+): Record<string, unknown> => ({
+    ...metadata,
+    visibleStepDelayPolicy,
+});
+
 const buildSimpleChoicePayload = (
     optionIds: string[],
     multi: PromptMultiConfig | undefined,
@@ -1145,11 +1153,11 @@ const buildInteractionActions = (
                         payload: { targetPlayerId, statusId },
                     }],
                     aiHints: buildRemoveStatusAiHints(state, playerId, targetPlayerId, statusId),
-                    metadata: withAiActionStrategyTags({
+                    metadata: withVisibleStepDelayPolicy(withAiActionStrategyTags({
                         interactionId: current.id,
                         targetPlayerId,
                         statusId,
-                    }, buildStatusInteractionStrategyTags(state, statusId)),
+                    }, buildStatusInteractionStrategyTags(state, statusId)), 'hidden'),
                 }));
             });
             return actions.length > 0
@@ -1239,11 +1247,11 @@ const buildInteractionActions = (
                 })),
                 { type: 'SYS_INTERACTION_CONFIRM', payload: { interactionId } },
             ],
-            metadata: withAiActionStrategyTags({
+            metadata: withVisibleStepDelayPolicy(withAiActionStrategyTags({
                 interactionId,
                 dieId: selection[0]?.id,
                 dieIds: selection.map((die) => die.id),
-            }, ['dice-setup']),
+            }, ['dice-setup']), 'hidden'),
         }));
     }
 
@@ -1276,7 +1284,7 @@ const buildInteractionActions = (
                         })),
                         { type: 'SYS_INTERACTION_CONFIRM', payload: { interactionId } },
                     ],
-                    metadata: withAiActionStrategyTags({
+                    metadata: withVisibleStepDelayPolicy(withAiActionStrategyTags({
                         interactionId,
                         dieId: sourceDie?.id,
                         dieIds: diceIds,
@@ -1285,7 +1293,7 @@ const buildInteractionActions = (
                         mode,
                         sourceDieId: sourceDie?.id,
                         targetDieIds: targetDice.map((die) => die.id),
-                    }, ['dice-setup']),
+                    }, ['dice-setup']), 'hidden'),
                 };
             });
         }
@@ -1315,14 +1323,14 @@ const buildInteractionActions = (
                     })),
                     { type: 'SYS_INTERACTION_CONFIRM', payload: { interactionId } },
                 ],
-                metadata: withAiActionStrategyTags({
+                metadata: withVisibleStepDelayPolicy(withAiActionStrategyTags({
                     interactionId,
                     dieId: selection[0]?.id,
                     dieIds: selection.map((die) => die.id),
                     newValue: newValues[0],
                     newValues,
                     mode,
-                }, ['dice-setup']),
+                }, ['dice-setup']), 'hidden'),
             };
         });
     }
@@ -1850,7 +1858,37 @@ const buildPhaseActions = (state: DiceThroneState, playerId: PlayerId, phase: Tu
         }
 
         if (canSellCard(state.core, playerId)) {
+            const currentCp = player.resources[RESOURCE_IDS.CP] ?? 0;
+            const projectedCoreAfterSell: DiceThroneCore = {
+                ...state.core,
+                players: {
+                    ...state.core.players,
+                    [playerId]: {
+                        ...player,
+                        resources: {
+                            ...player.resources,
+                            [RESOURCE_IDS.CP]: currentCp + 1,
+                        },
+                    },
+                },
+            };
             for (const card of player.hand) {
+                const unlocksImmediatePlay = player.hand.some((candidate) => {
+                    if (candidate.id === card.id) return false;
+                    if (currentCp >= candidate.cpCost || currentCp + 1 < candidate.cpCost) return false;
+
+                    if (candidate.type === 'upgrade') {
+                        const targetAbilityId = candidate.effects?.find((effect) => effect.action?.type === 'replaceAbility')?.action?.targetAbilityId;
+                        if (!targetAbilityId) return false;
+                        return checkPlayUpgradeCard(projectedCoreAfterSell, playerId, candidate, targetAbilityId, phase).ok;
+                    }
+
+                    return checkPlayCard(projectedCoreAfterSell, playerId, candidate, phase).ok;
+                });
+                if (!unlocksImmediatePlay) {
+                    continue;
+                }
+
                 appendAction(actions, state, playerId, {
                     actionId: createAiLegalActionId('sell-card', card.id),
                     kind: 'sell-card',
@@ -1882,7 +1920,7 @@ const buildPhaseActions = (state: DiceThroneState, playerId: PlayerId, phase: Tu
                 type: DICETHRONE_COMMANDS.PAY_TO_REMOVE_KNOCKDOWN,
                 payload: {},
             }],
-            metadata: withAiActionStrategyTags({}, ['survive-response']),
+            metadata: withVisibleStepDelayPolicy(withAiActionStrategyTags({}, ['survive-response']), 'hidden'),
         });
     }
 
@@ -2861,7 +2899,7 @@ const estimateBestUnlockedCardValue = (
     if (!player || !soldCard) return 0;
 
     const currentCp = player.resources[RESOURCE_IDS.CP] ?? 0;
-    const cpAfterSell = currentCp + soldCard.cpCost;
+    const cpAfterSell = currentCp + 1;
     let best = 0;
 
     for (const card of player.hand) {
@@ -3136,6 +3174,18 @@ function shouldUseRemoteDecisionForDiceThrone(context: AiDecisionContext): boole
 export const diceThroneAiRuntime: GameAiRuntime = {
     gameId: 'dicethrone',
     buildLegalActions: buildDiceThroneAiLegalActions,
+    localVisibleStepDelayConfig: {
+        mode: 'whitelist',
+        actionKinds: [
+            'play-card',
+            'play-upgrade-card',
+            'response-play-card',
+            'use-passive-ability',
+            'select-ability',
+            'roll-dice',
+            'bonus-die-reroll',
+        ],
+    },
     localPolicies: {
         baseline: defaultLocalPolicy,
     },

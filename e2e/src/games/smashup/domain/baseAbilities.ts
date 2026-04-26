@@ -474,7 +474,7 @@ export function registerBaseAbilities(): void {
         if (!base || !ctx.minionUid) return { events: [] };
         // Infiltrate：只影响你自己是否能用本基地能力
         const ignored = base.ongoingActions?.some(o =>
-            o.ownerId === ctx.playerId && o.defId.startsWith('ninja_infiltrate'),
+            o.ownerId === ctx.playerId && o.defId === 'ninja_infiltrate',
         ) ?? false;
         if (ignored) return { events: [] };
         // 计算当前玩家和最强对手的力量
@@ -835,7 +835,7 @@ export function registerBaseAbilities(): void {
     // "当一个玩家打出一个战术到这个基地时，该玩家可以额外打出一张战术"
     registerBaseAbility('base_the_workshop', 'onActionPlayed', (ctx) => {
         const actionTargetType = ctx.actionTargetType ?? (ctx.actionTargetMinionUid ? 'minion' : 'base');
-        if (actionTargetType !== 'base' && actionTargetType !== 'minion') return { events: [] };
+        if (actionTargetType !== 'base') return { events: [] };
         return {
             events: [grantContextualExtraAction(ctx, '工坊：额外打出一张战斗牌')],
         };
@@ -901,7 +901,7 @@ export function registerBaseAbilities(): void {
         const playedMinion = base.minions.find(m => m.uid === ctx.minionUid);
         const controllerId = playedMinion?.controller ?? ctx.playerId;
         const ignored = base.ongoingActions?.some(o =>
-            o.ownerId === controllerId && o.defId.startsWith('ninja_infiltrate'),
+            o.ownerId === controllerId && o.defId === 'ninja_infiltrate',
         ) ?? false;
         if (ignored) return { events: [] };
         return {
@@ -917,7 +917,7 @@ export function registerBaseAbilities(): void {
         const base = ctx.state.bases[ctx.baseIndex];
         if (!base) return { events: [] };
         const ignoredByWinner = base.ongoingActions?.some(o =>
-            o.ownerId === winnerId && o.defId.startsWith('ninja_infiltrate'),
+            o.ownerId === winnerId && o.defId === 'ninja_infiltrate',
         ) ?? false;
         if (ignoredByWinner) return { events: [] };
         const events: SmashUpEvent[] = [];
@@ -942,7 +942,7 @@ export function registerBaseAbilities(): void {
         const minion = base.minions.find(m => m.uid === ctx.minionUid);
         if (!minion) return { events: [] };
         const ignored = base.ongoingActions?.some(o =>
-            o.ownerId === minion.controller && o.defId.startsWith('ninja_infiltrate'),
+            o.ownerId === minion.controller && o.defId === 'ninja_infiltrate',
         ) ?? false;
         if (ignored) return { events: [] };
         return {
@@ -973,7 +973,7 @@ export function registerBaseAbilities(): void {
     registerBaseAbility('base_the_hill', 'onTurnStart', (ctx) => {
         const base = ctx.state.bases[ctx.baseIndex];
         const ignored = base?.ongoingActions?.some(o =>
-            o.ownerId === ctx.playerId && o.defId.startsWith('ninja_infiltrate'),
+            o.ownerId === ctx.playerId && o.defId === 'ninja_infiltrate',
         ) ?? false;
         if (ignored) return { events: [] };
         // 收集该玩家在其他基地的随从
@@ -1051,7 +1051,7 @@ export function registerBaseAbilities(): void {
         const ownerId = playedMinion?.owner ?? ctx.playerId;
         // Infiltrate：只让“你自己”忽略基地能力（不影响其他玩家）
         const ignoredByOwner = base?.ongoingActions?.some(o =>
-            o.ownerId === ownerId && o.defId.startsWith('ninja_infiltrate'),
+            o.ownerId === ownerId && o.defId === 'ninja_infiltrate',
         ) ?? false;
         if (ignoredByOwner) return { events: [] };
         const evt = drawMadnessCards(ownerId, 1, ctx.state, 'base_mountains_of_madness', ctx.now);

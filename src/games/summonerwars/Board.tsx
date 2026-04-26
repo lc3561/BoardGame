@@ -62,6 +62,12 @@ import { StatusBanners } from './ui/StatusBanners';
 import { BoardGrid, getCellPosition } from './ui/BoardGrid';
 import { AbilityButtonsPanel } from './ui/AbilityButtonsPanel';
 import { PathTrailEffect } from './ui/PathTrailEffect';
+import {
+  deriveSystemAbilityMode,
+  listActivatedAbilityTargetCardIds,
+  findActivatedAbilityTargetOptionByCardId,
+  type SwSimpleChoiceInteraction,
+} from './ui/systemInteractionAdapter';
 import { useMovementTrails } from './ui/useMovementTrails';
 import {
   BOARD_SHELL_REFERENCE_WIDTH,
@@ -395,7 +401,7 @@ export const SummonerWarsBoard: React.FC<Props> = ({
       type: (data.sw as { type?: string }).type ?? '',
       meta: data.sw as Record<string, unknown>,
       options: (data.options ?? []) as PromptOption[],
-    };
+    } satisfies SwSimpleChoiceInteraction;
   }, [currentInteraction, myPlayerId]);
   const afterAttackAbilityMode = useMemo<AfterAttackAbilityModeState | null>(() => {
     if (!swInteraction) return null;
@@ -421,127 +427,10 @@ export const SummonerWarsBoard: React.FC<Props> = ({
   } | null>(null);
   const noopSetAfterAttackAbilityMode = useCallback((_mode: AfterAttackAbilityModeState | null) => {}, []);
 
-  const systemAbilityMode = useMemo<AbilityModeState | null>(() => {
-    if (!swInteraction) return null;
-    const meta = swInteraction.meta as {
-      sourceUnitId?: string;
-      sourcePosition?: CellCoord;
-      structurePosition?: CellCoord;
-      targetPosition?: CellCoord;
-    };
-    if (!meta.sourceUnitId) return null;
-
-    if (swInteraction.type === 'on_phase_start_illusion') {
-      return {
-        abilityId: 'illusion',
-        step: 'selectUnit',
-        sourceUnitId: meta.sourceUnitId,
-      };
-    }
-
-    if (swInteraction.type === 'on_phase_start_blood_rune') {
-      return {
-        abilityId: 'blood_rune',
-        step: 'selectUnit',
-        sourceUnitId: meta.sourceUnitId,
-      };
-    }
-
-    if (swInteraction.type === 'after_move_spirit_bond') {
-      return {
-        abilityId: 'spirit_bond',
-        step: 'selectUnit',
-        sourceUnitId: meta.sourceUnitId,
-      };
-    }
-
-    if (swInteraction.type === 'after_move_ancestral_bond') {
-      return {
-        abilityId: 'ancestral_bond',
-        step: 'selectUnit',
-        sourceUnitId: meta.sourceUnitId,
-      };
-    }
-
-    if (swInteraction.type === 'after_move_structure_shift_target') {
-      return {
-        abilityId: 'structure_shift',
-        step: 'selectUnit',
-        sourceUnitId: meta.sourceUnitId,
-      };
-    }
-
-    if (swInteraction.type === 'after_move_structure_shift_direction') {
-      return {
-        abilityId: 'structure_shift',
-        step: 'selectNewPosition',
-        sourceUnitId: meta.sourceUnitId,
-        targetPosition: meta.targetPosition,
-      };
-    }
-
-    if (swInteraction.type === 'after_move_frost_axe') {
-      return {
-        abilityId: 'frost_axe',
-        step: 'selectUnit',
-        sourceUnitId: meta.sourceUnitId,
-      };
-    }
-
-    if (swInteraction.type === 'ice_ram_target') {
-      return {
-        abilityId: 'ice_ram',
-        step: 'selectUnit',
-        sourceUnitId: 'ice_ram',
-        structurePosition: meta.structurePosition,
-      };
-    }
-
-    if (swInteraction.type === 'ice_ram_push') {
-      return {
-        abilityId: 'ice_ram',
-        step: 'selectPushDirection',
-        sourceUnitId: 'ice_ram',
-        structurePosition: meta.structurePosition,
-        targetPosition: meta.targetPosition,
-      };
-    }
-
-    if (!meta.targetPosition) return null;
-
-    if (swInteraction.type === 'before_attack_life_drain') {
-      return {
-        abilityId: 'life_drain',
-        step: 'selectUnit',
-        sourceUnitId: meta.sourceUnitId,
-        context: 'beforeAttack',
-        pendingAttackTarget: meta.targetPosition,
-      };
-    }
-
-    if (swInteraction.type === 'before_attack_holy_arrow' || swInteraction.type === 'before_attack_healing') {
-      const expectedAction = swInteraction.type;
-      const selectableCardIds = swInteraction.options
-        .map((option) => {
-          const value = option.value as { action?: string; cardId?: string } | undefined;
-          return value?.action === expectedAction && typeof value.cardId === 'string' ? value.cardId : null;
-        })
-        .filter((cardId): cardId is string => !!cardId);
-      const selectedCardIds = interactionAbilityDraft?.interactionId === swInteraction.id
-        ? interactionAbilityDraft.selectedCardIds.filter((cardId) => selectableCardIds.includes(cardId))
-        : [];
-      return {
-        abilityId: swInteraction.type === 'before_attack_holy_arrow' ? 'holy_arrow' : 'healing',
-        step: 'selectCards',
-        sourceUnitId: meta.sourceUnitId,
-        context: 'beforeAttack',
-        selectedCardIds,
-        selectableCardIds,
-        pendingAttackTarget: meta.targetPosition,
-      };
-    }
-    return null;
-  }, [interactionAbilityDraft, swInteraction]);
+  const systemAbilityMode = useMemo<AbilityModeState | null>(
+    () => deriveSystemAbilityMode(swInteraction, interactionAbilityDraft),
+    [interactionAbilityDraft, swInteraction],
+  );
 
   const setAbilityMode = useCallback((mode: AbilityModeState | null) => {
     if (systemAbilityMode?.context === 'beforeAttack') {
@@ -639,6 +528,15 @@ export const SummonerWarsBoard: React.FC<Props> = ({
   }, [swInteraction]);
 
   const abilityMode = systemAbilityMode ?? localAbilityMode;
+  const systemSelectableAbilityId = abilityMode?.abilityId === 'revive_undead' || abilityMode?.abilityId === 'fortress_power'
+    ? abilityMode.abilityId
+    : null;
+  const systemAbilitySelectableCardIds = systemSelectableAbilityId
+    ? (() => {
+      const ids = listActivatedAbilityTargetCardIds(swInteraction, systemSelectableAbilityId, 'selectCard');
+      return ids.length > 0 ? new Set(ids) : null;
+    })()
+    : null;
 
   const systemIceShardsMode = useMemo(() => {
     if (!swInteraction || swInteraction.type !== 'ice_shards') return null;
@@ -1630,6 +1528,12 @@ export const SummonerWarsBoard: React.FC<Props> = ({
                         abilityMode.abilityId === 'fortress_power' ? t('cardSelector.fortressPower') : t('cardSelector.default')
                   }
                   cards={core.players[myPlayerId]?.discard.filter(c => {
+                    if (
+                      systemAbilitySelectableCardIds
+                      && (abilityMode.abilityId === 'revive_undead' || abilityMode.abilityId === 'fortress_power')
+                    ) {
+                      return systemAbilitySelectableCardIds.has(c.id);
+                    }
                     if (abilityMode.abilityId === 'revive_undead') {
                       return isUndeadCard(c);
                     }
@@ -1653,6 +1557,15 @@ export const SummonerWarsBoard: React.FC<Props> = ({
                         _noSnapshot: true,
                       });
                       setAbilityMode(null);
+                    } else if (swInteraction?.type === 'activated_ability_target') {
+                      const option = findActivatedAbilityTargetOptionByCardId(
+                        swInteraction,
+                        abilityMode.abilityId === 'fortress_power' ? 'fortress_power' : 'revive_undead',
+                        card.id,
+                        'selectCard',
+                      );
+                      if (!option) return;
+                      respondInteractionOption(option.id);
                     } else if (abilityMode.abilityId === 'fortress_power') {
                       dispatch(SW_COMMANDS.ACTIVATE_ABILITY, {
                         abilityId: 'fortress_power', sourceUnitId: abilityMode.sourceUnitId,
@@ -1666,6 +1579,10 @@ export const SummonerWarsBoard: React.FC<Props> = ({
                   }}
                   onCancel={() => {
                     if (swInteraction?.type === 'infection') {
+                      dispatch(INTERACTION_COMMANDS.CANCEL, { interactionId: swInteraction.id });
+                      return;
+                    }
+                    if (swInteraction?.type === 'activated_ability_target') {
                       dispatch(INTERACTION_COMMANDS.CANCEL, { interactionId: swInteraction.id });
                       return;
                     }

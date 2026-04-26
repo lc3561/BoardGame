@@ -30,27 +30,27 @@ export const DEFAULT_COMMON_ATLAS_INDEX: CommonCardAtlasIndexMap = {
 };
 
 /**
- * 武士通用卡顺序以 `ability-cards.webp` 前两行真实顺序为准。
+ * 武士通用卡顺序与枪手相同，按 `ability-cards.webp` 前两行真实顺序反向映射。
  */
 export const SAMURAI_COMMON_ATLAS_INDEX: CommonCardAtlasIndexMap = {
-    'card-play-six': 0,
-    'card-just-this': 1,
-    'card-give-hand': 2,
-    'card-i-can-again': 3,
-    'card-me-too': 4,
-    'card-surprise': 5,
-    'card-worthy-of-me': 6,
-    'card-unexpected': 7,
+    'card-play-six': 17,
+    'card-just-this': 16,
+    'card-give-hand': 15,
+    'card-i-can-again': 14,
+    'card-me-too': 13,
+    'card-surprise': 12,
+    'card-worthy-of-me': 11,
+    'card-unexpected': 10,
     'card-next-time': 9,
     'card-boss-generous': 8,
-    'card-flick': 10,
-    'card-bye-bye': 11,
-    'card-double': 12,
-    'card-super-double': 13,
-    'card-get-away': 14,
-    'card-one-throw-fortune': 15,
-    'card-what-status': 16,
-    'card-transfer-status': 17,
+    'card-flick': 7,
+    'card-bye-bye': 6,
+    'card-double': 5,
+    'card-super-double': 4,
+    'card-get-away': 3,
+    'card-one-throw-fortune': 2,
+    'card-what-status': 1,
+    'card-transfer-status': 0,
 };
 
 /**

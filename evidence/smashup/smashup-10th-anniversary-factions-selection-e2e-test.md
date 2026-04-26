@@ -162,3 +162,42 @@ node scripts/infra/run-e2e-command.mjs isolated e2e/smashup/smashup.e2e.ts --gre
   - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-mermaids-banner.png`
   - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-skeletons-banner.png`
   - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-world-champs-banner.png`
+
+## 复测记录（2026-04-26 08:06）
+
+- 触发原因：继续“三派系审计工作”，复核统一斜向“实施中”横幅是否仍稳定可见。
+- 复测命令：
+  - `npm run test:e2e:ci -- e2e/smashup/smashup.e2e.ts`
+- 结果：
+  - 整文件 `2 passed / 1 failed`；
+  - 横幅目标用例 `派系选择页应显示 10 周年三派系与统一斜向实施中横幅` 通过；
+  - 失败项为 `3 人房间可加入且大厅会显示座位状态`（第三访客 join `page.goto` 超时）。
+- 肉眼核图结论：
+  - 三派系（Mermaids / Skeletons / World Champs）仍是同一套斜向“实施中”横幅；
+  - 横幅文案仍是单值“实施中/Implementation in Progress”；
+  - 未出现“分批实施/持续完善”回流。
+- 本次核图截图（绝对路径）：
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-selection.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-mermaids-banner.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-skeletons-banner.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-world-champs-banner.png`
+
+## 复测记录（2026-04-26 08:22）
+
+- 触发原因：上一轮同文件出现 `2 passed / 1 failed`（3 人房用例 30s 超时），需要做稳定性收敛。
+- 修复：`e2e/smashup/smashup.e2e.ts` 为“3 人房间可加入且大厅会显示座位状态”增加 `test.setTimeout(120000)`。
+- 校验命令：
+  - `npx eslint e2e/smashup/smashup.e2e.ts`
+  - `npm run test:e2e:ci -- e2e/smashup/smashup.e2e.ts`
+- 结果：
+  - `eslint` 通过；
+  - 整文件 `3 passed`（横幅目标用例继续通过）。
+- 肉眼核图结论：
+  - Mermaids / Skeletons / World Champs 三派系横幅样式一致且为斜向黑黄样式；
+  - 文案仍是单值“实施中 / Implementation in Progress”；
+  - 未出现第二套“实施中”样式或长文案回流。
+- 本次截图（绝对路径）：
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-selection.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-mermaids-banner.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-skeletons-banner.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-world-champs-banner.png`

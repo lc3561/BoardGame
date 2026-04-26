@@ -31,7 +31,6 @@ import type {
     OngoingAttachedEvent,
     CardTransferredEvent,
     CardsDrawnEvent,
-    DeckReorderedEvent,
     MinionCardDef,
     PowerCounterAddedEvent,
     PowerCounterRemovedEvent,
@@ -205,15 +204,9 @@ function worldChampsStonefordOnPlay(ctx: AbilityContext): AbilityResult {
     const player = ctx.state.players[ctx.playerId];
     const actionCards = player.deck.filter(card => card.type === 'action');
     if (actionCards.length === 0) {
-        const shuffled = ctx.random.shuffle([...player.deck]);
         return {
             events: [
-                {
-                    type: SU_EVENTS.DECK_REORDERED,
-                    payload: { playerId: ctx.playerId, deckUids: shuffled.map(card => card.uid) },
-                    timestamp: ctx.now,
-                } as DeckReorderedEvent,
-                buildAbilityFeedback(ctx.playerId, 'feedback.deck_search_no_match', ctx.now),
+                buildAbilityFeedback(ctx.playerId, 'feedback.deck_search_no_match_no_shuffle', ctx.now),
             ],
         };
     }
@@ -228,7 +221,7 @@ function worldChampsStonefordOnPlay(ctx: AbilityContext): AbilityResult {
     const interaction = createSimpleChoice(
         `world_champs_stoneford_${ctx.now}`,
         ctx.playerId,
-        '斯通福德：从牌库选择一张行动卡加入手牌，然后洗牌',
+        '斯坦福：从牌库选择一张行动卡加入手牌',
         options,
         { sourceId: 'world_champs_stoneford', targetType: 'generic', autoRefresh: 'deck', responseValidationMode: 'live' },
     );
@@ -256,7 +249,7 @@ function worldChampsShieldMaidenOnPlay(ctx: AbilityContext): AbilityResult {
     const interaction = createSimpleChoice(
         `world_champs_shield_maiden_${ctx.now}`,
         ctx.playerId,
-        '盾女：选择另一位玩家，展示其牌库顶的一张牌',
+        '盾牌少女：选择另一位玩家，展示其牌库顶的一张牌',
         options,
         { sourceId: 'world_champs_shield_maiden', targetType: 'generic' },
     );
@@ -283,7 +276,7 @@ function worldChampsCalicoinOnPlay(ctx: AbilityContext): AbilityResult {
     const interaction = createSimpleChoice(
         `world_champs_calicoin_${ctx.now}`,
         ctx.playerId,
-        '卡利科因：选择一个其他随从放置 1 个 +1 力量指示物',
+        '金币猫：选择一个其他随从放置 1 个 +1 力量指示物',
         buildMinionTargetOptions(targets, { state: ctx.state, sourcePlayerId: ctx.playerId, sourceDefId: ctx.defId }),
         { sourceId: 'world_champs_calicoin', targetType: 'minion' },
     );
@@ -310,7 +303,7 @@ function worldChampsItsBlitzinTimeOnPlay(ctx: AbilityContext): AbilityResult {
     const interaction = createSimpleChoice(
         `world_champs_its_blitzin_time_${ctx.now}`,
         ctx.playerId,
-        '冲锋时刻：选择你的一个随从，本回合力量 +3',
+        '现在是闪电时间！：选择你的一个随从，本回合力量 +3',
         buildMinionTargetOptions(ownMinions, { state: ctx.state, sourcePlayerId: ctx.playerId, sourceDefId: ctx.defId }),
         { sourceId: 'world_champs_its_blitzin_time', targetType: 'minion' },
     );
@@ -345,7 +338,7 @@ function worldChampsFightingSpiritPrizeOnPlay(ctx: AbilityContext): AbilityResul
     const interaction = createSimpleChoice(
         `world_champs_fighting_spirit_prize_${ctx.now}`,
         ctx.playerId,
-        '斗志奖杯：选择 1-2 个你的随从分配 2 个 +1 力量指示物',
+        '战斗精神奖：选择 1-2 个你的随从分配 2 个 +1 力量指示物',
         buildMinionTargetOptions(ownMinions, {
             state: ctx.state,
             sourcePlayerId: ctx.playerId,
@@ -455,7 +448,7 @@ function worldChampsMouseBirdAndSausageOnPlay(ctx: AbilityContext): AbilityResul
     const interaction = createSimpleChoice(
         `world_champs_mouse_bird_and_sausage_anchor_${ctx.now}`,
         ctx.playerId,
-        '鼠、鸟与香肠：先选择同一基地同派系的一张随从',
+        '老鼠、鸟和香肠：先选择同一基地同派系的一张随从',
         buildMinionTargetOptions(minions, {
             state: ctx.state,
             sourcePlayerId: ctx.playerId,
@@ -589,7 +582,7 @@ function worldChampsBewitchedTransferOnLeave(ctx: TriggerContext): AbilityResult
     const interaction = createSimpleChoice(
         `world_champs_bewitched_transfer_${ctx.now}_${ctx.sourceCardUid}`,
         ctx.sourceControllerId,
-        '蛊惑附体：宿主离场，选择另一个随从转移附着',
+        '着魔：宿主离场，选择另一个随从转移附着',
         buildMinionTargetOptions(minionOptions, {
             state: ctx.state,
             sourcePlayerId: ctx.sourceControllerId,
@@ -833,7 +826,7 @@ function worldChampsSheriffBeforeScoring(ctx: TriggerContext): AbilityResult {
     const interaction = createSimpleChoice(
         `world_champs_sheriff_before_scoring_${ctx.now}_${ctx.sourceCardUid}`,
         ctx.sourceControllerId,
-        '治安官：你可以令此随从与这里另一位玩家的一个随从决斗',
+        '警长：你可以令此随从与这里另一位玩家的一个随从决斗',
         [createSkipOption('跳过（不决斗）'), ...enemyOptions],
         { sourceId: 'world_champs_sheriff_before_scoring', targetType: 'minion' },
     );
@@ -901,13 +894,18 @@ export function registerWorldChampsAbilities(): void {
     registerAbility('world_champs_its_blitzin_time', 'onPlay', worldChampsItsBlitzinTimeOnPlay);
     registerAbility('world_champs_kaiju_conflict', 'onPlay', worldChampsKaijuConflictOnPlay);
     registerAbility('world_champs_fighting_spirit_prize', 'onPlay', worldChampsFightingSpiritPrizeOnPlay);
-    registerAbility('world_champs_high_speed_chase', 'talent', worldChampsHighSpeedChaseTalent);
+    registerAbility('world_champs_high_speed_chase', 'talent', {
+        execute: worldChampsHighSpeedChaseTalent,
+        validateUse: (ctx) => {
+            const base = ctx.state.bases[ctx.baseIndex];
+            if (!base) return '当前没有可选择的目标';
+            return base.minions.some(minion => minion.controller === ctx.playerId) ? null : '当前没有可选择的目标';
+        },
+    });
     registerAbility('world_champs_mouse_bird_and_sausage', 'onPlay', worldChampsMouseBirdAndSausageOnPlay);
     registerAbility('world_champs_shark_tattoo', 'onPlay', worldChampsSharkTattooOnPlay);
     registerAbility('world_champs_smart_set_up', 'onPlay', worldChampsSmartSetUpOnPlay);
     registerAbility('world_champs_eh', 'special', worldChampsEhSpecial);
-    registerAbility('world_champs_mummy', 'special', worldChampsNoopSpecial);
-
     registerTrigger('world_champs_aramis', 'onMinionAffected', worldChampsAramisOnMinionAffected, {
         optional: true,
         perInstance: true,
@@ -942,30 +940,23 @@ export function registerWorldChampsAbilities(): void {
     registerInterceptor('world_champs_diva', worldChampsDivaInterceptor);
 }
 
-const handleWorldChampsStoneford: InteractionHandler = (state, playerId, value, _data, random, timestamp) => {
+const handleWorldChampsStoneford: InteractionHandler = (state, playerId, value, _data, _random, timestamp) => {
     const selected = value as StonefordChoice;
     if (!selected.cardUid) return { state, events: [] };
     const player = state.core.players[playerId];
     const selectedCard = player.deck.find(card => card.uid === selected.cardUid && (!selected.defId || card.defId === selected.defId));
     if (!selectedCard || selectedCard.type !== 'action') return { state, events: [] };
 
-    const events: SmashUpEvent[] = [
-        {
-            type: SU_EVENTS.CARDS_DRAWN,
-            payload: { playerId, count: 1, cardUids: [selectedCard.uid] },
-            timestamp,
-        } as CardsDrawnEvent,
-    ];
-
-    const remainingDeck = player.deck.filter(card => card.uid !== selectedCard.uid);
-    const shuffled = random.shuffle([...remainingDeck]);
-    events.push({
-        type: SU_EVENTS.DECK_REORDERED,
-        payload: { playerId, deckUids: shuffled.map(card => card.uid) },
-        timestamp,
-    } as DeckReorderedEvent);
-
-    return { state, events };
+    return {
+        state,
+        events: [
+            {
+                type: SU_EVENTS.CARDS_DRAWN,
+                payload: { playerId, count: 1, cardUids: [selectedCard.uid] },
+                timestamp,
+            } as CardsDrawnEvent,
+        ],
+    };
 };
 
 const handleWorldChampsAkyePlayer: InteractionHandler = (state, playerId, value, _data, _random, timestamp) => {
@@ -1253,7 +1244,7 @@ const handleWorldChampsMouseBirdAndSausageAnchor: InteractionHandler = (state, p
     const interaction = createSimpleChoice(
         `world_champs_mouse_bird_and_sausage_targets_${timestamp}`,
         playerId,
-        '鼠、鸟与香肠：选择至多两张同派系随从',
+        '老鼠、鸟和香肠：选择至多两张同派系随从',
         buildMinionTargetOptions(candidates, {
             state: state.core,
             sourcePlayerId: playerId,

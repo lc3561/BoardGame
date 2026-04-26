@@ -125,6 +125,8 @@ interface RemotePackInfo {
     checksum?: string | null;
     bytes?: number | null;
     fileCount?: number | null;
+    fileIndexUrl?: string | null;
+    fileIndexChecksum?: string | null;
 }
 
 interface RemoteGamePackageManifest {
@@ -132,6 +134,7 @@ interface RemoteGamePackageManifest {
     runtimeChannel?: string;
     modulePack?: RemotePackInfo | null;
     assetPack?: RemotePackInfo | null;
+    sharedAudioPack?: RemotePackInfo | null;
 }
 
 interface RemoteGamePackageManifestEnvelope {
@@ -189,6 +192,8 @@ const applyRemotePack = (
         | 'assetPackUrl'
         | 'modulePackChecksum'
         | 'assetPackChecksum'
+        | 'assetPackFileIndexUrl'
+        | 'assetPackFileIndexChecksum'
         | 'modulePackBytes'
         | 'assetPackBytes'
         | 'modulePackFileCount'
@@ -201,6 +206,8 @@ const applyRemotePack = (
     const fallbackVersion = type === 'module' ? fallback.modulePackVersion : fallback.assetPackVersion;
     const fallbackUrl = type === 'module' ? fallback.modulePackUrl : fallback.assetPackUrl;
     const fallbackChecksum = type === 'module' ? fallback.modulePackChecksum : fallback.assetPackChecksum;
+    const fallbackFileIndexUrl = type === 'module' ? undefined : fallback.assetPackFileIndexUrl;
+    const fallbackFileIndexChecksum = type === 'module' ? undefined : fallback.assetPackFileIndexChecksum;
     const fallbackBytes = type === 'module' ? fallback.modulePackBytes : fallback.assetPackBytes;
     const fallbackFileCount = type === 'module' ? fallback.modulePackFileCount : fallback.assetPackFileCount;
 
@@ -210,6 +217,8 @@ const applyRemotePack = (
             version: undefined,
             url: undefined,
             checksum: undefined,
+            fileIndexUrl: undefined,
+            fileIndexChecksum: undefined,
             bytes: undefined,
             fileCount: undefined,
         };
@@ -220,6 +229,8 @@ const applyRemotePack = (
         version: normalizeOptionalString(remotePack?.version) ?? fallbackVersion,
         url: normalizeOptionalHttpUrl(remotePack?.url) ?? fallbackUrl,
         checksum: normalizeOptionalString(remotePack?.checksum) ?? fallbackChecksum,
+        fileIndexUrl: normalizeOptionalHttpUrl(remotePack?.fileIndexUrl) ?? fallbackFileIndexUrl,
+        fileIndexChecksum: normalizeOptionalString(remotePack?.fileIndexChecksum) ?? fallbackFileIndexChecksum,
         bytes: normalizeOptionalRemoteNumber(remotePack?.bytes) ?? fallbackBytes,
         fileCount: normalizeOptionalRemoteNumber(remotePack?.fileCount) ?? fallbackFileCount,
     };
@@ -249,6 +260,17 @@ const mapRemoteManifest = (
 
     const modulePack = applyRemotePack(fallbackManifest, 'module', remoteManifest.modulePack);
     const assetPack = applyRemotePack(fallbackManifest, 'asset', remoteManifest.assetPack);
+    const sharedAudioPack = applyRemotePack({
+        ...fallbackManifest,
+        assetPackId: fallbackManifest.sharedAudioPackId,
+        assetPackVersion: fallbackManifest.sharedAudioPackVersion,
+        assetPackUrl: fallbackManifest.sharedAudioPackUrl,
+        assetPackChecksum: fallbackManifest.sharedAudioPackChecksum,
+        assetPackFileIndexUrl: fallbackManifest.sharedAudioPackFileIndexUrl,
+        assetPackFileIndexChecksum: fallbackManifest.sharedAudioPackFileIndexChecksum,
+        assetPackBytes: fallbackManifest.sharedAudioPackBytes,
+        assetPackFileCount: fallbackManifest.sharedAudioPackFileCount,
+    }, 'asset', remoteManifest.sharedAudioPack);
 
     return {
         gameId,
@@ -261,10 +283,20 @@ const mapRemoteManifest = (
         assetPackUrl: assetPack.url,
         modulePackChecksum: modulePack.checksum,
         assetPackChecksum: assetPack.checksum,
+        assetPackFileIndexUrl: assetPack.fileIndexUrl,
+        assetPackFileIndexChecksum: assetPack.fileIndexChecksum,
+        sharedAudioPackId: sharedAudioPack.id,
+        sharedAudioPackVersion: sharedAudioPack.version,
+        sharedAudioPackUrl: sharedAudioPack.url,
+        sharedAudioPackChecksum: sharedAudioPack.checksum,
+        sharedAudioPackFileIndexUrl: sharedAudioPack.fileIndexUrl,
+        sharedAudioPackFileIndexChecksum: sharedAudioPack.fileIndexChecksum,
         modulePackBytes: modulePack.bytes,
         assetPackBytes: assetPack.bytes,
+        sharedAudioPackBytes: sharedAudioPack.bytes,
         modulePackFileCount: modulePack.fileCount,
         assetPackFileCount: assetPack.fileCount,
+        sharedAudioPackFileCount: sharedAudioPack.fileCount,
         source: 'remote',
     };
 };

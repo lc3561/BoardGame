@@ -22,6 +22,7 @@ import {
     resolveForceAdvancePhaseAfterRecovery,
     resolveForceEndTurnForStalledAi,
     resolveForceSkippableHiddenAiInteraction,
+    shouldSilentlyRetryOnlineAiBatchRejection,
     submitOnlineAiResolution,
 } from '../onlineAiForceSkip';
 import { resolveOnlineHudPresence } from '../matchHudPresence';
@@ -1684,6 +1685,14 @@ describe('submitOnlineAiResolution', () => {
         expect(onConfirmed).toHaveBeenCalledWith({ sys: { phase: 'playCards' } });
         rejectHandler?.('command_failed');
         expect(onRejected).toHaveBeenCalledWith('command_failed');
+    });
+});
+
+describe('shouldSilentlyRetryOnlineAiBatchRejection', () => {
+    it('仅对 stale_state 走静默重试分支', () => {
+        expect(shouldSilentlyRetryOnlineAiBatchRejection('stale_state')).toBe(true);
+        expect(shouldSilentlyRetryOnlineAiBatchRejection('command_failed')).toBe(false);
+        expect(shouldSilentlyRetryOnlineAiBatchRejection('unauthorized')).toBe(false);
     });
 });
 

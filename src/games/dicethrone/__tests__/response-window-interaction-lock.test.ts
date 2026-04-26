@@ -7,6 +7,7 @@
  * 直到交互完成或取消。
  */
 import { describe, expect, it } from 'vitest';
+import { diceModifyReducer, diceModifyToCommands } from '../domain/systems';
 import {
     advanceTo,
     cmd,
@@ -135,6 +136,26 @@ describe('响应窗口交互锁定：骰子修改类（modifyDie）', () => {
 });
 
 describe('modifyDie 严格超限回归', () => {
+    it('card-unexpected 本地 any-2 预览不得累计到第 3/4 颗骰子', () => {
+        let result = { modifications: {}, modCount: 0, totalAdjustment: 0 };
+
+        result = diceModifyReducer(result, { action: 'setAny', dieId: 0, newValue: 6 }, { mode: 'any' }, 2);
+        result = diceModifyReducer(result, { action: 'setAny', dieId: 1, newValue: 5 }, { mode: 'any' }, 2);
+        result = diceModifyReducer(result, { action: 'setAny', dieId: 2, newValue: 4 }, { mode: 'any' }, 2);
+        result = diceModifyReducer(result, { action: 'setAny', dieId: 3, newValue: 3 }, { mode: 'any' }, 2);
+        result = diceModifyReducer(result, { action: 'setAny', dieId: 0, newValue: 2 }, { mode: 'any' }, 2);
+
+        expect(result).toEqual({
+            modifications: { 0: 2, 1: 5 },
+            modCount: 2,
+            totalAdjustment: 0,
+        });
+        expect(diceModifyToCommands(result, 2)).toEqual([
+            { type: 'MODIFY_DIE', payload: { dieId: 0, newValue: 2 } },
+            { type: 'MODIFY_DIE', payload: { dieId: 1, newValue: 5 } },
+        ]);
+    });
+
     it('card-unexpected 只能修改 2 颗骰子，第 3 次 MODIFY_DIE 会被拒绝', () => {
         const random = createQueuedRandom([3, 3, 3, 3, 3]);
         const runner = createRunner(random, true);

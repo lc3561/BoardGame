@@ -7,6 +7,7 @@
  */
 
 import { test, expect } from '../framework';
+import { clearEvidenceScreenshotsForTest, getEvidenceScreenshotPath } from '../framework/evidenceScreenshots';
 import {
   setupSWOnlineMatch,
   readCoreState,
@@ -37,6 +38,7 @@ void __ensureThreeAxesMarker;
 
 const prepareMindCaptureState = (coreState: any) => {
   const next = cloneState(coreState);
+  next.phase = 'attack';
   next.currentPlayer = '0';
   next.selectedUnit = undefined;
   next.abilityUsageCount = {};
@@ -83,8 +85,29 @@ const prepareMindCaptureState = (coreState: any) => {
   return { state: next, summonerPos, enemyPos };
 };
 
+const hasForceDestination = (
+  board: Array<Array<{ unit?: unknown; structure?: unknown }>>,
+  row: number,
+  col: number,
+) => {
+  const dirs = [
+    { row: -1, col: 0 },
+    { row: 1, col: 0 },
+    { row: 0, col: -1 },
+    { row: 0, col: 1 },
+  ];
+  return dirs.some((dir) => {
+    const nextRow = row + dir.row;
+    const nextCol = col + dir.col;
+    if (nextRow < 0 || nextRow >= 8 || nextCol < 0 || nextCol >= 6) return false;
+    const cell = board[nextRow]?.[nextCol];
+    return Boolean(cell && !cell.unit && !cell.structure);
+  });
+};
+
 const prepareTelekinesisInsteadState = (coreState: any) => {
   const next = cloneState(coreState);
+  next.phase = 'attack';
   next.currentPlayer = '0';
   next.selectedUnit = undefined;
   next.abilityUsageCount = {};
@@ -132,7 +155,12 @@ const prepareTelekinesisInsteadState = (coreState: any) => {
       const r = magePos.row + dr;
       const c = magePos.col + dc;
       if (r < 0 || r >= 8 || c < 0 || c >= 6) continue;
-      if (board[r][c].unit && board[r][c].unit.owner === '1' && board[r][c].unit.card.unitClass !== 'summoner') {
+      if (
+        board[r][c].unit
+        && board[r][c].unit.owner === '1'
+        && board[r][c].unit.card.unitClass !== 'summoner'
+        && hasForceDestination(board, r, c)
+      ) {
         targetPos = { row: r, col: c };
         break;
       }
@@ -146,7 +174,7 @@ const prepareTelekinesisInsteadState = (coreState: any) => {
         const r = magePos.row + dr;
         const c = magePos.col + dc;
         if (r < 0 || r >= 8 || c < 0 || c >= 6) continue;
-        if (!board[r][c].unit && !board[r][c].structure) {
+        if (!board[r][c].unit && !board[r][c].structure && hasForceDestination(board, r, c)) {
           board[r][c].unit = {
             instanceId: `enemy-tk-target-${r}-${c}`, cardId: 'necro-skeleton-tk',
             card: { id: 'necro-skeleton', cardType: 'unit', name: '骷髅兵', faction: 'necromancer',
@@ -304,12 +332,12 @@ test.describe('欺心巫族阵营特色交互', () => {
 
   test('念力代替攻击：选中单位后使用按钮推拉目标', async ({ browser }, testInfo) => {
     test.setTimeout(120000);
+    await clearEvidenceScreenshotsForTest(testInfo);
     const baseURL = testInfo.project.use.baseURL as string | undefined;
     const match = await setupSWOnlineMatch(browser, baseURL, 'trickster', 'necromancer');
     if (!match) { test.skip(true, 'Game server unavailable or room creation failed.'); return; }
     const { hostPage, hostContext, guestContext } = match;
     try {
-      await advanceToPhase(hostPage, 'attack');
       const coreState = await readCoreState(hostPage);
       const { state: tkCore, magePos, targetPos } = prepareTelekinesisInsteadState(coreState);
       await applyCoreState(hostPage, tkCore);
@@ -329,22 +357,105 @@ test.describe('欺心巫族阵营特色交互', () => {
       await hostPage.waitForTimeout(1000);
       const target = hostPage.locator(`[data-testid="sw-unit-${targetPos.row}-${targetPos.col}"][data-owner="1"]`).first();
       await expect(target).toBeVisible({ timeout: 5000 });
-      await target.dispatchEvent('click');
+      const targetCell = hostPage.getByTestId(`sw-cell-${targetPos.row}-${targetPos.col}`);
+      await expect(targetCell).toHaveAttribute('data-valid-ability-unit', 'true');
+      await targetCell.click({ force: true });
       await hostPage.waitForTimeout(1500);
-      const pushButton = hostPage.locator('button').filter({ hasText: /^Push$|^推$/i });
-      const directionVisible = await pushButton.isVisible().catch(() => false);
-      if (directionVisible) {
-        await pushButton.click();
-        await hostPage.waitForTimeout(1500);
+      const tkDebug = await hostPage.evaluate(() => {
+        const harnessState = (window as Window & {
+          __BG_TEST_HARNESS__?: {
+            state?: {
+              get?: () => unknown;
+            };
+          };
+        }).__BG_TEST_HARNESS__?.state?.get?.() as {
+          sys?: {
+            interaction?: {
+              current?: unknown;
+            };
+          };
+        } | undefined;
+        const cells = Array.from(document.querySelectorAll<HTMLElement>('[data-testid^="sw-cell-"]'));
+        return {
+          currentInteraction: harnessState?.sys?.interaction?.current ?? null,
+          validAbilityUnitCells: cells
+            .filter((cell) => cell.getAttribute('data-valid-ability-unit') === 'true')
+            .map((cell) => cell.getAttribute('data-testid')),
+          pulseCells: cells
+            .filter((cell) => cell.className.includes('animate-pulse'))
+            .map((cell) => ({
+              testId: cell.getAttribute('data-testid'),
+              borderColor: cell.style.borderColor,
+              backgroundColor: cell.style.backgroundColor,
+              className: cell.className,
+            })),
+        };
+      });
+      console.log('TK_DEBUG', JSON.stringify(tkDebug));
+      const readDirectionChoice = () => hostPage.evaluate(({ excludedRow, excludedCol }) => {
+        const cells = Array.from(document.querySelectorAll<HTMLElement>('[data-testid^="sw-cell-"]'));
+        const matches = cells
+          .map((cell) => {
+            const testId = cell.dataset.testid ?? cell.getAttribute('data-testid') ?? '';
+            const match = testId.match(/^sw-cell-(\d+)-(\d+)$/);
+            if (!match) return null;
+            const row = Number(match[1]);
+            const col = Number(match[2]);
+            if (row === excludedRow && col === excludedCol) return null;
+            const className = cell.className ?? '';
+            const inlineBorder = cell.style.borderColor ?? '';
+            const inlineBg = cell.style.backgroundColor ?? '';
+            const isTelekinesisHighlight =
+              className.includes('animate-pulse')
+              && (
+                inlineBorder.includes('94, 234, 212')
+                || inlineBorder.includes('94,234,212')
+                || inlineBg.includes('94, 234, 212')
+                || inlineBg.includes('94,234,212')
+              );
+            if (!isTelekinesisHighlight) return null;
+            return { row, col };
+          })
+          .filter((item): item is { row: number; col: number } => item !== null);
+        return matches[0] ?? null;
+      }, { excludedRow: targetPos.row, excludedCol: targetPos.col });
+      await expect.poll(readDirectionChoice, { timeout: 5000 }).not.toBeNull();
+      const directionChoice = await readDirectionChoice();
+      expect(directionChoice).toBeTruthy();
+
+      await hostPage.screenshot({
+        path: getEvidenceScreenshotPath(testInfo, 'telekinesis-instead-direction-choice', {
+          subdir: 'summonerwars/summonerwars-trickster-abilities.e2e/念力代替攻击：选中单位后使用按钮推拉目标',
+        }),
+        fullPage: true,
+      });
+
+      const targetInstanceId = tkCore.board[targetPos.row][targetPos.col]?.unit?.instanceId;
+      expect(targetInstanceId).toBeTruthy();
+      const destinationCell = hostPage.getByTestId(`sw-cell-${directionChoice!.row}-${directionChoice!.col}`);
+      await destinationCell.click({ force: true });
+      await hostPage.waitForTimeout(1500);
+
+      await expect.poll(async () => {
         const afterState = await readCoreState(hostPage);
-        const targetAfter = afterState.board[targetPos.row][targetPos.col]?.unit;
-        if (!targetAfter || targetAfter.owner !== '1') {
-          expect(true).toBe(true);
-        }
-      }
+        return {
+          sourceOccupant: afterState.board[targetPos.row][targetPos.col]?.unit?.instanceId ?? null,
+          destinationOccupant: afterState.board[directionChoice!.row][directionChoice!.col]?.unit?.instanceId ?? null,
+        };
+      }, { timeout: 5000 }).toEqual({
+        sourceOccupant: null,
+        destinationOccupant: targetInstanceId,
+      });
+
+      await hostPage.screenshot({
+        path: getEvidenceScreenshotPath(testInfo, 'telekinesis-instead-push-resolved', {
+          subdir: 'summonerwars/summonerwars-trickster-abilities.e2e/念力代替攻击：选中单位后使用按钮推拉目标',
+        }),
+        fullPage: true,
+      });
     } finally {
-      await hostContext.close();
-      await guestContext.close();
+      void hostContext.close().catch(() => {});
+      void guestContext.close().catch(() => {});
     }
   });
 });

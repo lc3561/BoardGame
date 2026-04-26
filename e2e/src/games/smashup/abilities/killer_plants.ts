@@ -452,7 +452,18 @@ export function registerKillerPlantAbilities(): void {
     // 野生食人花（随从）：打出回合-2力量
     registerAbility('killer_plant_weed_eater', 'onPlay', killerPlantWeedEater);
     // 金星捕蝇草（talent）：搜索牌库打出力量的随从
-    registerAbility('killer_plant_venus_man_trap', 'talent', killerPlantVenusManTrap);
+    registerAbility('killer_plant_venus_man_trap', 'talent', {
+        execute: killerPlantVenusManTrap,
+        validateUse: (ctx) => {
+            const player = ctx.state.players[ctx.playerId];
+            const hasEligible = player.deck.some(card => {
+                if (card.type !== 'minion') return false;
+                const def = getMinionDef(card.defId);
+                return def !== undefined && def.power <= 2;
+            });
+            return hasEligible ? null : '牌库中没有力量 2 或更低的随从';
+        },
+    });
     // 发芽（行动卡）：搜索牌库打出同名随从
     registerAbility('killer_plant_budding', 'onPlay', killerPlantBudding);
     // 绽放（行动卡）：额外打出3个随从

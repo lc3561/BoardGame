@@ -1,5 +1,103 @@
 # Smash Up 10 周年三派系专项审计（2026-04-19）
 
+## 2026-04-26 卡图优先第二轮修订：三派系重录回写
+
+- 本轮继续以 `temp/cards7-00.png` ~ `temp/cards7-43.png` 为主真相源，Wiki 仅做辅助交叉核对。
+- 失效回写：
+  - 本文档前面 2026-04-26 小节里那组 `World Champs` 旧中文名（`治安官 / 阿拉米斯 / 斯通福德 / 迪娃 / 盾女 / 卡利科因 / 武士酱 / 蛊惑附体 / 斗志奖杯 / 冲锋时刻！ / 怪兽冲突 / 鼠、鸟与香肠 / 聪明布局`）已失效。
+  - 当前卡图优先口径应改为：`警长 / 阿拉密斯 / 斯坦福 / 女主角 / 盾牌少女 / 金币猫 / 武士 陈 / 着魔 / 战斗精神奖 / 现在是闪电时间！ / 怪兽冲击 / 老鼠、鸟和香肠 / 聪明Set-Up`。
+- 本轮已落地修复：
+  1. `World Champs`
+     - `Stoneford / 斯坦福` 改回卡图语义：**检索行动入手，不额外洗牌**。
+     - `Mummy / 木乃伊` 维持卡图口径：静态数据为 `ongoing`，实现仅保留 `afterScoring` 触发，不再伪装成 `special`。
+     - 已同步回写：`src/games/smashup/data/factions/world_champs.ts`、`src/games/smashup/abilities/world_champs.ts`、`public/locales/zh-CN/game-smashup.json`、`public/locales/en/game-smashup.json`、`src/games/smashup/__tests__/smashup.smoke.test.ts`。
+  2. `Mermaids`
+     - `最后的歌声` 补回“**取消那些仆从的能力直到回合结束**”。
+     - `迷倒观众` 改回“**你不拥有的仆从** / **打出一张额外的行动**”。
+  3. `Skeletons`
+     - `灵车队伍` 按卡图优先口径修正为：普通打出可移动**任意数量的埋葬牌**；特殊效果仍只限制“你埋葬的牌”。
+     - `殉葬品` 修正为：**先从手中埋葬一张牌**，然后才进入“额外埋葬一张牌 / 挖掘一张你的埋葬牌”的后续分支；额外埋葬不再硬编码到同一基地。
+- 本轮验证：
+  - `npx vitest run src/games/smashup/__tests__/newFactionAbilities.test.ts src/games/smashup/__tests__/smashup.smoke.test.ts src/games/smashup/__tests__/cardI18nIntegrity.test.ts`
+  - `npm run i18n:check`
+  - `npm run typecheck`
+- 验证结果：
+  - `326 passed / 1 skipped`
+  - `i18n:check` 通过（保留 1 条既有动态 key warning：`src/games/smashup/ui/PromptOverlay.tsx:146`）
+  - `typecheck` 通过
+- 当前结论等级：
+  - **仍有残余范围**
+- 原因：
+  - 本轮已清理三派系卡图/文案/关键实现的已知漂移，但这仍主要是 **L1 + L2** 证据补强；
+  - 若要恢复成“三派系整包已收口”，仍需把三派系剩余对象级真实入口证据与最终整包结论继续补齐。
+
+## 2026-04-26 继续重审记录：外部真问题确认 + 世界冠军中文名清理
+
+## 2026-04-26 继续重审记录：Mermaids L3 补证 + 旧漏审回写
+
+- 触发原因：
+  - 按卡图优先重放 `Mermaids / 美人鱼` 关键链路时，这组卡暴露出三类此前未被旧审计拦住的低级错误：
+    1. **效果错误**：`最后的歌声` 卡面要求“选择一个你有仆从的基地”，旧实现却允许任意基地；
+    2. **配置错误**：`迷倒观众` 卡面要求“选择一个基地”，但静态数据缺少 `playNeedsBase: true`；
+    3. **效果错误**：`迷倒观众` 卡面要求“一个你在那里的仆从”，旧实现却允许选择其他基地上的己方随从。
+- 这不是单纯“维度名字不够多”，而是旧审计把：
+  - L1 静态注册/覆盖率
+  - L2 引擎级行为
+  - L3 真实入口目标选择
+  混在一起后，没有把“**打牌目标契约**”“**目标基地准入**”与“**目标范围语义**”单独拉出来逐卡验。
+
+- 本轮修复：
+  - `src/games/smashup/abilities/mermaids.ts`
+    - `mermaidsUltimateSongOnPlay` 的基地候选从“所有基地”收紧为“你有仆从的基地”
+    - `mermaidsCaptiveAudienceOnPlay` 的候选目标从“全场己方随从”收紧为“目标基地上的己方随从”
+  - `src/games/smashup/data/factions/mermaids.ts`
+    - `mermaids_captive_audience` 补 `playNeedsBase: true`
+  - `src/games/smashup/__tests__/newFactionAbilities.test.ts`
+    - 回写断言：`最后的歌声` 不得把没有你仆从的基地放进候选；`迷倒观众` 的另一基地己方随从不得进入候选
+  - `e2e/smashup/smashup-robot-hoverbot-new.e2e.ts`
+    - 补 `最后的歌声 / 迷倒观众` 两条真实入口浏览器级用例，并把 `最后的歌声` 场景扩成“一个合法基地 + 一个非法基地”防假通过
+
+- 本轮验证：
+  - `npx vitest run src/games/smashup/__tests__/newFactionAbilities.test.ts --testNamePattern "mermaids_captive_audience|mermaids_ultimate_song"`
+  - `npm run test:e2e:ci:file -- e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "最后的歌声应强制对手额外打出小随从且不触发其打出能力，并给予你额外行动与额外随从"`
+  - `npm run test:e2e:ci:file -- e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "迷倒观众应按目标基地非己方随从数给己方随从加力量并给予额外行动"`
+
+- 新增证据：
+  - `evidence/smashup/smashup-mermaids-ultimate-song-captive-audience-e2e-2026-04-26.md`
+
+- 结论收紧：
+  - `Mermaids` 当前至少已有 `最后的歌声` 与 `迷倒观众` 两条关键链路的 L3 真实入口证据；
+  - 但三新派系整体仍只能继续标记为 **仍有残余范围**；
+  - 本案例必须作为旧审计失效补充证据保留：**此前漏掉的不是卡图，也不是测试数量，而是“打牌目标契约 + 目标基地准入 + 目标范围语义 + 真实入口”四层没有逐卡锁死。**
+
+- 新确认并已修复的真实问题：
+  - `UndoSystem` 只把空 `matchId` 视为本地局，未覆盖实际 `local:${gameId}:${seed}`，导致撤回仍走审批流。
+  - `mermaids_siren` / `base_mermaid_reef` 的“控制者总力量 -1”之前按随从重复扣减，同一玩家有多个随从时会多扣。
+  - `mermaids_siren` / `base_mermaid_reef` 之前未正确受 suppression 约束，被压制后仍继续影响总力量。
+- 已落地修复与回归：
+  - 代码：`src/games/smashup/domain/ongoingModifiers.ts`、`e2e/src/games/smashup/domain/ongoingModifiers.ts`、`src/engine/systems/UndoSystem.ts`、`e2e/src/engine/systems/UndoSystem.ts`、`src/games/smashup/Board.tsx`、`e2e/src/games/smashup/Board.tsx`
+  - 测试：`src/games/smashup/__tests__/ongoingModifiers.test.ts`、`src/engine/__tests__/undo-eventstream.test.ts`
+  - 验证：
+    - `npx vitest run src/games/smashup/__tests__/ongoingModifiers.test.ts`
+    - `npx vitest run src/engine/__tests__/undo-eventstream.test.ts`
+    - `npm run typecheck`
+- 世界冠军中文名继续按卡图优先重录：
+  - 直接证据：`temp/cards7-title-26.png` ~ `temp/cards7-title-42.png`
+  - 本轮统一到静态数据 + 主 locale + Android 内置 locale 的名称：
+    - `治安官 / 阿拉米斯 / 斯通福德 / 迪娃 / 盾女 / 卡利科因 / 武士酱 / 蛊惑附体 / 斗志奖杯 / 冲锋时刻！ / 怪兽冲突 / 鼠、鸟与香肠 / 聪明布局`
+  - 本轮最小门禁：
+    - `npx vitest run src/games/smashup/__tests__/smashup.smoke.test.ts -t "世界冠军 cards7 图集索引应与 wangling 图集中的实际卡面一致|世界冠军关键中文卡名应与当前卡图重录口径一致"`
+    - `npm run i18n:check`
+    - `npm run typecheck`
+- 6 个新基地再次按标题切片复核：
+  - `temp/wangling-base-title-0.png` ~ `temp/wangling-base-title-5.png`
+  - 当前 `人鱼暗礁 / 人鱼水池 / 埋骨地 / 藏骨堂 / 竞技场 / 名人堂` 的名称、索引、断点值与卡图一致。
+- 当前结论等级保持：
+  - **仍有残余范围**
+- 未收口原因：
+  - `斯坦福` 的 L3 真实入口证据已于 2026-04-26 补齐，但 `World Champs` 仍未形成整派系真实入口覆盖，不能把单卡证据外推成整包收口；
+  - `Skeletons` 虽完成一轮重录与聚焦测试，但整派系仍需连同三派系整包证据一起继续重审，不能恢复成“专项已收口”。
+
 ## 2026-04-25 重审记录：旧“专项审计已收口”结论失效
 
 - 失效对象：
@@ -7,18 +105,21 @@
   - 本文档中 `D1 / D3 / D5 / D8 / D47` 对三派系整体给出 `✅ 命中` 的总括式结论。
 - 失效原因：
   - 本文档把 `interactionTargetTypeAudit / interactionDefIdAudit / abilityBehaviorAudit / interactionCompletenessAudit` 这类 **L1 结构证据**，和 `newFactionAbilities.test.ts` 这类 **L2 行为证据**，外加“派系选择页 / 实施中横幅”E2E 这种 **展示证据**，混写成了“三派系玩法已收口”。
-  - 本文档没有给出 `World Champs` 关键能力的 **L3 真实入口玩法证据**。以 `world_champs_stoneford` 为例，当前证据只有：
+  - 2026-04-25 已新增卡图优先重录合同：`evidence/smashup/smashup-10th-anniversary-reintake-2026-04-25.md`。后续所有三派系修复与重审，必须以该文档为新的 intake 基线，不能继续把本文件当作唯一真相源。
+  - 在 2026-04-25 写这份失效原因时，`World Champs` 关键能力缺少 **L3 真实入口玩法证据**。其中 `world_champs_stoneford` 当时只有：
     - `src/games/smashup/__tests__/newFactionAbilities.test.ts` 中的引擎级单测；
     - 选择页与横幅截图；
-    - 没有从真实对局入口打出 `Stoneford` 并完成“检索行动卡 -> 入手 -> 洗牌”的浏览器级证据。
+    - 没有从真实对局入口打出 `斯坦福` 并完成“检索行动卡 -> 入手”的浏览器级证据。
+  - 该缺口已在 2026-04-26 补齐，见：`evidence/smashup/smashup-world-champs-stoneford-e2e-2026-04-26.md`
   - 2026-04-25 新增反证：`Skeletons` 整派系与 Wiki 对照后确认存在 **12/12 张牌语义错配**，不是单卡漏测；对应证据见 `evidence/smashup/smashup-skeletons-wiki-semantic-audit-2026-04-25.md`。
   - 同日核对还确认：旧 Wiki 对比脚本 `scripts/scrape-wiki-with-descriptions.mjs` 根本没有纳入 `skeletons`，此前“Wiki 对比全绿”结论不覆盖该派系。
   - 因此，旧结论不是“维度不够多”，而是把低层证据误当成高层收口。
 - 重审后的当前等级：
   - **仍有残余范围**
 - 当前残余范围：
-  - `World Champs` 至少仍缺 `Stoneford` 等关键能力的真实入口玩法验证。
+  - `World Champs` 仍缺整派系级真实入口玩法覆盖；`斯坦福` 单卡缺口已补齐，但不能替代其它关键能力与整包收口。
   - `Skeletons` 当前已确认为整派系语义错录，必须按整派系重新 intake / 重新实现；旧文档中关于 `Skeletons` 的“0 缺口 / 已收口”口径全部失效。
+  - 截至 `2026-04-25`，`Skeletons` 已有新的聚焦修复与单测证据回写到 `evidence/smashup/smashup-10th-anniversary-reintake-2026-04-25.md`，但其中 `复仇者` 仍存在“卡图为你的回合中，当前实现入口收窄为 onTurnStart”的残余风险，因此本文件仍不得恢复为“专项已收口”。
   - 旧文档中的“三派系整体已收口”不能继续引用；后续若引用本文件，必须连同本失效记录一起看。
 
 ## 审计范围
@@ -94,7 +195,7 @@
   - 上传：`上传 0，跳过 530（未变更），失败 0`
   - 远端回查：两个目标 URL 均 `200`
 
-## 审计结论（本任务口径）
+## 2026-04-19 历史审计结论（已失效，不得作为当前收口依据）
 - 三派系（Mermaids / Skeletons / World Champs）已完成专项审计与回归验证。
 - 本轮已修掉三派系引入的 `sourceId` 审计噪声，且 `interactionTargetTypeAudit / interactionDefIdAudit / abilityBehaviorAudit / interactionCompletenessAudit` 全部转绿。
 - 历史 `orphan handlers` 债务已转入显式基线清单并持续纳入审计；后续新增孤儿仍会被门禁拦截。
@@ -252,6 +353,18 @@
   6. `npm run i18n:check`
      - 通过（`no missing keys detected`）
 
+### 审计修订（2026-04-26）
+
+- 上面这条“`cthulhu_corruption` 需要保留 `targetType: 'generic'` 原因登记”的审计补记，现已被后续验证推翻。
+- 当前正确口径：
+  - `cthulhu_corruption: { targetType: 'minion', autoRefresh: 'field', responseValidationMode: 'live' }`
+  - 不再属于 `APPROVED_GENERIC_SOURCE_REASONS`
+- 修订原因：
+  - 2026-04-26 真实页面 E2E 已证明 `腐化` 可以稳定走“手牌真实打出 -> 场上随从高亮 -> 直接点击随从 -> 目标消灭 -> 返回常规出牌态”这条链路。
+  - 旧补记里把 `buildActionMinionTargetOptions` 误判成“可能混合随从与持续行动卡”的复合语义，这与当前 helper 实际返回的 `minion` 候选不一致。
+- 修订后证据：
+  - `evidence/smashup/smashup-cthulhu-corruption-direct-select-e2e-2026-04-26.md`
+
 ### 复审记录（2026-04-24）
 
 > 本轮目标：确认三派系审计在最新代码基线上持续全绿，并将计数、E2E 与截图时间统一到最新事实。
@@ -379,8 +492,8 @@
 - 新发现根因：
   - `src/games/smashup/data/factions/world_champs.ts` 的 `previewRef.index` 与 `wangling.webp` 实际卡面顺序不一致。
 - 已证实的关键错位：
-  - `world_champs_akye_the_turtle` 修复前错误指向 `index 27`，而 `index 27` 实际卡面是 `武士酱`
-  - `world_champs_mummy` 修复前错误指向 `index 31`，而 `index 31` 实际卡面是 `斯通福德`
+  - `world_champs_akye_the_turtle` 修复前错误指向 `index 27`，而 `index 27` 实际卡面是 `武士 陈`
+  - `world_champs_mummy` 修复前错误指向 `index 31`，而 `index 31` 实际卡面是 `斯坦福`
 - 影响：
   - 引擎按正确 `defId` 执行能力，但玩家看到的是另一张卡的完整卡面，导致“效果和卡面不对应”。
   - 因而旧文档里“`World Champs` 已完成专项审计与回归验证”的高层收口口径失效，不是因为维度数量少，而是因为缺少“卡面资源映射”这一层的逐卡核对。
@@ -458,3 +571,172 @@
 #### 结论
 - 本轮计数变化（`talent 22 -> 20`）来自重复测试块去重，不是行为回退。
 - 去重后，三派系链路仍保持：能力回归 + 四审计套件 + i18n + gameplay E2E + 选择页 E2E 全绿。
+
+### 复核记录（2026-04-26 08:10）：_pod alias 审计收敛 + 美人鱼语义对齐
+
+> 触发原因：继续执行“三派系审计工作”批次，本轮先修审计误报，再对齐 `Mermaids` 两条用例语义并复跑门禁。
+
+#### 本轮实现
+- `src/engine/testing/interactionCompletenessAudit.ts`
+  - `createOrphanHandlerCheck` 新增 `_pod` alias 兼容：
+    - `sourceId` 被引用时，自动视作 `${sourceId}_pod` 也被引用；
+    - `${sourceId}_pod` 被引用时，自动视作基线 `sourceId` 也被引用。
+  - 目标：消除“注册了 `_pod` handler 但仅通过基线 id 被引用”导致的孤儿误报。
+- `src/games/smashup/__tests__/newFactionAbilities.test.ts`
+  - `mermaids_desert_island` 改为校验“控制者总力量压制”语义；
+  - `mermaids_charmed` 改为走完整交互链（`charmed -> destination`）并校验压制元数据与额外行动结果。
+
+#### 本轮复跑结果
+1. `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/newFactionAbilities.test.ts --configLoader native --maxWorkers 1`
+   - 结果：`178 passed / 1 skipped`
+2. `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/interactionTargetTypeAudit.test.ts src/games/smashup/__tests__/interactionDefIdAudit.test.ts src/games/smashup/__tests__/abilityBehaviorAudit.test.ts src/games/smashup/__tests__/interactionCompletenessAudit.test.ts --config vitest.config.audit.ts --configLoader native --maxWorkers 1`
+   - 结果：`36 passed`
+3. `npm run i18n:check`
+   - 结果：通过（仅保留既有 `dynamic-key` warning，无 missing keys）
+4. `npm run test:e2e:ci -- e2e/smashup/smashup.e2e.ts`
+   - 结果：`2 passed / 1 failed`
+   - 失败用例：`3 人房间可加入且大厅会显示座位状态`（`joinMatchAsGuest` 第三个访客 `page.goto` 超时，30s）
+   - 横幅目标用例：`派系选择页应显示 10 周年三派系与统一斜向实施中横幅` 通过
+
+#### 本轮关键截图（绝对路径）
+- `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-selection.png`
+- `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-mermaids-banner.png`
+- `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-skeletons-banner.png`
+- `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-world-champs-banner.png`
+
+#### 肉眼核图结论
+- 三派系卡面都可见斜向黑黄“实施中”横幅；
+- 横幅样式一致，未出现第二套“实施中”样式；
+- 文案仍为单值“实施中 / Implementation in Progress”，未回流“分批实施/持续完善”。
+
+#### 未收口项
+- `smashup.e2e.ts` 里“3 人房间座位状态”用例本轮出现超时失败，属于 E2E 稳定性风险，需在后续批次单独做超时与 join 节奏稳态化。
+
+### 复核记录（2026-04-26 08:22）：3 人房 E2E 超时稳态化
+
+- 触发原因：上一轮 `smashup.e2e.ts` 为 `2 passed / 1 failed`，失败点是“3 人房间座位状态”默认 30s 超时。
+- 修复文件：`e2e/smashup/smashup.e2e.ts`
+  - 在 `test('3 人房间可加入且大厅会显示座位状态', ...)` 中增加 `test.setTimeout(120000)`。
+- 验证：
+  1. `npx eslint e2e/smashup/smashup.e2e.ts` → 通过
+  2. `npm run test:e2e:ci -- e2e/smashup/smashup.e2e.ts` → `3 passed`
+- 关键截图（绝对路径）：
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-selection.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-mermaids-banner.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-skeletons-banner.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-world-champs-banner.png`
+- 结论：三派系统一斜向“实施中”横幅链路继续稳定，上一轮未收口项已收敛。
+
+### 复核记录（2026-04-26 08:26）：SmashUp smoke 追加回归
+
+- 命令：
+  - `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/smashup.smoke.test.ts --configLoader native --maxWorkers 1`
+- 结果：`124 passed`
+- 结论：本轮三派系相关修正未引入主流程烟测回归。
+
+### 复核记录（2026-04-26 09:22）：全量失败簇收敛（14→2→0）
+
+- 触发原因：上一轮全量 `src/games/smashup` 仍有 14 条失败，分布在 `afterScoring` / `onDestroy` / `validation`；收敛后残留 2 条位于 `newFactionAbilities` 的 `bear_cavalry_bear_necessities`。
+- 根因与修复：
+  1. **测试语义漂移**：旧断言误把 `bear_cavalry_bear_necessities` 限制为“仅行动卡”，与卡面权威语义（随从或行动卡）不一致。
+     - 已对齐断言为同时覆盖对手随从 + 已打出的行动卡。
+  2. **stale 目标兜底缺口**：交互响应分支未校验“目标行动卡仍在场”，导致离场后仍可能发出 `ONGOING_DETACHED`。
+     - 已在 `registerInteractionHandler('bear_cavalry_bear_necessities')` 增加 `actionStillOnBoard` 校验，离场则空事件返回。
+- 本轮验证：
+  1. `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/newFactionAbilities.test.ts --configLoader native --maxWorkers 1`
+     - 结果：`174 passed / 1 skipped`
+  2. `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup --configLoader native --pool threads --maxWorkers 1 --no-file-parallelism`
+     - 结果：`146 files passed / 9 skipped`，`2016 passed / 19 skipped`
+- 结论：先前 14 条全量失败簇已收敛为 0，三派系审计主链路与全量回归口径重新一致。
+
+### 复核记录（2026-04-26 09:26）：四审计套件二次确认
+
+- 命令：
+  - `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/interactionTargetTypeAudit.test.ts src/games/smashup/__tests__/interactionDefIdAudit.test.ts src/games/smashup/__tests__/abilityBehaviorAudit.test.ts src/games/smashup/__tests__/interactionCompletenessAudit.test.ts --config vitest.config.audit.ts --configLoader native --maxWorkers 1`
+- 结果：
+  - `interactionTargetTypeAudit`：`7 passed`
+  - `interactionDefIdAudit`：`2 passed`
+  - `abilityBehaviorAudit`：`22 passed`
+  - `interactionCompletenessAudit`：`5 passed`
+  - 总计：`36 passed`
+- 结论：在全量回归收敛后，三派系审计门禁保持稳定全绿。
+
+### 复核记录（2026-04-26 09:44）：横幅 E2E 冷启动稳态化
+
+- 触发原因：横幅用例在 managed runtime 冷启动窗口偶发 `skip`，探活单次请求存在误判。
+- 修复：
+  - `e2e/smashup/smashup.e2e.ts`
+  - `e2e/smashup.e2e.ts`
+  - `ensureGameServerAvailable` 由单次探活改为 45 秒轮询探活（每秒一次）。
+- 验证：
+  1. `npm run test:e2e:ci:file -- e2e/smashup/smashup.e2e.ts "派系选择页应显示 10 周年三派系与统一斜向实施中横幅"`
+     - 结果：`1 passed`
+  2. `npm run test:e2e:ci -- e2e/smashup/smashup.e2e.ts`
+     - 结果：`3 passed`
+- 本轮关键截图（绝对路径）：
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-selection.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-mermaids-banner.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-skeletons-banner.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-world-champs-banner.png`
+- 肉眼结论：
+  - 三派系（美人鱼/骷髅/世界冠军）均显示斜向“实施中”横幅；
+  - 横幅样式一致，无第二套实施中样式；
+  - 未出现“分批实施/持续完善”提示文案回流。
+
+### 复核记录（2026-04-26 09:33）：World Champs 关键单卡 L3 继续补证
+
+- 触发原因：`斯坦福` 的真实入口证据已补齐，但 `World Champs` 仍不能只靠单测和展示页 E2E 收口；继续补用户最早直接反馈链上的 `海龟阿凯`。
+- 本轮实现：
+  - `e2e/smashup/smashup-robot-hoverbot-new.e2e.ts`
+    - 新增用例：`海龟阿凯打出后应先选玩家再交牌并抽两张`
+- 本轮验证：
+  1. `$env:BG_BYPASS_GLOBAL_HEAVY_BUDGET='1'; npm run test:e2e:ci:file -- e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "海龟阿凯打出后应先选玩家再交牌并抽两张"`
+     - 结果：`1 passed`
+- 关键截图（绝对路径）：
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\smashup\smashup-robot-hoverbot-new.e2e\海龟阿凯打出后应先选玩家再交牌并抽两张\akye-player-prompt-visible.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\smashup\smashup-robot-hoverbot-new.e2e\海龟阿凯打出后应先选玩家再交牌并抽两张\akye-card-prompt-visible.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\smashup\smashup-robot-hoverbot-new.e2e\海龟阿凯打出后应先选玩家再交牌并抽两张\akye-transfer-and-draw-resolved.png`
+- 结论：
+  - `海龟阿凯` 当前基线下已具备浏览器级真实入口玩法证据。
+  - `World Champs` 当前至少已有 `斯坦福` 与 `海龟阿凯` 两张关键链路的 L3 证据。
+  - 这仍然不等于三派系整包审计完成；后续还需继续补 `盾牌少女 / 战斗精神奖 / 老鼠、鸟和香肠` 等对象级玩法证据，并持续对照卡图复扫剩余差异。
+
+### 复核记录（2026-04-26 09:41）：World Champs 关键单卡 L3 继续补证（二）
+
+- 触发原因：继续收敛 `World Champs` 的真实入口玩法缺口，优先补最简单且高代表性的 `盾牌少女`。
+- 本轮实现：
+  - `e2e/smashup/smashup-robot-hoverbot-new.e2e.ts`
+    - 新增用例：`盾牌少女打出后应选择对手并拿走其牌库顶的合格卡牌`
+- 本轮验证：
+  1. `$env:BG_BYPASS_GLOBAL_HEAVY_BUDGET='1'; npm run test:e2e:ci:file -- e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "盾牌少女打出后应选择对手并拿走其牌库顶的合格卡牌"`
+     - 结果：`1 passed`
+- 关键截图（绝对路径）：
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\smashup\smashup-robot-hoverbot-new.e2e\盾牌少女打出后应选择对手并拿走其牌库顶的合格卡牌\shield-maiden-player-prompt-visible.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\smashup\smashup-robot-hoverbot-new.e2e\盾牌少女打出后应选择对手并拿走其牌库顶的合格卡牌\shield-maiden-gained-top-card.png`
+- 结论：
+  - `盾牌少女` 当前基线下已具备浏览器级真实入口玩法证据。
+  - `World Champs` 当前至少已有 `斯坦福 / 海龟阿凯 / 盾牌少女` 三张关键链路的 L3 证据。
+  - 这仍然不等于三派系整包审计完成；后续还需继续补 `斗志奖杯 / 鼠、鸟与香肠` 等对象级玩法证据，并持续对照卡图复扫剩余差异。
+
+### 复核记录（2026-04-26 10:12）：World Champs 关键单卡 L3 继续补证（三）
+
+- 触发原因：继续消除上轮残余项，补齐 `斗志奖杯 / 鼠、鸟与香肠` 的真实入口玩法证据。
+- 本轮实现：
+  - `e2e/smashup/smashup-robot-hoverbot-new.e2e.ts`
+    - 新增：`鼠、鸟与香肠应先选锚点再给同基地同派系至多两个随从 +2`
+    - 稳定化：`斗志奖杯打出后应抽两张并给两个己方随从各放一个 +1 指示物` 的多选提交逻辑（改为 `optionIds[]` 一次性提交，避免 UI 多选态抖动导致假失败）
+- 本轮验证：
+  1. `$env:BG_BYPASS_GLOBAL_HEAVY_BUDGET='1'; npm run test:e2e:ci:file -- e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "斗志奖杯打出后应抽两张并给两个己方随从各放一个"`
+     - 结果：`1 passed`
+  2. `$env:BG_BYPASS_GLOBAL_HEAVY_BUDGET='1'; npm run test:e2e:ci:file -- e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "鼠、鸟与香肠应先选锚点再给同基地同派系至多两个随从"`
+     - 结果：`1 passed`
+- 关键截图（绝对路径）：
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\smashup\smashup-robot-hoverbot-new.e2e\斗志奖杯打出后应抽两张并给两个己方随从各放一个-+1-指示物\fighting-spirit-prize-prompt-visible.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\smashup\smashup-robot-hoverbot-new.e2e\斗志奖杯打出后应抽两张并给两个己方随从各放一个-+1-指示物\fighting-spirit-prize-resolved.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\smashup\smashup-robot-hoverbot-new.e2e\鼠、鸟与香肠应先选锚点再给同基地同派系至多两个随从-+2\mouse-bird-sausage-targets-prompt.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\smashup\smashup-robot-hoverbot-new.e2e\鼠、鸟与香肠应先选锚点再给同基地同派系至多两个随从-+2\mouse-bird-sausage-resolved.png`
+- 结论：
+  - `斗志奖杯` 已补齐真实入口“打出 -> 选择目标 -> 增益落地”的 L3 证据。
+  - `鼠、鸟与香肠` 已补齐真实入口“锚点 -> 二段筛选 -> +2 生效”的 L3 证据。
+  - `World Champs` 当前至少已有 `斯坦福 / 海龟阿凯 / 盾牌少女 / 战斗精神奖 / 老鼠、鸟和香肠` 五条关键链路的 L3 证据。
+  - 三派系整包仍按“仍有残余范围”管理：本轮是增量补证，不把单派系关键样本扩写成整包发布级收口。

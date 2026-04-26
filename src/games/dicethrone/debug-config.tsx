@@ -6,6 +6,7 @@
 import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { resolveCardDisplayName } from '../../components/game/framework/debug/cardNameResolver';
+import { HEROES_DATA } from './heroes';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const REVERSED_COMMON_ATLAS_HEROES = new Set(['gunslinger', 'samurai']);
@@ -68,6 +69,7 @@ export const DiceThroneDebugConfig: React.FC<DiceThroneDebugConfigProps> = ({ G,
     // 获取当前玩家牌库和手牌
     const playerDeck: any[] = useMemo(() => G?.core?.players?.[dealPlayer]?.deck ?? [], [G, dealPlayer]);
     const playerHand: any[] = useMemo(() => G?.core?.players?.[dealPlayer]?.hand ?? [], [G, dealPlayer]);
+    const playerDiscard: any[] = useMemo(() => G?.core?.players?.[dealPlayer]?.discard ?? [], [G, dealPlayer]);
     const playerCharacterId: string | null = useMemo(
         () => G?.core?.players?.[dealPlayer]?.characterId ?? null,
         [G, dealPlayer],
@@ -80,6 +82,10 @@ export const DiceThroneDebugConfig: React.FC<DiceThroneDebugConfigProps> = ({ G,
         () => REVERSED_COMMON_ATLAS_HEROES.has(playerCharacterId ?? ''),
         [playerCharacterId],
     );
+    const characterCardPool: any[] = useMemo(() => {
+        if (!playerCharacterId) return [];
+        return HEROES_DATA[playerCharacterId]?.cards ?? [];
+    }, [playerCharacterId]);
 
     // 检查牌库中是否存在指定图集索引的卡牌
     const matchingDeckCards = useMemo(() => {
@@ -99,47 +105,111 @@ export const DiceThroneDebugConfig: React.FC<DiceThroneDebugConfigProps> = ({ G,
 
     const matchingDiscardCards = useMemo(() => {
         const targetIndex = Number(deckIndex);
-        return (G?.core?.players?.[dealPlayer]?.discard ?? []).filter(
+        return playerDiscard.filter(
             (card: any) => getCardSourceAtlasIndex(card) === targetIndex,
         );
-    }, [G, dealPlayer, deckIndex]);
+    }, [playerDiscard, deckIndex]);
+
+    const characterCardEntries = useMemo(() => {
+        const deckIndexMap = new Map<string, number[]>();
+        playerDeck.forEach((card: any, deckIndexInDeck: number) => {
+            const entries = deckIndexMap.get(card.id) ?? [];
+            entries.push(deckIndexInDeck);
+            deckIndexMap.set(card.id, entries);
+        });
+
+        const handCountMap = new Map<string, number>();
+        playerHand.forEach((card: any) => {
+            handCountMap.set(card.id, (handCountMap.get(card.id) ?? 0) + 1);
+        });
+
+        const discardCountMap = new Map<string, number>();
+        playerDiscard.forEach((card: any) => {
+            discardCountMap.set(card.id, (discardCountMap.get(card.id) ?? 0) + 1);
+        });
+
+        return characterCardPool.map((card: any) => ({
+            card,
+            atlasIndex: getCardSourceAtlasIndex(card),
+            deckIndexes: deckIndexMap.get(card.id) ?? [],
+            handCount: handCountMap.get(card.id) ?? 0,
+            discardCount: discardCountMap.get(card.id) ?? 0,
+        }));
+    }, [characterCardPool, playerDeck, playerHand, playerDiscard]);
+
+    const matchingPoolCards = useMemo(() => {
+        const targetIndex = Number(deckIndex);
+        return characterCardEntries.filter(({ atlasIndex }) => atlasIndex === targetIndex);
+    }, [characterCardEntries, deckIndex]);
 
     const cardInDeck = useMemo(() => {
         return matchingDeckCards[0]?.card;
     }, [matchingDeckCards]);
 
-    const hasAmbiguousAtlasIndex = useMemo(() => {
-        return matchingDeckCards.length > 1;
-    }, [matchingDeckCards]);
+    const primaryPoolMatch = useMemo(() => matchingPoolCards[0] ?? null, [matchingPoolCards]);
 
-    const sortedDeckCards = useMemo(() => {
-        return playerDeck
-            .map((card: any, deckIndexInDeck: number) => ({ card, deckIndexInDeck }))
+    const atlasActionState = useMemo(() => {
+        if (matchingDeckCards.length === 1) {
+            return {
+                mode: 'deal-from-deck' as const,
+                buttonLabel: '🎴 从剩余牌库发到手牌',
+            };
+        }
+
+        if (matchingDeckCards.length > 1) {
+            return {
+                mode: 'choose-deck-candidate' as const,
+                buttonLabel: '🎴 发指定牌 (Atlas)',
+            };
+        }
+
+        if (matchingPoolCards.length === 1) {
+            return {
+                mode: 'add-from-pool' as const,
+                buttonLabel: '🪄 直接补到手牌',
+            };
+        }
+
+        if (matchingPoolCards.length > 1) {
+            return {
+                mode: 'choose-pool-candidate' as const,
+                buttonLabel: '🪄 精确补牌',
+            };
+        }
+
+        return {
+            mode: 'missing' as const,
+            buttonLabel: '🎴 发指定牌 (Atlas)',
+        };
+    }, [matchingDeckCards, matchingPoolCards]);
+
+    const sortedCharacterCards = useMemo(() => {
+        return [...characterCardEntries]
             .sort((a, b) => {
-                const ai = getCardSourceAtlasIndex(a.card) ?? 999;
-                const bi = getCardSourceAtlasIndex(b.card) ?? 999;
+                const ai = a.atlasIndex ?? 999;
+                const bi = b.atlasIndex ?? 999;
                 if (ai !== bi) return ai - bi;
-                return a.deckIndexInDeck - b.deckIndexInDeck;
+                return String(a.card.id).localeCompare(String(b.card.id));
             });
-    }, [playerDeck]);
+    }, [characterCardEntries]);
 
-    const groupedDeckCards = useMemo(() => {
-        const groups: Array<{ key: 'common' | 'hero'; title: string; description: string; entries: typeof sortedDeckCards }> = [];
-        const commonEntries = sortedDeckCards.filter(({ card }) => getDeckSectionLabel(playerCharacterId, getCardSourceAtlasIndex(card)) === '通用');
-        const heroEntries = sortedDeckCards.filter(({ card }) => getDeckSectionLabel(playerCharacterId, getCardSourceAtlasIndex(card)) === '专属');
+    const groupedCharacterCards = useMemo(() => {
+        const groups: Array<{ key: 'common' | 'hero'; title: string; description: string; entries: typeof sortedCharacterCards }> = [];
+        const commonEntries = sortedCharacterCards.filter(({ atlasIndex }) => getDeckSectionLabel(playerCharacterId, atlasIndex) === '通用');
+        const heroEntries = sortedCharacterCards.filter(({ atlasIndex }) => getDeckSectionLabel(playerCharacterId, atlasIndex) === '专属');
 
         if (usesReversedCommonAtlas) {
             groups.push(
                 {
                     key: 'common',
                     title: '通用牌区 0-17',
-                    description: '枪手 / 武士通用牌区是反向索引：0 → Transfer Status，17 → Play Six。',
+                    description: '点击任意条目都会优先从剩余牌库发牌；若该牌已离开牌库，则直接补到手牌。',
                     entries: commonEntries,
                 },
                 {
                     key: 'hero',
                     title: '专属牌区 18-31',
-                    description: '18 以后才是当前角色专属牌。',
+                    description: '18 以后才是当前角色专属牌，手牌 / 弃牌堆里的同名牌也可以直接补。',
                     entries: heroEntries,
                 },
             );
@@ -150,18 +220,18 @@ export const DiceThroneDebugConfig: React.FC<DiceThroneDebugConfigProps> = ({ G,
             {
                 key: 'hero',
                 title: '专属牌区',
-                description: '老角色通常是前半段索引为专属牌。',
+                description: '老角色前半段多为专属牌，点击即可优先发牌，不在牌库时会自动补牌。',
                 entries: heroEntries,
             },
             {
                 key: 'common',
                 title: '通用牌区 15-32',
-                description: '老角色通用牌区按正向排列：15 → Play Six，32 → Transfer Status。',
+                description: '老角色通用牌区按正向排列；手牌 / 弃牌堆中的同名牌不会再导致“发不了牌”。',
                 entries: commonEntries,
             },
         );
         return groups;
-    }, [playerCharacterId, sortedDeckCards, usesReversedCommonAtlas]);
+    }, [playerCharacterId, sortedCharacterCards, usesReversedCommonAtlas]);
 
     const handleDealByDeckIndex = (deckIndexInDeck: number, atlasIdx?: number | null) => {
         if (atlasIdx != null) {
@@ -171,6 +241,24 @@ export const DiceThroneDebugConfig: React.FC<DiceThroneDebugConfigProps> = ({ G,
             playerId: dealPlayer,
             deckIndex: deckIndexInDeck,
         });
+    };
+
+    const handleAddCardByCardId = (cardId: string, atlasIdx?: number | null) => {
+        if (atlasIdx != null) {
+            setDeckIndex(String(atlasIdx));
+        }
+        dispatch('SYS_CHEAT_ADD_CARD_TO_HAND_BY_CARD_ID', {
+            playerId: dealPlayer,
+            cardId,
+        });
+    };
+
+    const handleDealOrAddCard = (entry: { card: any; atlasIndex: number | null; deckIndexes: number[] }) => {
+        if (entry.deckIndexes.length > 0) {
+            handleDealByDeckIndex(entry.deckIndexes[0], entry.atlasIndex);
+            return;
+        }
+        handleAddCardByCardId(entry.card.id, entry.atlasIndex);
     };
 
     // 更新骰子值
@@ -428,29 +516,39 @@ export const DiceThroneDebugConfig: React.FC<DiceThroneDebugConfigProps> = ({ G,
                             牌库剩余: {playerDeck.length} 张
                             {matchingDeckCards.length === 1 ? (
                                 <span className="ml-1 text-green-700">| 牌库中存在: {resolveCardDisplayName(cardInDeck, t)}</span>
-                            ) : hasAmbiguousAtlasIndex ? (
+                            ) : atlasActionState.mode === 'choose-deck-candidate' ? (
                                 <span className="ml-1 text-amber-700">
                                     | 该索引命中 {matchingDeckCards.length} 张牌，请按下方候选卡精确发牌
                                 </span>
-                            ) : matchingHandCards.length > 0 || matchingDiscardCards.length > 0 ? (
+                            ) : atlasActionState.mode === 'add-from-pool' ? (
                                 <span className="ml-1 text-amber-700">
-                                    | 当前不在牌库：手牌 {matchingHandCards.length} 张，弃牌堆 {matchingDiscardCards.length} 张
+                                    | 当前不在剩余牌库，可直接补到手牌：{resolveCardDisplayName(primaryPoolMatch?.card, t)}（手牌 {matchingHandCards.length} 张，弃牌堆 {matchingDiscardCards.length} 张）
+                                </span>
+                            ) : atlasActionState.mode === 'choose-pool-candidate' ? (
+                                <span className="ml-1 text-amber-700">
+                                    | 当前不在剩余牌库，但角色全卡池命中 {matchingPoolCards.length} 张牌，请按下方候选卡精确补牌
                                 </span>
                             ) : (
-                                <span className="ml-1 text-red-400">| 牌库中不存在该索引</span>
+                                <span className="ml-1 text-red-400">| 当前角色全卡池不存在该索引</span>
                             )}
                         </div>
                         <button
                             onClick={() => {
-                                if (matchingDeckCards.length !== 1) return;
-                                handleDealByDeckIndex(matchingDeckCards[0].deckIndexInDeck, Number(deckIndex));
+                                if (atlasActionState.mode === 'deal-from-deck') {
+                                    handleDealByDeckIndex(matchingDeckCards[0].deckIndexInDeck, Number(deckIndex));
+                                    return;
+                                }
+
+                                if (atlasActionState.mode === 'add-from-pool' && primaryPoolMatch) {
+                                    handleAddCardByCardId(primaryPoolMatch.card.id, primaryPoolMatch.atlasIndex);
+                                }
                             }}
-                            disabled={matchingDeckCards.length !== 1}
+                            disabled={atlasActionState.mode !== 'deal-from-deck' && atlasActionState.mode !== 'add-from-pool'}
                             className="w-full px-3 py-1.5 bg-green-500 text-white rounded text-xs font-bold hover:bg-green-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
                         >
-                            🎴 发指定牌 (Atlas)
+                            {atlasActionState.buttonLabel}
                         </button>
-                        {hasAmbiguousAtlasIndex && (
+                        {atlasActionState.mode === 'choose-deck-candidate' && (
                             <div className="space-y-1 rounded border border-amber-200 bg-amber-50 p-2">
                                 {matchingDeckCards.map(({ card, deckIndexInDeck }: { card: any; deckIndexInDeck: number }) => (
                                     <button
@@ -471,20 +569,44 @@ export const DiceThroneDebugConfig: React.FC<DiceThroneDebugConfigProps> = ({ G,
                                 ))}
                             </div>
                         )}
+                        {atlasActionState.mode === 'choose-pool-candidate' && (
+                            <div className="space-y-1 rounded border border-emerald-200 bg-emerald-50 p-2">
+                                {matchingPoolCards.map((entry: { card: any; atlasIndex: number | null; deckIndexes: number[]; handCount: number; discardCount: number }) => (
+                                    <button
+                                        key={`${entry.card.id}-pool`}
+                                        type="button"
+                                        onClick={() => handleDealOrAddCard(entry)}
+                                        className="flex w-full items-center gap-2 rounded bg-white px-2 py-1 text-left text-[10px] text-emerald-800 hover:bg-emerald-100"
+                                    >
+                                        <span className="w-10 text-[9px] text-emerald-500">{entry.deckIndexes.length > 0 ? `deck#${entry.deckIndexes[0]}` : '补牌'}</span>
+                                        <span className={`rounded px-1 text-[8px] ${
+                                            entry.card.type === 'upgrade' ? 'bg-amber-200 text-amber-800' : 'bg-purple-200 text-purple-800'
+                                        }`}>
+                                            {entry.card.type === 'upgrade' ? '升级' : '行动'}
+                                        </span>
+                                        <span className="flex-1 truncate">{resolveCardDisplayName(entry.card, t)}</span>
+                                        <span className="text-[9px] text-slate-500">手牌 {entry.handCount} / 弃牌 {entry.discardCount}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 </div>
 
             {/* 卡牌索引速查表 */}
             <div className="bg-amber-50 p-3 rounded-lg border border-amber-200">
                 <h4 className="text-[10px] font-black text-amber-600 uppercase tracking-widest mb-3">
-                    牌库索引速查 ({dealPlayerLabel})
+                    角色全卡池速查 ({dealPlayerLabel})
                 </h4>
+                <div className="mb-2 text-[9px] leading-4 text-amber-700">
+                    点击任意条目都会优先从剩余牌库发牌；如果该牌当前已经在手牌或弃牌堆，会直接再补 1 张到手牌。
+                </div>
                 <div className="max-h-40 overflow-y-auto">
-                    {sortedDeckCards.length === 0 ? (
-                        <div className="text-[10px] text-amber-400 text-center py-2">牌库为空</div>
+                    {sortedCharacterCards.length === 0 ? (
+                        <div className="text-[10px] text-amber-400 text-center py-2">当前角色未选定</div>
                     ) : (
                         <div className="space-y-2">
-                            {groupedDeckCards.map((group) => (
+                            {groupedCharacterCards.map((group) => (
                                 <div key={group.key} className="space-y-1">
                                     <div className="rounded bg-amber-100 px-2 py-1">
                                         <div className="text-[9px] font-black uppercase tracking-wide text-amber-700">
@@ -495,22 +617,25 @@ export const DiceThroneDebugConfig: React.FC<DiceThroneDebugConfigProps> = ({ G,
                                         </div>
                                     </div>
                                     {group.entries.length === 0 ? (
-                                        <div className="px-2 py-1 text-[9px] text-amber-300">当前剩余牌库没有这一分区的牌（不含手牌 / 弃牌堆）</div>
-                                    ) : group.entries.map(({ card, deckIndexInDeck }, idx) => {
-                                        const atlasIdx = getCardSourceAtlasIndex(card);
-                                        const sectionLabel = getDeckSectionLabel(playerCharacterId, atlasIdx);
+                                        <div className="px-2 py-1 text-[9px] text-amber-300">当前角色这一分区没有配置卡牌</div>
+                                    ) : group.entries.map((entry, idx) => {
+                                        const { card, atlasIndex, deckIndexes, handCount, discardCount } = entry;
+                                        const sectionLabel = getDeckSectionLabel(playerCharacterId, atlasIndex);
+                                        const hasDeckCopy = deckIndexes.length > 0;
                                         return (
                                             <div
                                                 key={`${group.key}-${card.id}-${idx}`}
                                                 className="flex items-center gap-2 text-[10px] px-1 py-0.5 rounded cursor-pointer text-amber-700 hover:bg-amber-100"
                                                 onClick={() => {
-                                                    if (atlasIdx != null) {
-                                                        handleDealByDeckIndex(deckIndexInDeck, atlasIdx);
+                                                    if (atlasIndex != null) {
+                                                        handleDealOrAddCard(entry);
                                                     }
                                                 }}
                                             >
-                                                <span className="w-5 text-amber-500 font-mono">{atlasIdx ?? '-'}</span>
-                                                <span className="w-10 text-[8px] text-slate-400">#{deckIndexInDeck}</span>
+                                                <span className="w-5 text-amber-500 font-mono">{atlasIndex ?? '-'}</span>
+                                                <span className="w-12 text-[8px] text-slate-400">
+                                                    {hasDeckCopy ? `#${deckIndexes[0]}` : '补牌'}
+                                                </span>
                                                 <span className="rounded bg-emerald-100 px-1 text-[8px] text-emerald-800">
                                                     {sectionLabel}
                                                 </span>
@@ -521,7 +646,13 @@ export const DiceThroneDebugConfig: React.FC<DiceThroneDebugConfigProps> = ({ G,
                                                 </span>
                                                 <span className="flex-1 truncate">{resolveCardDisplayName(card, t)}</span>
                                                 <span className="text-purple-500 text-[9px]">💎{card.cpCost}</span>
-                                                <span className="text-green-500 text-[8px]">✓ 可发</span>
+                                                {hasDeckCopy ? (
+                                                    <span className="text-green-500 text-[8px]">✓ 牌库中</span>
+                                                ) : handCount > 0 || discardCount > 0 ? (
+                                                    <span className="text-emerald-500 text-[8px]">+ 可补（手 {handCount} / 弃 {discardCount}）</span>
+                                                ) : (
+                                                    <span className="text-emerald-500 text-[8px]">+ 可补</span>
+                                                )}
                                             </div>
                                         );
                                     })}

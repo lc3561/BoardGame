@@ -47,6 +47,11 @@ export interface StatePatchMeta {
     randomCursor: number;
 }
 
+export interface BatchDispatchMeta {
+    /** 客户端发起这批命令时所基于的权威 stateID */
+    expectedStateID?: number;
+}
+
 // ============================================================================
 // 客户端 → 服务端 事件
 // ============================================================================
@@ -64,6 +69,7 @@ export interface ClientToServerEvents {
         batchId: string,
         commands: Array<{ type: string; payload: unknown }>,
         credentials?: string,
+        meta?: BatchDispatchMeta,
     ) => void;
 }
 

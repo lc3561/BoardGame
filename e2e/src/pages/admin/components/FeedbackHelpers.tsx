@@ -43,6 +43,10 @@ interface FeedbackItemLike {
     source?: string;
     autoReportKind?: string;
     incidentKey?: string;
+    latestIncidentKey?: string;
+    occurrenceCount?: number;
+    firstOccurredAt?: string;
+    lastOccurredAt?: string;
     gameName?: string;
     contactInfo?: string;
     actionLog?: string;
@@ -309,6 +313,10 @@ export function buildFeedbackAiDiagnosticPacket(item: FeedbackItemLike, t: TFunc
         gameLabel ? `- 游戏: ${gameLabel}` : '',
         `- 提交人: ${reporter}`,
         item.contactInfo ? `- 联系方式: ${item.contactInfo}` : '',
+        typeof item.occurrenceCount === 'number' ? `- 聚合次数: ${item.occurrenceCount}` : '',
+        item.firstOccurredAt ? `- 首次出现: ${formatAbsoluteTime(item.firstOccurredAt)}` : '',
+        item.lastOccurredAt ? `- 最近出现: ${formatAbsoluteTime(item.lastOccurredAt)}` : '',
+        item.latestIncidentKey ? `- 最新 Incident: ${item.latestIncidentKey}` : '',
         '',
         '## 2. 用户反馈原文',
         contentText,

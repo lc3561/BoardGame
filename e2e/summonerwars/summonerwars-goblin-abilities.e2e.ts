@@ -133,6 +133,7 @@ test.describe('洞穴地精阵营特色交互', () => {
 
   test('神出鬼没：与0费友方单位交换位置', async ({ browser }, testInfo) => {
     test.setTimeout(120000);
+    await clearEvidenceScreenshotsForTest(testInfo);
     const baseURL = testInfo.project.use.baseURL as string | undefined;
     const match = await setupSWOnlineMatch(browser, baseURL, 'goblin', 'necromancer');
     if (!match) { test.skip(true, 'Game server unavailable or room creation failed.'); return; }
@@ -147,7 +148,10 @@ test.describe('洞穴地精阵营特色交互', () => {
       await hostPage.waitForTimeout(500);
 
       const summonerName = '思尼克斯';
-      const allyName = '部落投石手';
+      const allyName = vanishCore.board?.[allyPos.row]?.[allyPos.col]?.unit?.card?.name;
+      if (!allyName) {
+        throw new Error('无法读取神出鬼没目标友军名称');
+      }
 
       // 点击召唤师选中它
       const summonerUnit = hostPage.locator(`[data-testid^="sw-unit-"][data-owner="0"][data-unit-name="${summonerName}"]`).first();
@@ -166,18 +170,40 @@ test.describe('洞穴地精阵营特色交互', () => {
       await expect(vanishButton).toBeVisible({ timeout: 8000 });
       await vanishButton.click();
       await hostPage.waitForTimeout(500);
+      await hostPage.screenshot({
+        path: getEvidenceScreenshotPath(testInfo, 'vanish-target-selection-ready', {
+          subdir: 'summonerwars/summonerwars-goblin-abilities.e2e/神出鬼没：与0费友方单位交换位置',
+        }),
+        fullPage: true,
+      });
 
       // 点击0费友方单位完成交换
-      const ally = hostPage.locator(`[data-testid^="sw-unit-"][data-owner="0"][data-unit-name="${allyName}"]`).first();
+      const ally = hostPage.locator(`[data-testid="sw-unit-${allyPos.row}-${allyPos.col}"][data-owner="0"][data-unit-name="${allyName}"]`);
       await expect(ally).toBeVisible({ timeout: 5000 });
-      await ally.dispatchEvent('click');
+      const allyCell = hostPage.getByTestId(`sw-cell-${allyPos.row}-${allyPos.col}`);
+      await expect(allyCell).toHaveAttribute('data-valid-ability-unit', 'true');
+      await allyCell.click({ force: true });
       await hostPage.waitForTimeout(1500);
 
       // 验证位置交换
-      const summonerAfter = hostPage.locator(`[data-testid="sw-unit-${allyPos.row}-${allyPos.col}"][data-unit-name="${summonerName}"]`);
-      const allyAfter = hostPage.locator(`[data-testid="sw-unit-${summonerPos.row}-${summonerPos.col}"][data-unit-name="${allyName}"]`);
-      await expect(summonerAfter).toBeVisible({ timeout: 5000 });
-      await expect(allyAfter).toBeVisible({ timeout: 5000 });
+      await expect.poll(async () => {
+        const latestCore = await readCoreState(hostPage);
+        return {
+          summonerAtTarget: latestCore.board?.[allyPos.row]?.[allyPos.col]?.unit?.card?.name ?? null,
+          allyAtSource: latestCore.board?.[summonerPos.row]?.[summonerPos.col]?.unit?.card?.name ?? null,
+        };
+      }, { timeout: 5000 }).toEqual({
+        summonerAtTarget: summonerName,
+        allyAtSource: allyName,
+      });
+      await closeDebugPanelIfOpen(hostPage);
+      await hostPage.waitForTimeout(300);
+      await hostPage.screenshot({
+        path: getEvidenceScreenshotPath(testInfo, 'vanish-swap-complete', {
+          subdir: 'summonerwars/summonerwars-goblin-abilities.e2e/神出鬼没：与0费友方单位交换位置',
+        }),
+        fullPage: true,
+      });
     } finally {
       void hostContext.close().catch(() => {});
       void guestContext.close().catch(() => {});

@@ -428,6 +428,7 @@ export const waitForPhase = async (page: Page, phase: string, timeout = 10000) =
 /**
  * 从当前阶段自然推进到目标阶段（通过多次点击"结束阶段"）。
  * 这样 sys.phase 和 core.phase 保持同步。
+ * 若结束阶段触发了仅带“取消”的可选交互（如 onPhaseStart 提示），自动取消后继续推进。
  */
 export const advanceToPhase = async (page: Page, targetPhase: string, maxSteps = 6) => {
   const endPhaseBtn = page.getByTestId('sw-end-phase');
@@ -461,6 +462,7 @@ export const advanceToPhase = async (page: Page, targetPhase: string, maxSteps =
     
     const confirmBtn = page.locator('button').filter({ hasText: /^Confirm$|^确认$/i }).first();
     const skipBtn = page.locator('button').filter({ hasText: /^Skip$|^跳过$/i }).first();
+    const cancelBtn = page.locator('button').filter({ hasText: /^Cancel$|^取消$/i }).first();
     
     const confirmVisible = await confirmBtn.isVisible().catch(() => false);
     const skipVisible = await skipBtn.isVisible().catch(() => false);
@@ -477,7 +479,13 @@ export const advanceToPhase = async (page: Page, targetPhase: string, maxSteps =
     console.log(`[advanceToPhase] After click, phase changed: ${currentPhase} -> ${newPhase}`);
     
     if (newPhase === currentPhase) {
-      console.log(`[advanceToPhase] WARNING: Phase did not advance after click!`);
+      const cancelVisible = await cancelBtn.isVisible().catch(() => false);
+      console.log(`[advanceToPhase] WARNING: Phase did not advance after click! Cancel visible: ${cancelVisible}`);
+      if (cancelVisible) {
+        await cancelBtn.click();
+        console.log('[advanceToPhase] Cancelled optional interaction and will continue advancing');
+        await page.waitForTimeout(500);
+      }
     }
     
     await page.waitForTimeout(300);

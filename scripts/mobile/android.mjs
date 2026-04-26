@@ -407,17 +407,13 @@ const isAndroidOtaAllowedForApp = () => {
 
 const isHttpUrl = (value) => /^http:\/\//i.test(value);
 const isHttpsUrl = (value) => /^https:\/\//i.test(value);
-const resolveEmbeddedAndroidScheme = () => {
-    const backendUrl = process.env.VITE_BACKEND_URL?.trim() || '';
-    if (isHttpUrl(backendUrl)) return 'http';
-    return 'https';
-};
-
 const writeCapacitorShellConfig = () => {
     const { appId, appName } = getAppConfig();
     const mode = getAndroidWebviewMode();
     const server = {
-        androidScheme: mode === 'embedded' ? resolveEmbeddedAndroidScheme() : 'https',
+        // Android embedded WebView must keep the local bridge on http://localhost
+        // so Capacitor.convertFileSrc() can resolve /_capacitor_file_/... correctly.
+        androidScheme: mode === 'embedded' ? 'http' : 'https',
     };
     const otaEnabled = getAndroidOtaEnabled();
     const otaAppReadyTimeout = Number.parseInt(process.env.VITE_ANDROID_OTA_APP_READY_TIMEOUT_MS?.trim() || '', 10);

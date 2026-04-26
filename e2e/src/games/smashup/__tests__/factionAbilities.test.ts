@@ -267,7 +267,7 @@ function applyEventsLocal(state: SmashUpCore, events: SmashUpEvent[]): SmashUpCo
 // =====================================================================// 海盗派系
 // =====================================================================
 describe('海盗派系能力', () => {
-    it('pirate_broadside: 单个有己方随从的基地时创建 Prompt', () => {
+    it('pirate_broadside: 单个有己方随从的基地时先创建基地直点交互', () => {
         const state = makeState({
             players: {
                 '0': makePlayer('0', {
@@ -289,7 +289,8 @@ describe('海盗派系能力', () => {
         // 单个基地时创建 Interaction
         const current = (matchState.sys as any).interaction?.current;
         expect(current).toBeDefined();
-        expect(current?.data?.sourceId).toBe('pirate_broadside');
+        expect(current?.data?.sourceId).toBe('pirate_broadside_choose_base');
+        expect(current?.data?.targetType).toBe('base');
     });
 
     it('pirate_cannon: 多目标时创建 Prompt 选择', () => {

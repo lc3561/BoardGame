@@ -7,6 +7,7 @@ import { Capacitor } from '@capacitor/core';
 import {
     buildLocalMatchSearchParams,
     createDefaultLocalMatchPreferences,
+    DEFAULT_AI_MINIMUM_ACTION_DELAY_MS,
     normalizeSeatController,
     resolveAiMinimumActionDelayMs,
     resolveSeatControllersFromSearchParams,
@@ -28,6 +29,7 @@ import * as matchApi from '../../../services/matchApi';
 import * as matchStatus from '../../../hooks/match/useMatchStatus';
 import { lobbySocket } from '../../../services/lobbySocket';
 import {
+    refreshGamePackageStateFromNativeTask,
     resetGamePackageManagerForTests,
     startGamePackageInstall,
     hydrateInstalledNativeGamePackages,
@@ -128,6 +130,7 @@ const markGamePackageInstalled = (gameId = 'dicethrone', installedVersion = 'tes
         modulePackId: gameId,
         assetPackId: gameId,
         installedVersion,
+        localAssetBaseUrl: `/_capacitor_file_/data/user/0/top.easyboardgame.app.debug/files/game-packages/${gameId}/current/assets`,
         updatedAt: Date.now(),
     }));
 };
@@ -705,8 +708,8 @@ describe('AI seat controller helpers', () => {
 
     it('AI controller 默认使用统一最小时长，并支持自定义覆盖', () => {
         expect(resolveAiMinimumActionDelayMs({ type: 'human' })).toBe(0);
-        expect(resolveAiMinimumActionDelayMs({ type: 'local-ai' })).toBe(400);
-        expect(resolveAiMinimumActionDelayMs({ type: 'remote-ai', providerId: 'astrbot' })).toBe(400);
+        expect(resolveAiMinimumActionDelayMs({ type: 'local-ai' })).toBe(DEFAULT_AI_MINIMUM_ACTION_DELAY_MS);
+        expect(resolveAiMinimumActionDelayMs({ type: 'remote-ai', providerId: 'astrbot' })).toBe(DEFAULT_AI_MINIMUM_ACTION_DELAY_MS);
         expect(resolveAiMinimumActionDelayMs({ type: 'local-ai', minimumActionDelayMs: 950 })).toBe(950);
     });
 
@@ -763,7 +766,7 @@ describe('GameDetailsMobilePackageCard', () => {
         expect(screen.getByText('packageManager.progress.pendingPercent')).toBeInTheDocument();
     });
 
-    it('未安装且回退到 fallback 清单时显示同步中并保留安装按钮', () => {
+    it('未安装且回退到 fallback 清单时显示同步失败并保留安装按钮', () => {
         render(createElement(GameDetailsMobilePackageCard, {
             gameName: 'Tic-Tac-Toe',
             state: {
@@ -776,8 +779,8 @@ describe('GameDetailsMobilePackageCard', () => {
             onInstall: vi.fn(),
         }));
 
-        expect(screen.getByText('packageManager.packageSyncing')).toBeInTheDocument();
-        expect(screen.queryByText('packageManager.sizeUnknown')).toBeNull();
+        expect(screen.getByText('packageManager.packageSyncFailed')).toBeInTheDocument();
+        expect(screen.queryByText('packageManager.packageSyncing')).toBeNull();
         expect(screen.queryByText('packageManager.packageUnpublished')).toBeNull();
         expect(screen.getByText('packageManager.installAction')).toBeInTheDocument();
     });
@@ -894,6 +897,34 @@ describe('GameDetailsMobilePackageCard', () => {
 
         expect(screen.getByText('packageManager.installedVersionBadge')).toBeInTheDocument();
         expect(screen.queryByTestId('game-details-mobile-package-progress-track')).toBeNull();
+    });
+});
+
+describe('GamePackageInstallConfirmModal', () => {
+    it('已安装旧版本但存在更新时，仍显示确认下载按钮', async () => {
+        const { GamePackageInstallConfirmModal: RealGamePackageInstallConfirmModal } = await vi.importActual<typeof import('../GamePackageInstallConfirmModal')>('../GamePackageInstallConfirmModal');
+        const onConfirm = vi.fn();
+        const onClose = vi.fn();
+        const onCancel = vi.fn();
+
+        render(createElement(RealGamePackageInstallConfirmModal, {
+            gameName: '王权骰铸',
+            state: {
+                status: 'installed',
+                installedVersion: '0.5.0',
+                availableVersion: '0.5.1',
+                isUpdateAvailable: true,
+            },
+            assetPackId: 'dicethrone',
+            assetPackBytes: 16211486,
+            onConfirm,
+            onClose,
+            onCancel,
+        }));
+
+        expect(screen.getByText('packageManager.confirmTitle')).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'packageManager.confirmAction' }));
+        expect(onConfirm).toHaveBeenCalledTimes(1);
     });
 });
 
@@ -1135,7 +1166,7 @@ describe('GameDetailsModal create room ai entry', () => {
         expect(screen.queryByTestId('game-details-mobile-package-card')).toBeNull();
     });
 
-    it('打开详情后会预取远端素材包大小，并显示在下载卡片上', async () => {
+    it('打开详情后会预取远端素材包状态，并在下载卡片上显示同步完成', async () => {
         vi.mocked(manifestClient.resolveGamePackageManifest).mockImplementationOnce(async (gameId: string, delivery?: {
             runtimeChannel?: string;
             modulePackId?: string;
@@ -1160,7 +1191,7 @@ describe('GameDetailsModal create room ai entry', () => {
 
         fireEvent.click(screen.getByTestId('game-details-mobile-package-toggle'));
 
-        expect(await screen.findByText('12.0 MB')).toBeInTheDocument();
+        expect(await screen.findByText('packageManager.packageSyncCompleted')).toBeInTheDocument();
         expect(screen.queryByText('packageManager.sizeUnknown')).toBeNull();
     });
 
@@ -1211,6 +1242,7 @@ describe('GameDetailsModal create room ai entry', () => {
                     modulePackId: 'dicethrone',
                     assetPackId: 'dicethrone',
                     installedVersion: 'test-asset-pack-v1',
+                    localAssetBaseUrl: '/_capacitor_file_/data/user/0/top.easyboardgame.app.debug/files/game-packages/dicethrone/current/assets',
                     updatedAt: Date.now(),
                 };
 
@@ -1278,6 +1310,7 @@ describe('GameDetailsModal create room ai entry', () => {
                 runtimeChannel: 'stable',
                 status: 'installed',
                 installedVersion: 'test-asset-pack-v1',
+                localAssetBaseUrl: '/_capacitor_file_/data/user/0/top.easyboardgame.app.debug/files/game-packages/dicethrone/current/assets',
                 updatedAt: Date.now(),
             }),
         });
@@ -1348,6 +1381,7 @@ describe('GameDetailsModal create room ai entry', () => {
 
     it('冷启动读到原生 downloading 但任务已不存在时，回退为可重试失败态', async () => {
         vi.mocked(nativeGamePackagePlugin.readNativeGamePackageInstallState).mockResolvedValueOnce({
+            exists: true,
             state: {
                 gameId: 'dicethrone',
                 status: 'downloading',
@@ -1373,6 +1407,84 @@ describe('GameDetailsModal create room ai entry', () => {
             status: 'failed',
             errorMessage: '上次下载未完成，请重新发起。',
         }));
+    });
+
+    it('原生已自愈清掉坏包时，前端同步清理残留 installed 状态', async () => {
+        markGamePackageInstalled('dicethrone', 'test-asset-pack-v1');
+        vi.mocked(nativeGamePackagePlugin.readNativeGamePackageInstallState).mockResolvedValueOnce({
+            exists: false,
+            state: {
+                gameId: 'dicethrone',
+                status: 'not-installed',
+                updatedAt: Date.now(),
+            },
+            taskRunning: false,
+        });
+
+        const fallbackState = createDefaultGamePackageState('dicethrone', {
+            mode: 'package-managed',
+            runtimeChannel: 'stable',
+            modulePackId: 'dicethrone',
+            assetPackId: 'dicethrone',
+        });
+        syncGamePackageState('dicethrone', fallbackState);
+
+        const nextState = await refreshGamePackageStateFromNativeTask('dicethrone', fallbackState);
+
+        expect(nextState).toEqual(expect.objectContaining({
+            status: 'not-installed',
+            installedVersion: undefined,
+            localAssetBaseUrl: undefined,
+            errorCode: undefined,
+            errorMessage: undefined,
+        }));
+        expect(JSON.parse(window.localStorage.getItem('mobile-package-state:dicethrone') ?? '{}')).toEqual(
+            expect.objectContaining({
+                status: 'not-installed',
+            }),
+        );
+    });
+
+    it('原生任务仍在运行但状态文件缺失时，前端应保留下载中状态而不是重置为未安装', async () => {
+        const fallbackState = createDefaultGamePackageState('dicethrone', {
+            mode: 'package-managed',
+            runtimeChannel: 'stable',
+            modulePackId: 'dicethrone',
+            assetPackId: 'dicethrone',
+        });
+
+        window.localStorage.setItem('mobile-package-state:dicethrone', JSON.stringify({
+            ...fallbackState,
+            status: 'downloading',
+            progressMode: 'determinate',
+            progressPercent: 42,
+            updatedAt: Date.now(),
+        }));
+        syncGamePackageState('dicethrone', fallbackState);
+
+        vi.mocked(nativeGamePackagePlugin.readNativeGamePackageInstallState).mockResolvedValueOnce({
+            exists: false,
+            state: {
+                gameId: 'dicethrone',
+                status: 'manifest',
+                updatedAt: Date.now(),
+            },
+            taskRunning: true,
+        });
+
+        const nextState = await refreshGamePackageStateFromNativeTask('dicethrone', fallbackState);
+
+        expect(nextState).toEqual(expect.objectContaining({
+            status: 'downloading',
+            progressMode: 'determinate',
+            progressPercent: 42,
+        }));
+        expect(JSON.parse(window.localStorage.getItem('mobile-package-state:dicethrone') ?? '{}')).toEqual(
+            expect.objectContaining({
+                status: 'downloading',
+                progressPercent: 42,
+            }),
+        );
     });
 
     it('原生安装器创建卡住时，3 秒内失败而不是无限停留 queued', async () => {
@@ -1635,6 +1747,34 @@ describe('GameDetailsModal create room ai entry', () => {
 
         expect(screen.getByText('packageManager.installAction')).toBeInTheDocument();
         expect(screen.getByTestId('game-details-title')).not.toHaveAttribute('data-installed-version');
+    });
+
+    it('已安装旧版本 package-managed 游戏时，点击下载安装会保留更新确认弹窗', async () => {
+        markGamePackageInstalled('dicethrone', '0.5.0');
+        render(createElement(GameDetailsModal, baseProps));
+
+        await waitFor(() => {
+            expect(screen.getByText('packageManager.installAction')).toBeInTheDocument();
+        });
+
+        fireEvent.click(screen.getByText('packageManager.installAction'));
+
+        await waitFor(() => {
+            expect(screen.getByText('package-install-confirm')).toBeInTheDocument();
+        });
+
+        await act(async () => {});
+
+        expect(screen.getByText('package-install-confirm')).toBeInTheDocument();
+        expect(latestPackageInstallModalProps.current).toEqual(expect.objectContaining({
+            closeOnBackdrop: true,
+            state: expect.objectContaining({
+                status: 'installed',
+                installedVersion: '0.5.0',
+                isUpdateAvailable: true,
+                availableVersion: 'test-asset-pack-v1',
+            }),
+        }));
     });
 
     it('已安装状态缺少版本号时，回退显示下载入口而不是已完成角标', () => {

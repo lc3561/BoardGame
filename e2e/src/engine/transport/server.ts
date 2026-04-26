@@ -18,6 +18,7 @@ import type {
 import { isMatchAuthMetadataProvider } from './storage';
 import type {
     MatchPlayerInfo,
+    BatchDispatchMeta,
 } from './protocol';
 import type { TrainingDataRecorder, TrainingDecisionSample } from './trainingData';
 import { buildTrainingDecisionSample } from './trainingData';
@@ -26,7 +27,7 @@ import { GAME_MANIFEST_BY_ID } from '../../games/manifest';
 import * as aiModule from '../ai';
 import { applyPlayerViewToState, buildAiDecisionContext, getAiSeatIds, getGameAiRuntime, resolveOnlineAiDecisionView } from '../ai';
 import { extractAiInteractionSnapshot, extractAiResponseWindowSnapshot } from '../ai/snapshots';
-import type { AiInteractionSnapshot, AiInteractionOptionSnapshot } from '../ai/types';
+import type { AiInteractionSnapshot, AiInteractionOptionSnapshot, AiResponseWindowSnapshot } from '../ai/types';
 import {
     executePipeline,
     createSeededRandom,
@@ -197,6 +198,26 @@ type OnlineAiRecoveryAiSummary = {
     decisionPreview: OnlineAiRecoveryDecisionPreview | null;
 };
 
+type OnlineAiRecoveryActionLogTailEntry = {
+    text?: string;
+    type?: unknown;
+};
+
+type OnlineAiRecoveryEventTailEntry = {
+    type?: string;
+    timestamp?: unknown;
+    payload?: unknown;
+};
+
+type OnlineAiRecoveryPendingDamageDiagnostic = {
+    id: unknown;
+    responderId: unknown;
+    responseType: unknown;
+    currentDamage: unknown;
+    sourceAbilityId: unknown;
+    tokenUsageTotals: unknown;
+};
+
 const isRecoverableInteractionOption = (option: AiInteractionOptionSnapshot): boolean => {
     const value = option.value as {
         skip?: unknown;
@@ -266,6 +287,76 @@ const resolveUnsatisfiableReasonFromSelectability = (
     }
     if (diagnostic.minSelectionCount > 0 && diagnostic.enabledOptions < diagnostic.minSelectionCount) {
         return 'min-selection-unreachable';
+    }
+    return null;
+};
+
+const normalizeOnlineAiDiagnosticSegment = (value: unknown, fallback: string): string => {
+    if (typeof value !== 'string') {
+        return fallback;
+    }
+    const normalized = value
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, '-')
+        .replace(/[^a-z0-9:_-]/g, '');
+    return normalized || fallback;
+};
+
+const resolveOnlineAiResponseWindowResponderId = (
+    responseWindow: AiResponseWindowSnapshot | null | undefined,
+): string | null => {
+    if (!responseWindow || !Array.isArray(responseWindow.responderQueue)) {
+        return null;
+    }
+    const index = typeof responseWindow.currentResponderIndex === 'number'
+        ? responseWindow.currentResponderIndex
+        : 0;
+    const responderId = responseWindow.responderQueue[index];
+    return typeof responderId === 'string' && responderId.trim().length > 0
+        ? responderId
+        : null;
+};
+
+const buildOnlineAiWatchdogBlockerFingerprint = (args: {
+    phase?: unknown;
+    reason?: unknown;
+    sharedInteraction?: AiInteractionSnapshot | null;
+    seatInteraction?: AiInteractionSnapshot | null;
+    responseWindow?: AiResponseWindowSnapshot | null;
+    pendingDamage?: OnlineAiRecoveryPendingDamageDiagnostic | null;
+}): string | null => {
+    const phase = normalizeOnlineAiDiagnosticSegment(args.phase, 'unknown-phase');
+    const reason = normalizeOnlineAiDiagnosticSegment(args.reason, 'unknown-reason');
+    const interaction = args.seatInteraction ?? args.sharedInteraction;
+    if (interaction) {
+        const kind = normalizeOnlineAiDiagnosticSegment(interaction.kind, 'unknown-kind');
+        const sourceId = normalizeOnlineAiDiagnosticSegment(
+            typeof interaction.sourceId === 'string' ? interaction.sourceId : interaction.id,
+            'unknown-source',
+        );
+        return `${phase}:${reason}:interaction:${kind}:${sourceId}`;
+    }
+    if (args.responseWindow) {
+        const windowType = normalizeOnlineAiDiagnosticSegment(args.responseWindow.windowType, 'unknown-window');
+        const sourceId = normalizeOnlineAiDiagnosticSegment(args.responseWindow.sourceId, 'unknown-source');
+        const responderId = normalizeOnlineAiDiagnosticSegment(
+            resolveOnlineAiResponseWindowResponderId(args.responseWindow),
+            'unknown-responder',
+        );
+        return `${phase}:${reason}:response-window:${windowType}:${sourceId}:${responderId}`;
+    }
+    if (args.pendingDamage) {
+        const responseType = normalizeOnlineAiDiagnosticSegment(args.pendingDamage.responseType, 'unknown-response');
+        const sourceAbilityId = normalizeOnlineAiDiagnosticSegment(
+            args.pendingDamage.sourceAbilityId,
+            'unknown-source-ability',
+        );
+        const responderId = normalizeOnlineAiDiagnosticSegment(
+            args.pendingDamage.responderId,
+            'unknown-responder',
+        );
+        return `${phase}:${reason}:pending-damage:${responseType}:${sourceAbilityId}:${responderId}`;
     }
     return null;
 };
@@ -631,6 +722,7 @@ export class GameTransportServer {
                 batchId: string,
                 commands: Array<{ type: string; payload: unknown }>,
                 credentials?: string,
+                meta?: BatchDispatchMeta,
             ) => {
                 if (!matchID || !batchId || !Array.isArray(commands)) return;
                 const info = this.socketIndex.get(socket.id);
@@ -640,7 +732,7 @@ export class GameTransportServer {
                     socket.emit('batch:rejected', matchID, batchId, 'unauthorized');
                     return;
                 }
-                await this.handleBatch(socket, matchID, info.playerID, batchId, commands);
+                await this.handleBatch(socket, matchID, info.playerID, batchId, commands, meta);
             });
 
             socket.on('disconnect', () => {
@@ -1230,7 +1322,10 @@ export class GameTransportServer {
         let currentCandidate = candidate;
         let phaseLabel = currentCandidate.requiresConfirmedAdvancePhase ? 'recover-interaction' : 'follow-up-advance';
         let totalAdvanceSteps = 0;
+        let totalForcedCommands = 0;
         let usedForcedRecoveryCommand = false;
+        let lastForcedReason: ForceEndTurnStalledAiResolution['reason'] | null = null;
+        let lastForcedPhaseLabel: 'recover-interaction' | 'follow-up-advance' = phaseLabel;
 
         try {
             const seenMarkers = new Set<string>([progressMarkerBeforeRecovery]);
@@ -1277,6 +1372,9 @@ export class GameTransportServer {
                     }
 
                     usedForcedRecoveryCommand = true;
+                    totalForcedCommands += 1;
+                    lastForcedReason = currentCandidate.reason;
+                    lastForcedPhaseLabel = phaseLabel;
                     const nextCommand = mapRecoveryCommand(recoveryCommands[0]);
                     const nextCommandType = nextCommand?.type ?? 'UNKNOWN';
                     if (nextCommandType === advancePhaseCommandType
@@ -1459,6 +1557,9 @@ export class GameTransportServer {
             if (!usedForcedRecoveryCommand) {
                 return;
             }
+            const reportedReason = lastForcedReason ?? candidate.reason;
+            const reportedPhaseLabel = lastForcedReason ? lastForcedPhaseLabel : phaseLabel;
+            const reportedSteps = Math.max(totalAdvanceSteps, totalForcedCommands, 1);
             await this.reportOnlineAiRecoveryFeedback({
                 matchId: match.matchID,
                 gameId: match.gameId,
@@ -1466,11 +1567,21 @@ export class GameTransportServer {
                 incidentKind: 'force-end-turn-success',
                 severity: 'medium',
                 status: 'resolved',
-                reason: `${candidate.reason}:${phaseLabel}:steps=${totalAdvanceSteps}`,
+                reason: `${reportedReason}:${reportedPhaseLabel}:steps=${reportedSteps}`,
                 trackerKey: tracker.key,
                 progressMarker: progressMarkerBeforeRecovery,
-                stateSnapshot: await this.buildOnlineAiRecoveryStateSnapshot(match, candidate, progressMarkerBeforeRecovery),
-                actionLog: this.buildOnlineAiRecoveryActionLog(match),
+                stateSnapshot: await this.buildOnlineAiRecoveryStateSnapshot(
+                    match,
+                    candidate,
+                    tracker.key,
+                    progressMarkerBeforeRecovery,
+                ),
+                actionLog: this.buildOnlineAiRecoveryActionLog(
+                    match,
+                    candidate,
+                    tracker.key,
+                    progressMarkerBeforeRecovery,
+                ),
             });
         } finally {
             await this.drainCommandQueue(match);
@@ -1516,8 +1627,18 @@ export class GameTransportServer {
                 reason: `${candidate.reason}:${phaseLabel}:${reason}`,
                 trackerKey: tracker.key,
                 progressMarker: progressMarkerBeforeRecovery,
-                stateSnapshot: await this.buildOnlineAiRecoveryStateSnapshot(match, candidate, progressMarkerBeforeRecovery),
-                actionLog: this.buildOnlineAiRecoveryActionLog(match),
+                stateSnapshot: await this.buildOnlineAiRecoveryStateSnapshot(
+                    match,
+                    candidate,
+                    tracker.key,
+                    progressMarkerBeforeRecovery,
+                ),
+                actionLog: this.buildOnlineAiRecoveryActionLog(
+                    match,
+                    candidate,
+                    tracker.key,
+                    progressMarkerBeforeRecovery,
+                ),
             });
         }
     }
@@ -1525,6 +1646,7 @@ export class GameTransportServer {
     private async buildOnlineAiRecoveryStateSnapshot(
         match: ActiveMatch,
         candidate: ForceEndTurnStalledAiResolution,
+        trackerKey: string,
         progressMarker: string,
     ): Promise<string> {
         const interactionState = match.state.sys?.interaction as { isBlocked?: unknown } | undefined;
@@ -1534,16 +1656,7 @@ export class GameTransportServer {
         const sharedInteractionState = (match.state.sys?.interaction as { current?: unknown } | undefined)?.current;
         const seatInteractionState = (seatView.sys?.interaction as { current?: unknown } | undefined)?.current;
         const responseWindow = extractAiResponseWindowSnapshot(match.state);
-        const pendingDamage = (match.state.core as {
-            pendingDamage?: {
-                id?: unknown;
-                responderId?: unknown;
-                responseType?: unknown;
-                currentDamage?: unknown;
-                sourceAbilityId?: unknown;
-                tokenUsageTotals?: unknown;
-            };
-        } | undefined)?.pendingDamage;
+        const pendingDamage = this.buildOnlineAiPendingDamageDiagnostic(match.state);
         const aiSummary = await this.buildOnlineAiRecoveryAiSummary(match, candidate.playerId, seatView);
         const sharedUnsatisfiableReasonDetailed = resolveUnsatisfiableReasonFromInteraction(
             match.state,
@@ -1557,16 +1670,26 @@ export class GameTransportServer {
             ?? sharedUnsatisfiableReasonDetailed;
         const seatUnsatisfiableReason = resolveUnsatisfiableReasonFromSelectability(seatInteraction)
             ?? seatUnsatisfiableReasonDetailed;
+        const blockerFingerprint = this.resolveOnlineAiRecoveryFeedbackFingerprint(
+            match,
+            candidate,
+            trackerKey,
+            progressMarker,
+        );
 
         return JSON.stringify({
             matchId: match.matchID,
             gameId: match.gameId,
             playerId: candidate.playerId,
             reason: candidate.reason,
+            trackerKey,
+            blockerFingerprint,
             phase: match.state.sys?.phase ?? null,
             turnNumber: match.state.sys?.turnNumber ?? null,
             currentPlayerId: resolveCurrentPlayerId(match.state),
             progressMarker,
+            recentActionLogTail: this.extractOnlineAiRecoveryActionLogTail(match.state),
+            recentEventStreamTail: this.extractOnlineAiRecoveryEventTail(match.state),
             loop: candidate.reason === 'action-loop' ? (candidate.loopInfo ?? null) : null,
             interaction: {
                 isBlocked: interactionState?.isBlocked ?? null,
@@ -1581,14 +1704,7 @@ export class GameTransportServer {
             legalActions: aiSummary.legalActions,
             aiDecisionPreview: aiSummary.decisionPreview,
             responseWindow,
-            pendingDamage: pendingDamage ? {
-                id: pendingDamage.id ?? null,
-                responderId: pendingDamage.responderId ?? null,
-                responseType: pendingDamage.responseType ?? null,
-                currentDamage: pendingDamage.currentDamage ?? null,
-                sourceAbilityId: pendingDamage.sourceAbilityId ?? null,
-                tokenUsageTotals: pendingDamage.tokenUsageTotals ?? null,
-            } : null,
+            pendingDamage,
         });
     }
 
@@ -1698,16 +1814,82 @@ export class GameTransportServer {
         }
     }
 
-    private buildOnlineAiRecoveryActionLog(match: ActiveMatch): string | undefined {
-        const entries = (match.state.sys?.actionLog as { entries?: Array<{ text?: unknown; event?: { type?: unknown } }> } | undefined)?.entries;
-        if (!Array.isArray(entries) || entries.length === 0) {
-            return undefined;
+    private buildOnlineAiRecoveryActionLog(
+        match: ActiveMatch,
+        candidate: ForceEndTurnStalledAiResolution,
+        trackerKey: string,
+        progressMarker: string,
+    ): string | undefined {
+        const seatView = this.applyPlayerView(match, candidate.playerId) as MatchState<unknown>;
+        const sharedInteraction = extractAiInteractionSnapshot(match.state);
+        const seatInteraction = extractAiInteractionSnapshot(seatView);
+        const responseWindow = extractAiResponseWindowSnapshot(seatView);
+        const pendingDamage = this.buildOnlineAiPendingDamageDiagnostic(match.state);
+        const blockerFingerprint = this.resolveOnlineAiRecoveryFeedbackFingerprint(
+            match,
+            candidate,
+            trackerKey,
+            progressMarker,
+        );
+        return this.buildOnlineAiDiagnosticActionLog({
+            state: match.state,
+            phase: seatView.sys?.phase ?? match.state.sys?.phase ?? null,
+            progressMarker,
+            trackerKey,
+            reason: candidate.reason,
+            blockerFingerprint,
+            sharedInteraction,
+            interaction: seatInteraction,
+            responseWindow,
+            pendingDamage,
+        });
+    }
+
+    private buildOnlineAiPendingDamageDiagnostic(
+        state: MatchState<unknown>,
+    ): OnlineAiRecoveryPendingDamageDiagnostic | null {
+        const pendingDamage = (state.core as {
+            pendingDamage?: {
+                id?: unknown;
+                responderId?: unknown;
+                responseType?: unknown;
+                currentDamage?: unknown;
+                sourceAbilityId?: unknown;
+                tokenUsageTotals?: unknown;
+            };
+        } | undefined)?.pendingDamage;
+        return pendingDamage ? {
+            id: pendingDamage.id ?? null,
+            responderId: pendingDamage.responderId ?? null,
+            responseType: pendingDamage.responseType ?? null,
+            currentDamage: pendingDamage.currentDamage ?? null,
+            sourceAbilityId: pendingDamage.sourceAbilityId ?? null,
+            tokenUsageTotals: pendingDamage.tokenUsageTotals ?? null,
+        } : null;
+    }
+
+    private extractOnlineAiRecoveryFingerprintFromTrackerKey(
+        playerId: string,
+        reason: string,
+        trackerKey: string,
+    ): string | null {
+        const prefix = `${playerId}:${reason}:`;
+        if (!trackerKey.startsWith(prefix)) {
+            return null;
         }
-        const tail = entries.slice(-5).map((entry) => ({
-            text: typeof entry?.text === 'string' ? entry.text : undefined,
-            type: entry?.event?.type,
-        }));
-        return JSON.stringify(tail);
+        const fingerprint = trackerKey.slice(prefix.length).trim();
+        return fingerprint || null;
+    }
+
+    private resolveOnlineAiRecoveryFeedbackFingerprint(
+        match: ActiveMatch,
+        candidate: ForceEndTurnStalledAiResolution,
+        trackerKey: string,
+        progressMarker: string,
+    ): string | null {
+        return candidate.fingerprintHint
+            ?? this.extractOnlineAiRecoveryFingerprintFromTrackerKey(candidate.playerId, candidate.reason, trackerKey)
+            ?? this.buildOnlineAiRecoveryFingerprint(match, candidate, progressMarker);
     }
 
     private buildOnlineAiRecoveryFingerprint(
@@ -1770,11 +1952,13 @@ export class GameTransportServer {
             const current = (match.state.sys as { responseWindow?: { current?: unknown } } | undefined)?.responseWindow?.current as {
                 id?: unknown;
                 windowType?: unknown;
+                sourceId?: unknown;
                 responderQueue?: unknown;
                 currentResponderIndex?: unknown;
             } | undefined;
             if (current) {
                 const windowType = typeof current?.windowType === 'string' ? current.windowType : '';
+                const sourceId = typeof current?.sourceId === 'string' ? current.sourceId : '';
                 const responderQueue = Array.isArray(current?.responderQueue) ? current?.responderQueue : [];
                 const responderIndex = typeof current?.currentResponderIndex === 'number' ? current.currentResponderIndex : 0;
                 const responderId = typeof responderQueue[responderIndex] === 'string'
@@ -1784,7 +1968,7 @@ export class GameTransportServer {
                     .map((value) => (typeof value === 'string' ? value : ''))
                     .filter((value) => value.length > 0)
                     .join('|');
-                return `${candidate.reason}:${responderId}:${phase}:${windowType}:${queueSignature}`;
+                return `${candidate.reason}:${responderId}:${phase}:${windowType}:${sourceId}:${queueSignature}`;
             }
             return candidate.fingerprintHint ?? progressMarker;
         }
@@ -1867,16 +2051,32 @@ export class GameTransportServer {
         preCommandSeatView: MatchState<unknown>;
     }): Promise<string> {
         const { match, playerId, reason, commandType, progressMarkerBefore, preCommandSeatView } = args;
+        const sharedInteraction = extractAiInteractionSnapshot(match.state);
         const interaction = extractAiInteractionSnapshot(preCommandSeatView);
+        const sharedInteractionState = (match.state.sys?.interaction as { current?: unknown } | undefined)?.current;
         const responseWindow = extractAiResponseWindowSnapshot(preCommandSeatView);
         const aiSummary = await this.buildOnlineAiRecoveryAiSummary(match, playerId, preCommandSeatView);
+        const sharedUnsatisfiableReasonDetailed = resolveUnsatisfiableReasonFromInteraction(
+            match.state,
+            sharedInteractionState as HiddenInteractionDescriptor | undefined,
+        );
         const seatUnsatisfiableReasonDetailed = resolveUnsatisfiableReasonFromInteraction(
             preCommandSeatView,
             (preCommandSeatView.sys?.interaction as { current?: unknown } | undefined)?.current as HiddenInteractionDescriptor | undefined,
         );
+        const sharedUnsatisfiableReason = resolveUnsatisfiableReasonFromSelectability(sharedInteraction)
+            ?? sharedUnsatisfiableReasonDetailed;
         const seatUnsatisfiableReason = reason
             ?? resolveUnsatisfiableReasonFromSelectability(interaction)
             ?? seatUnsatisfiableReasonDetailed;
+        const blockerFingerprint = buildOnlineAiWatchdogBlockerFingerprint({
+            phase: preCommandSeatView.sys?.phase ?? match.state.sys?.phase ?? null,
+            reason,
+            sharedInteraction,
+            seatInteraction: interaction,
+            responseWindow,
+            pendingDamage: this.buildOnlineAiPendingDamageDiagnostic(match.state),
+        });
 
         return JSON.stringify({
             matchId: match.matchID,
@@ -1884,11 +2084,17 @@ export class GameTransportServer {
             playerId,
             reason,
             commandType,
+            blockerFingerprint,
             phase: preCommandSeatView.sys?.phase ?? match.state.sys?.phase ?? null,
             turnNumber: preCommandSeatView.sys?.turnNumber ?? match.state.sys?.turnNumber ?? null,
             currentPlayerId: resolveCurrentPlayerId(preCommandSeatView),
             progressMarker: progressMarkerBefore,
+            recentActionLogTail: this.extractOnlineAiRecoveryActionLogTail(match.state),
+            recentEventStreamTail: this.extractOnlineAiRecoveryEventTail(match.state),
             interaction: {
+                shared: sharedInteraction,
+                sharedSelectability: buildInteractionSelectabilityDiagnostic(sharedInteraction),
+                sharedUnsatisfiableReason,
                 seat: interaction,
                 seatSelectability: buildInteractionSelectabilityDiagnostic(interaction),
                 seatUnsatisfiableReason,
@@ -1931,6 +2137,109 @@ export class GameTransportServer {
                 error: error instanceof Error ? error.message : String(error),
             });
         }
+    }
+
+    private buildOnlineAiDiagnosticActionLog(args: {
+        state: MatchState<unknown>;
+        phase?: unknown;
+        progressMarker?: string;
+        trackerKey?: string;
+        blockerFingerprint?: string | null;
+        sharedInteraction?: AiInteractionSnapshot | null;
+        interaction?: AiInteractionSnapshot | null;
+        responseWindow?: AiResponseWindowSnapshot | null;
+        pendingDamage?: OnlineAiRecoveryPendingDamageDiagnostic | null;
+        commandType?: string;
+        reason?: string;
+    }): string | undefined {
+        const actionLogTail = this.extractOnlineAiRecoveryActionLogTail(args.state);
+        const eventStreamTail = this.extractOnlineAiRecoveryEventTail(args.state);
+        const interactionOptions = (args.interaction?.options ?? []).slice(0, 8);
+        const hasSharedInteraction = Boolean(args.sharedInteraction);
+        const hasResponseWindow = Boolean(args.responseWindow);
+        const hasPendingDamage = Boolean(args.pendingDamage);
+        if (
+            actionLogTail.length === 0
+            && eventStreamTail.length === 0
+            && interactionOptions.length === 0
+            && !hasSharedInteraction
+            && !hasResponseWindow
+            && !hasPendingDamage
+            && !args.blockerFingerprint
+        ) {
+            return undefined;
+        }
+        return JSON.stringify({
+            kind: 'online-ai-feedback-diagnostic',
+            ...(args.phase !== undefined ? { phase: args.phase } : {}),
+            ...(args.progressMarker ? { progressMarker: args.progressMarker } : {}),
+            ...(args.trackerKey ? { trackerKey: args.trackerKey } : {}),
+            ...(args.blockerFingerprint ? { blockerFingerprint: args.blockerFingerprint } : {}),
+            ...(args.commandType ? { commandType: args.commandType } : {}),
+            ...(args.reason ? { reason: args.reason } : {}),
+            actionLogTail,
+            eventStreamTail,
+            ...((hasSharedInteraction || args.interaction)
+                ? {
+                    interaction: {
+                        ...(args.sharedInteraction
+                            ? {
+                                shared: {
+                                    id: args.sharedInteraction.id,
+                                    kind: args.sharedInteraction.kind,
+                                    sourceId: args.sharedInteraction.sourceId,
+                                },
+                                sharedSelectability: buildInteractionSelectabilityDiagnostic(args.sharedInteraction),
+                            }
+                            : {}),
+                        ...(args.interaction
+                            ? {
+                                seat: {
+                                    id: args.interaction.id,
+                                    kind: args.interaction.kind,
+                                    sourceId: args.interaction.sourceId,
+                                    options: interactionOptions,
+                                },
+                                seatSelectability: buildInteractionSelectabilityDiagnostic(args.interaction),
+                            }
+                            : {}),
+                    },
+                }
+                : {}),
+            ...(args.responseWindow ? { responseWindow: args.responseWindow } : {}),
+            ...(args.pendingDamage ? { pendingDamage: args.pendingDamage } : {}),
+        });
+    }
+
+    private extractOnlineAiRecoveryActionLogTail(
+        state: MatchState<unknown>,
+    ): OnlineAiRecoveryActionLogTailEntry[] {
+        const entries = (state.sys?.actionLog as {
+            entries?: Array<{ text?: unknown; event?: { type?: unknown } }>;
+        } | undefined)?.entries;
+        if (!Array.isArray(entries) || entries.length === 0) {
+            return [];
+        }
+        return entries.slice(-5).map((entry) => ({
+            text: typeof entry?.text === 'string' ? entry.text : undefined,
+            type: entry?.event?.type,
+        }));
+    }
+
+    private extractOnlineAiRecoveryEventTail(
+        state: MatchState<unknown>,
+    ): OnlineAiRecoveryEventTailEntry[] {
+        const entries = (state.sys?.eventStream as {
+            entries?: Array<{ type?: unknown; timestamp?: unknown; payload?: unknown }>;
+        } | undefined)?.entries;
+        if (!Array.isArray(entries) || entries.length === 0) {
+            return [];
+        }
+        return entries.slice(-5).map((entry) => ({
+            type: typeof entry?.type === 'string' ? entry.type : undefined,
+            timestamp: entry?.timestamp,
+            ...(entry?.payload !== undefined ? { payload: JSON.parse(JSON.stringify(entry.payload)) } : {}),
+        }));
     }
 
     private async defaultOnlineAiFeedbackReporter(payload: OnlineAiRecoveryFeedbackPayload): Promise<void> {
@@ -2134,8 +2443,18 @@ export class GameTransportServer {
                 reason: `${candidate.reason}:legal-action:${resolution.action.kind}:${resolution.action.actionId}`,
                 trackerKey: tracker.key,
                 progressMarker: markerBefore,
-                stateSnapshot: await this.buildOnlineAiRecoveryStateSnapshot(match, candidate, markerBefore),
-                actionLog: this.buildOnlineAiRecoveryActionLog(match),
+                stateSnapshot: await this.buildOnlineAiRecoveryStateSnapshot(
+                    match,
+                    candidate,
+                    tracker.key,
+                    markerBefore,
+                ),
+                actionLog: this.buildOnlineAiRecoveryActionLog(
+                    match,
+                    candidate,
+                    tracker.key,
+                    markerBefore,
+                ),
             });
         }
 
@@ -2331,6 +2650,7 @@ export class GameTransportServer {
         playerID: string,
         batchId: string,
         commands: Array<{ type: string; payload: unknown }>,
+        meta?: BatchDispatchMeta,
     ): Promise<void> {
         const match = this.activeMatches.get(matchID);
         if (!match) {
@@ -2343,7 +2663,7 @@ export class GameTransportServer {
             await new Promise<void>((resolve) => {
                 match.commandQueue.push({
                     _batch: true,
-                    execute: () => this.executeBatchInternal(socket, match, playerID, batchId, commands),
+                    execute: () => this.executeBatchInternal(socket, match, playerID, batchId, commands, meta),
                     resolve: () => resolve(),
                 });
             });
@@ -2357,6 +2677,9 @@ export class GameTransportServer {
         const snapshotStateID = match.stateID;
 
         try {
+            if (this.rejectBatchWhenStatePreconditionFails(socket, matchID, batchId, match, meta)) {
+                return;
+            }
             // 批次内命令串行执行（抑制中间广播，避免客户端收到中间状态导致动画重播）
             for (const cmd of commands) {
                 const success = await this.executeCommandInternal(match, playerID, cmd.type, cmd.payload, { suppressBroadcast: true });
@@ -2399,10 +2722,15 @@ export class GameTransportServer {
         playerID: string,
         batchId: string,
         commands: Array<{ type: string; payload: unknown }>,
+        meta?: BatchDispatchMeta,
     ): Promise<void> {
         const matchID = match.matchID;
         const snapshotState = match.state;
         const snapshotStateID = match.stateID;
+
+        if (this.rejectBatchWhenStatePreconditionFails(socket, matchID, batchId, match, meta)) {
+            return;
+        }
 
         // 批次内命令串行执行（抑制中间广播，避免客户端收到中间状态导致动画重播）
         for (const cmd of commands) {
@@ -2427,6 +2755,31 @@ export class GameTransportServer {
         this.broadcastState(match);
         const authoritative = this.stripStateForTransport(match.state, { stripEventStream: true });
         socket.emit('batch:confirmed', matchID, batchId, authoritative);
+    }
+
+    private rejectBatchWhenStatePreconditionFails(
+        socket: IOSocket,
+        matchID: string,
+        batchId: string,
+        match: ActiveMatch,
+        meta?: BatchDispatchMeta,
+    ): boolean {
+        const expectedStateID = meta?.expectedStateID;
+        if (typeof expectedStateID !== 'number') {
+            return false;
+        }
+        if (match.stateID === expectedStateID) {
+            return false;
+        }
+
+        logger.warn('[GameTransport] batch rejected due to stale state precondition', {
+            matchID,
+            batchId,
+            expectedStateID,
+            actualStateID: match.stateID,
+        });
+        socket.emit('batch:rejected', matchID, batchId, 'stale_state');
+        return true;
     }
 
     /**
@@ -2812,6 +3165,16 @@ export class GameTransportServer {
                 const reason = inferredReason;
                 if (reason && UNSATISFIABLE_INTERACTION_REASONS.has(reason)) {
                     const interaction = extractAiInteractionSnapshot(preTrainingState);
+                    const sharedInteraction = extractAiInteractionSnapshot(match.state);
+                    const responseWindow = extractAiResponseWindowSnapshot(preTrainingState);
+                    const blockerFingerprint = buildOnlineAiWatchdogBlockerFingerprint({
+                        phase: preTrainingState.sys?.phase ?? match.state.sys?.phase ?? null,
+                        reason,
+                        sharedInteraction,
+                        seatInteraction: interaction,
+                        responseWindow,
+                        pendingDamage: this.buildOnlineAiPendingDamageDiagnostic(match.state),
+                    });
                     const trackerKey = `${playerID}:unsatisfiable-interaction:${typeof payload?.interactionId === 'string' ? payload.interactionId : 'unknown'}:${reason}:${progressMarkerBeforeCommand}`;
                     unsatisfiableInteractionFeedback = {
                         matchId: match.matchID,
@@ -2833,7 +3196,19 @@ export class GameTransportServer {
                             progressMarkerBefore: progressMarkerBeforeCommand,
                             preCommandSeatView: preTrainingState,
                         }),
-                        actionLog: interaction ? JSON.stringify(interaction.options.slice(0, 8)) : undefined,
+                        actionLog: this.buildOnlineAiDiagnosticActionLog({
+                            state: preTrainingState,
+                            phase: preTrainingState.sys?.phase ?? match.state.sys?.phase ?? null,
+                            progressMarker: progressMarkerBeforeCommand,
+                            trackerKey,
+                            blockerFingerprint,
+                            sharedInteraction,
+                            interaction,
+                            responseWindow,
+                            pendingDamage: this.buildOnlineAiPendingDamageDiagnostic(match.state),
+                            commandType,
+                            reason,
+                        }),
                     };
                 }
             }

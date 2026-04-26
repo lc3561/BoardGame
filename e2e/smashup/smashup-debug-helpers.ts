@@ -278,43 +278,25 @@ export const clickHandCard = async (page: Page, index = 0) => {
 
 /** 点击第 N 个基地（通过 evaluate 确保点击到正确元素） */
 export const clickBaseByIndex = async (page: Page, index = 0) => {
-    await page.evaluate((idx) => {
-        const bases = document.querySelectorAll('.group\\/base');
-        if (bases[idx]) {
-            const baseCard = bases[idx].querySelector('[class*="w-\\[14vw\\]"]') as HTMLElement;
-            if (baseCard) baseCard.click();
-            else (bases[idx] as HTMLElement).click();
-        }
-    }, index);
+    const baseZone = page.getByTestId(`base-zone-${index}`);
+    await expect(baseZone).toBeVisible({ timeout: 5000 });
+    await baseZone.evaluate((el: HTMLElement) => {
+        el.click();
+        el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
     await page.waitForTimeout(500);
 };
 
 /** 点击高亮的基地（ring-amber-400） — 基地选择交互模式下基地直接高亮在棋盘上 */
 export const clickHighlightedBase = async (page: Page, index = 0) => {
-    const result = await page.evaluate((idx) => {
-        // 基地选择模式下，可选基地的卡片 div（w-[14vw]）上有 ring-amber-400 class
-        // onClick 绑定在这个 div 上，必须直接点击它
-        const allBases = document.querySelectorAll('.group\\/base');
-        const selectableCards: HTMLElement[] = [];
-        for (const base of allBases) {
-            const baseCard = base.querySelector('[class*="ring-amber-400"]') as HTMLElement;
-            if (baseCard) selectableCards.push(baseCard);
-        }
-        if (selectableCards[idx]) {
-            selectableCards[idx].click();
-            return `clicked-base-card-${idx}`;
-        }
-        // fallback：点击基地容器内的卡片区域
-        if (allBases[idx]) {
-            const card = allBases[idx].querySelector('[class*="w-\\[14vw\\]"]') as HTMLElement;
-            if (card) { card.click(); return `clicked-base-fallback-card-${idx}`; }
-            (allBases[idx] as HTMLElement).click();
-            return `clicked-base-fallback-${idx}`;
-        }
-        return 'not-found';
-    }, index);
+    const baseZone = page.getByTestId(`base-zone-${index}`);
+    await expect(baseZone).toBeVisible({ timeout: 5000 });
+    await baseZone.evaluate((el: HTMLElement) => {
+        el.click();
+        el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
     await page.waitForTimeout(500);
-    return result;
+    return `clicked-base-zone-${index}`;
 };
 
 /** 点击高亮的随从（ring-purple-400） — 随从选择交互模式下随从直接高亮在棋盘上 */

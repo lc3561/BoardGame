@@ -605,8 +605,8 @@ export function injectPendingInteraction(
             maxSteps,
             minSteps: (mode === 'adjust' || mode === 'any') ? 1 : undefined,
             initialResult: { modifications: {}, modCount: 0, totalAdjustment: 0 },
-            localReducer: (current, step) => diceModifyReducer(current, step, config),
-            toCommands: diceModifyToCommands,
+            localReducer: (current, step) => diceModifyReducer(current, step, config, selectCount),
+            toCommands: (result) => diceModifyToCommands(result, selectCount),
             meta: {
                 dtType: 'modifyDie',
                 dieModifyConfig: config,

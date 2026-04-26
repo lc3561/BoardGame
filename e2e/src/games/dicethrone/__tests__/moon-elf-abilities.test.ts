@@ -22,6 +22,7 @@ import { moonElfDiceDefinition } from '../heroes/moon_elf/diceConfig';
 import { moonElfResourceDefinitions } from '../heroes/moon_elf/resourceConfig';
 import { CHARACTER_DATA_MAP, initHeroState } from '../domain/characters';
 import { DiceThroneDomain } from '../domain';
+import { getAvailableAbilityIds } from '../domain/rules';
 import { TOKEN_IDS, STATUS_IDS, MOON_ELF_DICE_FACE_IDS, DICETHRONE_CARD_ATLAS_IDS } from '../domain/ids';
 import { RESOURCE_IDS } from '../domain/resources';
 import { INITIAL_HEALTH, INITIAL_CP } from '../domain/types';
@@ -175,6 +176,75 @@ describe('Moon Elf 技能定义', () => {
             type: 'damage',
             value: 2,
         });
+    });
+
+    it('covert-fire 在 offensiveRoll 下应按 3弓+2月进入可用技能列表', () => {
+        const random = createQueuedRandom([1, 1, 1, 6, 6]);
+        const runner = new GameTestRunner({
+            domain: DiceThroneDomain,
+            systems: testSystems,
+            playerIds: ['0', '1'],
+            random,
+            setup: createMoonElfSetup(),
+            assertFn: assertState,
+            silent: true,
+        });
+
+        const result = runner.run({
+            name: 'Covert Fire 3弓2月可用',
+            commands: [
+                cmd('ADVANCE_PHASE', '0'),
+                cmd('ROLL_DICE', '0'),
+                cmd('CONFIRM_ROLL', '0'),
+            ],
+            expect: {
+                turnPhase: 'offensiveRoll',
+                roll: { count: 1, confirmed: true },
+            },
+        });
+
+        expect(result.assertionErrors).toEqual([]);
+        expect(getAvailableAbilityIds(result.finalState.core, '0', 'offensiveRoll')).toContain('covert-fire');
+    });
+
+    it('covert-fire 触发后应能选择并结算锁定，伤害按当前规则落地', () => {
+        const random = createQueuedRandom([1, 1, 1, 6, 6, 1, 1, 1, 1, 1]);
+        const runner = new GameTestRunner({
+            domain: DiceThroneDomain,
+            systems: testSystems,
+            playerIds: ['0', '1'],
+            random,
+            setup: createMoonElfSetup(),
+            assertFn: assertState,
+            silent: true,
+        });
+
+        const result = runner.run({
+            name: 'Covert Fire 结算',
+            commands: [
+                cmd('ADVANCE_PHASE', '0'),
+                cmd('ROLL_DICE', '0'),
+                cmd('CONFIRM_ROLL', '0'),
+                cmd('SELECT_ABILITY', '0', { abilityId: 'covert-fire' }),
+                cmd('ADVANCE_PHASE', '0'),
+                cmd('ROLL_DICE', '1'),
+                cmd('CONFIRM_ROLL', '1'),
+                cmd('SELECT_ABILITY', '1', { abilityId: 'shadow-step' }),
+                cmd('ADVANCE_PHASE', '1'),
+            ],
+            expect: {
+                turnPhase: 'main2',
+                players: {
+                    '1': {
+                        hp: INITIAL_HEALTH - 6,
+                        statusEffects: { [STATUS_IDS.TARGETED]: 1 },
+                    },
+                },
+            },
+        });
+
+        expect(result.assertionErrors).toEqual([]);
+        expect(result.finalState.core.pendingAttack).toBeNull();
     });
 });
 

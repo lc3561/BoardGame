@@ -884,7 +884,7 @@ export function fireMinionPlayedTriggers(params: {
     // 所以随从已经在基地上了，不需要再次 reduce
 
     // 1. onPlay 能力触发
-    const executor = resolveOnPlay(defId);
+    const executor = params.playedEvt.payload.skipOnPlayAbility ? undefined : resolveOnPlay(defId);
     if (executor) {
         const ctx: AbilityContext = {
             state: core,

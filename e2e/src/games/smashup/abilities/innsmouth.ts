@@ -51,7 +51,27 @@ export function registerInnsmouthAbilities(): void {
     // 深潜者的秘密（行动卡）：3+同名随从时抽牌，可选额外抽牌并获得疯狂卡牌
     registerAbility('innsmouth_mysteries_of_the_deep', 'onPlay', innsmouthMysteriesOfTheDeep);
     // 宗教圆环（ongoing talent）：额外打出同名随从到此基地
-    registerAbility('innsmouth_sacred_circle', 'talent', innsmouthSacredCircle);
+    registerAbility('innsmouth_sacred_circle', 'talent', {
+        execute: innsmouthSacredCircle,
+        validateUse: (ctx) => {
+            let sacredBaseIndex = -1;
+            for (let i = 0; i < ctx.state.bases.length; i++) {
+                if (ctx.state.bases[i].ongoingActions.some(o => o.uid === ctx.cardUid)) {
+                    sacredBaseIndex = i;
+                    break;
+                }
+            }
+            if (sacredBaseIndex === -1) return '当前没有可选择的目标';
+
+            const base = ctx.state.bases[sacredBaseIndex];
+            const minionDefIds = new Set(base.minions.map(m => m.defId));
+            if (minionDefIds.size === 0) return '当前没有可选择的目标';
+
+            const player = ctx.state.players[ctx.playerId];
+            const hasMatch = player.hand.some(c => c.type === 'minion' && minionDefIds.has(c.defId));
+            return hasMatch ? null : '当前没有可选择的目标';
+        },
+    });
     // 散播谣言（行动卡）：额外打出至多2个与场中同名的随从
     registerAbility('innsmouth_spreading_the_word', 'onPlay', innsmouthSpreadingTheWord);
 

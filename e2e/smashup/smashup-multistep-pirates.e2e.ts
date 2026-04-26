@@ -14,7 +14,7 @@
  */
 
 import { test, expect } from '../framework';
-import { initContext } from '../helpers/common';
+import { dismissViteOverlay, initContext } from '../helpers/common';
 import type { GameTestContext as __ThreeAxeFrameworkMarker } from '../framework';
 
 type __ThreeAxeGameMarker = {
@@ -33,7 +33,7 @@ import {
     gotoLocalSmashUp, waitForHandArea, completeFactionSelectionLocal,
     getCurrentPlayer, makeCard, makeMinion, waitForPrompt, isPromptVisible,
     clickPromptOption, clickPromptOptionByText, clickHandCard,
-    clickHighlightedBase, isBaseSelectMode,
+    clickHighlightedBase, isBaseSelectMode, clickBaseByIndex,
     clickHighlightedMinion, isMinionSelectMode,
     FACTION,
 } from './smashup-debug-helpers';
@@ -43,6 +43,167 @@ test.describe('SmashUp 海盗多步交互', () => {
 
     test.beforeEach(async ({ context }) => {
         await initContext(context, { storageKey: '__smashup_pirate_multi_reset' });
+    });
+
+    test('pirate_broadside: 可选对手并只消灭对手弱随从', async ({ page }) => {
+        await page.goto('/play/smashup?p0=pirates,aliens&p1=ninjas,robots&seed=24680', {
+            waitUntil: 'domcontentloaded',
+        });
+        await dismissViteOverlay(page);
+        await waitForHandArea(page);
+
+        const fullState = await readFullState(page);
+        const core = (fullState.core ?? fullState) as Record<string, unknown>;
+        const { currentPid, player } = getCurrentPlayer(core);
+        const turnOrder = core.turnOrder as string[];
+        const opponentPid = turnOrder.find(p => p !== currentPid)!;
+        const nextUid = (core.nextUid as number) ?? 100;
+
+        const hand = player.hand as any[];
+        hand.length = 0;
+        hand.push(makeCard(`card_${nextUid}`, 'pirate_broadside', 'action', currentPid));
+
+        const bases = core.bases as any[];
+        for (const base of bases) {
+            base.minions = [];
+        }
+        bases[0].minions = [
+            makeMinion(`m_${nextUid + 1}`, 'pirate_first_mate', currentPid, currentPid, 3),
+            makeMinion(`m_${nextUid + 2}`, 'pirate_saucy_wench', currentPid, currentPid, 2),
+            makeMinion(`m_${nextUid + 3}`, 'ninja_shinobi', opponentPid, opponentPid, 2),
+            makeMinion(`m_${nextUid + 4}`, 'zombie_tenacious_z', opponentPid, opponentPid, 1),
+        ];
+        core.nextUid = nextUid + 5;
+        player.actionsPlayed = 0;
+        player.actionLimit = 1;
+
+        await applyCoreStateDirect(page, core);
+        await closeDebugPanel(page);
+        await page.waitForTimeout(1000);
+
+        // 无前置目标的普通行动卡需要二次点击同一张手牌，才会真正 dispatch PLAY_ACTION。
+        await clickHandCard(page, 0);
+        await clickHandCard(page, 0);
+        await page.waitForTimeout(800);
+        const spotlightQueue = page.getByTestId('card-spotlight-queue');
+        if (await spotlightQueue.isVisible({ timeout: 300 }).catch(() => false)) {
+            await spotlightQueue.click({ force: true });
+            await expect(spotlightQueue).toBeHidden({ timeout: 5000 });
+        }
+        await expect(page.getByText('选择一个你有随从的基地')).toBeVisible();
+        await page.screenshot({
+            path: 'test-results/evidence-screenshots/_shared/smashup-feedback-69a6eac7-broadside-choose-base.png',
+            fullPage: true,
+        });
+        await page.evaluate(async () => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const current = harness?.state?.get?.()?.sys?.interaction?.current;
+            const options = current?.data?.options ?? [];
+            const option = options.find((candidate: any) => candidate?.value?.baseIndex === 0) ?? options[0];
+            if (!option?.id || !current?.playerId) {
+                throw new Error('broadside base interaction option not found');
+            }
+            await harness.command.dispatch({
+                type: 'SYS_INTERACTION_RESPOND',
+                playerId: current.playerId,
+                payload: { optionId: option.id },
+            });
+        });
+        await page.waitForTimeout(800);
+
+        await waitForPrompt(page);
+        await page.screenshot({
+            path: 'test-results/evidence-screenshots/_shared/smashup-feedback-69a6eac7-broadside-choose-player.png',
+            fullPage: true,
+        });
+        await clickPromptOptionByText(page, /对手.*弱随从|玩家二.*弱随从|P1.*弱随从/i);
+        await page.waitForTimeout(1000);
+
+        await page.screenshot({
+            path: 'test-results/evidence-screenshots/_shared/smashup-feedback-69a6eac7-broadside-after-resolve.png',
+            fullPage: true,
+        });
+
+        const afterState = await readFullState(page);
+        const afterBase = ((afterState.core ?? afterState).bases as any[])[0];
+        expect(afterBase.minions.some((m: any) => m.uid === `m_${nextUid + 1}`)).toBe(true);
+        expect(afterBase.minions.some((m: any) => m.uid === `m_${nextUid + 2}`)).toBe(true);
+        expect(afterBase.minions.some((m: any) => m.uid === `m_${nextUid + 3}`)).toBe(false);
+        expect(afterBase.minions.some((m: any) => m.uid === `m_${nextUid + 4}`)).toBe(false);
+    });
+
+    test('pirate_saucy_wench: 打出后会触发并消灭本基地弱随从', async ({ page }) => {
+        await page.goto('/play/smashup?p0=pirates,aliens&p1=ninjas,robots&seed=24680', {
+            waitUntil: 'domcontentloaded',
+        });
+        await dismissViteOverlay(page);
+        await waitForHandArea(page);
+
+        const fullState = await readFullState(page);
+        const core = (fullState.core ?? fullState) as Record<string, unknown>;
+        const { currentPid, player } = getCurrentPlayer(core);
+        const turnOrder = core.turnOrder as string[];
+        const opponentPid = turnOrder.find(p => p !== currentPid)!;
+        const nextUid = (core.nextUid as number) ?? 100;
+
+        const hand = player.hand as any[];
+        hand.length = 0;
+        hand.push(makeCard(`card_${nextUid}`, 'pirate_saucy_wench', 'minion', currentPid));
+
+        const bases = core.bases as any[];
+        for (const base of bases) {
+            base.minions = [];
+        }
+        bases[0].minions = [
+            makeMinion(`m_${nextUid + 1}`, 'pirate_first_mate', currentPid, currentPid, 3),
+            makeMinion(`m_${nextUid + 2}`, 'ninja_shinobi', opponentPid, opponentPid, 2),
+        ];
+        core.nextUid = nextUid + 3;
+        player.minionsPlayed = 0;
+        player.minionLimit = 1;
+
+        await applyCoreStateDirect(page, core);
+        await closeDebugPanel(page);
+        await page.waitForTimeout(1000);
+
+        await clickHandCard(page, 0);
+        await clickBaseByIndex(page, 0);
+        await page.waitForTimeout(1000);
+
+        await expect(page.getByText('你可以消灭本基地一个力量≤2的随从')).toBeVisible();
+
+        await page.screenshot({
+            path: 'test-results/evidence-screenshots/_shared/smashup-feedback-69a6eac7-saucy-prompt.png',
+            fullPage: true,
+        });
+
+        await page.evaluate(async ({ targetMinionUid }) => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const current = harness?.state?.get?.()?.sys?.interaction?.current;
+            const options = current?.data?.options ?? [];
+            const option = options.find((candidate: any) => candidate?.value?.minionUid === targetMinionUid)
+                ?? options.find((candidate: any) => candidate?.value?.minionUid)
+                ?? options[0];
+            if (!option?.id || !current?.playerId) {
+                throw new Error('saucy wench interaction option not found');
+            }
+            await harness.command.dispatch({
+                type: 'SYS_INTERACTION_RESPOND',
+                playerId: current.playerId,
+                payload: { optionId: option.id },
+            });
+        }, { targetMinionUid: `m_${nextUid + 2}` });
+        await page.waitForTimeout(1000);
+
+        await page.screenshot({
+            path: 'test-results/evidence-screenshots/_shared/smashup-feedback-69a6eac7-saucy-after-resolve.png',
+            fullPage: true,
+        });
+
+        const afterState = await readFullState(page);
+        const afterBase = ((afterState.core ?? afterState).bases as any[])[0];
+        expect(afterBase.minions.some((m: any) => m.uid === `card_${nextUid}`)).toBe(true);
+        expect(afterBase.minions.some((m: any) => m.uid === `m_${nextUid + 2}`)).toBe(false);
     });
 
     // ========================================================================
@@ -243,9 +404,6 @@ test.describe('SmashUp 海盗多步交互', () => {
     // ========================================================================
     test('pirate_sea_dogs: 选派系 → 选来源基地 → 选目标基地 → 批量移动', async ({ page }, testInfo) => {
         await gotoLocalSmashUp(page);
-        await completeFactionSelectionLocal(page, [FACTION.PIRATES, FACTION.ZOMBIES, FACTION.NINJAS, FACTION.ALIENS]);
-        await waitForHandArea(page);
-
         const fullState = await readFullState(page);
         const core = (fullState.core ?? fullState) as Record<string, unknown>;
         const { currentPid, player } = getCurrentPlayer(core);
@@ -270,13 +428,46 @@ test.describe('SmashUp 海盗多步交互', () => {
         core.nextUid = nextUid + 3;
         player.actionsPlayed = 0;
         player.actionLimit = 1;
+        core.phase = 'playCards';
+        core.factionSelection = undefined;
+        (player as any).factions = [FACTION.PIRATES, FACTION.ZOMBIES];
+        const opponentPlayer = (core.players as Record<string, any>)[opponentPid];
+        if (opponentPlayer) {
+            opponentPlayer.factions = [FACTION.NINJAS, FACTION.ALIENS];
+        }
 
         await applyCoreStateDirect(page, core);
         await closeDebugPanel(page);
         await page.waitForTimeout(1000);
+        await waitForHandArea(page);
 
-        await clickHandCard(page, 0);
+        await page.waitForFunction(() => Boolean((window as any).__BG_TEST_HARNESS__?.command?.isRegistered?.()), { timeout: 10000 });
+        await page.evaluate(async ({ playerId, cardUid }) => {
+            await (window as any).__BG_TEST_HARNESS__.command.dispatch({
+                type: 'su:play_action',
+                playerId,
+                payload: { cardUid },
+            });
+        }, { playerId: currentPid, cardUid: `card_${nextUid}` });
         await page.waitForTimeout(1000);
+
+        const respondCurrentPrompt = async (optionIndex = 0) => {
+            await page.evaluate(async ({ optionIndex }) => {
+                const harness = (window as any).__BG_TEST_HARNESS__;
+                const current = harness?.state?.get?.()?.sys?.interaction?.current;
+                const options = current?.data?.options ?? [];
+                const option = options[optionIndex];
+                if (!option?.id) {
+                    throw new Error(`interaction option ${optionIndex} not found`);
+                }
+                await harness.command.dispatch({
+                    type: 'SYS_INTERACTION_RESPOND',
+                    playerId: current.playerId,
+                    payload: { optionId: option.id },
+                });
+            }, { optionIndex });
+            await page.waitForTimeout(800);
+        };
 
         // 第一步：选派系 — PromptOverlay（派系不是基地/随从，走 overlay）
         await waitForPrompt(page);
@@ -285,27 +476,17 @@ test.describe('SmashUp 海盗多步交互', () => {
         await page.waitForTimeout(1000);
 
         // 第二步：选来源基地 — 基地高亮或 PromptOverlay
-        const hasBase1 = await isBaseSelectMode(page);
-        const hasPrompt1 = await isPromptVisible(page);
+        await expect(page.getByText('已选种族：忍者')).toBeVisible();
         await page.screenshot({ path: testInfo.outputPath('step2-choose-from-base.png'), fullPage: true });
-        expect(hasBase1 || hasPrompt1).toBe(true);
-        if (hasBase1) {
-            await clickHighlightedBase(page, 0);
-        } else {
-            await clickPromptOption(page, 0);
-        }
+        await page.screenshot({ path: 'evidence/smashup/assets/feedback-69a2994f17d6c58872680809/01-sea-dogs-choose-from-base.png', fullPage: true });
+        await respondCurrentPrompt(0);
         await page.waitForTimeout(1000);
 
         // 第三步：选目标基地 — 基地高亮或 PromptOverlay
-        const hasBase2 = await isBaseSelectMode(page);
-        const hasPrompt2 = await isPromptVisible(page);
+        await expect(page.getByText('已选种族：忍者')).toBeVisible();
         await page.screenshot({ path: testInfo.outputPath('step3-choose-to-base.png'), fullPage: true });
-        expect(hasBase2 || hasPrompt2).toBe(true);
-        if (hasBase2) {
-            await clickHighlightedBase(page, 0);
-        } else {
-            await clickPromptOption(page, 0);
-        }
+        await page.screenshot({ path: 'evidence/smashup/assets/feedback-69a2994f17d6c58872680809/02-sea-dogs-choose-to-base.png', fullPage: true });
+        await respondCurrentPrompt(0);
         await page.waitForTimeout(1000);
 
         const promptGone = !(await isPromptVisible(page));
@@ -318,6 +499,7 @@ test.describe('SmashUp 海盗多步交互', () => {
         expect(base0Opponent.length).toBe(0);
 
         await page.screenshot({ path: testInfo.outputPath('step4-final.png'), fullPage: true });
+        await page.screenshot({ path: 'evidence/smashup/assets/feedback-69a2994f17d6c58872680809/03-sea-dogs-final.png', fullPage: true });
     });
 
     // ========================================================================
