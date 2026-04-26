@@ -156,6 +156,49 @@ export const buildResponseWindowFingerprint = (
     ].join('|');
 };
 
+function resolveDecisionEpochValue(state: MatchState<unknown>): number {
+    return typeof state.sys?.decisionEpoch === 'number' ? state.sys.decisionEpoch : 0;
+}
+
+function bumpDecisionEpoch<TCore>(state: MatchState<TCore>): MatchState<TCore> {
+    return {
+        ...state,
+        sys: {
+            ...state.sys,
+            decisionEpoch: resolveDecisionEpochValue(state as MatchState<unknown>) + 1,
+        },
+    };
+}
+
+function buildResponseWindowDecisionSignature(window: ResponseWindowState['current']): string {
+    if (!window) return '';
+    return [
+        window.windowType ?? '',
+        window.sourceId ?? '',
+        ...(Array.isArray(window.responderQueue) ? window.responderQueue : []),
+        window.currentResponderIndex ?? '',
+        window.pendingInteractionId ?? '',
+    ].join('|');
+}
+
+function writeResponseWindowCurrent<TCore>(
+    state: MatchState<TCore>,
+    current: ResponseWindowState['current'],
+): MatchState<TCore> {
+    const decisionChanged = buildResponseWindowDecisionSignature(state.sys.responseWindow?.current)
+        !== buildResponseWindowDecisionSignature(current);
+    const nextState: MatchState<TCore> = {
+        ...state,
+        sys: {
+            ...state.sys,
+            responseWindow: {
+                current,
+            },
+        },
+    };
+    return decisionChanged ? bumpDecisionEpoch(nextState) : nextState;
+}
+
 /**
  * 创建响应窗口（多响应者队列）
  */
@@ -196,15 +239,7 @@ export function openResponseWindow<TCore>(
 ): MatchState<TCore> {
     if (!window) return state;
 
-    return syncActiveResolutionWithResponseWindow({
-        ...state,
-        sys: {
-            ...state.sys,
-            responseWindow: {
-                current: window,
-            },
-        },
-    });
+    return syncActiveResolutionWithResponseWindow(writeResponseWindowCurrent(state, window));
 }
 
 /**
@@ -213,15 +248,7 @@ export function openResponseWindow<TCore>(
 export function closeResponseWindow<TCore>(
     state: MatchState<TCore>
 ): MatchState<TCore> {
-    const nextState = syncActiveResolutionWithResponseWindow({
-        ...state,
-        sys: {
-            ...state.sys,
-            responseWindow: {
-                current: undefined,
-            },
-        },
-    });
+    const nextState = syncActiveResolutionWithResponseWindow(writeResponseWindowCurrent(state, undefined));
     return syncActiveResolutionWithInteraction(nextState);
 }
 
@@ -749,15 +776,7 @@ export function createResponseWindowSystem<TCore>(
                                     ...currentWindow,
                                     pendingInteractionId: interactionPayload.interaction.id,
                                 };
-                            newState = {
-                                ...newState,
-                                sys: {
-                                    ...newState.sys,
-                                    responseWindow: {
-                                        current: lockedWindow,
-                                    },
-                                },
-                            };
+                            newState = writeResponseWindowCurrent(newState, lockedWindow);
                         }
                     }
                 }
@@ -822,13 +841,7 @@ export function createResponseWindowSystem<TCore>(
                                     });
                                 }
                             } else {
-                                newState = {
-                                    ...newState,
-                                    sys: {
-                                        ...newState.sys,
-                                        responseWindow: { current: unlockedWindow },
-                                    },
-                                };
+                                newState = writeResponseWindowCurrent(newState, unlockedWindow);
                             }
                         } else if (hasInteractionLockRequest) {
                             // 同批事件中有交互锁定请求（如 INTERACTION_REQUESTED），但更高优先级的系统
@@ -930,13 +943,7 @@ export function createResponseWindowSystem<TCore>(
                                     });
                                 }
                             } else {
-                                newState = {
-                                    ...newState,
-                                    sys: {
-                                        ...newState.sys,
-                                        responseWindow: { current: unlockedWindow },
-                                    },
-                                };
+                                newState = writeResponseWindowCurrent(newState, unlockedWindow);
                             }
                         } else {
                             // 正常推进到下一个响应者
@@ -1000,13 +1007,7 @@ export function createResponseWindowSystem<TCore>(
                         const markedForLock = loopUntilAllPass
                             ? { ...currentWindow, pendingInteractionId: interactionId, actionTakenThisRound: true, consecutivePassRounds: 0 }
                             : { ...currentWindow, pendingInteractionId: interactionId };
-                        newState = {
-                            ...newState,
-                            sys: {
-                                ...newState.sys,
-                                responseWindow: { current: markedForLock },
-                            },
-                        };
+                        newState = writeResponseWindowCurrent(newState, markedForLock);
                         break;
                     }
                     

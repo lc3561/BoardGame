@@ -42,6 +42,78 @@ const dummyRandom = {
 };
 
 describe('InteractionSystem - 通用刷新', () => {
+    it('decisionEpoch 只应在当前决策面变化时递增', () => {
+        let state: MatchState<TestCore> = {
+            core: {
+                players: {
+                    p1: { hand: [] },
+                },
+            },
+            sys: {
+                decisionEpoch: 0,
+                interaction: { queue: [] },
+            },
+        } as any;
+
+        state = queueInteraction(state, createSimpleChoice(
+            'interaction-1',
+            'p1',
+            '第一步',
+            [{ id: 'a', label: 'A', value: { id: 'a' } }],
+            { sourceId: 'step-1' },
+        ));
+        expect(state.sys.decisionEpoch).toBe(1);
+
+        state = queueInteraction(state, createSimpleChoice(
+            'interaction-2',
+            'p1',
+            '第二步',
+            [{ id: 'b', label: 'B', value: { id: 'b' } }],
+            { sourceId: 'step-2' },
+        ));
+        expect(state.sys.decisionEpoch).toBe(1);
+
+        state = resolveInteraction(state);
+        expect(state.sys.interaction.current?.id).toBe('interaction-2');
+        expect(state.sys.decisionEpoch).toBe(2);
+    });
+
+    it('refreshInteractionOptions 在同一 interaction id 下刷新选项时应递增 decisionEpoch', () => {
+        const state: MatchState<TestCore> = {
+            core: {
+                players: {
+                    p1: {
+                        hand: [
+                            { uid: 'card-2', defId: 'card-2' },
+                        ],
+                    },
+                },
+            },
+            sys: {
+                decisionEpoch: 4,
+                interaction: {
+                    current: createSimpleChoice(
+                        'interaction-refresh',
+                        'p1',
+                        '刷新',
+                        [
+                            { id: 'card-1', label: 'Card 1', value: { cardUid: 'card-1' } },
+                            { id: 'card-2', label: 'Card 2', value: { cardUid: 'card-2' } },
+                        ],
+                        { sourceId: 'refresh-test', autoRefresh: 'hand' },
+                    ),
+                    queue: [],
+                },
+            },
+        } as any;
+
+        const refreshed = refreshInteractionOptions(state);
+        const refreshedOptions = ((refreshed.sys.interaction.current?.data as any)?.options ?? []).map((option: { id: string }) => option.id);
+
+        expect(refreshedOptions).toEqual(['card-2']);
+        expect(refreshed.sys.decisionEpoch).toBe(5);
+    });
+
     it('queueInteraction / resolveInteraction 应同步 active resolution frame 的 interaction blocker', () => {
         let state: MatchState<TestCore> = {
             core: {

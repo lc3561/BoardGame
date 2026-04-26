@@ -412,6 +412,8 @@ export interface SystemState {
     schemaVersion: number;
     /** matchID */
     matchId?: string;
+    /** 当前可决策面的显式版本号；交互/响应窗口等决策面变化时递增 */
+    decisionEpoch?: number;
     /** 撤销系统状态 */
     undo: UndoState;
     /** 交互系统状态（替代旧 PromptSystem） */

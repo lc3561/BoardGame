@@ -146,6 +146,9 @@ export function buildAiProgressMarker(state: MatchState<unknown>): string {
     const eventStreamNextId = typeof state.sys?.eventStream?.nextId === 'number'
         ? state.sys.eventStream.nextId
         : '';
+    const decisionEpoch = typeof state.sys?.decisionEpoch === 'number'
+        ? state.sys.decisionEpoch
+        : 0;
     const currentInteraction = state.sys?.interaction?.current as {
         id?: unknown;
         sourceId?: unknown;
@@ -191,6 +194,7 @@ export function buildAiProgressMarker(state: MatchState<unknown>): string {
         turnNumber,
         phase,
         eventStreamNextId,
+        decisionEpoch,
         interactionId,
         interactionSourceId,
         interactionOptionSignature,

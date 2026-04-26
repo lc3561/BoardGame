@@ -81,6 +81,7 @@ export function createInitialSystemState(
     let sys: SystemState = {
         schemaVersion: 1,
         matchId,
+        decisionEpoch: 0,
         undo: {
             snapshots: [],
             maxSnapshots: 50,

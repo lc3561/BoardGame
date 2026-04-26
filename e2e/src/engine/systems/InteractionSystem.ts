@@ -26,6 +26,67 @@ function isSamePlayerId(a: unknown, b: unknown): boolean {
     return String(a) === String(b);
 }
 
+function resolveDecisionEpochValue(state: MatchState<unknown>): number {
+    return typeof state.sys?.decisionEpoch === 'number' ? state.sys.decisionEpoch : 0;
+}
+
+function bumpDecisionEpoch<TCore>(state: MatchState<TCore>): MatchState<TCore> {
+    return {
+        ...state,
+        sys: {
+            ...state.sys,
+            decisionEpoch: resolveDecisionEpochValue(state as MatchState<unknown>) + 1,
+        },
+    };
+}
+
+function resolveInteractionSourceId(interaction?: InteractionDescriptor): string {
+    if (!interaction) return '';
+    const directSourceId = (interaction as { sourceId?: unknown }).sourceId;
+    if (typeof directSourceId === 'string') return directSourceId;
+    const dataSourceId = (interaction.data as { sourceId?: unknown } | undefined)?.sourceId;
+    return typeof dataSourceId === 'string' ? dataSourceId : '';
+}
+
+function buildInteractionOptionSignature(interaction?: InteractionDescriptor): string {
+    const options = (interaction?.data as { options?: Array<{ id?: unknown; disabled?: unknown }> } | undefined)?.options;
+    if (!Array.isArray(options)) return '';
+    return options
+        .map((option) => {
+            const optionId = typeof option?.id === 'string' ? option.id : '';
+            const disabledFlag = option?.disabled === true ? '1' : '0';
+            return `${optionId}:${disabledFlag}`;
+        })
+        .join(',');
+}
+
+function buildInteractionDecisionSignature(interaction?: InteractionDescriptor): string {
+    if (!interaction) return '';
+    return [
+        interaction.id ?? '',
+        interaction.kind ?? '',
+        interaction.playerId ?? '',
+        resolveInteractionSourceId(interaction),
+        buildInteractionOptionSignature(interaction),
+    ].join('|');
+}
+
+function writeInteractionState<TCore>(
+    state: MatchState<TCore>,
+    interaction: InteractionState,
+): MatchState<TCore> {
+    const decisionChanged = buildInteractionDecisionSignature(state.sys.interaction?.current)
+        !== buildInteractionDecisionSignature(interaction.current);
+    const nextState: MatchState<TCore> = {
+        ...state,
+        sys: {
+            ...state.sys,
+            interaction,
+        },
+    };
+    return decisionChanged ? bumpDecisionEpoch(nextState) : nextState;
+}
+
 // ============================================================================
 // 交互选项类型（原属 types.ts，逻辑上归属交互系统）
 // ============================================================================
@@ -664,29 +725,20 @@ export function queueInteraction<TCore>(
             }
         }
 
-        return syncActiveResolutionWithInteraction({
-            ...state,
-            sys: {
-                ...state.sys,
-                interaction: { ...state.sys.interaction, current: interaction },
-            },
-        });
+        return syncActiveResolutionWithInteraction(writeInteractionState(state, {
+            ...state.sys.interaction,
+            current: interaction,
+        }));
     }
 
     // 否则加入队列（选项生成延迟到 resolveInteraction 时）
     // urgent 交互插入队列头部，确保链式交互不被打断
     const newQueue = options?.urgent ? [interaction, ...queue] : [...queue, interaction];
     
-    return syncActiveResolutionWithInteraction({
-        ...state,
-        sys: {
-            ...state.sys,
-            interaction: {
-                ...state.sys.interaction,
-                queue: newQueue,
-            },
-        },
-    });
+    return syncActiveResolutionWithInteraction(writeInteractionState(state, {
+        ...state.sys.interaction,
+        queue: newQueue,
+    }));
 }
 
 /**
@@ -758,13 +810,10 @@ export function resolveInteraction<TCore>(
         }
     }
 
-    return syncActiveResolutionWithInteraction({
-        ...state,
-        sys: {
-            ...state.sys,
-            interaction: { current: next, queue: newQueue },
-        },
-    });
+    return syncActiveResolutionWithInteraction(writeInteractionState(state, {
+        current: next,
+        queue: newQueue,
+    }));
 }
 
 /**
@@ -1061,19 +1110,13 @@ export function refreshInteractionOptions<TCore>(
     }
     
     // 更新交互选项
-    return {
-        ...state,
-        sys: {
-            ...state.sys,
-            interaction: {
-                ...state.sys.interaction,
-                current: {
-                    ...currentInteraction,
-                    data: { ...data, options: freshOptions },
-                },
-            },
+    return writeInteractionState(state, {
+        ...state.sys.interaction,
+        current: {
+            ...currentInteraction,
+            data: { ...data, options: freshOptions },
         },
-    };
+    });
 }
 
 // ============================================================================

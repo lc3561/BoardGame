@@ -2270,6 +2270,155 @@ describe('本地 AI 无进展重试判定', () => {
             nextState: previousState,
         })).toBe(false);
     });
+
+    it('同一 interaction id 下若 sourceId 或选项签名变化，应视为已推进而不是重试', () => {
+        const previousState = buildProgressState({
+            sys: {
+                turnNumber: 1,
+                phase: 'scoreBases',
+                eventStream: { nextId: 5 },
+                interaction: {
+                    current: {
+                        id: 'reaction-choice-1',
+                        kind: 'simple-choice',
+                        playerId: '1',
+                        data: {
+                            sourceId: 'smashup_reaction_choose',
+                            options: [
+                                { id: 'trigger-a', label: 'A', value: { kind: 'trigger', triggerId: 'a' } },
+                                { id: 'pass', label: 'Pass', value: { kind: 'pass' } },
+                            ],
+                        },
+                    },
+                    queue: [],
+                },
+                responseWindow: {
+                    current: {
+                        id: 'reaction-window-1',
+                        windowType: 'afterScoring',
+                        sourceId: 'smashup_reaction_choose',
+                        responderQueue: ['1'],
+                        currentResponderIndex: 0,
+                    },
+                },
+            },
+        });
+        const nextState = buildProgressState({
+            sys: {
+                turnNumber: 1,
+                phase: 'scoreBases',
+                eventStream: { nextId: 5 },
+                interaction: {
+                    current: {
+                        id: 'reaction-choice-1',
+                        kind: 'simple-choice',
+                        playerId: '1',
+                        data: {
+                            sourceId: 'smashup_reaction_choose',
+                            options: [
+                                { id: 'play_action:c1:0', label: '打出动作牌', value: { kind: 'play_action' } },
+                                { id: 'pass', label: 'Pass', value: { kind: 'pass' } },
+                            ],
+                        },
+                    },
+                    queue: [],
+                },
+                responseWindow: {
+                    current: {
+                        id: 'reaction-window-1',
+                        windowType: 'afterScoring',
+                        sourceId: 'smashup_reaction_choose',
+                        responderQueue: ['1'],
+                        currentResponderIndex: 0,
+                    },
+                },
+            },
+        });
+
+        expect(shouldRetryLocalAiAttemptAfterDispatch({
+            cancelled: false,
+            activeAttemptKey: 'attempt-1',
+            resolutionAttemptKey: 'attempt-1',
+            markerBeforeDispatch: buildAiProgressMarker(previousState),
+            nextState,
+        })).toBe(false);
+    });
+
+    it('决策面 epoch 变化时，即使 interaction / responseWindow 指纹未变，也应视为已推进', () => {
+        const previousState = buildProgressState({
+            sys: {
+                turnNumber: 1,
+                phase: 'scoreBases',
+                eventStream: { nextId: 5 },
+                decisionEpoch: 7,
+                interaction: {
+                    current: {
+                        id: 'reaction-choice-1',
+                        kind: 'simple-choice',
+                        playerId: '1',
+                        data: {
+                            sourceId: 'smashup_reaction_choose',
+                            options: [
+                                { id: 'trigger-a', label: 'A', value: { kind: 'trigger', triggerId: 'a' } },
+                                { id: 'pass', label: 'Pass', value: { kind: 'pass' } },
+                            ],
+                        },
+                    },
+                    queue: [],
+                },
+                responseWindow: {
+                    current: {
+                        id: 'reaction-window-1',
+                        windowType: 'afterScoring',
+                        sourceId: 'smashup_reaction_choose',
+                        responderQueue: ['1'],
+                        currentResponderIndex: 0,
+                    },
+                },
+            },
+        });
+        const nextState = buildProgressState({
+            sys: {
+                turnNumber: 1,
+                phase: 'scoreBases',
+                eventStream: { nextId: 5 },
+                decisionEpoch: 8,
+                interaction: {
+                    current: {
+                        id: 'reaction-choice-1',
+                        kind: 'simple-choice',
+                        playerId: '1',
+                        data: {
+                            sourceId: 'smashup_reaction_choose',
+                            options: [
+                                { id: 'trigger-a', label: 'A', value: { kind: 'trigger', triggerId: 'a' } },
+                                { id: 'pass', label: 'Pass', value: { kind: 'pass' } },
+                            ],
+                        },
+                    },
+                    queue: [],
+                },
+                responseWindow: {
+                    current: {
+                        id: 'reaction-window-1',
+                        windowType: 'afterScoring',
+                        sourceId: 'smashup_reaction_choose',
+                        responderQueue: ['1'],
+                        currentResponderIndex: 0,
+                    },
+                },
+            },
+        });
+
+        expect(buildAiProgressMarker(previousState)).not.toBe(buildAiProgressMarker(nextState));
+        expect(shouldRetryLocalAiAttemptAfterDispatch({
+            cancelled: false,
+            activeAttemptKey: 'attempt-1',
+            resolutionAttemptKey: 'attempt-1',
+            markerBeforeDispatch: buildAiProgressMarker(previousState),
+            nextState,
+        })).toBe(false);
+    });
 });
 
 describe('AI attemptKey 预占位', () => {

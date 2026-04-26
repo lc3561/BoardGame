@@ -756,6 +756,51 @@ describe('buildAiProgressMarker（响应窗口语义指纹）', () => {
         expect(buildAiProgressMarker(baseState.G as any))
             .not.toBe(buildAiProgressMarker(progressedState.G as any));
     });
+
+    it('decisionEpoch 变化时，即使交互与响应窗口指纹不变，也应被视为进展', () => {
+        const baseState = createOnlineAiRecoveryState({
+            decisionEpoch: 11,
+            interaction: {
+                current: {
+                    id: 'reaction-choice-1',
+                    kind: 'simple-choice',
+                    playerId: '1',
+                    data: {
+                        sourceId: 'smashup_reaction_choose',
+                        options: [
+                            { id: 'trigger-a', label: 'A', value: { kind: 'trigger', triggerId: 'a' } },
+                            { id: 'pass', label: 'Pass', value: { kind: 'pass' } },
+                        ],
+                    },
+                },
+                queue: [],
+                isBlocked: false,
+            },
+            responseWindow: {
+                current: {
+                    id: 'reaction-window-1',
+                    windowType: 'afterScoring',
+                    sourceId: 'smashup_reaction_choose',
+                    responderQueue: ['1'],
+                    currentResponderIndex: 0,
+                    passedPlayers: [],
+                },
+            },
+        });
+        const progressedState = {
+            ...baseState,
+            G: {
+                ...baseState.G,
+                sys: {
+                    ...baseState.G.sys,
+                    decisionEpoch: 12,
+                },
+            },
+        };
+
+        expect(buildAiProgressMarker(baseState.G as any))
+            .not.toBe(buildAiProgressMarker(progressedState.G as any));
+    });
 });
 
 describe('resolveCurrentPlayerId（防御阶段操作者）', () => {
@@ -4816,7 +4861,7 @@ describe('GameTransportServer（离座与重连）', () => {
 
             expect(executeSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
             expect(resolutionSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
-            expect(buildAiProgressMarker(match.state)).toBe('4|draw|1|||||||0');
+            expect(buildAiProgressMarker(match.state)).toBe('4|draw|1|0|||||||0');
             expect(match.state.sys.interaction?.current).toBeUndefined();
             expect(feedbackReporter).toHaveBeenCalledWith(expect.objectContaining({
                 matchId: 'match-watchdog-visible-interaction-chain',

@@ -55,6 +55,8 @@ describe('响应窗口交互锁定：骰子修改类（modifyDie）', () => {
         });
 
         assertWindowLockedWithInteraction(result1.finalState, 'multistep-choice', '1');
+        const lockedDecisionEpoch = result1.finalState.sys.decisionEpoch ?? 0;
+        expect(lockedDecisionEpoch).toBeGreaterThan(0);
         const meta1 = (result1.finalState.sys.interaction?.current?.data as any)?.meta;
         expect(meta1?.targetOpponentDice).toBe(true);
 
@@ -70,6 +72,7 @@ describe('响应窗口交互锁定：骰子修改类（modifyDie）', () => {
         expect(result2.finalState.core.dice.find((d: any) => d.id === 0)?.value).toBe(4);
         expect(result2.finalState.sys.interaction?.current).toBeUndefined();
         expect(result2.finalState.sys.responseWindow?.current).toBeUndefined();
+        expect((result2.finalState.sys.decisionEpoch ?? 0)).toBeGreaterThan(lockedDecisionEpoch);
     });
 
     it('惊不惊喜（modify-die-any-1, target=select）：窗口锁定', () => {
