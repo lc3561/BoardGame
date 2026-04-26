@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createScopedLogger } from '../logger';
 import {
@@ -205,6 +207,74 @@ describe('i18n 静态检查工具', () => {
                 key: 'statusEffects.*.name',
                 namespaces: ['game-dicethrone'],
                 patternSegments: ['statusEffects', null, 'name'],
+            }),
+        ]));
+        expect(result.warnings.some((warning) => warning.type === 'dynamic-key')).toBe(false);
+    });
+
+    it('识别成员表达式上的字面量联合，并展开为具体 key', () => {
+        const content = `
+            import { useTranslation } from 'react-i18next';
+
+            interface TelekinesisTargetModeState {
+                abilityId: 'telekinesis' | 'high_telekinesis_instead';
+            }
+
+            interface Props {
+                telekinesisTargetMode: TelekinesisTargetModeState | null;
+            }
+
+            function Demo({ telekinesisTargetMode }: Props) {
+                const { t } = useTranslation('game-summonerwars');
+                if (!telekinesisTargetMode) return null;
+                t(\`statusBanners.abilityNames.${'${telekinesisTargetMode.abilityId}'}\`);
+                return null;
+            }
+        `;
+
+        const result = collectReferencesFromContent(content, 'demo.tsx', {
+            defaultNamespace: 'common',
+            knownNamespaces: new Set(['common', 'game-summonerwars']),
+        });
+
+        expect(result.references).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                key: 'statusBanners.abilityNames.telekinesis',
+                namespaces: ['game-summonerwars'],
+            }),
+            expect.objectContaining({
+                key: 'statusBanners.abilityNames.high_telekinesis_instead',
+                namespaces: ['game-summonerwars'],
+            }),
+        ]));
+        expect(result.references).not.toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                key: 'statusBanners.abilityNames.*',
+            }),
+        ]));
+        expect(result.warnings.some((warning) => warning.type === 'dynamic-key')).toBe(false);
+    });
+
+    it('summonerwars StatusBanners 能展开 abilityId 联合并覆盖 instead key', () => {
+        const filePath = path.resolve('src/games/summonerwars/ui/StatusBanners.tsx');
+        const content = fs.readFileSync(filePath, 'utf-8');
+        const result = collectReferencesFromContent(content, filePath, {
+            defaultNamespace: 'common',
+            knownNamespaces: new Set(['common', 'game-summonerwars']),
+        });
+
+        expect(result.references).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                key: 'statusBanners.abilityNames.telekinesis_instead',
+                namespaces: ['game-summonerwars'],
+            }),
+            expect.objectContaining({
+                key: 'statusBanners.abilityNames.high_telekinesis_instead',
+                namespaces: ['game-summonerwars'],
+            }),
+            expect.objectContaining({
+                key: 'statusBanners.abilityNames.mind_transmission',
+                namespaces: ['game-summonerwars'],
             }),
         ]));
         expect(result.warnings.some((warning) => warning.type === 'dynamic-key')).toBe(false);

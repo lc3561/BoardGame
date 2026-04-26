@@ -484,6 +484,8 @@
     "abilityNames": {
       "telekinesis": "Telekinesis",
       "high_telekinesis": "High Telekinesis",
+      "telekinesis_instead": "Telekinesis Instead of Attack",
+      "high_telekinesis_instead": "High Telekinesis Instead of Attack",
       "mind_transmission": "Mind Transmission"
     }
   },

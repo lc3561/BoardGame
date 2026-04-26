@@ -1686,6 +1686,43 @@ describe('submitOnlineAiResolution', () => {
         rejectHandler?.('command_failed');
         expect(onRejected).toHaveBeenCalledWith('command_failed');
     });
+
+    it('提供 onWillResync 时由调用方接管 resync，内部不再重复 resync', () => {
+        const retry = vi.fn();
+        const resync = vi.fn();
+        const onWillResync = vi.fn();
+        let rejectHandler: ((reason: string) => void) | undefined;
+        const sendBatch = vi.fn((_batchId, _commands, _onConfirmed, onRejected) => {
+            rejectHandler = onRejected;
+        });
+
+        submitOnlineAiResolution({
+            client: {
+                sendBatch,
+                updateLatestState: vi.fn(),
+                resync,
+            },
+            resolution: {
+                playerId: '1',
+                attemptKey: 'attempt-callback-resync',
+                source: 'local-ai',
+                action: {
+                    actionId: 'respond-choice',
+                    kind: 'interaction-choice',
+                    label: '响应',
+                    commands: [{ type: 'SYS_INTERACTION_RESPOND', payload: { optionId: 'skip' } }],
+                },
+            },
+            lastAiAttemptKeyRef: { current: null },
+            scheduleRetry: retry,
+            onWillResync,
+        });
+
+        rejectHandler?.('command_failed');
+        expect(onWillResync).toHaveBeenCalledWith('command_failed');
+        expect(resync).not.toHaveBeenCalled();
+        expect(retry).toHaveBeenCalledTimes(1);
+    });
 });
 
 describe('shouldSilentlyRetryOnlineAiBatchRejection', () => {

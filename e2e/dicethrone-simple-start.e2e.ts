@@ -3,7 +3,7 @@
  * 目标：覆盖双人与四人房间的创建、占座、加入与开局主链路。
  */
 
-import { mkdir } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { Browser, BrowserContext, Page, TestInfo } from '@playwright/test';
 import { test, expect } from './framework';
@@ -125,9 +125,24 @@ async function waitForAiSeatCredential(
     }).not.toBeNull();
 }
 
+async function seedAiSeatCredentials(
+    page: Page,
+    matchId: string,
+    credentials: Record<string, string>,
+): Promise<void> {
+    await page.evaluate(({ targetMatchId, nextCredentials }) => {
+        localStorage.setItem(`match_ai_creds_${targetMatchId}`, JSON.stringify(nextCredentials));
+        window.dispatchEvent(new Event('match-credentials-changed'));
+    }, { targetMatchId: matchId, nextCredentials: credentials });
+    await page.waitForTimeout(300);
+}
+
 async function setupDTOnlineAiRoom(
     browser: Browser,
     baseURL: string | undefined,
+    options: {
+        minimumActionDelayMs?: number;
+    } = {},
 ): Promise<{
     hostPage: Page;
     hostContext: BrowserContext;
@@ -163,10 +178,11 @@ async function setupDTOnlineAiRoom(
         numPlayers: 2,
         gameServerBaseURL: getGameServerBaseURL(),
         setupData: {
+            enableAi: true,
             seatControllers: {
                 '1': {
                     type: 'local-ai',
-                    minimumActionDelayMs: 2000,
+                    minimumActionDelayMs: options.minimumActionDelayMs ?? 2000,
                 },
             },
         },
@@ -255,6 +271,44 @@ const dispatchHarnessCommand = async (
         commandPayload: payload,
     });
 };
+
+const readHarnessTurnSnapshot = async (page: Page) => page.evaluate(() => {
+    const state = (window as any).__BG_TEST_HARNESS__?.state?.get?.();
+    return {
+        activePlayerId: state?.core?.activePlayerId ?? null,
+        phase: state?.sys?.phase ?? null,
+        rollCount: state?.core?.rollCount ?? null,
+    };
+});
+
+async function resolveOnlineAiRoomEntry(
+    page: Page,
+    timeout = 30000,
+): Promise<'board' | 'character-selection'> {
+    const entry = await expect.poll(async () => {
+        const boardVisible = await page.locator('[data-tutorial-id="dice-roll-button"]')
+            .isVisible()
+            .catch(() => false);
+        if (boardVisible) {
+            return 'board';
+        }
+
+        const characterSelectionVisible = await page.locator('[data-character-id]').first()
+            .isVisible()
+            .catch(() => false);
+        if (characterSelectionVisible) {
+            return 'character-selection';
+        }
+
+        return null;
+    }, {
+        timeout,
+        intervals: [250, 500, 800, 1000],
+        message: '等待在线真人+AI房间进入棋盘或角色选择入口',
+    }).not.toBeNull();
+
+    return entry as 'board' | 'character-selection';
+}
 
 async function installAiBatchRejectPatch(
     page: Page,
@@ -2043,6 +2097,164 @@ test.describe('DiceThrone Simple Start', () => {
             });
 
             await saveEvidenceScreenshot(hostPage, testInfo, '18-online-ai-hidden-multistep-after-third-attempt');
+        } finally {
+            await setup.hostContext.close();
+        }
+    });
+
+    test('Online AI 真人房间：主阶段到两次投骰的在线时间线应可区分动作延迟与传输重试', async ({ browser }, testInfo) => {
+        test.setTimeout(180000);
+        const baseURL = testInfo.project.use.baseURL as string | undefined;
+        const setup = await setupDTOnlineAiRoom(browser, baseURL, { minimumActionDelayMs: 1000 });
+        if (!setup) {
+            test.skip(true, 'DiceThrone AI 联机房间创建失败');
+            return;
+        }
+
+        const consoleTimeline: Array<{
+            atMs: number;
+            type: string;
+            text: string;
+        }> = [];
+        const testStartedAt = Date.now();
+
+        try {
+            const { hostPage, matchId } = setup;
+            hostPage.on('console', (message) => {
+                const text = message.text();
+                if (!/(ONLINE_AI_PERF|ONLINE_AI_TRANSPORT|AI_RUNTIME_TRUTH)/.test(text)) {
+                    return;
+                }
+                consoleTimeline.push({
+                    atMs: Date.now() - testStartedAt,
+                    type: message.type(),
+                    text,
+                });
+            });
+
+            const entry = await resolveOnlineAiRoomEntry(hostPage, 30000);
+
+            if (entry === 'character-selection') {
+                await waitForCharacterSelection(hostPage, 20000);
+                await waitForAiSeatCredential(hostPage, matchId, '1');
+                await selectCharacter(hostPage, 'monk');
+
+                await expect.poll(async () => {
+                    const state = await getMatchState(matchId, hostPage);
+                    return {
+                        hostSelected: state.core?.selectedCharacters?.['0'] ?? null,
+                        aiSelected: state.core?.selectedCharacters?.['1'] ?? null,
+                        aiReady: state.core?.readyPlayers?.['1'] ?? false,
+                    };
+                }, {
+                    timeout: 30000,
+                    message: '等待 DiceThrone host/AI 一起完成在线真人房间前置条件',
+                }).toEqual({
+                    hostSelected: 'monk',
+                    aiSelected: expect.not.stringMatching(/^unselected$/),
+                    aiReady: true,
+                });
+
+                const startButton = hostPage.locator('button').filter({ hasText: /开始游戏|Start Game|Press.*Start/i }).first();
+                await expect(startButton).toBeEnabled({ timeout: 10000 });
+                await startButton.click();
+                await waitForGameBoard(hostPage, 30000);
+            }
+
+            await waitForTestHarness(hostPage, 15000);
+            await expect.poll(async () => {
+                return readHarnessTurnSnapshot(hostPage);
+            }, {
+                timeout: 30000,
+                intervals: [200, 300, 500, 800],
+                message: '等待在线真人房间进入可推进的 host 主阶段',
+            }).toMatchObject({
+                activePlayerId: '0',
+                phase: 'main1',
+            });
+
+            await saveEvidenceScreenshot(hostPage, testInfo, '40-online-ai-real-timeline-host-main1');
+
+            for (let step = 0; step < 8; step += 1) {
+                const snapshot = await readHarnessTurnSnapshot(hostPage);
+                if (snapshot.activePlayerId === '1') {
+                    break;
+                }
+                const advanceButton = hostPage.locator('[data-tutorial-id="advance-phase-button"]');
+                if (!(await advanceButton.isEnabled({ timeout: 1000 }).catch(() => false))) {
+                    break;
+                }
+                await advanceButton.click();
+                await hostPage.waitForTimeout(500);
+            }
+
+            await expect.poll(async () => {
+                return readHarnessTurnSnapshot(hostPage);
+            }, {
+                timeout: 30000,
+                intervals: [200, 300, 500, 800],
+                message: '等待真人回合结束并进入 AI 回合',
+            }).toMatchObject({
+                activePlayerId: '1',
+            });
+
+            await saveEvidenceScreenshot(hostPage, testInfo, '41-online-ai-real-timeline-ai-turn-start');
+
+            await expect.poll(async () => {
+                const submittedRolls = consoleTimeline.filter((entry) => (
+                    entry.text.includes('[ONLINE_AI_PERF]')
+                    && entry.text.includes('"stage":"submitted"')
+                    && entry.text.includes('"actionKind":"roll-dice"')
+                ));
+                const transportWarnings = consoleTimeline.filter((entry) => (
+                    entry.text.includes('[ONLINE_AI_TRANSPORT]')
+                    && /resync-requested|transport-error/.test(entry.text)
+                ));
+                const phaseSnapshot = await readHarnessTurnSnapshot(hostPage);
+                return {
+                    submittedRollCount: submittedRolls.length,
+                    transportWarningCount: transportWarnings.length,
+                    activePlayerId: phaseSnapshot.activePlayerId,
+                    phase: phaseSnapshot.phase,
+                    rollCount: phaseSnapshot.rollCount,
+                };
+            }, {
+                timeout: 45000,
+                intervals: [250, 400, 700, 1000],
+                message: '等待在线 AI 至少完成两次 roll-dice 提交',
+            }).toMatchObject({
+                submittedRollCount: 2,
+                activePlayerId: '1',
+            });
+
+            await saveEvidenceScreenshot(hostPage, testInfo, '42-online-ai-real-timeline-after-second-roll');
+
+            const rollSubmittedTimeline = consoleTimeline.filter((entry) => (
+                entry.text.includes('[ONLINE_AI_PERF]')
+                && entry.text.includes('"stage":"submitted"')
+                && entry.text.includes('"actionKind":"roll-dice"')
+            ));
+            const consoleJsonPath = getEvidenceScreenshotPath(testInfo, 'online-ai-real-timeline-console', {
+                filename: 'online-ai-real-timeline-console.json',
+            });
+            const summaryJsonPath = getEvidenceScreenshotPath(testInfo, 'online-ai-real-timeline-summary', {
+                filename: 'online-ai-real-timeline-summary.json',
+            });
+            const derivedSummary = {
+                matchId,
+                minimumActionDelayMs: 1000,
+                submittedRollCount: rollSubmittedTimeline.length,
+                firstToSecondRollGapMs: rollSubmittedTimeline.length >= 2
+                    ? rollSubmittedTimeline[1].atMs - rollSubmittedTimeline[0].atMs
+                    : null,
+                transportEvents: consoleTimeline.filter((entry) => entry.text.includes('[ONLINE_AI_TRANSPORT]')),
+                perfEvents: consoleTimeline.filter((entry) => entry.text.includes('[ONLINE_AI_PERF]')),
+            };
+            await mkdir(dirname(consoleJsonPath), { recursive: true });
+            await writeFile(consoleJsonPath, JSON.stringify(consoleTimeline, null, 2), 'utf8');
+            await writeFile(summaryJsonPath, JSON.stringify(derivedSummary, null, 2), 'utf8');
+
+            expect(rollSubmittedTimeline.length).toBeGreaterThanOrEqual(2);
         } finally {
             await setup.hostContext.close();
         }

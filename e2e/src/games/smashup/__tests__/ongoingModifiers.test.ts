@@ -21,6 +21,8 @@ import {
     getTotalEffectivePowerOnBase,
     clearPowerModifierRegistry,
 } from '../domain/ongoingModifiers';
+import { reduce } from '../domain/reduce';
+import { SU_EVENTS } from '../domain/types';
 import { makeMinion, makeCard, makePlayer, makeState } from './helpers';
 
 beforeAll(() => {
@@ -114,7 +116,7 @@ describe('持续力量修正基础设施', () => {
         expect(getTotalEffectivePowerOnBase(state, base, 0)).toBe(9);
     });
 
-    it('mermaids_desert_island 令随从不计入控制者总力量，但不改变基地总力量', () => {
+    it('mermaids_desert_island 只压制拥有者自己在这里的随从总力量，不改变基地总力量', () => {
         const m1 = makeMinion('m1', 'test_minion', '0', 3, { powerModifier: 0 });
         const m2 = makeMinion('m2', 'test_minion', '1', 4, { powerModifier: 0 });
         const base = {
@@ -125,7 +127,7 @@ describe('持续力量修正基础设施', () => {
         const state = makeState({ bases: [base] });
 
         expect(getPlayerEffectivePowerOnBase(state, base, 0, '0')).toBe(0);
-        expect(getPlayerEffectivePowerOnBase(state, base, 0, '1')).toBe(0);
+        expect(getPlayerEffectivePowerOnBase(state, base, 0, '1')).toBe(4);
         expect(getTotalEffectivePowerOnBase(state, base, 0)).toBe(7);
     });
 
@@ -140,6 +142,36 @@ describe('持续力量修正基础设施', () => {
         expect(getEffectivePower(state, target, 0)).toBe(3);
         expect(getPlayerEffectivePowerOnBase(state, base, 0, '1')).toBe(0);
         expect(getTotalEffectivePowerOnBase(state, base, 0)).toBe(3);
+    });
+
+    it('mermaids_temptress 在其他玩家自己的回合把自己的随从移动到这里时仍应 +2', () => {
+        const enemy = makeMinion('enemy-1', 'test_minion', '1', 3, { powerModifier: 0 });
+        const temptress = makeMinion('temptress-1', 'mermaids_temptress', '0', 4, { powerModifier: 0 });
+        const state = makeState({
+            turnOrder: ['0', '1'],
+            currentPlayerIndex: 1,
+            bases: [
+                { defId: 'base_a', minions: [enemy], ongoingActions: [] },
+                { defId: 'base_b', minions: [temptress], ongoingActions: [] },
+            ],
+        });
+
+        const moved = reduce(state, {
+            type: SU_EVENTS.MINION_MOVED,
+            payload: {
+                minionUid: 'enemy-1',
+                minionDefId: 'test_minion',
+                fromBaseIndex: 0,
+                toBaseIndex: 1,
+                reason: 'test_move',
+            },
+        });
+        const movedTemptress = moved.bases[1].minions.find(minion => minion.uid === 'temptress-1');
+
+        expect(moved.minionsMovedToBaseThisTurn?.['1']?.[1]).toBe(1);
+        expect(moved.movedToBasesThisTurn?.[1] ?? false).toBe(false);
+        expect(movedTemptress).toBeTruthy();
+        expect(getEffectivePower(moved, movedTemptress!, 1)).toBe(6);
     });
 });
 

@@ -521,6 +521,8 @@
     "abilityNames": {
       "telekinesis": "念力",
       "high_telekinesis": "高阶念力",
+      "telekinesis_instead": "念力代替攻击",
+      "high_telekinesis_instead": "高阶念力代替攻击",
       "mind_transmission": "读心传念"
     }
   },

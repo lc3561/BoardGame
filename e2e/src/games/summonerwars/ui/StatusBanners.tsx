@@ -11,7 +11,7 @@ import { normalizeUnitBoosts } from '../domain/helpers';
 import { GameButton } from './GameButton';
 import { ActionBanner } from './ActionBanner';
 import type { AbilityModeState, SoulTransferModeState, MindCaptureModeState, AfterAttackAbilityModeState } from './useGameEvents';
-import type { MindControlModeState, StunModeState, HypnoticLureModeState, ChantEntanglementModeState, SneakModeState, GlacialShiftModeState, WithdrawModeState } from './modeTypes';
+import type { MindControlModeState, StunModeState, HypnoticLureModeState, ChantEntanglementModeState, SneakModeState, GlacialShiftModeState, WithdrawModeState, TelekinesisTargetModeState } from './modeTypes';
 
 // ============================================================================
 // 类型定义
@@ -76,7 +76,7 @@ interface StatusBannersProps {
   mindCaptureMode: MindCaptureModeState | null;
   afterAttackAbilityMode: AfterAttackAbilityModeState | null;
   rapidFireMode: import('./modeTypes').RapidFireModeState | null;
-  telekinesisTargetMode: { abilityId: string; targetPosition: CellCoord; destinations: { position: CellCoord; moveRow: number; moveCol: number }[] } | null;
+  telekinesisTargetMode: TelekinesisTargetModeState | null;
   magicEventChoiceMode: { cardId: string } | null;
   eventTargetMode: { cardId: string } | null;
   systemIceShardsMode: { sourceBoosts: number } | null;

@@ -36,6 +36,7 @@ void __ensureThreeAxesMarker;
 // 测试状态准备函数
 // ============================================================================
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- E2E 测试中 coreState 为动态 JSON 结构
 const prepareMindCaptureState = (coreState: any) => {
   const next = cloneState(coreState);
   next.phase = 'attack';
@@ -105,6 +106,7 @@ const hasForceDestination = (
   });
 };
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- E2E 测试中 coreState 为动态 JSON 结构
 const prepareTelekinesisInsteadState = (coreState: any) => {
   const next = cloneState(coreState);
   next.phase = 'attack';
@@ -361,37 +363,6 @@ test.describe('欺心巫族阵营特色交互', () => {
       await expect(targetCell).toHaveAttribute('data-valid-ability-unit', 'true');
       await targetCell.click({ force: true });
       await hostPage.waitForTimeout(1500);
-      const tkDebug = await hostPage.evaluate(() => {
-        const harnessState = (window as Window & {
-          __BG_TEST_HARNESS__?: {
-            state?: {
-              get?: () => unknown;
-            };
-          };
-        }).__BG_TEST_HARNESS__?.state?.get?.() as {
-          sys?: {
-            interaction?: {
-              current?: unknown;
-            };
-          };
-        } | undefined;
-        const cells = Array.from(document.querySelectorAll<HTMLElement>('[data-testid^="sw-cell-"]'));
-        return {
-          currentInteraction: harnessState?.sys?.interaction?.current ?? null,
-          validAbilityUnitCells: cells
-            .filter((cell) => cell.getAttribute('data-valid-ability-unit') === 'true')
-            .map((cell) => cell.getAttribute('data-testid')),
-          pulseCells: cells
-            .filter((cell) => cell.className.includes('animate-pulse'))
-            .map((cell) => ({
-              testId: cell.getAttribute('data-testid'),
-              borderColor: cell.style.borderColor,
-              backgroundColor: cell.style.backgroundColor,
-              className: cell.className,
-            })),
-        };
-      });
-      console.log('TK_DEBUG', JSON.stringify(tkDebug));
       const readDirectionChoice = () => hostPage.evaluate(({ excludedRow, excludedCol }) => {
         const cells = Array.from(document.querySelectorAll<HTMLElement>('[data-testid^="sw-cell-"]'));
         const matches = cells

@@ -175,6 +175,10 @@ const onlineAiPerfLogger = createScopedLogger('ONLINE_AI_PERF');
 function emitOnlineAiPerf(stage: string, payload: Record<string, unknown>): void {
     console.log('[ONLINE_AI_PERF]', { stage, ...payload });
 }
+const onlineAiTransportLogger = createScopedLogger('ONLINE_AI_TRANSPORT');
+function emitOnlineAiTransport(stage: string, payload: Record<string, unknown>): void {
+    console.log('[ONLINE_AI_TRANSPORT]', { stage, ...payload });
+}
 const aiRuntimeTruthLogger = createScopedLogger('AI_RUNTIME_TRUTH');
 function emitAiRuntimeTruth(stage: string, payload: Record<string, unknown>): void {
     console.log('[AI_RUNTIME_TRUTH]', { stage, ...payload });
@@ -235,6 +239,11 @@ const OnlineAiSeatBridge = ({
     const latestSharedStateRef = useRef<MatchState<unknown> | null>(null);
     const pendingRecoveryCheckTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
     const aiSeatStateOverridesRef = useRef<Record<string, MatchState<unknown> | null>>({});
+    const pendingSeatResyncRef = useRef<Record<string, {
+        requestedAt: number;
+        reason: string;
+        meta?: Record<string, unknown>;
+    }>>({});
 
     useEffect(() => {
         latestSharedStateRef.current = state && typeof state === 'object'
@@ -359,13 +368,47 @@ const OnlineAiSeatBridge = ({
         };
     }, []);
 
+    const requestSeatResync = useCallback((args: {
+        playerId: string;
+        client: Pick<GameTransportClient, 'resync' | 'latestState' | 'isConnected'>;
+        reason: string;
+        meta?: Record<string, unknown>;
+    }) => {
+        const { playerId, client, reason, meta } = args;
+        pendingSeatResyncRef.current[playerId] = {
+            requestedAt: Date.now(),
+            reason,
+            meta,
+        };
+        const payload = {
+            matchId,
+            gameId: engineConfig.gameId,
+            playerId,
+            reason,
+            clientConnected: client.isConnected,
+            currentSeatMarker: client.latestState && typeof client.latestState === 'object'
+                ? buildAiProgressMarker(client.latestState as MatchState<unknown>)
+                : null,
+            ...(meta ?? {}),
+        };
+        onlineAiTransportLogger.warn('resync-requested', payload);
+        emitOnlineAiTransport('resync-requested', payload);
+        client.resync();
+    }, [engineConfig.gameId, matchId]);
+
     const scheduleRecoveryFailureNotice = useCallback((args: {
         targetClient: GameTransportClient;
+        playerId: string;
         markerBefore: string;
         onStillStalled: () => void;
     }) => {
-        const { targetClient, markerBefore, onStillStalled } = args;
-        targetClient.resync();
+        const { targetClient, playerId, markerBefore, onStillStalled } = args;
+        requestSeatResync({
+            playerId,
+            client: targetClient,
+            reason: 'recovery-failure-check',
+            meta: { markerBefore },
+        });
         const timer = setTimeout(() => {
             pendingRecoveryCheckTimersRef.current.delete(timer);
             const sharedMarker = latestSharedStateRef.current
@@ -406,11 +449,54 @@ const OnlineAiSeatBridge = ({
                 matchID: matchId,
                 playerID: playerId,
                 credentials: seatCredentials[playerId],
-                onStateUpdate: () => {
+                onStateUpdate: (nextState) => {
+                    const pendingResync = pendingSeatResyncRef.current[playerId];
+                    const authoritativeState = nextState && typeof nextState === 'object'
+                        ? nextState as MatchState<unknown>
+                        : null;
+                    const marker = authoritativeState ? buildAiProgressMarker(authoritativeState) : null;
+                    const payload = {
+                        matchId,
+                        gameId: engineConfig.gameId,
+                        playerId,
+                        phase: authoritativeState?.sys?.phase ?? null,
+                        turnNumber: authoritativeState?.sys?.turnNumber ?? null,
+                        currentPlayerId: authoritativeState ? resolveCurrentPlayerId(authoritativeState) : null,
+                        marker,
+                        pendingResyncReason: pendingResync?.reason ?? null,
+                        resyncElapsedMs: pendingResync ? Date.now() - pendingResync.requestedAt : null,
+                    };
+                    onlineAiTransportLogger.info('state-update', payload);
+                    emitOnlineAiTransport('state-update', payload);
+                    delete pendingSeatResyncRef.current[playerId];
                     setAiRetryVersion((version) => version + 1);
                 },
-                onConnectionChange: () => {
+                onConnectionChange: (connected) => {
+                    const pendingResync = pendingSeatResyncRef.current[playerId];
+                    const payload = {
+                        matchId,
+                        gameId: engineConfig.gameId,
+                        playerId,
+                        connected,
+                        pendingResyncReason: pendingResync?.reason ?? null,
+                        resyncElapsedMs: pendingResync ? Date.now() - pendingResync.requestedAt : null,
+                    };
+                    onlineAiTransportLogger.info('connection-change', payload);
+                    emitOnlineAiTransport('connection-change', payload);
                     setConnectionVersion((version) => version + 1);
+                },
+                onError: (error) => {
+                    const pendingResync = pendingSeatResyncRef.current[playerId];
+                    const payload = {
+                        matchId,
+                        gameId: engineConfig.gameId,
+                        playerId,
+                        error,
+                        pendingResyncReason: pendingResync?.reason ?? null,
+                        resyncElapsedMs: pendingResync ? Date.now() - pendingResync.requestedAt : null,
+                    };
+                    onlineAiTransportLogger.warn('transport-error', payload);
+                    emitOnlineAiTransport('transport-error', payload);
                 },
             });
             client.connect();
@@ -427,12 +513,16 @@ const OnlineAiSeatBridge = ({
 
     useEffect(() => {
         return onAppVisible(() => {
-            for (const client of Object.values(clientsRef.current)) {
-                client.resync();
+            for (const [playerId, client] of Object.entries(clientsRef.current)) {
+                requestSeatResync({
+                    playerId,
+                    client,
+                    reason: 'app-visible',
+                });
             }
             setAiRetryVersion((version) => version + 1);
         });
-    }, []);
+    }, [requestSeatResync]);
 
     useEffect(() => {
         const hasAiSeat = Object.values(seatControllers).some((controller) => controller.type !== 'human');
@@ -553,8 +643,16 @@ const OnlineAiSeatBridge = ({
                             key: staleDecisionKey,
                             lastRecoveryAt: now,
                         };
-                        for (const seatClient of Object.values(clientsRef.current)) {
-                            seatClient.resync();
+                        for (const [seatPlayerId, seatClient] of Object.entries(clientsRef.current)) {
+                            requestSeatResync({
+                                playerId: seatPlayerId,
+                                client: seatClient,
+                                reason: 'blocked-stale-decision',
+                                meta: {
+                                    blockedKey: staleDecisionKey,
+                                    blockedReason: aiDispatchResult.blockedReason,
+                                },
+                            });
                         }
                         delayTimer = setTimeout(() => {
                             delayTimer = null;
@@ -615,8 +713,15 @@ const OnlineAiSeatBridge = ({
                             key: idleDecisionKey,
                             lastRecoveryAt: now,
                         };
-                        for (const seatClient of Object.values(clientsRef.current)) {
-                            seatClient.resync();
+                        for (const [seatPlayerId, seatClient] of Object.entries(clientsRef.current)) {
+                            requestSeatResync({
+                                playerId: seatPlayerId,
+                                client: seatClient,
+                                reason: 'idle-active-ai',
+                                meta: {
+                                    blockedKey: idleDecisionKey,
+                                },
+                            });
                         }
                         delayTimer = setTimeout(() => {
                             delayTimer = null;
@@ -685,7 +790,16 @@ const OnlineAiSeatBridge = ({
                             key: submitBlockedRecoveryKey,
                             lastRecoveryAt: now,
                         };
-                        client.resync();
+                        requestSeatResync({
+                            playerId: resolution.playerId,
+                            client,
+                            reason: 'submit-blocked',
+                            meta: {
+                                blockedKey: submitBlockedRecoveryKey,
+                                actionKind: resolution.action.kind,
+                                commandTypes: resolution.action.commands.map((command) => command.type),
+                            },
+                        });
                         delayTimer = setTimeout(() => {
                             delayTimer = null;
                             setAiRetryVersion((version) => version + 1);
@@ -823,6 +937,18 @@ const OnlineAiSeatBridge = ({
                 lastAiAttemptKeyRef,
                 scheduleRetry: () => {
                     setAiRetryVersion((version) => version + 1);
+                },
+                onWillResync: (reason) => {
+                    requestSeatResync({
+                        playerId: resolution.playerId,
+                        client,
+                        reason: 'batch-rejected',
+                        meta: {
+                            rejectReason: reason,
+                            actionKind: resolution.action.kind,
+                            commandTypes,
+                        },
+                    });
                 },
                 onConfirmed: () => {
                     logMobileRuntimeCritical('MatchRoom', 'online-ai-command-confirmed', {

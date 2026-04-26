@@ -149,8 +149,10 @@ export function computeSpriteImgStyle(index: number, atlas: SpriteAtlasConfig): 
   const imgWidthPct = (atlas.imageW / cardW) * 100;
   const imgHeightPct = (atlas.imageH / cardH) * 100;
 
-  const translateXPct = cardW > 0 ? (x / cardW) * 100 : 0;
-  const translateYPct = cardH > 0 ? (y / cardH) * 100 : 0;
+  // transform: translate(%) 的百分比是相对于 img 自身尺寸，而不是容器尺寸。
+  // 这里必须按整张 atlas 的宽高计算偏移，否则第 2 列 / 第 N 行会被平移过头，导致帧被裁到容器外。
+  const translateXPct = atlas.imageW > 0 ? (x / atlas.imageW) * 100 : 0;
+  const translateYPct = atlas.imageH > 0 ? (y / atlas.imageH) * 100 : 0;
 
   return {
     imgWidth: `${imgWidthPct}%`,

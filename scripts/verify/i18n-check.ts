@@ -266,12 +266,15 @@ const parseStringLiteral = (quote: string, value: string): { value: string; dyna
     return { value, dynamic: false };
 };
 
-const parseTemplateLiteralPattern = (
+const parseTemplateLiteralPatterns = (
     rawValue: string,
+    content: string,
+    filePath: string,
+    position: number,
     knownNamespaces: Set<string>,
-): { namespace?: string; key: string; patternSegments: Array<string | null> } | null => {
+): ResolvedIdentifierPattern[] => {
     if (!rawValue.includes('${')) {
-        return null;
+        return [];
     }
 
     const parsed = parseI18nKey(rawValue, knownNamespaces);
@@ -283,29 +286,59 @@ const parseTemplateLiteralPattern = (
         const afterIndex = placeholderMatch.index + placeholderMatch[0].length;
         const after = afterIndex < keyPath.length ? keyPath[afterIndex] : '';
         if ((before && before !== '.') || (after && after !== '.')) {
-            return null;
+            return [];
         }
     }
 
-    const normalized = keyPath.replace(placeholderRegex, '*');
-    if (normalized.startsWith('.') || normalized.endsWith('.') || normalized.includes('..')) {
-        return null;
+    const segments = splitTemplatePathSegments(keyPath);
+    const placeholderOnlyRegex = /^\$\{([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\}$/;
+    let variants: Array<Array<string | null>> = [[]];
+
+    for (const segment of segments) {
+        const match = segment.match(placeholderOnlyRegex);
+        if (!match) {
+            if (segment.includes('${')) {
+                return [];
+            }
+            variants = variants.map((variant) => [...variant, segment]);
+            continue;
+        }
+
+        const resolvedKeys = resolveTemplatePlaceholderKeys(
+            match[1],
+            content,
+            filePath,
+            position,
+            knownNamespaces,
+        );
+
+        if (resolvedKeys.length > 0) {
+            const nextVariants: Array<Array<string | null>> = [];
+            for (const variant of variants) {
+                for (const key of resolvedKeys) {
+                    nextVariants.push([...variant, key.includes('.') ? null : key]);
+                }
+            }
+            variants = nextVariants;
+            continue;
+        }
+
+        variants = variants.map((variant) => [...variant, null]);
     }
 
-    const patternSegments = normalized.split('.').map((segment) => {
-        if (segment === '*') return null;
-        return segment;
-    });
-
-    if (patternSegments.length === 0 || patternSegments.every((segment) => segment === null) || patternSegments[0] === null) {
-        return null;
-    }
-
-    return {
-        namespace: parsed.namespace,
-        key: patternSegments.map((segment) => segment ?? '*').join('.'),
-        patternSegments,
-    };
+    return variants
+        .filter((patternSegments) => {
+            if (patternSegments.length === 0 || patternSegments[0] === null) {
+                return false;
+            }
+            const normalized = patternSegments.map((segment) => segment ?? '*').join('.');
+            return !normalized.startsWith('.') && !normalized.endsWith('.') && !normalized.includes('..');
+        })
+        .map((patternSegments) => ({
+            namespace: parsed.namespace,
+            key: patternSegments.map((segment) => segment ?? '*').join('.'),
+            patternSegments,
+        }));
 };
 
 const looksLikeHumanReadableValidationError = (value: string): boolean => {
@@ -354,6 +387,472 @@ type ResolvedIdentifierKeys = {
     patterns?: ResolvedIdentifierPattern[];
 };
 
+const readDelimitedExpression = (
+    content: string,
+    startIndex: number,
+    terminator: string,
+): string => {
+    let braceDepth = 0;
+    let bracketDepth = 0;
+    let parenDepth = 0;
+    let angleDepth = 0;
+    let inSingleQuote = false;
+    let inDoubleQuote = false;
+    let inTemplate = false;
+
+    for (let i = startIndex; i < content.length; i++) {
+        const char = content[i];
+        const prev = i > 0 ? content[i - 1] : '';
+
+        if (inSingleQuote) {
+            if (char === '\'' && prev !== '\\') inSingleQuote = false;
+            continue;
+        }
+        if (inDoubleQuote) {
+            if (char === '"' && prev !== '\\') inDoubleQuote = false;
+            continue;
+        }
+        if (inTemplate) {
+            if (char === '`' && prev !== '\\') inTemplate = false;
+            continue;
+        }
+
+        if (char === '\'') {
+            inSingleQuote = true;
+            continue;
+        }
+        if (char === '"') {
+            inDoubleQuote = true;
+            continue;
+        }
+        if (char === '`') {
+            inTemplate = true;
+            continue;
+        }
+
+        if (char === '{') braceDepth++;
+        else if (char === '}') braceDepth = Math.max(0, braceDepth - 1);
+        else if (char === '[') bracketDepth++;
+        else if (char === ']') bracketDepth = Math.max(0, bracketDepth - 1);
+        else if (char === '(') parenDepth++;
+        else if (char === ')') parenDepth = Math.max(0, parenDepth - 1);
+        else if (char === '<') angleDepth++;
+        else if (char === '>') angleDepth = Math.max(0, angleDepth - 1);
+
+        if (
+            char === terminator
+            && braceDepth === 0
+            && bracketDepth === 0
+            && parenDepth === 0
+            && angleDepth === 0
+        ) {
+            return content.slice(startIndex, i).trim();
+        }
+    }
+
+    return content.slice(startIndex).trim();
+};
+
+const splitTopLevelUnion = (typeExpression: string): string[] => {
+    const parts: string[] = [];
+    let start = 0;
+    let braceDepth = 0;
+    let bracketDepth = 0;
+    let parenDepth = 0;
+    let angleDepth = 0;
+    let inSingleQuote = false;
+    let inDoubleQuote = false;
+    let inTemplate = false;
+
+    for (let i = 0; i < typeExpression.length; i++) {
+        const char = typeExpression[i];
+        const prev = i > 0 ? typeExpression[i - 1] : '';
+
+        if (inSingleQuote) {
+            if (char === '\'' && prev !== '\\') inSingleQuote = false;
+            continue;
+        }
+        if (inDoubleQuote) {
+            if (char === '"' && prev !== '\\') inDoubleQuote = false;
+            continue;
+        }
+        if (inTemplate) {
+            if (char === '`' && prev !== '\\') inTemplate = false;
+            continue;
+        }
+
+        if (char === '\'') {
+            inSingleQuote = true;
+            continue;
+        }
+        if (char === '"') {
+            inDoubleQuote = true;
+            continue;
+        }
+        if (char === '`') {
+            inTemplate = true;
+            continue;
+        }
+
+        if (char === '{') braceDepth++;
+        else if (char === '}') braceDepth = Math.max(0, braceDepth - 1);
+        else if (char === '[') bracketDepth++;
+        else if (char === ']') bracketDepth = Math.max(0, bracketDepth - 1);
+        else if (char === '(') parenDepth++;
+        else if (char === ')') parenDepth = Math.max(0, parenDepth - 1);
+        else if (char === '<') angleDepth++;
+        else if (char === '>') angleDepth = Math.max(0, angleDepth - 1);
+
+        if (
+            char === '|'
+            && braceDepth === 0
+            && bracketDepth === 0
+            && parenDepth === 0
+            && angleDepth === 0
+        ) {
+            const part = typeExpression.slice(start, i).trim();
+            if (part) parts.push(part);
+            start = i + 1;
+        }
+    }
+
+    const tail = typeExpression.slice(start).trim();
+    if (tail) parts.push(tail);
+    return parts;
+};
+
+const collectStringLiteralUnionValues = (typeExpression: string): string[] => {
+    const parts = splitTopLevelUnion(typeExpression);
+    if (parts.length === 0) return [];
+    const values: string[] = [];
+
+    for (const part of parts) {
+        const match = part.match(/^['"]([^'"]+)['"]$/);
+        if (!match) {
+            return [];
+        }
+        values.push(match[1]);
+    }
+
+    return Array.from(new Set(values));
+};
+
+const extractBraceBlock = (content: string, openBraceIndex: number): string | null => {
+    let depth = 0;
+    for (let i = openBraceIndex; i < content.length; i++) {
+        const char = content[i];
+        if (char === '{') depth++;
+        else if (char === '}') {
+            depth--;
+            if (depth === 0) {
+                return content.slice(openBraceIndex + 1, i);
+            }
+        }
+    }
+    return null;
+};
+
+const extractPropertyTypeFromObjectBody = (body: string, propertyName: string): string | null => {
+    const propertyRegex = new RegExp(`\\b${escapeRegExp(propertyName)}\\??\\s*:`, 'g');
+    let match: RegExpExecArray | null;
+    while ((match = propertyRegex.exec(body)) !== null) {
+        const typeExpression = readDelimitedExpression(body, match.index + match[0].length, ';');
+        if (typeExpression) {
+            return typeExpression;
+        }
+    }
+    return null;
+};
+
+const normalizeTypeReference = (typeExpression: string): string | null => {
+    const trimmed = typeExpression.trim().replace(/^\(([\s\S]+)\)$/, '$1').trim();
+    if (!trimmed) return null;
+    if (trimmed.includes('{') || trimmed.includes('|') || trimmed.includes('&') || trimmed.includes('[')) {
+        return null;
+    }
+    const withoutGenerics = trimmed.replace(/<[\s\S]*>$/, '').trim();
+    const match = withoutGenerics.match(/^(?:import\([^)]*\)\.)?([A-Za-z_$][\w$]*)$/);
+    return match?.[1] ?? null;
+};
+
+const findRelativeImportSource = (content: string, typeName: string): string | null => {
+    const importRegex = /import\s+(?:type\s+)?\{([\s\S]*?)\}\s+from\s+['"]([^'"]+)['"]/g;
+    let match: RegExpExecArray | null;
+    while ((match = importRegex.exec(content)) !== null) {
+        const bindings = match[1]
+            .split(',')
+            .map((item) => item.trim())
+            .filter(Boolean);
+
+        for (const binding of bindings) {
+            const aliasMatch = binding.match(/^([A-Za-z_$][\w$]*)(?:\s+as\s+([A-Za-z_$][\w$]*))?$/);
+            if (!aliasMatch) continue;
+            const importedName = aliasMatch[1];
+            const localName = aliasMatch[2] ?? importedName;
+            if (localName === typeName) {
+                return match[2];
+            }
+        }
+    }
+    return null;
+};
+
+const resolveRelativeTypeFile = (currentFilePath: string, importSource: string): string | null => {
+    if (!importSource.startsWith('.')) {
+        return null;
+    }
+
+    const candidateBase = path.resolve(path.dirname(currentFilePath), importSource);
+    const candidates = [
+        candidateBase,
+        `${candidateBase}.ts`,
+        `${candidateBase}.tsx`,
+        `${candidateBase}.js`,
+        `${candidateBase}.jsx`,
+        path.join(candidateBase, 'index.ts'),
+        path.join(candidateBase, 'index.tsx'),
+        path.join(candidateBase, 'index.js'),
+        path.join(candidateBase, 'index.jsx'),
+    ];
+
+    for (const candidate of candidates) {
+        if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+            return candidate;
+        }
+    }
+
+    return null;
+};
+
+const resolveTypeDeclarationExpression = (
+    content: string,
+    typeName: string,
+): string | null => {
+    const interfaceRegex = new RegExp(`(?:export\\s+)?interface\\s+${escapeRegExp(typeName)}\\s*\\{`, 'g');
+    const interfaceMatch = interfaceRegex.exec(content);
+    if (interfaceMatch) {
+        const openBraceIndex = content.indexOf('{', interfaceMatch.index);
+        const body = openBraceIndex >= 0 ? extractBraceBlock(content, openBraceIndex) : null;
+        if (body !== null) {
+            return `{${body}}`;
+        }
+    }
+
+    const typeRegex = new RegExp(`(?:export\\s+)?type\\s+${escapeRegExp(typeName)}\\s*=`, 'g');
+    const typeMatch = typeRegex.exec(content);
+    if (typeMatch) {
+        return readDelimitedExpression(content, typeMatch.index + typeMatch[0].length, ';');
+    }
+
+    return null;
+};
+
+const resolveNamedTypeExpression = (
+    content: string,
+    filePath: string,
+    typeName: string,
+): { content: string; filePath: string; expression: string } | null => {
+    const localDeclaration = resolveTypeDeclarationExpression(content, typeName);
+    if (localDeclaration) {
+        return { content, filePath, expression: localDeclaration };
+    }
+
+    const importSource = findRelativeImportSource(content, typeName);
+    if (!importSource) {
+        return null;
+    }
+
+    const resolvedFile = resolveRelativeTypeFile(filePath, importSource);
+    if (!resolvedFile) {
+        return null;
+    }
+
+    const importedContent = fs.readFileSync(resolvedFile, 'utf-8');
+    const importedDeclaration = resolveTypeDeclarationExpression(importedContent, typeName);
+    if (!importedDeclaration) {
+        return null;
+    }
+
+    return { content: importedContent, filePath: resolvedFile, expression: importedDeclaration };
+};
+
+const collectCandidateTypeExpressionsForIdentifier = (
+    content: string,
+    identifier: string,
+    position: number,
+): string[] => {
+    const expressions: string[] = [];
+    const seen = new Set<string>();
+
+    const pushExpression = (expression: string | null) => {
+        const trimmed = expression?.trim();
+        if (!trimmed || seen.has(trimmed)) return;
+        seen.add(trimmed);
+        expressions.push(trimmed);
+    };
+
+    const variableRegex = new RegExp(`\\b(?:const|let|var)\\s+${escapeRegExp(identifier)}\\s*:\\s*`, 'g');
+    let variableMatch: RegExpExecArray | null;
+    while ((variableMatch = variableRegex.exec(content)) !== null) {
+        if (variableMatch.index > position) break;
+        pushExpression(readDelimitedExpression(content, variableMatch.index + variableMatch[0].length, '='));
+    }
+
+    const propertyRegex = new RegExp(`\\b${escapeRegExp(identifier)}\\??\\s*:`, 'g');
+    let propertyMatch: RegExpExecArray | null;
+    while ((propertyMatch = propertyRegex.exec(content)) !== null) {
+        if (propertyMatch.index > position) break;
+        pushExpression(readDelimitedExpression(content, propertyMatch.index + propertyMatch[0].length, ';'));
+    }
+
+    return expressions;
+};
+
+const resolveTypeLiteralValues = (
+    content: string,
+    filePath: string,
+    typeExpression: string,
+    propertyPath: string[],
+    visited: Set<string>,
+): string[] => {
+    const unionParts = splitTopLevelUnion(typeExpression)
+        .map((part) => part.trim())
+        .filter((part) => part !== 'null' && part !== 'undefined');
+
+    if (unionParts.length === 0) {
+        return [];
+    }
+
+    if (propertyPath.length === 0) {
+        const directValues = collectStringLiteralUnionValues(unionParts.join(' | '));
+        if (directValues.length > 0) {
+            return directValues;
+        }
+    }
+
+    const values = new Set<string>();
+
+    for (const part of unionParts) {
+        if (!part) continue;
+
+        if (propertyPath.length > 0 && part.startsWith('{')) {
+            const body = extractBraceBlock(part, part.indexOf('{'));
+            if (body === null) continue;
+            const propertyType = extractPropertyTypeFromObjectBody(body, propertyPath[0]);
+            if (!propertyType) continue;
+            for (const value of resolveTypeLiteralValues(content, filePath, propertyType, propertyPath.slice(1), visited)) {
+                values.add(value);
+            }
+            continue;
+        }
+
+        const typeName = normalizeTypeReference(part);
+        if (!typeName) {
+            continue;
+        }
+
+        const visitKey = `${filePath}:${typeName}:${propertyPath.join('.')}`;
+        if (visited.has(visitKey)) {
+            continue;
+        }
+        visited.add(visitKey);
+
+        const resolvedType = resolveNamedTypeExpression(content, filePath, typeName);
+        if (!resolvedType) {
+            continue;
+        }
+
+        for (const value of resolveTypeLiteralValues(
+            resolvedType.content,
+            resolvedType.filePath,
+            resolvedType.expression,
+            propertyPath,
+            visited,
+        )) {
+            values.add(value);
+        }
+    }
+
+    return Array.from(values);
+};
+
+const resolveMemberExpressionKeys = (
+    content: string,
+    filePath: string,
+    expression: string,
+    position: number,
+): string[] => {
+    const parts = expression.split('.').map((part) => part.trim()).filter(Boolean);
+    if (parts.length < 2) {
+        return [];
+    }
+
+    const [rootIdentifier, ...propertyPath] = parts;
+    const candidateTypes = collectCandidateTypeExpressionsForIdentifier(content, rootIdentifier, position);
+    if (candidateTypes.length === 0) {
+        return [];
+    }
+
+    const values = new Set<string>();
+    for (const typeExpression of candidateTypes) {
+        for (const value of resolveTypeLiteralValues(content, filePath, typeExpression, propertyPath, new Set<string>())) {
+            values.add(value);
+        }
+    }
+
+    return Array.from(values);
+};
+
+const resolveTemplatePlaceholderKeys = (
+    placeholderExpression: string,
+    content: string,
+    filePath: string,
+    position: number,
+    knownNamespaces: Set<string>,
+): string[] => {
+    if (placeholderExpression.includes('.')) {
+        return resolveMemberExpressionKeys(content, filePath, placeholderExpression, position);
+    }
+
+    const resolved = resolveIdentifierKeys(content, filePath, placeholderExpression, position, knownNamespaces);
+    return resolved.keys.filter((key) => !key.includes('.'));
+};
+
+const splitTemplatePathSegments = (value: string): string[] => {
+    const segments: string[] = [];
+    let current = '';
+    let placeholderDepth = 0;
+
+    for (let i = 0; i < value.length; i++) {
+        const char = value[i];
+        const nextChar = i + 1 < value.length ? value[i + 1] : '';
+
+        if (char === '$' && nextChar === '{') {
+            placeholderDepth++;
+            current += '${';
+            i++;
+            continue;
+        }
+
+        if (char === '}' && placeholderDepth > 0) {
+            placeholderDepth--;
+            current += char;
+            continue;
+        }
+
+        if (char === '.' && placeholderDepth === 0) {
+            segments.push(current);
+            current = '';
+            continue;
+        }
+
+        current += char;
+    }
+
+    segments.push(current);
+    return segments;
+};
+
 const extractIdentifierExpression = (content: string, identifier: string, position: number): string | null => {
     const regex = new RegExp(`\\b(?:const|let|var)\\s+${identifier}\\s*=\\s*([\\s\\S]*?);`, 'g');
     let match: RegExpExecArray | null;
@@ -368,6 +867,7 @@ const extractIdentifierExpression = (content: string, identifier: string, positi
 const parseTemplateLiteralPatternsFromExpression = (
     expression: string,
     content: string,
+    filePath: string,
     position: number,
     knownNamespaces: Set<string>,
 ): ResolvedIdentifierPattern[] => {
@@ -378,8 +878,8 @@ const parseTemplateLiteralPatternsFromExpression = (
     const rawValue = templateMatch[1];
     if (!rawValue.includes('${')) return [];
 
-    const segments = rawValue.split('.');
-    const placeholderOnlyRegex = /^\$\{([A-Za-z_$][\w$]*)\}$/;
+    const segments = splitTemplatePathSegments(rawValue);
+    const placeholderOnlyRegex = /^\$\{([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\}$/;
     let variants: Array<Array<string | null>> = [[]];
 
     for (const segment of segments) {
@@ -392,12 +892,17 @@ const parseTemplateLiteralPatternsFromExpression = (
             continue;
         }
 
-        const nestedIdentifier = placeholderMatch[1];
-        const resolved = resolveIdentifierKeys(content, nestedIdentifier, position, knownNamespaces);
-        if (resolved.keys.length > 0) {
+        const resolvedKeys = resolveTemplatePlaceholderKeys(
+            placeholderMatch[1],
+            content,
+            filePath,
+            position,
+            knownNamespaces,
+        );
+        if (resolvedKeys.length > 0) {
             const nextVariants: Array<Array<string | null>> = [];
             for (const variant of variants) {
-                for (const key of resolved.keys) {
+                for (const key of resolvedKeys) {
                     if (key.includes('.')) {
                         nextVariants.push([...variant, null]);
                     } else {
@@ -427,6 +932,7 @@ const parseTemplateLiteralPatternsFromExpression = (
 
 const resolveIdentifierKeys = (
     content: string,
+    filePath: string,
     identifier: string,
     position: number,
     knownNamespaces: Set<string>,
@@ -436,7 +942,7 @@ const resolveIdentifierKeys = (
         return { keys: [], dynamic: true };
     }
 
-    const patterns = parseTemplateLiteralPatternsFromExpression(expression, content, position, knownNamespaces);
+    const patterns = parseTemplateLiteralPatternsFromExpression(expression, content, filePath, position, knownNamespaces);
     if (patterns.length > 0) {
         return { keys: [], dynamic: false, patterns };
     }
@@ -582,17 +1088,18 @@ export const collectReferencesFromContent = (
             const line = getLineNumber(content, match.index);
             const source = `${aliasName}(${literal.value})`;
             if (literal.dynamic) {
-                const parsedPattern = quote === '`'
-                    ? parseTemplateLiteralPattern(literal.value, knownNamespaces)
-                    : null;
-                if (parsedPattern) {
+                const parsedPatterns = quote === '`'
+                    ? parseTemplateLiteralPatterns(literal.value, content, filePath, match.index, knownNamespaces)
+                    : [];
+                if (parsedPatterns.length > 0) {
                     const callEnd = findCallEnd(content, match.index + match[0].length);
                     const snippet = content.slice(match.index, callEnd);
                     const overrideNamespaces = findNsOverride(snippet);
-                    const namespaces = parsedPattern.namespace
-                        ? [parsedPattern.namespace]
-                        : (overrideNamespaces.length ? overrideNamespaces : resolveAliasNamespaces(aliasName, line, source));
-                    if (namespaces.length) {
+                    for (const parsedPattern of parsedPatterns) {
+                        const namespaces = parsedPattern.namespace
+                            ? [parsedPattern.namespace]
+                            : (overrideNamespaces.length ? overrideNamespaces : resolveAliasNamespaces(aliasName, line, source));
+                        if (!namespaces.length) continue;
                         pushReference(
                             parsedPattern.key,
                             namespaces,
@@ -600,8 +1107,8 @@ export const collectReferencesFromContent = (
                             source,
                             parsedPattern.patternSegments,
                         );
-                        continue;
                     }
+                    continue;
                 }
                 addWarning({ type: 'dynamic-key', key: literal.value, file: filePath, line, source });
                 continue;
@@ -646,7 +1153,7 @@ export const collectReferencesFromContent = (
             }
             
             // 尝试解析变量值
-            const resolved = resolveIdentifierKeys(content, identifier, match.index, knownNamespaces);
+            const resolved = resolveIdentifierKeys(content, filePath, identifier, match.index, knownNamespaces);
 
             if (resolved.patterns && resolved.patterns.length > 0) {
                 const callEnd = findCallEnd(content, match.index + match[0].length);
@@ -698,23 +1205,25 @@ export const collectReferencesFromContent = (
         const line = getLineNumber(content, i18nMatch.index);
         const source = `i18n.${i18nMatch[1]}(${literal.value})`;
         if (literal.dynamic) {
-            const parsedPattern = i18nMatch[2] === '`'
-                ? parseTemplateLiteralPattern(literal.value, knownNamespaces)
-                : null;
-            if (parsedPattern) {
+            const parsedPatterns = i18nMatch[2] === '`'
+                ? parseTemplateLiteralPatterns(literal.value, content, filePath, i18nMatch.index, knownNamespaces)
+                : [];
+            if (parsedPatterns.length > 0) {
                 const callEnd = findCallEnd(content, i18nMatch.index + i18nMatch[0].length);
                 const snippet = content.slice(i18nMatch.index, callEnd);
                 const overrideNamespaces = findNsOverride(snippet);
-                const namespaces = parsedPattern.namespace
-                    ? [parsedPattern.namespace]
-                    : (overrideNamespaces.length ? overrideNamespaces : [defaultNamespace]);
-                pushReference(
-                    parsedPattern.key,
-                    namespaces,
-                    line,
-                    source,
-                    parsedPattern.patternSegments,
-                );
+                for (const parsedPattern of parsedPatterns) {
+                    const namespaces = parsedPattern.namespace
+                        ? [parsedPattern.namespace]
+                        : (overrideNamespaces.length ? overrideNamespaces : [defaultNamespace]);
+                    pushReference(
+                        parsedPattern.key,
+                        namespaces,
+                        line,
+                        source,
+                        parsedPattern.patternSegments,
+                    );
+                }
                 continue;
             }
             addWarning({ type: 'dynamic-key', key: literal.value, file: filePath, line, source });
@@ -764,7 +1273,7 @@ export const collectReferencesFromContent = (
             keyDynamic = literal.dynamic;
             keyValues = literal.dynamic ? [] : [literal.value];
         } else if (keyIdentifierName) {
-            const resolved = resolveIdentifierKeys(content, keyIdentifierName, toastMatch.index, knownNamespaces);
+            const resolved = resolveIdentifierKeys(content, filePath, keyIdentifierName, toastMatch.index, knownNamespaces);
             keyDynamic = resolved.dynamic;
             keyValues = resolved.keys;
             if (resolved.patterns && resolved.patterns.length > 0) {

@@ -28,6 +28,7 @@ type SubmitOnlineAiResolutionArgs = {
     resolution: AiResolution;
     lastAiAttemptKeyRef: { current: string | null };
     scheduleRetry: () => void;
+    onWillResync?: (reason: string) => void;
     onConfirmed?: (authoritativeState: MatchState<unknown> | unknown) => void;
     onRejected?: (reason: string) => void;
 };
@@ -88,6 +89,7 @@ function submitSingleOnlineAiResolution(args: SubmitOnlineAiResolutionArgs): voi
         resolution,
         lastAiAttemptKeyRef,
         scheduleRetry,
+        onWillResync,
         onConfirmed,
         onRejected,
     } = args;
@@ -110,7 +112,11 @@ function submitSingleOnlineAiResolution(args: SubmitOnlineAiResolutionArgs): voi
                 lastAiAttemptKeyRef.current = null;
             }
             if (reason !== 'unauthorized') {
-                client.resync();
+                if (onWillResync) {
+                    onWillResync(reason);
+                } else {
+                    client.resync();
+                }
                 scheduleRetry();
             }
             onRejected?.(reason);

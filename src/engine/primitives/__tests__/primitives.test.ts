@@ -39,6 +39,8 @@ import {
   canAfford,
   payResources,
   clampValue,
+  computeSpriteImgStyle,
+  type SpriteAtlasConfig,
 } from '../index';
 
 // ============================================================================
@@ -193,6 +195,34 @@ describe('engine/primitives/effects', () => {
     expect(() =>
       executeEffect({ type: 'unknownEffect' }, {}, registry),
     ).toThrowError('未注册的效果类型: unknownEffect');
+  });
+});
+
+// ============================================================================
+// spriteAtlas
+// ============================================================================
+describe('engine/primitives/spriteAtlas', () => {
+  it('computeSpriteImgStyle 应按整张 atlas 尺寸计算 translate 百分比，避免非首帧被平移过头', () => {
+    const atlas: SpriteAtlasConfig = {
+      imageW: 2088,
+      imageH: 4374,
+      cols: 2,
+      rows: 6,
+      colStarts: [0, 1044],
+      colWidths: [1044, 1044],
+      rowStarts: [0, 729, 1458, 2187, 2916, 3645],
+      rowHeights: [729, 729, 729, 729, 729, 729],
+    };
+
+    const secondColumnFirstRow = computeSpriteImgStyle(1, atlas);
+    expect(secondColumnFirstRow.imgWidth).toBe('200%');
+    expect(secondColumnFirstRow.translateX).toBe('-50%');
+    expect(secondColumnFirstRow.translateY).toBe('-0%');
+
+    const secondColumnLastRow = computeSpriteImgStyle(11, atlas);
+    expect(secondColumnLastRow.imgHeight).toBe('600%');
+    expect(secondColumnLastRow.translateX).toBe('-50%');
+    expect(secondColumnLastRow.translateY).toBe(`-${(3645 / 4374) * 100}%`);
   });
 });
 

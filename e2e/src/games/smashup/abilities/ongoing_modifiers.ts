@@ -276,9 +276,10 @@ function registerMermaidsModifiers(): void {
     // 诱惑者：如果本回合有其他玩家仆从移动到这里，则 +2 力量
     registerPowerModifier('mermaids_temptress', (ctx: PowerModifierContext) => {
         if (!matchesDefId(ctx.minion, 'mermaids_temptress')) return 0;
-        const movedOpponentHereThisTurn = ctx.state.movedToBasesThisTurn?.[ctx.baseIndex] ?? false;
+        const movedOpponentHereThisTurn = Object.entries(ctx.state.minionsMovedToBaseThisTurn ?? {})
+            .some(([playerId, movedBases]) => playerId !== ctx.minion.controller && (movedBases?.[ctx.baseIndex] ?? 0) > 0);
         return movedOpponentHereThisTurn ? 2 : 0;
-    });
+    }, { handlesPodInternally: true });
 }
 
 function registerWorldChampsModifiers(): void {

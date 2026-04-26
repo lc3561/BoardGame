@@ -634,7 +634,9 @@ export function getPlayerEffectivePowerOnBase(
 
             const charmedTurn = Number(m.metadata?.mermaidsCharmedSuppressedTurn ?? -1);
             const charmedActive = charmedTurn === state.turnNumber;
-            const desertIslandActive = base.ongoingActions.some(action => normalizeDefId(action.defId) === 'mermaids_desert_island');
+            const desertIslandActive = base.ongoingActions.some(
+                action => normalizeDefId(action.defId) === 'mermaids_desert_island' && action.ownerId === m.controller,
+            );
             if (charmedActive || desertIslandActive) {
                 contribution = 0;
             }
