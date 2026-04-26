@@ -1,6 +1,7 @@
 package top.easyboardgame.app;
 
 import android.content.Context;
+import android.net.Uri;
 import android.util.Log;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
@@ -16,27 +17,43 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipException;
 import java.util.zip.ZipInputStream;
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 final class GamePackageForegroundRuntime {
 
     private static final String TAG = "GamePkgFgRuntime";
-    private static final String ROOT_DIR = "game-packages";
-    private static final String CURRENT_DIR = "current";
-    private static final String STAGING_DIR = "staging";
-    private static final String ASSETS_DIR = "assets";
-    private static final String ARCHIVE_FILE = "package.zip";
-    private static final String STATE_FILE = "install-state.json";
-    private static final String METADATA_FILE = "metadata.json";
     private static final int HTTP_RANGE_NOT_SATISFIABLE = 416;
     private static final int BUFFER_SIZE = 16 * 1024;
 
     private GamePackageForegroundRuntime() {}
+
+    private static final class IncrementalFallbackException extends IOException {
+        IncrementalFallbackException(String message) {
+            super(message);
+        }
+    }
+
+    private static final class RemoteFileEntry {
+        final String path;
+        final String hash;
+        final long size;
+
+        RemoteFileEntry(String path, String hash, long size) {
+            this.path = path;
+            this.hash = hash;
+            this.size = size;
+        }
+    }
 
     static void runTask(
         Context context,
@@ -95,48 +112,325 @@ final class GamePackageForegroundRuntime {
             throw new IOException("当前仅支持游戏包下载任务");
         }
 
+        if (!task.isIncrementalInstall()) {
+            executeFullGamePackageTask(context, taskStore, task, cancelFlag, onProgress);
+            return;
+        }
+
+        try {
+            executeIncrementalGamePackageTask(context, taskStore, task, cancelFlag, onProgress);
+        } catch (IncrementalFallbackException error) {
+            Log.w(TAG, "incremental install fallback taskId=" + task.taskId + " reason=" + error.getMessage());
+            executeFullGamePackageTask(context, taskStore, task, cancelFlag, onProgress);
+        }
+    }
+
+    private static void executeFullGamePackageTask(
+        Context context,
+        AndroidDownloadTaskStore taskStore,
+        AndroidDownloadTaskRecord task,
+        AtomicBoolean cancelFlag,
+        Runnable onProgress
+    ) throws Exception {
         String gameId = task.logicalId;
-        File gameDir = new File(getRootDir(context), gameId);
-        File stagingDir = new File(new File(gameDir, STAGING_DIR), sanitizeFileSegment(safe(task.packageVersion, "unknown")));
-        File archiveFile = new File(task.destinationPath != null ? task.destinationPath : new File(stagingDir, ARCHIVE_FILE).getAbsolutePath());
-        File archivePartFile = new File(task.partialPath != null ? task.partialPath : new File(stagingDir, ARCHIVE_FILE + ".part").getAbsolutePath());
-        File stagingAssetsDir = new File(stagingDir, ASSETS_DIR);
-        File currentDir = new File(gameDir, CURRENT_DIR);
-        File currentAssetsDir = new File(currentDir, ASSETS_DIR);
+        String resolvedPackageVersion = safe(task.packageVersion, "unknown");
+        File stagingDir = GamePackageFs.resolveVersionedStagingDir(context, gameId, resolvedPackageVersion);
+        File archiveFile = new File(task.destinationPath != null ? task.destinationPath : GamePackageFs.resolveArchiveFile(context, gameId, resolvedPackageVersion).getAbsolutePath());
+        File archivePartFile = new File(task.partialPath != null ? task.partialPath : GamePackageFs.resolveArchivePartFile(context, gameId, resolvedPackageVersion).getAbsolutePath());
+        File stagingAssetsDir = GamePackageFs.resolveStagingAssetsDir(context, gameId, resolvedPackageVersion);
+        File currentDir = GamePackageFs.resolveCurrentDir(context, gameId);
+        File currentAssetsDir = GamePackageFs.resolveCurrentAssetsDir(context, gameId);
         long installedAt = System.currentTimeMillis();
 
-        if (!stagingDir.exists() && !stagingDir.mkdirs()) {
-            throw new IOException("创建临时目录失败");
-        }
-        if (!stagingAssetsDir.exists() && !stagingAssetsDir.mkdirs()) {
-            throw new IOException("创建临时目录失败");
-        }
+        GamePackageFs.cleanupBrokenCurrentInstall(context, gameId);
+        GamePackageFs.cleanupStagingDirectories(context, gameId, resolvedPackageVersion);
+        if (!stagingDir.exists() && !stagingDir.mkdirs()) throw new IOException("创建临时目录失败");
+        if (!stagingAssetsDir.exists() && !stagingAssetsDir.mkdirs()) throw new IOException("创建临时目录失败");
 
         emitInstallState(context, gameId, "manifest", null, "indeterminate", null, null, task.packageVersion, null, null);
         downloadArchive(context, taskStore, task, archiveFile, archivePartFile, cancelFlag, onProgress);
         taskStore.markVerifying(task.taskId, System.currentTimeMillis());
         emitInstallState(context, gameId, "verifying", 100, "indeterminate", null, null, task.packageVersion, null, null);
 
-        deleteRecursively(stagingAssetsDir);
-        if (!stagingAssetsDir.mkdirs() && !stagingAssetsDir.exists()) {
-            throw new IOException("创建解压目录失败");
-        }
+        GamePackageFs.deleteRecursively(stagingAssetsDir);
+        if (!stagingAssetsDir.mkdirs() && !stagingAssetsDir.exists()) throw new IOException("创建解压目录失败");
         extractArchive(archiveFile, stagingAssetsDir, cancelFlag);
-        if (cancelFlag.get()) {
-            throw new IOException("安装已取消");
-        }
+        if (cancelFlag.get()) throw new IOException("安装已取消");
 
-        deleteRecursively(currentDir);
-        if (!currentDir.mkdirs() && !currentDir.exists()) {
-            throw new IOException("创建安装目录失败");
-        }
-        Files.move(stagingAssetsDir.toPath(), currentAssetsDir.toPath(), StandardCopyOption.REPLACE_EXISTING);
-        writeMetadata(new File(currentDir, METADATA_FILE), gameId, safe(task.runtimeChannel, "stable"), safe(task.packageId, gameId), safe(task.packageVersion, "unknown"), installedAt);
+        JSONObject installedFilesIndex = GamePackageFs.buildInstalledFilesIndex(stagingAssetsDir, resolvedPackageVersion);
+        GamePackageFs.writeJsonFile(GamePackageFs.resolveStagingInstalledFilesIndexFile(context, gameId, resolvedPackageVersion), installedFilesIndex);
+        GamePackageFs.writeMetadata(GamePackageFs.resolveStagingMetadataFile(context, gameId, resolvedPackageVersion), gameId, safe(task.runtimeChannel, "stable"), safe(task.packageId, gameId), resolvedPackageVersion, installedAt);
+        switchStagingToCurrent(context, gameId, resolvedPackageVersion, currentDir, currentAssetsDir);
 
         taskStore.markCompleted(task.taskId, archiveFile.length(), System.currentTimeMillis());
         emitInstallState(context, gameId, "installed", null, null, null, null, task.packageVersion, currentAssetsDir.getAbsolutePath(), installedAt);
-        deleteRecursively(stagingDir);
+        GamePackageFs.cleanupStagingDirectories(context, gameId, null);
         onProgress.run();
+    }
+
+    private static void executeIncrementalGamePackageTask(
+        Context context,
+        AndroidDownloadTaskStore taskStore,
+        AndroidDownloadTaskRecord task,
+        AtomicBoolean cancelFlag,
+        Runnable onProgress
+    ) throws Exception {
+        String gameId = task.logicalId;
+        String resolvedPackageVersion = safe(task.packageVersion, "unknown");
+        String assetBaseUrl = GamePackageFs.normalizeNonEmpty(task.assetBaseUrl);
+        String fileIndexUrl = GamePackageFs.normalizeNonEmpty(task.fileIndexUrl);
+        File currentAssetsDir = GamePackageFs.resolveCurrentAssetsDir(context, gameId);
+        File currentMetadataFile = GamePackageFs.resolveCurrentMetadataFile(context, gameId);
+        File currentInstalledFilesIndexFile = GamePackageFs.resolveCurrentInstalledFilesIndexFile(context, gameId);
+        long installedAt = System.currentTimeMillis();
+
+        if (assetBaseUrl == null || fileIndexUrl == null) throw new IncrementalFallbackException("增量安装缺少索引或资源根地址");
+        if (!currentAssetsDir.isDirectory() || !currentMetadataFile.exists()) throw new IncrementalFallbackException("本地未安装可复用资源");
+
+        JSONObject localInstalledFilesIndex = GamePackageFs.readJsonFile(currentInstalledFilesIndexFile);
+        JSONObject localFiles = localInstalledFilesIndex == null ? null : localInstalledFilesIndex.optJSONObject("files");
+        if (localFiles == null) throw new IncrementalFallbackException("本地已安装文件索引缺失");
+
+        emitInstallState(context, gameId, "manifest", null, "indeterminate", null, null, task.packageVersion, null, null);
+        JSONObject remoteIndex = downloadJson(fileIndexUrl, task.fileIndexChecksum, cancelFlag);
+        List<RemoteFileEntry> remoteEntries = parseRemoteFileIndex(remoteIndex);
+        if (remoteEntries.isEmpty()) throw new IncrementalFallbackException("远端文件索引为空");
+
+        List<RemoteFileEntry> changedEntries = computeChangedEntries(currentAssetsDir, localFiles, remoteEntries);
+        Set<String> remotePaths = buildRemotePathSet(remoteEntries);
+        Log.i(
+            TAG,
+            "incremental-plan gameId=" + gameId
+                + " version=" + resolvedPackageVersion
+                + " totalFiles=" + remoteEntries.size()
+                + " changedFiles=" + changedEntries.size()
+        );
+
+        File stagingDir = GamePackageFs.resolveVersionedStagingDir(context, gameId, resolvedPackageVersion);
+        File stagingAssetsDir = GamePackageFs.resolveStagingAssetsDir(context, gameId, resolvedPackageVersion);
+        try {
+            GamePackageFs.cleanupStagingDirectories(context, gameId, resolvedPackageVersion);
+            GamePackageFs.deleteRecursively(stagingDir);
+            if (!stagingAssetsDir.mkdirs() && !stagingAssetsDir.exists()) throw new IOException("创建增量暂存目录失败");
+
+            GamePackageFs.copyDirectoryContents(currentAssetsDir, stagingAssetsDir);
+            GamePackageFs.pruneDirectoryContents(stagingAssetsDir, remotePaths);
+            long totalBytes = 0L;
+            for (RemoteFileEntry entry : changedEntries) totalBytes += Math.max(0L, entry.size);
+            Log.i(
+                TAG,
+                "incremental-download-start gameId=" + gameId
+                    + " version=" + resolvedPackageVersion
+                    + " changedFiles=" + changedEntries.size()
+                    + " totalBytes=" + totalBytes
+            );
+            long downloadedBytes = 0L;
+            taskStore.updateRunningProgress(task.taskId, 0L, totalBytes, AndroidDownloadTaskRecord.STATUS_RUNNING, System.currentTimeMillis());
+            emitInstallState(context, gameId, "downloading", totalBytes > 0 ? 0 : null, totalBytes > 0 ? "determinate" : "indeterminate", null, null, task.packageVersion, null, null);
+
+            for (RemoteFileEntry entry : changedEntries) {
+                if (cancelFlag.get()) throw new IOException("安装已取消");
+                File targetFile = resolveFileWithinRoot(stagingAssetsDir, entry.path);
+                downloadIncrementalFile(cancelFlag, assetBaseUrl, entry, targetFile);
+                downloadedBytes += Math.max(entry.size, targetFile.length());
+                taskStore.updateRunningProgress(task.taskId, downloadedBytes, totalBytes, AndroidDownloadTaskRecord.STATUS_RUNNING, System.currentTimeMillis());
+                if (totalBytes > 0L) {
+                    int percent = (int) Math.max(0, Math.min(100, Math.round((downloadedBytes * 100f) / totalBytes)));
+                    emitInstallState(context, gameId, "downloading", percent, "determinate", null, null, task.packageVersion, null, null);
+                } else {
+                    emitInstallState(context, gameId, "downloading", null, "indeterminate", null, null, task.packageVersion, null, null);
+                }
+                onProgress.run();
+            }
+
+            taskStore.markVerifying(task.taskId, System.currentTimeMillis());
+            emitInstallState(context, gameId, "verifying", 100, "indeterminate", null, null, task.packageVersion, null, null);
+            verifyMergedFiles(stagingAssetsDir, remoteEntries);
+
+            JSONObject installedFilesIndex = buildInstalledFilesIndexFromRemote(remoteEntries, resolvedPackageVersion);
+            GamePackageFs.writeJsonFile(GamePackageFs.resolveStagingInstalledFilesIndexFile(context, gameId, resolvedPackageVersion), installedFilesIndex);
+            GamePackageFs.writeMetadata(GamePackageFs.resolveStagingMetadataFile(context, gameId, resolvedPackageVersion), gameId, safe(task.runtimeChannel, "stable"), safe(task.packageId, gameId), resolvedPackageVersion, installedAt);
+            switchStagingToCurrent(context, gameId, resolvedPackageVersion, GamePackageFs.resolveCurrentDir(context, gameId), currentAssetsDir);
+
+            taskStore.markCompleted(task.taskId, totalBytes, System.currentTimeMillis());
+            Log.i(
+                TAG,
+                "incremental-install-finished gameId=" + gameId
+                    + " version=" + resolvedPackageVersion
+                    + " downloadedBytes=" + totalBytes
+            );
+            emitInstallState(context, gameId, "installed", 100, "determinate", null, null, task.packageVersion, currentAssetsDir.getAbsolutePath(), installedAt);
+            GamePackageFs.cleanupStagingDirectories(context, gameId, null);
+            onProgress.run();
+        } catch (IncrementalFallbackException error) {
+            GamePackageFs.deleteRecursively(stagingDir);
+            throw error;
+        } catch (Exception error) {
+            GamePackageFs.deleteRecursively(stagingDir);
+            throw new IncrementalFallbackException(error.getMessage() != null ? error.getMessage() : "增量安装失败");
+        }
+    }
+
+    private static void switchStagingToCurrent(
+        Context context,
+        String gameId,
+        String packageVersion,
+        File currentDir,
+        File currentAssetsDir
+    ) throws Exception {
+        GamePackageFs.deleteRecursively(currentDir);
+        if (!currentDir.mkdirs() && !currentDir.exists()) throw new IOException("创建安装目录失败");
+        Files.move(GamePackageFs.resolveStagingAssetsDir(context, gameId, packageVersion).toPath(), currentAssetsDir.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        Files.move(GamePackageFs.resolveStagingMetadataFile(context, gameId, packageVersion).toPath(), GamePackageFs.resolveCurrentMetadataFile(context, gameId).toPath(), StandardCopyOption.REPLACE_EXISTING);
+        Files.move(GamePackageFs.resolveStagingInstalledFilesIndexFile(context, gameId, packageVersion).toPath(), GamePackageFs.resolveCurrentInstalledFilesIndexFile(context, gameId).toPath(), StandardCopyOption.REPLACE_EXISTING);
+    }
+
+    private static JSONObject downloadJson(String urlValue, String expectedChecksum, AtomicBoolean cancelFlag) throws Exception {
+        HttpURLConnection connection = (HttpURLConnection) new URL(urlValue).openConnection();
+        connection.setConnectTimeout(15000);
+        connection.setReadTimeout(30000);
+        connection.setRequestProperty("Accept", "application/json");
+        try {
+            int responseCode = connection.getResponseCode();
+            if (responseCode < 200 || responseCode >= 300) throw new IncrementalFallbackException("下载文件索引失败，HTTP " + responseCode);
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            StringBuilder builder = new StringBuilder();
+            try (InputStream input = new BufferedInputStream(connection.getInputStream())) {
+                byte[] buffer = new byte[BUFFER_SIZE];
+                int read;
+                while ((read = input.read(buffer)) != -1) {
+                    if (cancelFlag.get()) throw new IOException("安装已取消");
+                    digest.update(buffer, 0, read);
+                    builder.append(new String(buffer, 0, read, StandardCharsets.UTF_8));
+                }
+            }
+            String actualChecksum = bytesToHex(digest.digest());
+            if (expectedChecksum != null && !expectedChecksum.equalsIgnoreCase(actualChecksum)) throw new IncrementalFallbackException("文件索引校验失败");
+            return new JSONObject(builder.toString());
+        } finally {
+            connection.disconnect();
+        }
+    }
+
+    private static List<RemoteFileEntry> parseRemoteFileIndex(JSONObject payload) throws Exception {
+        JSONArray files = payload.optJSONArray("files");
+        List<RemoteFileEntry> entries = new ArrayList<>();
+        if (files == null) return entries;
+        for (int index = 0; index < files.length(); index += 1) {
+            JSONObject item = files.optJSONObject(index);
+            if (item == null) continue;
+            String path = GamePackageFs.normalizeNonEmpty(item.optString("path", null));
+            String hash = GamePackageFs.normalizeNonEmpty(item.optString("hash", null));
+            long size = item.optLong("size", 0L);
+            if (path == null || hash == null) throw new IncrementalFallbackException("文件索引项不完整");
+            entries.add(new RemoteFileEntry(path, hash, size));
+        }
+        return entries;
+    }
+
+    private static List<RemoteFileEntry> computeChangedEntries(File currentAssetsDir, JSONObject localFiles, List<RemoteFileEntry> remoteEntries) throws Exception {
+        List<RemoteFileEntry> changedEntries = new ArrayList<>();
+        for (RemoteFileEntry entry : remoteEntries) {
+            String localHash = GamePackageFs.normalizeNonEmpty(localFiles.optString(entry.path, null));
+            File localFile = resolveFileWithinRoot(currentAssetsDir, entry.path);
+            if (!localFile.isFile() || !entry.hash.equalsIgnoreCase(localHash)) changedEntries.add(entry);
+        }
+        return changedEntries;
+    }
+
+    private static void downloadIncrementalFile(
+        AtomicBoolean cancelFlag,
+        String assetBaseUrl,
+        RemoteFileEntry entry,
+        File targetFile
+    ) throws Exception {
+        File parent = targetFile.getParentFile();
+        if (parent != null && !parent.exists() && !parent.mkdirs()) throw new IOException("创建目录失败");
+
+        for (int attempt = 1; attempt <= 3; attempt += 1) {
+            if (targetFile.exists() && !targetFile.delete()) throw new IOException("清理旧文件失败");
+            HttpURLConnection connection = (HttpURLConnection) new URL(buildRemoteAssetFileUrl(assetBaseUrl, entry.path)).openConnection();
+            connection.setConnectTimeout(15000);
+            connection.setReadTimeout(30000);
+            try {
+                int responseCode = connection.getResponseCode();
+                if (responseCode < 200 || responseCode >= 300) {
+                    if (attempt >= 3) throw new IncrementalFallbackException("增量文件下载失败，HTTP " + responseCode);
+                    continue;
+                }
+                MessageDigest digest = MessageDigest.getInstance("SHA-256");
+                try (
+                    InputStream input = new BufferedInputStream(connection.getInputStream());
+                    BufferedOutputStream output = new BufferedOutputStream(new FileOutputStream(targetFile))
+                ) {
+                    byte[] buffer = new byte[BUFFER_SIZE];
+                    int read;
+                    while ((read = input.read(buffer)) != -1) {
+                        if (cancelFlag.get()) throw new IOException("安装已取消");
+                        output.write(buffer, 0, read);
+                        digest.update(buffer, 0, read);
+                    }
+                }
+                String actualChecksum = bytesToHex(digest.digest());
+                if (!entry.hash.equalsIgnoreCase(actualChecksum)) {
+                    if (attempt >= 3) throw new IncrementalFallbackException("增量文件校验失败");
+                    continue;
+                }
+                return;
+            } finally {
+                connection.disconnect();
+            }
+        }
+
+        throw new IncrementalFallbackException("增量文件连续下载失败");
+    }
+
+    private static void verifyMergedFiles(File stagingAssetsDir, List<RemoteFileEntry> remoteEntries) throws Exception {
+        for (RemoteFileEntry entry : remoteEntries) {
+            File file = resolveFileWithinRoot(stagingAssetsDir, entry.path);
+            if (!file.isFile()) throw new IncrementalFallbackException("增量合并后缺少文件: " + entry.path);
+            String actualHash = GamePackageFs.hashFile(file);
+            if (!entry.hash.equalsIgnoreCase(actualHash)) throw new IncrementalFallbackException("增量合并后校验失败: " + entry.path);
+        }
+    }
+
+    private static JSONObject buildInstalledFilesIndexFromRemote(List<RemoteFileEntry> remoteEntries, String assetPackVersion) throws Exception {
+        JSONObject files = new JSONObject();
+        for (RemoteFileEntry entry : remoteEntries) files.put(entry.path, entry.hash);
+        JSONObject payload = new JSONObject();
+        payload.put("assetPackVersion", assetPackVersion);
+        payload.put("files", files);
+        payload.put("updatedAt", System.currentTimeMillis());
+        return payload;
+    }
+
+    private static Set<String> buildRemotePathSet(List<RemoteFileEntry> remoteEntries) {
+        Set<String> paths = new HashSet<>();
+        for (RemoteFileEntry entry : remoteEntries) {
+            paths.add(entry.path);
+        }
+        return paths;
+    }
+
+    private static String buildRemoteAssetFileUrl(String assetBaseUrl, String relativePath) {
+        String normalizedBase = assetBaseUrl.replaceAll("/+$", "");
+        String[] segments = relativePath.replace('\\', '/').split("/");
+        StringBuilder builder = new StringBuilder(normalizedBase);
+        for (String segment : segments) {
+            if (segment == null || segment.isEmpty()) continue;
+            builder.append('/').append(Uri.encode(segment));
+        }
+        return builder.toString();
+    }
+
+    private static File resolveFileWithinRoot(File rootDir, String relativePath) throws Exception {
+        File targetFile = new File(rootDir, relativePath.replace('/', File.separatorChar));
+        String canonicalRootPath = rootDir.getCanonicalPath();
+        String canonicalTargetPath = targetFile.getCanonicalPath();
+        if (!canonicalTargetPath.startsWith(canonicalRootPath + File.separator) && !canonicalTargetPath.equals(canonicalRootPath)) {
+            throw new IOException("非法文件路径: " + relativePath);
+        }
+        return targetFile;
     }
 
     private static void downloadArchive(
@@ -159,9 +453,7 @@ final class GamePackageForegroundRuntime {
         connection.setReadTimeout(30000);
         connection.setRequestProperty("Accept", "application/zip,application/octet-stream");
         long resumedBytes = partFile.exists() ? partFile.length() : 0L;
-        if (resumedBytes > 0) {
-            connection.setRequestProperty("Range", "bytes=" + resumedBytes + "-");
-        }
+        if (resumedBytes > 0) connection.setRequestProperty("Range", "bytes=" + resumedBytes + "-");
 
         try {
             int responseCode = connection.getResponseCode();
@@ -169,30 +461,20 @@ final class GamePackageForegroundRuntime {
             if (resumedBytes > 0 && responseCode == HttpURLConnection.HTTP_PARTIAL) {
                 appendMode = true;
             } else if (resumedBytes > 0 && responseCode == HttpURLConnection.HTTP_OK) {
-                if (!partFile.delete() && partFile.exists()) {
-                    throw new IOException("重置续传文件失败");
-                }
+                if (!partFile.delete() && partFile.exists()) throw new IOException("重置续传文件失败");
                 resumedBytes = 0L;
             } else if (resumedBytes > 0 && responseCode == HTTP_RANGE_NOT_SATISFIABLE) {
                 if (isChecksumMatch(partFile, task.checksum)) {
-                    if (targetFile.exists() && !targetFile.delete()) {
-                        throw new IOException("清理旧安装包失败");
-                    }
-                    if (!partFile.renameTo(targetFile)) {
-                        throw new IOException("恢复已完成资源包失败");
-                    }
+                    if (targetFile.exists() && !targetFile.delete()) throw new IOException("清理旧安装包失败");
+                    if (!partFile.renameTo(targetFile)) throw new IOException("恢复已完成资源包失败");
                     taskStore.updateRunningProgress(task.taskId, targetFile.length(), targetFile.length(), AndroidDownloadTaskRecord.STATUS_RUNNING, System.currentTimeMillis());
                     emitInstallState(context, task.logicalId, "downloading", 100, "determinate", null, null, task.packageVersion, null, null);
                     return;
                 }
-                if (!partFile.delete() && partFile.exists()) {
-                    throw new IOException("重置不可续传文件失败");
-                }
+                if (!partFile.delete() && partFile.exists()) throw new IOException("重置不可续传文件失败");
                 throw new IOException("服务端拒绝续传，且本地临时资源包校验失败");
             }
-            if (responseCode < 200 || responseCode >= 300) {
-                throw new IOException("下载失败，HTTP " + responseCode);
-            }
+            if (responseCode < 200 || responseCode >= 300) throw new IOException("下载失败，HTTP " + responseCode);
 
             long totalBytes = resolveTotalBytes(connection, resumedBytes, responseCode);
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -200,9 +482,7 @@ final class GamePackageForegroundRuntime {
                 try (InputStream existingInput = new BufferedInputStream(new FileInputStream(partFile))) {
                     byte[] existingBuffer = new byte[BUFFER_SIZE];
                     int existingRead;
-                    while ((existingRead = existingInput.read(existingBuffer)) != -1) {
-                        digest.update(existingBuffer, 0, existingRead);
-                    }
+                    while ((existingRead = existingInput.read(existingBuffer)) != -1) digest.update(existingBuffer, 0, existingRead);
                 }
             }
 
@@ -215,9 +495,7 @@ final class GamePackageForegroundRuntime {
                 byte[] buffer = new byte[BUFFER_SIZE];
                 int read;
                 while ((read = rawInput.read(buffer)) != -1) {
-                    if (cancelFlag.get()) {
-                        throw new IOException("安装已取消");
-                    }
+                    if (cancelFlag.get()) throw new IOException("安装已取消");
                     output.write(buffer, 0, read);
                     digest.update(buffer, 0, read);
                     downloadedBytes += read;
@@ -236,15 +514,9 @@ final class GamePackageForegroundRuntime {
             }
 
             String actualChecksum = bytesToHex(digest.digest());
-            if (task.checksum != null && !task.checksum.equalsIgnoreCase(actualChecksum)) {
-                throw new IOException("下载包校验失败");
-            }
-            if (targetFile.exists() && !targetFile.delete()) {
-                throw new IOException("清理旧安装包失败");
-            }
-            if (!partFile.renameTo(targetFile)) {
-                throw new IOException("写入安装包失败");
-            }
+            if (task.checksum != null && !task.checksum.equalsIgnoreCase(actualChecksum)) throw new IOException("下载包校验失败");
+            if (targetFile.exists() && !targetFile.delete()) throw new IOException("清理旧安装包失败");
+            if (!partFile.renameTo(targetFile)) throw new IOException("写入安装包失败");
         } finally {
             connection.disconnect();
         }
@@ -282,14 +554,7 @@ final class GamePackageForegroundRuntime {
     }
 
     private static void persistInstallState(Context context, String gameId, JSONObject payload) throws IOException {
-        File stateFile = new File(new File(getRootDir(context), gameId), STATE_FILE);
-        File parent = stateFile.getParentFile();
-        if (parent != null && !parent.exists() && !parent.mkdirs()) {
-            throw new IOException("创建安装状态目录失败");
-        }
-        try (FileOutputStream output = new FileOutputStream(stateFile)) {
-            output.write((payload.toString() + "\n").getBytes(StandardCharsets.UTF_8));
-        }
+        GamePackageFs.writeJsonFile(GamePackageFs.resolveStateFile(context, gameId), payload);
     }
 
     private static void extractArchive(File archiveFile, File outputDir, AtomicBoolean cancelFlag) throws IOException {
@@ -317,26 +582,6 @@ final class GamePackageForegroundRuntime {
                 }
             }
         }
-    }
-
-    private static void writeMetadata(File targetFile, String gameId, String runtimeChannel, String assetPackId, String assetPackVersion, long installedAt) throws Exception {
-        JSONObject metadata = new JSONObject();
-        metadata.put("gameId", gameId);
-        metadata.put("runtimeChannel", runtimeChannel);
-        metadata.put("assetPackId", assetPackId);
-        metadata.put("assetPackVersion", assetPackVersion);
-        metadata.put("installedAt", installedAt);
-        File parent = targetFile.getParentFile();
-        if (parent != null && !parent.mkdirs() && !parent.exists()) throw new IOException("创建元数据目录失败");
-        try (FileOutputStream output = new FileOutputStream(targetFile)) {
-            output.write((metadata.toString(2) + "\n").getBytes(StandardCharsets.UTF_8));
-        }
-    }
-
-    private static File getRootDir(Context context) {
-        File rootDir = new File(context.getFilesDir(), ROOT_DIR);
-        if (!rootDir.exists()) rootDir.mkdirs();
-        return rootDir;
     }
 
     private static long resolveTotalBytes(HttpURLConnection connection, long resumedBytes, int responseCode) {
@@ -387,17 +632,6 @@ final class GamePackageForegroundRuntime {
         if (message.contains("压缩包") || message.contains("路径非法")) return "archive-invalid";
         if (error instanceof IOException) return "file-io";
         return "unknown";
-    }
-
-    private static void deleteRecursively(File target) {
-        if (target == null || !target.exists()) return;
-        File[] children = target.listFiles();
-        if (children != null) for (File child : children) deleteRecursively(child);
-        if (!target.delete() && target.exists()) Log.w(TAG, "deleteRecursively failed: " + target.getAbsolutePath());
-    }
-
-    private static String sanitizeFileSegment(String value) {
-        return value.replaceAll("[^a-zA-Z0-9._-]", "_");
     }
 
     private static String safe(String value, String fallback) {

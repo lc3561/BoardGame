@@ -164,4 +164,32 @@ describe('撤回后 EventStream 行为', () => {
     expect(state.sys.undo.pendingRequest).toBeUndefined();
     expect(state.sys.undo.snapshots).toHaveLength(0);
   });
+
+  it('本地对局 localAutoApprove 在 local: matchId 下应直接通过', () => {
+    let state = makeState();
+    state = {
+      ...state,
+      sys: {
+        ...state.sys,
+        matchId: 'local:undo-es-test:seed',
+      } as typeof state.sys,
+    };
+
+    const r1 = exec(state, { type: 'INCREMENT', playerId: '0', payload: {} });
+    expect(r1.success).toBe(true);
+    state = r1.state;
+    expect(state.core.counter).toBe(1);
+
+    const r2 = exec(state, {
+      type: UNDO_COMMANDS.REQUEST_UNDO,
+      playerId: '0',
+      payload: { localAutoApprove: true },
+    });
+    expect(r2.success).toBe(true);
+    state = r2.state;
+
+    expect(state.core.counter).toBe(0);
+    expect(state.sys.undo.pendingRequest).toBeUndefined();
+    expect(state.sys.undo.snapshots).toHaveLength(0);
+  });
 });

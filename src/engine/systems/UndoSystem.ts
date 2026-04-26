@@ -59,6 +59,21 @@ export interface UndoSystemConfig {
     turnStartPhase?: string;
 }
 
+function isLocalAutoApproveRequest<TCore>(
+    state: MatchState<TCore>,
+    payload: unknown,
+): boolean {
+    const rawPayload = payload as { localAutoApprove?: unknown } | undefined;
+    if (rawPayload?.localAutoApprove !== true) {
+        return false;
+    }
+    const matchId = (state.sys as { matchId?: unknown }).matchId;
+    if (matchId === undefined || matchId === null || matchId === '') {
+        return true;
+    }
+    return typeof matchId === 'string' && matchId.startsWith('local:');
+}
+
 
 function clearPendingRequest<TCore>(state: MatchState<TCore>): MatchState<TCore> {
     const { undo } = state.sys;
@@ -194,7 +209,14 @@ export function createUndoSystem<TCore>(
 
             // 处理撤销相关命令
             if (command.type === UNDO_COMMANDS.REQUEST_UNDO) {
-                return handleRequestUndo(state, command.playerId, playerIds, requireApproval, requiredApprovals);
+                return handleRequestUndo(
+                    state,
+                    command.playerId,
+                    playerIds,
+                    requireApproval,
+                    requiredApprovals,
+                    isLocalAutoApproveRequest(state, command.payload),
+                );
             }
             if (command.type === UNDO_COMMANDS.APPROVE_UNDO) {
                 return handleApproveUndo(state, command.playerId);
@@ -403,7 +425,8 @@ function handleRequestUndo<TCore>(
     requesterId: PlayerId,
     playerIds: readonly PlayerId[],
     requireApproval: boolean,
-    requiredApprovals: number
+    requiredApprovals: number,
+    localAutoApprove = false,
 ): HookResult<TCore> {
     const undo = state.sys.undo as UndoState & { aiSeatIds?: PlayerId[] };
 
@@ -420,7 +443,7 @@ function handleRequestUndo<TCore>(
     }
 
     // 如果不需要批准，直接执行撤销
-    if (!requireApproval || requiredApprovals === 0) {
+    if (!requireApproval || requiredApprovals === 0 || localAutoApprove) {
         const previousState = undo.snapshots[undo.snapshots.length - 1] as MatchState<TCore>;
         const newSnapshots = undo.snapshots.slice(0, -1);
         const cursors = undo.snapshotCursors ?? [];
@@ -430,6 +453,7 @@ function handleRequestUndo<TCore>(
         logUndoServer('request-approved-direct', {
             requesterId,
             historyLen: undo.snapshots.length,
+            localAutoApprove,
             restoredRandomCursor: restoredCursor,
         });
         

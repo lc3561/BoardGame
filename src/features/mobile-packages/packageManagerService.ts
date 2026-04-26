@@ -21,7 +21,7 @@ import {
     writeStoredGamePackageState,
 } from './storage';
 import type { GamePackageInstallHandle, ResolvedGamePackageManifest, StoredGamePackageState } from './types';
-import { hasUsableInstalledGamePackageVersion, mergeGamePackageState } from './types';
+import { hasUsableInstalledGamePackageState, mergeGamePackageState } from './types';
 
 type GamePackageStateListener = (state: StoredGamePackageState) => void;
 
@@ -34,8 +34,8 @@ let appliedCommonAudioAssetBaseOverride: string | undefined;
 let installedSharedAudioPackVersion: string | undefined;
 const isDevRuntime = typeof import.meta !== 'undefined' && import.meta.env?.DEV;
 
-const hasInstalledVersion = (state: Pick<StoredGamePackageState, 'status' | 'installedVersion'>) =>
-    state.status === 'installed' && hasUsableInstalledGamePackageVersion(state.installedVersion);
+const hasInstalledVersion = (state: Pick<StoredGamePackageState, 'status' | 'installedVersion' | 'localAssetBaseUrl'>) =>
+    hasUsableInstalledGamePackageState(state);
 
 const isInProgressStatus = (status: StoredGamePackageState['status']) =>
     status === 'queued'
@@ -202,6 +202,8 @@ const ensureSharedAudioPackInstalled = async (
         assetPackVersion: manifest.sharedAudioPackVersion,
         assetPackUrl: manifest.sharedAudioPackUrl,
         assetPackChecksum: manifest.sharedAudioPackChecksum,
+        assetPackFileIndexUrl: manifest.sharedAudioPackFileIndexUrl,
+        assetPackFileIndexChecksum: manifest.sharedAudioPackFileIndexChecksum,
         assetPackBytes: manifest.sharedAudioPackBytes,
         assetPackFileCount: manifest.sharedAudioPackFileCount,
         source: manifest.source,
@@ -334,6 +336,52 @@ export const refreshGamePackageStateFromNativeTask = async (
     });
     const nativeSnapshot = await readNativeGamePackageInstallState(gameId);
     if (nativeSnapshot) {
+        if (nativeSnapshot.exists !== true) {
+            if (nativeSnapshot.taskRunning === true) {
+                const currentState = getCurrentOrStoredState(gameId, resolvedFallback);
+                const resumedState = normalizeIncompleteInstalledState(
+                    isInProgressStatus(currentState.status)
+                        ? mergeGamePackageState(resolvedFallback, currentState)
+                        : mergeGamePackageState(resolvedFallback, {
+                            status: nativeSnapshot.state.status ?? 'manifest',
+                            progressPercent: nativeSnapshot.state.progressPercent,
+                            progressMode: nativeSnapshot.state.progressMode ?? 'indeterminate',
+                            updatedAt: nativeSnapshot.state.updatedAt ?? Date.now(),
+                        }),
+                    resolvedFallback,
+                    'cache',
+                );
+                logMobileRuntimeCritical('PackageManagerService', 'refresh-native-task-preserve-in-progress', {
+                    gameId,
+                    previousCachedState: stateCache.get(gameId),
+                    taskRunning: nativeSnapshot.taskRunning,
+                    resumedState,
+                });
+                emitState(resumedState);
+                return resumedState;
+            }
+
+            const resetState = mergeGamePackageState(resolvedFallback, {
+                status: 'not-installed',
+                progressPercent: undefined,
+                progressMode: undefined,
+                installedVersion: undefined,
+                localAssetBaseUrl: undefined,
+                errorCode: undefined,
+                errorMessage: undefined,
+                updatedAt: Date.now(),
+            });
+            logMobileRuntimeCritical('PackageManagerService', 'refresh-native-task-reset-missing-native-state', {
+                gameId,
+                previousCachedState: stateCache.get(gameId),
+                taskRunning: nativeSnapshot.taskRunning,
+                resetState,
+            });
+            clearStoredGamePackageState(gameId);
+            emitState(resetState);
+            return resetState;
+        }
+
         const mergedState = normalizeIncompleteInstalledState(
             mergeGamePackageState(resolvedFallback, nativeSnapshot.state),
             resolvedFallback,

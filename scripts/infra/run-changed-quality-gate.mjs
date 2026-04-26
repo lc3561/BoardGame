@@ -16,6 +16,8 @@ const mode = modeInput === 'prepush'
   : (modeInput === 'precommit' ? 'pre-commit' : modeInput);
 const isPrePushMode = mode === 'pre-push';
 const isPreCommitMode = mode === 'pre-commit';
+const skipLintInQualityGate = process.env.QUALITY_GATE_SKIP_LINT === '1';
+const isDryRun = process.env.QUALITY_GATE_DRY_RUN === '1';
 const targetHeadRef = (process.env.QUALITY_GATE_HEAD || 'HEAD').trim() || 'HEAD';
 const CACHE_SCHEMA_VERSION = 2;
 
@@ -44,6 +46,13 @@ const PRE_PUSH_CORE_TARGET_GROUPS = [
     targets: ['src/components', 'src/pages'],
   },
 ];
+const PRE_PUSH_GAME_SMOKE_TARGETS = {
+  smashup: ['src/games/smashup/__tests__/smashup.smoke.test.ts'],
+  dicethrone: ['src/games/dicethrone/__tests__/flow.test.ts'],
+  summonerwars: ['src/games/summonerwars/__tests__/flow.test.ts'],
+  tictactoe: ['src/games/tictactoe/__tests__/flow.test.ts'],
+  cardia: ['src/games/cardia/__tests__/smoke.test.ts'],
+};
 const ESLINT_WARNING_DELTA_IGNORE_PATTERNS = [
   /^e2e\//,
   /(^|\/)__tests__\//,
@@ -554,21 +563,6 @@ function affectsBuild(file) {
     || file.startsWith('scripts/audio/');
 }
 
-function affectsDiceThroneStyleContract(file) {
-  return file === 'src/index.css'
-    || file === 'vite.config.ts'
-    || file === 'postcss.config.js'
-    || file === 'postcss-tailwind-legacy-structure.js'
-    || file === 'postcss-tailwind-legacy-colors.js'
-    || file === 'postcss-tailwind-legacy-translate.js'
-    || file === 'package.json'
-    || file === 'playwright.config.ts'
-    || file.startsWith('src/games/dicethrone/ui/')
-    || file === 'src/components/game/framework/presets.tsx'
-    || file === 'scripts/games/dicethrone/verify/dicethrone-style-contract.mjs'
-    || file === 'e2e/dicethrone/dicethrone-simple-start.e2e.ts';
-}
-
 function affectsI18n(file) {
   return file.startsWith('src/')
     || file.startsWith('apps/api/')
@@ -665,10 +659,28 @@ function resolveScopedVitestTarget(file, targets, coverage) {
   return targets.find((target) => coverage.coveredScopes.has(target) && (file.startsWith(`${target}/`) || file === target)) || null;
 }
 
+function collectTestsForDirectoryTarget(target, coverage) {
+  const normalizedTarget = normalizeFile(target);
+  const directTestDir = `${normalizedTarget}/__tests__/`;
+
+  const directTests = coverage.testFiles.filter((file) => {
+    const normalizedFile = normalizeFile(file);
+    if (!isRunnableVitestTestFile(normalizedFile)) return false;
+    if (normalizedFile.startsWith(directTestDir)) return true;
+    return path.posix.dirname(normalizedFile) === normalizedTarget;
+  });
+
+  if (directTests.length > 0) {
+    return directTests;
+  }
+
+  return coverage.testFiles.filter((file) => isRunnableVitestTestFile(file) && (file === normalizedTarget || file.startsWith(`${normalizedTarget}/`)));
+}
+
 function expandVitestTargetsToTestFiles(targets, coverage) {
   return dedupeValues(targets.flatMap((target) => {
     if (isTestFile(target)) return isRunnableVitestTestFile(target) ? [target] : [];
-    return coverage.testFiles.filter((file) => isRunnableVitestTestFile(file) && (file === target || file.startsWith(`${target}/`)));
+    return collectTestsForDirectoryTarget(target, coverage);
   }));
 }
 
@@ -681,6 +693,49 @@ function collectScopedVitestTargets(files, targets) {
       .filter(Boolean),
   );
   return expandVitestTargetsToTestFiles(scopedTargets, coverage).filter(fileExistsInWorkspace);
+}
+
+function toWorkspaceScopeFile(file) {
+  const normalized = normalizeFile(file);
+  if (normalized.startsWith('e2e/src/')) {
+    const workspacePath = normalized.slice('e2e/'.length);
+    if (fileExistsInWorkspace(workspacePath)) {
+      return workspacePath;
+    }
+  }
+  return normalized;
+}
+
+function createScopedGameTestCommands(files, vitestArgs) {
+  const workspaceScopeFiles = dedupeValues(files.map((file) => toWorkspaceScopeFile(file)));
+  const gameIds = collectGameIds(workspaceScopeFiles);
+  const commands = [];
+
+  for (const gameId of gameIds) {
+    const gameTarget = `src/games/${gameId}`;
+    const scopedTargets = collectScopedVitestTargets(workspaceScopeFiles, [gameTarget]);
+    if (scopedTargets.length === 0) {
+      commands.push({
+        label: `${gameId} tests`,
+        reason: `${gameId} 目录有改动，但未解析到更细测试范围，回退到该游戏测试集`,
+        command: process.execPath,
+        args: [...VITEST_SAFE_ENTRY, 'run', gameTarget, ...vitestArgs],
+      });
+      continue;
+    }
+
+    scopedTargets.forEach((target, index) => {
+      const label = scopedTargets.length === 1 ? `${gameId} tests` : `${gameId} tests (${index + 1}/${scopedTargets.length})`;
+      commands.push(...createVitestCommands({
+        label,
+        reason: `${gameId} 目录有改动，按最近受影响测试范围增量执行`,
+        target,
+        vitestArgs,
+      }));
+    });
+  }
+
+  return commands;
 }
 
 function createVitestCommands({ label, reason, target, vitestArgs }) {
@@ -708,6 +763,7 @@ function createVitestCommands({ label, reason, target, vitestArgs }) {
 
 function collectCommands(files, baseRef, affectsTypecheck) {
   const commands = [];
+  const workspaceScopeFiles = dedupeValues(files.map((file) => toWorkspaceScopeFile(file)));
   const lintCandidateFiles = isPrePushMode
     ? prePushLintFiles.filter(isLintTarget)
     : files.filter(isLintTarget);
@@ -716,15 +772,16 @@ function collectCommands(files, baseRef, affectsTypecheck) {
     : lintCandidateFiles;
   const lintFiles = lintCandidateFiles.filter(fileExistsInWorkspace);
   const coreSourceChanged = hasAny(
-    files,
+    workspaceScopeFiles,
     isPrePushMode ? affectsPrePushGlobalVitest : isCoreSourceFile,
   );
   const coreTestFiles = collectRunnableVitestWorkspaceTargets(
-    files.filter((file) => isNonGameTestFile(file)),
+    workspaceScopeFiles.filter((file) => isNonGameTestFile(file)),
   );
-  const gameSourceIds = collectGameIds(files, { sourceOnly: true });
+  const touchedGameIds = collectGameIds(workspaceScopeFiles);
+  const gameSourceIds = collectGameIds(workspaceScopeFiles, { sourceOnly: true });
   const gameTestFiles = collectRunnableVitestWorkspaceTargets(
-    files.filter((file) => isGameFile(file) && isTestFile(file)),
+    workspaceScopeFiles.filter((file) => isGameFile(file) && isTestFile(file)),
   );
 
   if (hasAny(files, affectsTypecheck)) {
@@ -736,7 +793,9 @@ function collectCommands(files, baseRef, affectsTypecheck) {
     });
   }
 
-  if (isPrePushMode && lintWarningDeltaFiles.length > 0) {
+  if (skipLintInQualityGate && !isPrePushMode && lintFiles.length > 0) {
+    console.log('[changed-quality-gate] QUALITY_GATE_SKIP_LINT=1：pre-commit 的 ESLint 已由 lint-staged 执行，这里跳过重复 lint。');
+  } else if (isPrePushMode && lintWarningDeltaFiles.length > 0) {
     commands.push({
       label: 'ESLint warning delta',
       reason: 'pre-push 模式下仅阻止新增 warning，同时继续阻止当前 errors（忽略 e2e 与 __tests__ 的 warning 计数）',
@@ -763,30 +822,22 @@ function collectCommands(files, baseRef, affectsTypecheck) {
     });
   }
 
-  if (hasAny(files, affectsBuild) && !isPrePushMode) {
+  if (hasAny(files, affectsBuild) && isPrePushMode) {
     const buildArgs = ['run', 'build'];
-    // 本地 pre-commit 门禁只需要确保能成功构建并捕获编译/打包错误，
+    // 本地 pre-push 门禁需要确保能成功构建并捕获编译/打包错误，
     // 不需要强制跑 esbuild minify（它在 Windows + 大 bundle 时更容易触发内存峰值导致 gate 失败）。
-    // CI 会兜底 full build（含 minify），因此这里默认在 pre-commit 下关闭 minify 来提高稳定性。
-    if (isPreCommitMode) {
+    // CI 会兜底 full build（含 minify），因此这里默认在 pre-push 下关闭 minify 来提高稳定性。
+    if (isPrePushMode) {
       buildArgs.push('--', '--minify', 'false');
     }
     commands.push({
       label: 'Build',
-      reason: 'local 模式下存在前端/构建输入改动',
+      reason: 'pre-push 模式下存在前端/构建输入改动',
       command: 'npm',
       args: buildArgs,
     });
-    if (hasAny(files, affectsDiceThroneStyleContract)) {
-      commands.push({
-        label: 'DiceThrone style contract',
-        reason: '涉及 DiceThrone HUD / Tailwind 兼容链改动，需验证构建产物关键样式合同',
-        command: 'npm',
-        args: ['run', 'verify:dicethrone:style-contract'],
-      });
-    }
-  } else if (hasAny(files, affectsBuild) && isPrePushMode) {
-    console.log('[changed-quality-gate] pre-push 模式：跳过 build，交给 CI 全量构建兜底。');
+  } else if (hasAny(files, affectsBuild) && isPreCommitMode) {
+    console.log('[changed-quality-gate] pre-commit 模式：跳过 build，改由 pre-push 增量构建门禁兜底。');
   }
 
   if (hasAny(files, affectsI18n)) {
@@ -855,20 +906,44 @@ function collectCommands(files, baseRef, affectsTypecheck) {
           });
         });
 
-      const targetGameIds = gameSourceIds.length > 0
-        ? gameSourceIds
-        : [...KNOWN_GAME_IDS];
-
-      targetGameIds.forEach((gameId) => {
-        commands.push({
-          label: `${gameId} tests`,
-          reason: gameSourceIds.length > 0
-            ? `${gameId} 源码改动，单独跑该游戏完整测试集`
-            : '核心源码改动，需要逐游戏回归完整测试集',
-          command: process.execPath,
-          args: [...VITEST_SAFE_ENTRY, 'run', `src/games/${gameId}`, ...GAME_VITEST_ARGS],
+      if (gameSourceIds.length > 0) {
+        gameSourceIds.forEach((gameId) => {
+          commands.push({
+            label: `${gameId} tests`,
+            reason: `${gameId} 源码改动，单独跑该游戏完整测试集`,
+            command: process.execPath,
+            args: [...VITEST_SAFE_ENTRY, 'run', `src/games/${gameId}`, ...GAME_VITEST_ARGS],
+          });
         });
-      });
+      } else if (gameTestFiles.length > 0) {
+        commands.push({
+          label: 'Changed game test files',
+          reason: '核心源码改动且仅改到游戏测试文件，优先按测试文件精确运行',
+          command: process.execPath,
+          args: [...VITEST_SAFE_ENTRY, 'run', ...gameTestFiles, ...ensurePassWithNoTests(GAME_VITEST_ARGS)],
+        });
+      } else {
+        const fallbackGameIds = touchedGameIds.length > 0 ? touchedGameIds : [...KNOWN_GAME_IDS];
+        fallbackGameIds.forEach((gameId) => {
+          const smokeTargets = PRE_PUSH_GAME_SMOKE_TARGETS[gameId] ?? [];
+          if (smokeTargets.length > 0) {
+            commands.push({
+              label: `${gameId} smoke`,
+              reason: '核心源码改动，使用每个游戏的代表性 smoke/flow 测试做跨游戏兜底',
+              command: process.execPath,
+              args: [...VITEST_SAFE_ENTRY, 'run', ...smokeTargets, ...ensurePassWithNoTests(GAME_VITEST_ARGS)],
+            });
+            return;
+          }
+
+          commands.push({
+            label: `${gameId} tests`,
+            reason: '核心源码改动，缺少代表性 smoke/flow 测试，回退到该游戏完整测试集',
+            command: process.execPath,
+            args: [...VITEST_SAFE_ENTRY, 'run', `src/games/${gameId}`, ...GAME_VITEST_ARGS],
+          });
+        });
+      }
     } else {
       if (coreTestFiles.length > 0) {
         commands.push({
@@ -901,33 +976,21 @@ function collectCommands(files, baseRef, affectsTypecheck) {
       }
     }
   } else {
-    if (hasAny(files, affectsCoreArea)) {
-      const coreCoverage = collectTrackedTestCoverage(CORE_VITEST_TARGETS);
-      const coreTargetsWithTests = CORE_VITEST_TARGETS.filter((target) => coreCoverage.coveredScopes.has(target));
-      coreTargetsWithTests.forEach((target, index) => {
-        const label = coreTargetsWithTests.length === 1 ? 'Core tests' : `Core tests (${index + 1}/${coreTargetsWithTests.length})`;
+    if (hasAny(workspaceScopeFiles, affectsCoreArea)) {
+      const scopedCoreTargets = collectScopedVitestTargets(workspaceScopeFiles, CORE_VITEST_TARGETS);
+      scopedCoreTargets.forEach((target, index) => {
+        const label = scopedCoreTargets.length === 1 ? 'Core tests' : `Core tests (${index + 1}/${scopedCoreTargets.length})`;
         commands.push(...createVitestCommands({
           label,
-          reason: '核心框架/引擎区域改动，拆分执行以降低 Windows OOM 风险',
+          reason: '核心框架/引擎区域改动，按最近受影响测试范围增量执行',
           target,
           vitestArgs: FAST_VITEST_ARGS,
         }));
       });
-      commands.push({
-        label: 'Games core tests',
-        reason: '核心框架改动可能影响所有游戏',
-        command: process.execPath,
-        args: [...VITEST_SAFE_ENTRY, 'run', 'src/games', ...GAME_VITEST_ARGS],
-      });
+
+      commands.push(...createScopedGameTestCommands(workspaceScopeFiles, GAME_VITEST_ARGS));
     } else {
-      for (const gameId of collectGameIds(files)) {
-        commands.push({
-          label: `${gameId} tests`,
-          reason: `${gameId} 目录有改动`,
-          command: process.execPath,
-          args: [...VITEST_SAFE_ENTRY, 'run', `src/games/${gameId}`, ...GAME_VITEST_ARGS],
-        });
-      }
+      commands.push(...createScopedGameTestCommands(workspaceScopeFiles, GAME_VITEST_ARGS));
     }
   }
 
@@ -1041,6 +1104,43 @@ function shouldUseStableVitestEnv(command, args) {
 function shouldUseStableEslintEnv(command, args) {
   return command.trim().toLowerCase() === 'npx'
     && args[0] === 'eslint';
+}
+
+function isVitestCliSafeCommand(command, args) {
+  return command.includes('vitest-cli-safe') || args.includes('scripts/infra/vitest-cli-safe.mjs');
+}
+
+function cleanupWindowsVitestResidue() {
+  if (process.platform !== 'win32') return;
+
+  const repoRootForPowerShell = repoRoot.replace(/'/g, "''");
+  const powerShellScript = [
+    `$repo = [System.IO.Path]::GetFullPath('${repoRootForPowerShell}')`,
+    `$targets = Get-CimInstance Win32_Process | Where-Object {`,
+    `  ($_.Name -eq 'node.exe' -and ($_.CommandLine -match 'scripts[/\\\\]infra[/\\\\]vitest-cli-safe\\.mjs' -or $_.CommandLine -match 'node_modules[/\\\\]vitest[/\\\\]dist[/\\\\]workers[/\\\\]forks\\.js')) -or`,
+    `  ($_.Name -eq 'esbuild.exe' -and $_.ExecutablePath -like ($repo + '*'))`,
+    `}`,
+    `$ids = @($targets | Select-Object -ExpandProperty ProcessId -Unique)`,
+    `if ($ids.Count -gt 0) { Stop-Process -Id $ids -Force -ErrorAction SilentlyContinue }`,
+    `Write-Output $ids.Count`,
+  ].join('; ');
+
+  const result = spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', powerShellScript], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    shell: false,
+  });
+
+  if (result.error) {
+    console.warn(`[changed-quality-gate] 清理残留 vitest/esbuild 进程失败: ${result.error.message}`);
+    return;
+  }
+
+  const cleanedCount = Number.parseInt((result.stdout ?? '').trim(), 10);
+  if (Number.isFinite(cleanedCount) && cleanedCount > 0) {
+    console.log(`[changed-quality-gate] 已清理 ${cleanedCount} 个残留 vitest/esbuild 进程。`);
+  }
 }
 
 function shouldDirectSpawnOnWindows(command) {
@@ -1180,23 +1280,41 @@ async function runCommand({ label, reason, command, args }) {
   console.log(`[changed-quality-gate] 命令: ${commandToLine(command, args)}`);
 
   const startAt = Date.now();
+  const shouldCleanupVitestResidue = isVitestCliSafeCommand(command, args);
+  if (shouldCleanupVitestResidue) {
+    cleanupWindowsVitestResidue();
+  }
+
   const env = shouldUseStableVitestEnv(command, args)
     ? createVitestEnv()
     : (shouldUseStableEslintEnv(command, args) ? createEslintEnv() : process.env);
-  const result = shouldDirectSpawnOnWindows(command)
-    ? spawnSync(command, args, {
-        cwd: repoRoot,
-        stdio: 'inherit',
-        shell: false,
-        env,
-      })
-    : spawnSync(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', commandToLine(command, args)], {
-        cwd: repoRoot,
-        stdio: 'inherit',
-        shell: false,
-        env,
-      });
+  const runSpawn = () => (
+    shouldDirectSpawnOnWindows(command)
+      ? spawnSync(command, args, {
+          cwd: repoRoot,
+          stdio: 'inherit',
+          shell: false,
+          env,
+        })
+      : spawnSync(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', commandToLine(command, args)], {
+          cwd: repoRoot,
+          stdio: 'inherit',
+          shell: false,
+          env,
+        })
+  );
+
+  let result = runSpawn();
+  if (shouldCleanupVitestResidue && result.status !== 0) {
+    cleanupWindowsVitestResidue();
+    console.warn('[changed-quality-gate] Vitest 命令失败，执行一次清理后重试。');
+    result = runSpawn();
+  }
   const durationMs = Date.now() - startAt;
+
+  if (shouldCleanupVitestResidue) {
+    cleanupWindowsVitestResidue();
+  }
 
   if (result.error) {
     console.error(`[changed-quality-gate] 命令启动失败: ${result.error.message}`);
@@ -1308,6 +1426,16 @@ try {
   const commands = collectCommands(files, baseRef, affectsTypecheck);
   if (commands.length === 0) {
     console.log('[changed-quality-gate] 当前改动仅涉及文档/证据，跳过代码校验。');
+    process.exit(0);
+  }
+
+  if (isDryRun) {
+    console.log('\n[changed-quality-gate] DRY RUN：以下命令会被执行');
+    commands.forEach((command, index) => {
+      console.log(`${index + 1}. ${command.label}`);
+      console.log(`   reason: ${command.reason}`);
+      console.log(`   command: ${commandToLine(command.command, command.args)}`);
+    });
     process.exit(0);
   }
 

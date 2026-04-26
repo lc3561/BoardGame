@@ -17,6 +17,7 @@ interface ReactionSessionView {
     responseWindowType?: 'meFirst' | 'afterScoring';
     activePlayerId: string;
     currentPlayerId: string;
+    sourceBaseIndex?: number;
 }
 
 const PLAYER_IDS: PlayerId[] = ['0', '1'];
@@ -219,6 +220,14 @@ describe('After Scoring 响应窗口 - 真实链路', () => {
         expect(chooseAmount.success).toBe(true);
         eventLog.push(...chooseAmount.events);
 
+        for (let guard = 0; guard < 4; guard += 1) {
+            const pendingChoice = getCurrentChoice(runner.getState());
+            if (pendingChoice?.sourceId !== 'smashup_reaction_choose') break;
+            const passResult = runner.resolveInteraction(pendingChoice.playerId, { optionId: 'pass' });
+            expect(passResult.success).toBe(true);
+            eventLog.push(...passResult.events);
+        }
+
         expect(collectBaseEventCount(eventLog, SU_EVENTS.BASE_SCORED)).toBe(1);
         expect(collectBaseEventCount(eventLog, SU_EVENTS.BASE_CLEARED)).toBe(1);
         expect(collectBaseEventCount(eventLog, SU_EVENTS.BASE_REPLACED)).toBe(1);
@@ -400,6 +409,7 @@ describe('After Scoring 响应窗口 - 真实链路', () => {
                 responseWindowType: 'afterScoring',
                 activePlayerId: '0',
                 currentPlayerId: '0',
+                sourceBaseIndex: 0,
             };
             sys.responseWindow = {
                 ...(sys.responseWindow ?? {}),
