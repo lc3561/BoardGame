@@ -169,6 +169,56 @@ describe('systemInteractionAdapter', () => {
     });
   });
 
+  it('为 on_phase_start_illusion 交互派生系统 abilityMode', () => {
+    const swInteraction: SwSimpleChoiceInteraction = {
+      id: 'sw-illusion-1',
+      type: 'on_phase_start_illusion',
+      meta: {
+        type: 'on_phase_start_illusion',
+        sourceUnitId: 'illusionist-1',
+        sourcePosition: { row: 4, col: 2 },
+      },
+      options: [
+        {
+          id: 'pos:4,3',
+          label: 'Target',
+          value: { action: 'on_phase_start_illusion', targetPosition: { row: 4, col: 3 } },
+        },
+      ],
+    };
+
+    expect(deriveSystemAbilityMode(swInteraction, null)).toEqual({
+      abilityId: 'illusion',
+      step: 'selectUnit',
+      sourceUnitId: 'illusionist-1',
+    });
+  });
+
+  it('为 on_phase_start_blood_rune 交互派生系统 abilityMode', () => {
+    const swInteraction: SwSimpleChoiceInteraction = {
+      id: 'sw-blood-rune-1',
+      type: 'on_phase_start_blood_rune',
+      meta: {
+        type: 'on_phase_start_blood_rune',
+        sourceUnitId: 'brav-1',
+        sourcePosition: { row: 3, col: 2 },
+      },
+      options: [
+        {
+          id: 'damage',
+          label: '自伤',
+          value: { action: 'on_phase_start_blood_rune', choice: 'damage' },
+        },
+      ],
+    };
+
+    expect(deriveSystemAbilityMode(swInteraction, null)).toEqual({
+      abilityId: 'blood_rune',
+      step: 'selectUnit',
+      sourceUnitId: 'brav-1',
+    });
+  });
+
   it('能按卡牌和位置匹配 activated_ability_target 选项', () => {
     const swInteraction: SwSimpleChoiceInteraction = {
       id: 'sw-activated-1',

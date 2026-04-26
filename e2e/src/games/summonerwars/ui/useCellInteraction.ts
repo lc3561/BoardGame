@@ -26,7 +26,6 @@ import { BOARD_ROWS, BOARD_COLS } from '../config/board';
 import type { AbilityModeState, SoulTransferModeState, MindCaptureModeState, AfterAttackAbilityModeState } from './useGameEvents';
 import { useToast } from '../../../contexts/ToastContext';
 import { useEventCardModes, requiresEventInteraction } from './useEventCardModes';
-import type { PendingBeforeAttack } from './modeTypes';
 import type { InteractionDescriptor, PromptOption } from '../../../engine/systems/InteractionSystem';
 import { INTERACTION_COMMANDS } from '../../../engine/systems/InteractionSystem';
 import {
@@ -100,7 +99,6 @@ export function useCellInteraction({
   // ---------- 核心状态 ----------
   const [selectedHandCardId, setSelectedHandCardId] = useState<string | null>(null);
   const [selectedCardsForDiscard, setSelectedCardsForDiscard] = useState<string[]>([]);
-  const [pendingBeforeAttack, setPendingBeforeAttack] = useState<PendingBeforeAttack | null>(null);
   const [endPhaseConfirmPending, setEndPhaseConfirmPending] = useState(false);
   const [isPhaseAdvanceLocked, setIsPhaseAdvanceLocked] = useState(false);
   const phaseAdvanceCooldownUntilRef = useRef(0);
@@ -446,11 +444,7 @@ export function useCellInteraction({
       if (!hasExtraAttacks && !hasRallyingCry) return [];
     }
     const baseTargets = getValidAttackTargetsEnhanced(core, core.selectedUnit);
-    const hasHealingBeforeAttack = pendingBeforeAttack
-      && selectedUnit
-      && pendingBeforeAttack.sourceUnitId === selectedUnit.instanceId
-      && pendingBeforeAttack.abilityId === 'healing';
-    if (!selectedUnit || (!selectedUnit.healingMode && !hasHealingBeforeAttack)) {
+    if (!selectedUnit || !selectedUnit.healingMode) {
       return baseTargets;
     }
     const extendedTargets = [...baseTargets];
@@ -468,7 +462,7 @@ export function useCellInteraction({
       }
     }
     return extendedTargets;
-  }, [core, currentPhase, isMyTurn, myPlayerId, pendingBeforeAttack]);
+  }, [core, currentPhase, isMyTurn, myPlayerId]);
 
   // 可以使用技能的单位（青色 + 波纹）
   const abilityReadyPositions = useMemo(() => {
@@ -495,31 +489,6 @@ export function useCellInteraction({
     
     return extractPositions(hints);
   }, [core, currentPhase, isMyTurn, myPlayerId]);
-
-  // 攻击前技能状态
-  const activeBeforeAttack = useMemo(() => {
-    if (!pendingBeforeAttack || !core.selectedUnit) return null;
-    const unit = core.board[core.selectedUnit.row]?.[core.selectedUnit.col]?.unit;
-    if (!unit) return null;
-    if (unit.instanceId !== pendingBeforeAttack.sourceUnitId) return null;
-    return pendingBeforeAttack;
-  }, [core, pendingBeforeAttack]);
-
-  useEffect(() => {
-    if (!pendingBeforeAttack) return;
-    if (currentPhase !== 'attack') {
-      queueMicrotask(() => setPendingBeforeAttack(null));
-      return;
-    }
-    if (!core.selectedUnit) {
-      queueMicrotask(() => setPendingBeforeAttack(null));
-      return;
-    }
-    const unit = core.board[core.selectedUnit.row]?.[core.selectedUnit.col]?.unit;
-    if (!unit || unit.instanceId !== pendingBeforeAttack.sourceUnitId) {
-      queueMicrotask(() => setPendingBeforeAttack(null));
-    }
-  }, [currentPhase, core, pendingBeforeAttack]);
 
   // ---------- 格子点击 ----------
 
@@ -635,29 +604,18 @@ export function useCellInteraction({
                 });
               }
               setAbilityMode(null);
-              setPendingBeforeAttack(null);
               return;
             }
-            // ✅ 被动触发模式：选择目标后立即发送攻击命令
-            if (abilityMode.pendingAttackTarget && core.selectedUnit) {
-              dispatch(SW_COMMANDS.DECLARE_ATTACK, {
-                attacker: core.selectedUnit,
-                target: abilityMode.pendingAttackTarget,
-                beforeAttack: {
-                  abilityId: abilityMode.abilityId as PendingBeforeAttack['abilityId'],
-                  targetUnitId: targetUnit.instanceId,
-                },
-              });
-              setAbilityMode(null);
-              setPendingBeforeAttack(null);
-            } else {
-              // 旧流程：设置 pendingBeforeAttack（等待玩家点击攻击目标）
-              setPendingBeforeAttack({
-                abilityId: abilityMode.abilityId as PendingBeforeAttack['abilityId'],
-                sourceUnitId: abilityMode.sourceUnitId,
+            if (!abilityMode.pendingAttackTarget || !core.selectedUnit) return;
+            dispatch(SW_COMMANDS.DECLARE_ATTACK, {
+              attacker: core.selectedUnit,
+              target: abilityMode.pendingAttackTarget,
+              beforeAttack: {
+                abilityId: abilityMode.abilityId,
                 targetUnitId: targetUnit.instanceId,
-              });
-            }
+              },
+            });
+            setAbilityMode(null);
           } else if (abilityMode.abilityId === 'illusion') {
             if (swInteraction?.type !== 'on_phase_start_illusion') return;
             const option = swInteraction.options.find((opt) => {
@@ -1229,64 +1187,37 @@ export function useCellInteraction({
         optionId: option.id,
       });
       setAbilityMode(null);
-      setPendingBeforeAttack(null);
       return;
     }
     
     if (abilityMode.abilityId === 'holy_arrow') {
       // "任意数量"包括 0，允许不选择任何卡直接确认
-      
-      // 有 pendingAttackTarget 时立即发送攻击命令
-      if (abilityMode.pendingAttackTarget && core.selectedUnit) {
-        dispatch(SW_COMMANDS.DECLARE_ATTACK, {
-          attacker: core.selectedUnit,
-          target: abilityMode.pendingAttackTarget,
-          beforeAttack: selected.length > 0 ? {
-            abilityId: 'holy_arrow',
-            discardCardIds: selected,
-          } : undefined,
-        });
-        setAbilityMode(null);
-        setPendingBeforeAttack(null);
-        return;
-      }
-      
-      // 旧流程（无 pendingAttackTarget）
-      if (selected.length > 0) {
-        setPendingBeforeAttack({
+      if (!abilityMode.pendingAttackTarget || !core.selectedUnit) return;
+      dispatch(SW_COMMANDS.DECLARE_ATTACK, {
+        attacker: core.selectedUnit,
+        target: abilityMode.pendingAttackTarget,
+        beforeAttack: selected.length > 0 ? {
           abilityId: 'holy_arrow',
-          sourceUnitId: abilityMode.sourceUnitId,
           discardCardIds: selected,
-        });
-      }
+        } : undefined,
+      });
+      setAbilityMode(null);
+      return;
     }
     
     if (abilityMode.abilityId === 'healing') {
       // "你可以"弃牌，允许不选择任何卡直接确认
-      
-      // 有 pendingAttackTarget 时立即发送攻击命令
-      if (abilityMode.pendingAttackTarget && core.selectedUnit) {
-        dispatch(SW_COMMANDS.DECLARE_ATTACK, {
-          attacker: core.selectedUnit,
-          target: abilityMode.pendingAttackTarget,
-          beforeAttack: selected.length > 0 ? {
-            abilityId: 'healing',
-            targetCardId: selected[0],
-          } : undefined,
-        });
-        setAbilityMode(null);
-        setPendingBeforeAttack(null);
-        return;
-      }
-      
-      // 旧流程（无 pendingAttackTarget）
-      if (selected.length > 0) {
-        setPendingBeforeAttack({
+      if (!abilityMode.pendingAttackTarget || !core.selectedUnit) return;
+      dispatch(SW_COMMANDS.DECLARE_ATTACK, {
+        attacker: core.selectedUnit,
+        target: abilityMode.pendingAttackTarget,
+        beforeAttack: selected.length > 0 ? {
           abilityId: 'healing',
-          sourceUnitId: abilityMode.sourceUnitId,
           targetCardId: selected[0],
-        });
-      }
+        } : undefined,
+      });
+      setAbilityMode(null);
+      return;
     }
     
     setAbilityMode(null);
@@ -1311,22 +1242,16 @@ export function useCellInteraction({
         dispatch(INTERACTION_COMMANDS.CANCEL, { interactionId: swInteraction.id });
       }
       setAbilityMode(null);
-      setPendingBeforeAttack(null);
       return;
     }
-    // ✅ 如果是被动触发模式（有 pendingAttackTarget），跳过能力并直接攻击
     if (abilityMode && abilityMode.pendingAttackTarget && core.selectedUnit) {
       dispatch(SW_COMMANDS.DECLARE_ATTACK, {
         attacker: core.selectedUnit,
         target: abilityMode.pendingAttackTarget,
       });
       setAbilityMode(null);
-      setPendingBeforeAttack(null);
       return;
     }
-    
-    // 否则只是取消 pendingBeforeAttack
-    setPendingBeforeAttack(null);
   };
 
   // ---------- 自动跳过 ----------
@@ -1424,9 +1349,7 @@ export function useCellInteraction({
     glacialShiftMode: eventCardModes.glacialShiftMode,
     setGlacialShiftMode: eventCardModes.setGlacialShiftMode,
     withdrawMode: eventCardModes.withdrawMode,
-    setWithdrawMode: eventCardModes.setWithdrawMode,
     telekinesisTargetMode: eventCardModes.telekinesisTargetMode,
-    setTelekinesisTargetMode: eventCardModes.setTelekinesisTargetMode,
     // 计算值
     validSummonPositions, validBuildPositions, validMovePositions, validAttackPositions,
     validAbilityPositions, validAbilityUnits, actionableUnitPositions, abilityReadyPositions,

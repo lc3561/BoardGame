@@ -159,15 +159,18 @@ async function bootstrap() {
         : ['http://localhost', 'https://localhost', 'capacitor://localhost'];
     const allowedOrigins = new Set([...webOrigins, ...appWebOrigins]);
     const isDev = !process.env.WEB_ORIGINS;
+    const isAllowedRequestOrigin = (origin?: string) => {
+        if (!origin) return true;
+        if (isDev && (origin.includes('localhost') || origin.includes('127.0.0.1'))) {
+            return true;
+        }
+        return allowedOrigins.has(origin);
+    };
 
     const app = await NestFactory.create(AppModule, {
         cors: {
             origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-                if (!origin) return callback(null, true);
-                if (isDev && (origin.includes('localhost') || origin.includes('127.0.0.1'))) {
-                    return callback(null, true);
-                }
-                if (allowedOrigins.has(origin)) {
+                if (isAllowedRequestOrigin(origin)) {
                     return callback(null, true);
                 }
                 callback(new Error(`CORS: origin ${origin} not allowed`));
@@ -188,6 +191,29 @@ async function bootstrap() {
         process.env.GAME_SERVER_PROXY_TARGET
         || process.env.GAME_SERVER_URL
         || 'http://127.0.0.1:18000';
+
+    expressApp.use((req, res, next) => {
+        const requestOrigin = req.headers.origin;
+        if (isAllowedRequestOrigin(requestOrigin)) {
+            if (requestOrigin) {
+                res.setHeader('Access-Control-Allow-Origin', requestOrigin);
+                res.setHeader('Vary', 'Origin');
+            }
+            res.setHeader('Access-Control-Allow-Credentials', 'true');
+        }
+        res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+        res.setHeader(
+            'Access-Control-Allow-Headers',
+            req.headers['access-control-request-headers'] || 'Content-Type, Authorization',
+        );
+
+        if (req.method === 'OPTIONS') {
+            res.status(204).end();
+            return;
+        }
+
+        next();
+    });
 
     const gameProxy = createProxyMiddleware({
         target: gameServerTarget,

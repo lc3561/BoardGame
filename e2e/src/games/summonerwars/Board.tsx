@@ -928,8 +928,7 @@ export const SummonerWarsBoard: React.FC<Props> = ({
     if (swInteraction?.type === 'after_attack_withdraw_cost' || swInteraction?.type === 'after_attack_withdraw_position') {
       cancelSwInteraction(true);
     }
-    interaction.setWithdrawMode(null);
-  }, [cancelSwInteraction, interaction, swInteraction]);
+  }, [cancelSwInteraction, swInteraction]);
   const handleConfirmStun = useCallback(() => {
     interaction.handleConfirmStun();
   }, [interaction]);
@@ -1040,8 +1039,7 @@ export const SummonerWarsBoard: React.FC<Props> = ({
     ) {
       cancelSwInteraction(true);
     }
-    interaction.setTelekinesisTargetMode(null);
-  }, [cancelSwInteraction, interaction, swInteraction]);
+  }, [cancelSwInteraction, swInteraction]);
   // afterMove 技能：充能自身
   const handleAfterMoveSelfCharge = useCallback(() => {
     if (swInteraction?.type !== 'after_move_spirit_bond' && swInteraction?.type !== 'after_move_frost_axe') {
@@ -1397,7 +1395,6 @@ export const SummonerWarsBoard: React.FC<Props> = ({
                       }
                       interaction.handleCardSelect(null);
                     }}
-                    pendingBeforeAttack={interaction.pendingBeforeAttack}
                     bloodSummonMode={interaction.bloodSummonMode}
                     annihilateMode={interaction.annihilateMode}
                     soulTransferMode={soulTransferMode}

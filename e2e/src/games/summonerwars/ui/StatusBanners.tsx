@@ -41,14 +41,6 @@ export interface FuneralPyreModeState {
   charges: number;
 }
 
-interface PendingBeforeAttack {
-  abilityId: 'life_drain' | 'holy_arrow' | 'healing';
-  sourceUnitId: string;
-  targetUnitId?: string;
-  targetCardId?: string;
-  discardCardIds?: string[];
-}
-
 // ============================================================================
 // Props
 // ============================================================================
@@ -61,7 +53,6 @@ interface StatusBannersProps {
   abilityMode: AbilityModeState | null;
   fireSacrificeSummonMode: { handCardId: string } | null;
   onCancelFireSacrifice: () => void;
-  pendingBeforeAttack: PendingBeforeAttack | null;
   bloodSummonMode: BloodSummonModeState | null;
   annihilateMode: AnnihilateModeState | null;
   soulTransferMode: SoulTransferModeState | null;
@@ -158,7 +149,7 @@ const StunBanner: React.FC<{
 
 export const StatusBanners: React.FC<StatusBannersProps> = ({
   currentPhase, isMyTurn, core,
-  abilityMode, fireSacrificeSummonMode, onCancelFireSacrifice, pendingBeforeAttack, bloodSummonMode, annihilateMode, soulTransferMode, funeralPyreMode,
+  abilityMode, fireSacrificeSummonMode, onCancelFireSacrifice, bloodSummonMode, annihilateMode, soulTransferMode, funeralPyreMode,
   mindControlMode, chantEntanglementMode, sneakMode, glacialShiftMode, withdrawMode, stunMode, hypnoticLureMode,
   mindCaptureMode, afterAttackAbilityMode, rapidFireMode, telekinesisTargetMode, magicEventChoiceMode,
   eventTargetMode,
@@ -364,19 +355,6 @@ export const StatusBanners: React.FC<StatusBannersProps> = ({
           {t('statusBanners.ability.feedBeast')}
         </span>
         <GameButton onClick={onConfirmFeedBeastSelfDestroy} variant="secondary" size="sm">{t('actions.feedBeastSelfDestroy')}</GameButton>
-      </div>
-    );
-  }
-
-  if (pendingBeforeAttack) {
-    return (
-      <div className="bg-amber-900/90 backdrop-blur-sm px-4 py-2 rounded-lg border border-amber-500/40 flex items-center gap-3 shadow-lg">
-        <span className="text-amber-200 text-sm font-bold">
-          {pendingBeforeAttack.abilityId === 'life_drain' && t('statusBanners.beforeAttack.lifeDrain')}
-          {pendingBeforeAttack.abilityId === 'holy_arrow' && t('statusBanners.beforeAttack.holyArrow')}
-          {pendingBeforeAttack.abilityId === 'healing' && t('statusBanners.beforeAttack.healing')}
-        </span>
-        <GameButton onClick={onCancelBeforeAttack} variant="secondary" size="sm">{t('actions.cancel')}</GameButton>
       </div>
     );
   }

@@ -710,7 +710,7 @@ test.describe('Smash Up 牌库检索交互', () => {
         await game.setupScene({
             gameId: 'smashup',
             player0: {
-                hand: ['robot_tech_center', 'robot_microbot_alpha'],
+                hand: ['robot_microbot_alpha', 'robot_microbot_beta'],
                 deck: [],
                 discard: ['skeletons_revenant'],
                 factions: ['skeletons', 'robots'],
@@ -729,7 +729,7 @@ test.describe('Smash Up 牌库检索交互', () => {
             ],
         });
 
-        await game.playCard('robot_tech_center', { targetBaseIndex: 0 });
+        await game.playCard('robot_microbot_alpha', { targetBaseIndex: 0 });
         await game.waitForInteraction('skeletons_revenant_base');
 
         const promptMeta = await page.evaluate(() => {
@@ -762,7 +762,7 @@ test.describe('Smash Up 牌库检索交互', () => {
 
         await game.screenshot('skeletons-revenant-buried-resolved', testInfo);
 
-        await game.playCard('robot_microbot_alpha', { targetBaseIndex: 0 });
+        await game.playCard('robot_microbot_beta', { targetBaseIndex: 0 });
         await game.waitForNoInteraction();
         await page.waitForTimeout(250);
 

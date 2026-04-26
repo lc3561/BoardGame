@@ -386,12 +386,6 @@ export function useEventCardModes({
 
   const withdrawMode = systemWithdrawMode;
 
-  const setWithdrawMode = useCallback((mode: WithdrawModeState | null) => {
-    if (!mode) {
-      setSelectedHandCardId(null);
-    }
-  }, [setSelectedHandCardId]);
-
   const systemTelekinesisTargetMode = useMemo<TelekinesisTargetModeState | null>(() => {
     if (!swInteraction) return null;
     const isSystemDirectionMode = swInteraction.type === 'after_attack_telekinesis_direction'
@@ -427,8 +421,6 @@ export function useEventCardModes({
   }, [swInteraction]);
 
   const telekinesisTargetMode = systemTelekinesisTargetMode;
-
-  const setTelekinesisTargetMode = useCallback((_mode: TelekinesisTargetModeState | null) => {}, []);
 
   const sneakMode = useMemo<SneakModeState | null>(() => {
     if (!swInteraction) return null;
@@ -782,7 +774,6 @@ export function useEventCardModes({
             respondInteractionOption(optionId);
           }
         }
-        setTelekinesisTargetMode(null);
       }
       return true;
     }
@@ -855,20 +846,9 @@ export function useEventCardModes({
     // 撤退位置选择模式
     if (withdrawMode && withdrawMode.step === 'selectPosition') {
       const isValid = withdrawHighlights.some(p => p.row === gameRow && p.col === gameCol);
-      if (isValid) {
-        if (swInteraction?.type === 'after_attack_withdraw_position') {
-          const optionId = findInteractionOptionId((option) => option.id === `pos:${gameRow},${gameCol}`);
-          respondInteractionOption(optionId);
-        } else {
-          dispatch(SW_COMMANDS.ACTIVATE_ABILITY, {
-            abilityId: 'withdraw',
-            sourceUnitId: withdrawMode.sourceUnitId,
-            costType: withdrawMode.costType,
-            targetPosition: { row: gameRow, col: gameCol },
-            _noSnapshot: true,
-          });
-        }
-        setWithdrawMode(null);
+      if (isValid && swInteraction?.type === 'after_attack_withdraw_position') {
+        const optionId = findInteractionOptionId((option) => option.id === `pos:${gameRow},${gameCol}`);
+        respondInteractionOption(optionId);
       }
       return true;
     }
@@ -956,7 +936,7 @@ export function useEventCardModes({
     hypnoticLureMode, eventTargetMode,
     chantEntanglementOptions, mindControlOptions, annihilateOptions,
     findInteractionOptionId, respondInteractionOption,
-    respondPositionOption, setTelekinesisTargetMode, setWithdrawMode, swInteraction]);
+    respondPositionOption, swInteraction]);
 
   // ---------- 打出事件卡 ----------
 
@@ -1172,8 +1152,8 @@ export function useEventCardModes({
     chantEntanglementMode, setChantEntanglementMode,
     sneakMode, setSneakMode,
     glacialShiftMode, setGlacialShiftMode,
-    withdrawMode, setWithdrawMode,
-    telekinesisTargetMode, setTelekinesisTargetMode,
+    withdrawMode,
+    telekinesisTargetMode,
     // 派生
     clearAllEventModes, hasActiveEventMode,
     // 高亮
