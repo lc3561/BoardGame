@@ -15,7 +15,6 @@ import type { AbilityUIContext } from '../domain/abilities';
 import { getUnitAbilities } from '../domain/helpers';
 import { GameButton } from './GameButton';
 import type { AbilityModeState } from './useGameEvents';
-import type { WithdrawModeState } from './modeTypes';
 import { BOARD_SHELL_REFERENCE_WIDTH } from './layoutConstants';
 
 interface Props {
@@ -29,13 +28,12 @@ interface Props {
   eventTargetMode: unknown;
   dispatch: (type: string, payload?: unknown) => void;
   setAbilityMode: (mode: AbilityModeState | null) => void;
-  setWithdrawMode: (mode: WithdrawModeState | null) => void;
 }
 
 export const AbilityButtonsPanel: React.FC<Props> = ({
   core, currentPhase, isMyTurn, myPlayerId, myHand,
   abilityMode, bloodSummonMode, eventTargetMode,
-  dispatch, setAbilityMode, setWithdrawMode,
+  dispatch, setAbilityMode,
 }) => {
   const { t } = useTranslation('game-summonerwars');
   const validationTimestamp = 0;
@@ -75,8 +73,6 @@ export const AbilityButtonsPanel: React.FC<Props> = ({
     const handleClick = () => {
       if (ui.activationType === 'directExecute') {
         dispatch(SW_COMMANDS.ACTIVATE_ABILITY, { abilityId, sourceUnitId: unit.instanceId });
-      } else if (ui.activationType === 'withdrawMode') {
-        setWithdrawMode({ sourceUnitId: unit.instanceId, step: 'selectCost' });
       } else {
         // 交给 domain 决定是直接执行还是先进入 InteractionSystem。
         dispatch(SW_COMMANDS.ACTIVATE_ABILITY, {

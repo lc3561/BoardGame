@@ -31,6 +31,52 @@
   - 本轮已清理三派系卡图/文案/关键实现的已知漂移，但这仍主要是 **L1 + L2** 证据补强；
   - 若要恢复成“三派系整包已收口”，仍需把三派系剩余对象级真实入口证据与最终整包结论继续补齐。
 
+## 2026-04-26 继续重审记录：Mermaids 卡图口径再收紧
+
+- 直接真相源：
+  - `temp/cards7-03.png` → `塞壬的歌声`
+  - `temp/cards7-04.png` → `死亡海湾`
+  - `temp/cards7-07.png` → `诱惑者`
+  - `temp/cards7-11.png` → `无人岛`
+- 新确认的问题不是“维度名字不够多”，而是旧审计里仍有**卡图句法被人脑误读后直接写进结论**：
+  1. `塞壬的歌声`
+     - 旧实现把“来源基地有没有别人的仆从”当成唯一准入条件。
+     - 但卡图是“移动到**另一个**有你仆从的基地”，因此来源基地还必须满足：存在至少 1 个**别的**己方基地可去。
+     - 已修复为在来源基地 prompt 阶段就过滤掉这类必然无效的选项。
+  2. `无人岛`
+     - 失效回写：此前“只压制行动拥有者自己在这里的随从总力量”的结论是错的。
+     - 卡图文字是“这里的仆从不能把它们的力量添加到它们控制者的总力量中”，主语是**这里的仆从**，不是“你的仆从”。
+     - 正确语义：这里**所有**仆从都不再给各自控制者的个人总力量做贡献；基地总力量本身不变。
+  3. `诱惑者`
+     - 已再次确认旧 bug 根因是持续条件实现过窄，不是卡图录错。
+     - 触发条件必须覆盖“其他玩家在自己的回合把自己的仆从移动到这里”，不能只覆盖“当前玩家把对手仆从移动过来”。
+  4. `死亡海湾`
+     - 本轮按卡图逐词复核后确认当前实现无语义漂移，但此前没有单独锁死“只数其他玩家仆从”的断言，已补测试。
+- 本轮回写文件：
+  - `src/games/smashup/abilities/mermaids.ts`
+  - `e2e/src/games/smashup/abilities/mermaids.ts`
+  - `src/games/smashup/domain/ongoingModifiers.ts`
+  - `e2e/src/games/smashup/domain/ongoingModifiers.ts`
+  - `src/games/smashup/__tests__/newFactionAbilities.test.ts`
+  - `e2e/src/games/smashup/__tests__/newFactionAbilities.test.ts`
+  - `src/games/smashup/__tests__/ongoingModifiers.test.ts`
+  - `e2e/src/games/smashup/__tests__/ongoingModifiers.test.ts`
+- 本轮验证：
+  - `npx eslint src/games/smashup/abilities/mermaids.ts`
+  - `npx eslint e2e/src/games/smashup/abilities/mermaids.ts`
+  - `npx eslint src/games/smashup/domain/ongoingModifiers.ts`
+  - `npx eslint e2e/src/games/smashup/domain/ongoingModifiers.ts`
+  - `npx eslint src/games/smashup/__tests__/newFactionAbilities.test.ts`
+  - `npx eslint e2e/src/games/smashup/__tests__/newFactionAbilities.test.ts`
+  - `npx eslint src/games/smashup/__tests__/ongoingModifiers.test.ts`
+  - `npx eslint e2e/src/games/smashup/__tests__/ongoingModifiers.test.ts`
+  - `npx vitest run src/games/smashup/__tests__/newFactionAbilities.test.ts --testNamePattern "Mermaids abilities"`
+  - `npx vitest run src/games/smashup/__tests__/ongoingModifiers.test.ts --testNamePattern "mermaids_temptress|mermaids_desert_island|mermaids_charmed"`
+- 结果：
+  - `Mermaids abilities`：`10 passed`
+  - `ongoingModifiers` 聚焦：`3 passed`
+  - ESLint：修改文件 `0 errors`（保留仓库既有 warnings，不是本轮新增）
+
 ## 2026-04-26 继续重审记录：外部真问题确认 + 世界冠军中文名清理
 
 ## 2026-04-26 继续重审记录：Mermaids L3 补证 + 旧漏审回写
@@ -72,13 +118,14 @@
 
 - 新确认并已修复的真实问题：
   - `UndoSystem` 只把空 `matchId` 视为本地局，未覆盖实际 `local:${gameId}:${seed}`，导致撤回仍走审批流。
-  - `mermaids_siren` / `base_mermaid_reef` 的“控制者总力量 -1”之前按随从重复扣减，同一玩家有多个随从时会多扣。
+  - `mermaids_siren` / `base_mermaid_reef` 此前被误审成“同一玩家无论几个随从都只减 1 次”；2026-04-26 按卡图复核后确认该结论失效，正确语义是：**其他玩家在这里的每个仆从都各自 -1 力量计入其控制者总力量**。
   - `mermaids_siren` / `base_mermaid_reef` 之前未正确受 suppression 约束，被压制后仍继续影响总力量。
+  - `mermaids_desert_island` 此前被误审成“只压制行动拥有者自己”；2026-04-26 按卡图复核后确认应为：**这里所有仆从都不把力量加入各自控制者总力量，但基地总力量不变**。
 - 已落地修复与回归：
   - 代码：`src/games/smashup/domain/ongoingModifiers.ts`、`e2e/src/games/smashup/domain/ongoingModifiers.ts`、`src/engine/systems/UndoSystem.ts`、`e2e/src/engine/systems/UndoSystem.ts`、`src/games/smashup/Board.tsx`、`e2e/src/games/smashup/Board.tsx`
   - 测试：`src/games/smashup/__tests__/ongoingModifiers.test.ts`、`src/engine/__tests__/undo-eventstream.test.ts`
   - 验证：
-    - `npx vitest run src/games/smashup/__tests__/ongoingModifiers.test.ts`
+    - `npx vitest run src/games/smashup/__tests__/ongoingModifiers.test.ts --testNamePattern "mermaids_siren|base_mermaid_reef|mermaids_desert_island|mermaids_charmed|mermaids_temptress"`
     - `npx vitest run src/engine/__tests__/undo-eventstream.test.ts`
     - `npm run typecheck`
 - 世界冠军中文名继续按卡图优先重录：
@@ -583,7 +630,7 @@
     - `${sourceId}_pod` 被引用时，自动视作基线 `sourceId` 也被引用。
   - 目标：消除“注册了 `_pod` handler 但仅通过基线 id 被引用”导致的孤儿误报。
 - `src/games/smashup/__tests__/newFactionAbilities.test.ts`
-  - `mermaids_desert_island` 改为校验“控制者总力量压制”语义；
+  - `mermaids_desert_island` 改为校验“这里所有仆从都不再给各自控制者提供总力量，但基地总力量不变”的语义；
   - `mermaids_charmed` 改为走完整交互链（`charmed -> destination`）并校验压制元数据与额外行动结果。
 
 #### 本轮复跑结果
@@ -740,3 +787,4 @@
   - `鼠、鸟与香肠` 已补齐真实入口“锚点 -> 二段筛选 -> +2 生效”的 L3 证据。
   - `World Champs` 当前至少已有 `斯坦福 / 海龟阿凯 / 盾牌少女 / 战斗精神奖 / 老鼠、鸟和香肠` 五条关键链路的 L3 证据。
   - 三派系整包仍按“仍有残余范围”管理：本轮是增量补证，不把单派系关键样本扩写成整包发布级收口。
+

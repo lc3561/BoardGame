@@ -6,6 +6,7 @@ import { describe, it, expect } from 'vitest';
 import type { EventStreamEntry, GameEvent } from '../../../engine/types';
 import { computeEventStreamDelta } from '../ui/useGameEvents';
 import {
+  ACTIVATED_ABILITY_IDS,
   deriveSystemAbilityMode,
   findActivatedAbilityDirectionOptionByPosition,
   findActivatedAbilityTargetOptionByCardId,
@@ -70,6 +71,16 @@ describe('computeEventStreamDelta', () => {
 });
 
 describe('systemInteractionAdapter', () => {
+  it('activated_ability_target 适配白名单与系统交互保持一致', () => {
+    expect(ACTIVATED_ABILITY_IDS).toEqual([
+      'revive_undead',
+      'fortress_power',
+      'telekinesis_instead',
+      'high_telekinesis_instead',
+      'vanish',
+    ]);
+  });
+
   it('为 revive_undead 的 selectCard 交互派生系统 abilityMode', () => {
     const swInteraction: SwSimpleChoiceInteraction = {
       id: 'sw-revive-1',
@@ -128,6 +139,33 @@ describe('systemInteractionAdapter', () => {
       step: 'selectPosition',
       sourceUnitId: 'summoner-1',
       selectedCardId: 'card-a',
+    });
+  });
+
+  it('为 fortress_power 的 selectCard 交互派生系统 abilityMode', () => {
+    const swInteraction: SwSimpleChoiceInteraction = {
+      id: 'sw-fortress-1',
+      type: 'activated_ability_target',
+      meta: {
+        type: 'activated_ability_target',
+        abilityId: 'fortress_power',
+        sourceUnitId: 'paladin-1',
+        sourcePosition: { row: 7, col: 2 },
+        step: 'selectCard',
+      },
+      options: [
+        {
+          id: 'fort-card',
+          label: 'Fortress',
+          value: { action: 'activated_ability_target', abilityId: 'fortress_power', targetCardId: 'fort-card' },
+        },
+      ],
+    };
+
+    expect(deriveSystemAbilityMode(swInteraction, null)).toEqual({
+      abilityId: 'fortress_power',
+      step: 'selectCard',
+      sourceUnitId: 'paladin-1',
     });
   });
 

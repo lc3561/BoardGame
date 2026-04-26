@@ -1012,9 +1012,12 @@ export class GameTransportServer {
         }
 
         const currentPhase = typeof match.state.sys?.phase === 'string' ? match.state.sys.phase : '';
-        // 通用保护：当真人是当前操作者时，seat-legal-only 仅允许在 defensiveRoll 触发。
-        // 其它阶段一律不代 AI 执行合法动作，避免“真人回合被 watchdog 代推进”。
-        if (currentPhase !== 'defensiveRoll') {
+        const core = match.state.core as { hostStarted?: unknown } | undefined;
+        const isPublicPregameSetup = core?.hostStarted === false;
+        // 通用保护：当真人是当前操作者时，seat-legal-only 仅允许在两类公开场景触发：
+        // 1. defensiveRoll 这类 off-turn 真人防御阶段；
+        // 2. hostStarted=false 的公开预开局 setup，此时 AI 选阵营/准备不会越权代真人推进。
+        if (currentPhase !== 'defensiveRoll' && !isPublicPregameSetup) {
             return null;
         }
 
@@ -2582,11 +2585,10 @@ export class GameTransportServer {
         }
 
         // 发送当前状态（经 playerView 过滤 + 传输裁剪）
-        // 重连同步时清空 eventStream entries，避免客户端重播历史事件
-        const viewState = this.stripStateForTransport(
-            this.applyPlayerView(match, playerID),
-            { stripEventStream: true },
-        );
+        // state:sync 必须保留 eventStream entries，作为后续 state:patch 的权威基线；
+        // 重连后的“避免历史事件重播”由客户端事件游标在 onConnectionChange/reconcile 层处理，
+        // 不能再靠裁掉 eventStream 来破坏 patch 连续性。
+        const viewState = this.stripStateForTransport(this.applyPlayerView(match, playerID));
         const matchPlayers = this.buildMatchPlayers(match);
         socket.emit('state:sync', matchID, viewState, matchPlayers, {
             seed: match.randomSeed,
@@ -2805,13 +2807,13 @@ export class GameTransportServer {
      * 在 playerView 过滤之后、socket.emit 之前调用，移除客户端不需要的大体积数据：
      * 1. undo.snapshots — 完整 MatchState 深拷贝，客户端只需 length（判断能否撤回）
      *    ⚠️ 安全：快照含所有玩家完整状态（手牌/牌库），不过滤会泄漏隐私信息
-     * 2. eventStream.entries — 仅在重连/batch确认时清空；正常广播时保留（客户端需消费事件驱动动画）
+     * 2. eventStream.entries — 仅在 batch 确认时清空；正常广播与 state:sync 都保留（客户端需消费事件驱动动画，且 patch baseline 依赖完整 entries）
      * 3. log.entries — 引擎级调试日志（command/event 完整对象），客户端 UI 层不读取
      * 4. tutorial.steps — 客户端只用 step（当前步骤）和 stepIndex，steps 数组只需 length
      *
      * @param options.stripEventStream 是否清空 eventStream.entries（默认 false）
-     *   - true: 用于 state:sync（重连）和 batch:confirmed（乐观确认），客户端不需要历史事件
-     *   - false: 用于 state:update（正常广播），客户端需要消费事件驱动动画/特效/交互
+     *   - true: 仅用于 batch:confirmed（乐观确认），客户端不需要历史事件
+     *   - false: 用于 state:sync / state:update，客户端需要保留完整 baseline 与事件驱动动画/特效/交互
      */
     private stripStateForTransport(viewState: unknown, options?: { stripEventStream?: boolean }): unknown {
         const state = viewState as { sys?: Record<string, unknown> };
@@ -2831,8 +2833,10 @@ export class GameTransportServer {
             };
         }
 
-        // 2. eventStream: 仅在 stripEventStream=true 时清空 entries（重连/批次确认）
-        //    broadcastState 需要保留 entries，供客户端 EventStream 消费（如技能触发事件）
+        // 2. eventStream: 仅在 stripEventStream=true 时清空 entries（批次确认）
+        //    state:sync / broadcastState 都需要保留 entries：
+        //    - state:sync: 作为后续 patch apply 的完整 baseline
+        //    - broadcastState: 供客户端 EventStream 消费（如技能触发事件）
         const shouldStripEventStream = options?.stripEventStream ?? false;
         if (shouldStripEventStream) {
             const es = sys.eventStream as { entries?: unknown[]; nextId?: number; maxEntries?: number } | undefined;

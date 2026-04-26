@@ -17,7 +17,7 @@ import {
   getPlayerUnits, hasAvailableActions, isCellEmpty,
   getAdjacentCells,
   manhattanDistance, getStructureAt, findUnitPositionByInstanceId, getSummoner,
-  getUnitAbilities, hasStableAbility, getForceDestinations, normalizeUnitBoosts,
+  getUnitAbilities, hasStableAbility, normalizeUnitBoosts,
 } from '../domain/helpers';
 import { isUndeadCard, getBaseCardId, CARD_IDS } from '../domain/ids';
 import { getSummonerWarsUIHints } from '../domain/uiHints';
@@ -105,8 +105,6 @@ export function useCellInteraction({
   const [isPhaseAdvanceLocked, setIsPhaseAdvanceLocked] = useState(false);
   const phaseAdvanceCooldownUntilRef = useRef(0);
   const phaseAdvanceReleaseTimerRef = useRef<number | null>(null);
-  // 火祀召唤（本地 fallback）：优先使用系统交互，保留本地状态仅用于旧链路兼容
-  const [localFireSacrificeSummonMode, setLocalFireSacrificeSummonMode] = useState<{ handCardId: string } | null>(null);
 
   // 离开魔力阶段时自动清空弃牌选中和事件卡选择模式
   useEffect(() => {
@@ -159,8 +157,8 @@ export function useCellInteraction({
       const cardId = typeof swInteraction.meta?.cardId === 'string' ? swInteraction.meta.cardId : undefined;
       if (cardId) return { handCardId: cardId };
     }
-    return localFireSacrificeSummonMode;
-  }, [localFireSacrificeSummonMode, swInteraction]);
+    return null;
+  }, [swInteraction]);
 
   // ---------- 事件卡模式子 hook ----------
   const eventCardModes = useEventCardModes({
@@ -274,9 +272,6 @@ export function useCellInteraction({
         { row: sourcePos.row, col: sourcePos.col + 1 },
       ];
       return adj.filter(p => isCellEmpty(core, p));
-    }
-    if (abilityMode.abilityId === 'infection' && abilityMode.targetPosition) {
-      return [abilityMode.targetPosition];
     }
     return [];
   }, [abilityMode, core, grabFollowMode, interactionPositions]);
@@ -581,7 +576,6 @@ export function useCellInteraction({
       if (!optionId) return;
       respondInteractionOption(optionId);
       setSelectedHandCardId(null);
-      setLocalFireSacrificeSummonMode(null);
       return;
     }
 
@@ -591,49 +585,35 @@ export function useCellInteraction({
       if (isValid) {
         // 寒冰冲撞：选择目标后进入推拉方向选择
         if (abilityMode.abilityId === 'ice_ram') {
-            if (swInteraction?.type === 'ice_ram_target') {
-              const optionId = swInteraction.options.find((opt) => {
-                const value = opt.value as { action?: string; targetPosition?: CellCoord } | undefined;
-                return value?.action === 'ice_ram_target'
-                  && value.targetPosition?.row === gameRow
-                  && value.targetPosition?.col === gameCol;
-              })?.id ?? null;
-              if (optionId) {
-                respondInteractionOption(optionId);
-                setAbilityMode(null);
-              }
-              return;
-            }
-          setAbilityMode({
-            ...abilityMode,
-            step: 'selectPushDirection',
-            targetPosition: { row: gameRow, col: gameCol },
-          });
+          if (swInteraction?.type !== 'ice_ram_target') return;
+          const optionId = swInteraction.options.find((opt) => {
+            const value = opt.value as { action?: string; targetPosition?: CellCoord } | undefined;
+            return value?.action === 'ice_ram_target'
+              && value.targetPosition?.row === gameRow
+              && value.targetPosition?.col === gameCol;
+          })?.id ?? null;
+          if (optionId) {
+            respondInteractionOption(optionId);
+            setAbilityMode(null);
+          }
           return;
         }
         // 结构变换目标是建筑，进入选择推拉方向步骤
         if (abilityMode.abilityId === 'structure_shift') {
-            if (swInteraction?.type === 'after_move_structure_shift_target') {
-              const option = swInteraction.options.find((opt) => {
-                const value = opt.value as { action?: string; targetPosition?: CellCoord } | undefined;
-                return value?.action === 'after_move_structure_shift_target'
-                  && value.targetPosition?.row === gameRow
-                  && value.targetPosition?.col === gameCol;
-              });
-              if (option) {
-                dispatch(INTERACTION_COMMANDS.RESPOND, {
-                  interactionId: swInteraction.id,
-                  optionId: option.id,
-                });
-                setAbilityMode(null);
-              }
-              return;
-            }
-          setAbilityMode({
-            ...abilityMode,
-            step: 'selectNewPosition',
-            targetPosition: { row: gameRow, col: gameCol },
+          if (swInteraction?.type !== 'after_move_structure_shift_target') return;
+          const option = swInteraction.options.find((opt) => {
+            const value = opt.value as { action?: string; targetPosition?: CellCoord } | undefined;
+            return value?.action === 'after_move_structure_shift_target'
+              && value.targetPosition?.row === gameRow
+              && value.targetPosition?.col === gameCol;
           });
+          if (option) {
+            dispatch(INTERACTION_COMMANDS.RESPOND, {
+              interactionId: swInteraction.id,
+              optionId: option.id,
+            });
+            setAbilityMode(null);
+          }
           return;
         }
         const targetUnit = core.board[gameRow]?.[gameCol]?.unit;
@@ -679,174 +659,107 @@ export function useCellInteraction({
               });
             }
           } else if (abilityMode.abilityId === 'illusion') {
-            if (swInteraction?.type === 'on_phase_start_illusion') {
-              const option = swInteraction.options.find((opt) => {
-                const value = opt.value as { action?: string; targetPosition?: CellCoord } | undefined;
-                return value?.action === 'on_phase_start_illusion'
-                  && value.targetPosition?.row === gameRow
-                  && value.targetPosition?.col === gameCol;
-              });
-              if (option) {
-                dispatch(INTERACTION_COMMANDS.RESPOND, {
-                  interactionId: swInteraction.id,
-                  optionId: option.id,
-                });
-                setAbilityMode(null);
-              }
-              return;
-            }
-            dispatch(SW_COMMANDS.ACTIVATE_ABILITY, {
-              abilityId: 'illusion',
-              sourceUnitId: abilityMode.sourceUnitId,
-              targetPosition: { row: gameRow, col: gameCol },
-              _noSnapshot: true,
+            if (swInteraction?.type !== 'on_phase_start_illusion') return;
+            const option = swInteraction.options.find((opt) => {
+              const value = opt.value as { action?: string; targetPosition?: CellCoord } | undefined;
+              return value?.action === 'on_phase_start_illusion'
+                && value.targetPosition?.row === gameRow
+                && value.targetPosition?.col === gameCol;
             });
+            if (option) {
+              dispatch(INTERACTION_COMMANDS.RESPOND, {
+                interactionId: swInteraction.id,
+                optionId: option.id,
+              });
+              setAbilityMode(null);
+            }
           } else if (abilityMode.abilityId === 'ancestral_bond') {
-            if (swInteraction?.type === 'after_move_ancestral_bond') {
-              const option = swInteraction.options.find((opt) => {
-                const value = opt.value as { action?: string; targetPosition?: CellCoord } | undefined;
-                return value?.action === 'after_move_ancestral_bond'
-                  && value.targetPosition?.row === gameRow
-                  && value.targetPosition?.col === gameCol;
-              });
-              if (option) {
-                dispatch(INTERACTION_COMMANDS.RESPOND, {
-                  interactionId: swInteraction.id,
-                  optionId: option.id,
-                });
-                setAbilityMode(null);
-              }
-              return;
-            }
-            dispatch(SW_COMMANDS.ACTIVATE_ABILITY, {
-              abilityId: 'ancestral_bond',
-              sourceUnitId: abilityMode.sourceUnitId,
-              targetPosition: { row: gameRow, col: gameCol },
-              _noSnapshot: true,
+            if (swInteraction?.type !== 'after_move_ancestral_bond') return;
+            const option = swInteraction.options.find((opt) => {
+              const value = opt.value as { action?: string; targetPosition?: CellCoord } | undefined;
+              return value?.action === 'after_move_ancestral_bond'
+                && value.targetPosition?.row === gameRow
+                && value.targetPosition?.col === gameCol;
             });
+            if (option) {
+              dispatch(INTERACTION_COMMANDS.RESPOND, {
+                interactionId: swInteraction.id,
+                optionId: option.id,
+              });
+              setAbilityMode(null);
+            }
           } else if (abilityMode.abilityId === 'spirit_bond') {
-            if (swInteraction?.type === 'after_move_spirit_bond') {
-              const option = swInteraction.options.find((opt) => {
-                const value = opt.value as { action?: string; choice?: string; targetPosition?: CellCoord } | undefined;
-                return value?.action === 'after_move_spirit_bond'
-                  && value.choice === 'transfer'
-                  && value.targetPosition?.row === gameRow
-                  && value.targetPosition?.col === gameCol;
-              });
-              if (option) {
-                dispatch(INTERACTION_COMMANDS.RESPOND, {
-                  interactionId: swInteraction.id,
-                  optionId: option.id,
-                });
-                setAbilityMode(null);
-              }
-              return;
-            }
-            dispatch(SW_COMMANDS.ACTIVATE_ABILITY, {
-              abilityId: 'spirit_bond',
-              sourceUnitId: abilityMode.sourceUnitId,
-              choice: 'transfer',
-              targetPosition: { row: gameRow, col: gameCol },
-              _noSnapshot: true,
+            if (swInteraction?.type !== 'after_move_spirit_bond') return;
+            const option = swInteraction.options.find((opt) => {
+              const value = opt.value as { action?: string; choice?: string; targetPosition?: CellCoord } | undefined;
+              return value?.action === 'after_move_spirit_bond'
+                && value.choice === 'transfer'
+                && value.targetPosition?.row === gameRow
+                && value.targetPosition?.col === gameCol;
             });
+            if (option) {
+              dispatch(INTERACTION_COMMANDS.RESPOND, {
+                interactionId: swInteraction.id,
+                optionId: option.id,
+              });
+              setAbilityMode(null);
+            }
           } else if (abilityMode.abilityId === 'frost_axe') {
-            if (swInteraction?.type === 'after_move_frost_axe') {
-              const option = swInteraction.options.find((opt) => {
-                const value = opt.value as { action?: string; choice?: string; targetPosition?: CellCoord } | undefined;
-                return value?.action === 'after_move_frost_axe'
-                  && value.choice === 'attach'
-                  && value.targetPosition?.row === gameRow
-                  && value.targetPosition?.col === gameCol;
+            if (swInteraction?.type !== 'after_move_frost_axe') return;
+            const option = swInteraction.options.find((opt) => {
+              const value = opt.value as { action?: string; choice?: string; targetPosition?: CellCoord } | undefined;
+              return value?.action === 'after_move_frost_axe'
+                && value.choice === 'attach'
+                && value.targetPosition?.row === gameRow
+                && value.targetPosition?.col === gameCol;
+            });
+            if (option) {
+              dispatch(INTERACTION_COMMANDS.RESPOND, {
+                interactionId: swInteraction.id,
+                optionId: option.id,
               });
-              if (option) {
-                dispatch(INTERACTION_COMMANDS.RESPOND, {
-                  interactionId: swInteraction.id,
-                  optionId: option.id,
-                });
-                setAbilityMode(null);
-              }
-              return;
+              setAbilityMode(null);
             }
-            dispatch(SW_COMMANDS.ACTIVATE_ABILITY, {
-              abilityId: 'frost_axe',
-              sourceUnitId: abilityMode.sourceUnitId,
-              choice: 'attach',
-              targetPosition: { row: gameRow, col: gameCol },
-              _noSnapshot: true,
-            });
           } else if (abilityMode.abilityId === 'vanish') {
-            if (swInteraction?.type === 'activated_ability_target') {
-              const option = findActivatedAbilityTargetOptionByPosition(
-                swInteraction,
-                'vanish',
-                { row: gameRow, col: gameCol },
-                'selectUnit',
-              );
-              if (option) {
-                dispatch(INTERACTION_COMMANDS.RESPOND, {
-                  interactionId: swInteraction.id,
-                  optionId: option.id,
-                });
-                setAbilityMode(null);
-              }
-              return;
+            if (swInteraction?.type !== 'activated_ability_target') return;
+            const option = findActivatedAbilityTargetOptionByPosition(
+              swInteraction,
+              'vanish',
+              { row: gameRow, col: gameCol },
+              'selectUnit',
+            );
+            if (option) {
+              dispatch(INTERACTION_COMMANDS.RESPOND, {
+                interactionId: swInteraction.id,
+                optionId: option.id,
+              });
+              setAbilityMode(null);
             }
-            dispatch(SW_COMMANDS.ACTIVATE_ABILITY, {
-              abilityId: 'vanish',
-              sourceUnitId: abilityMode.sourceUnitId,
-              targetPosition: { row: gameRow, col: gameCol },
-            });
           } else if (abilityMode.abilityId === 'high_telekinesis_instead') {
-            if (swInteraction?.type === 'activated_ability_target') {
-              const option = findActivatedAbilityTargetOptionByPosition(
-                swInteraction,
-                'high_telekinesis_instead',
-                { row: gameRow, col: gameCol },
-                'selectUnit',
-              );
-              if (option) {
-                respondInteractionOption(option.id);
-                setAbilityMode(null);
-              }
-              return;
+            if (swInteraction?.type !== 'activated_ability_target') return;
+            const option = findActivatedAbilityTargetOptionByPosition(
+              swInteraction,
+              'high_telekinesis_instead',
+              { row: gameRow, col: gameCol },
+              'selectUnit',
+            );
+            if (option) {
+              respondInteractionOption(option.id);
+              setAbilityMode(null);
             }
-            // 高阶念力（代替攻击）：选择目标后计算所有可达终点，进入棋盘点击终点模式
-            const htTargetPos = { row: gameRow, col: gameCol };
-            const htDests = getForceDestinations(core, htTargetPos, 1);
-            setAbilityMode(null);
-            eventCardModes.setTelekinesisTargetMode({
-              abilityId: 'high_telekinesis_instead',
-              sourceUnitId: abilityMode.sourceUnitId,
-              sourcePosition: findUnitPositionByInstanceId(core, abilityMode.sourceUnitId) ?? undefined,
-              targetPosition: htTargetPos,
-              destinations: htDests,
-            });
             return;
           } else if (abilityMode.abilityId === 'telekinesis_instead') {
-            if (swInteraction?.type === 'activated_ability_target') {
-              const option = findActivatedAbilityTargetOptionByPosition(
-                swInteraction,
-                'telekinesis_instead',
-                { row: gameRow, col: gameCol },
-                'selectUnit',
-              );
-              if (option) {
-                respondInteractionOption(option.id);
-                setAbilityMode(null);
-              }
-              return;
+            if (swInteraction?.type !== 'activated_ability_target') return;
+            const option = findActivatedAbilityTargetOptionByPosition(
+              swInteraction,
+              'telekinesis_instead',
+              { row: gameRow, col: gameCol },
+              'selectUnit',
+            );
+            if (option) {
+              respondInteractionOption(option.id);
+              setAbilityMode(null);
             }
-            // 念力（代替攻击）：选择目标后计算所有可达终点，进入棋盘点击终点模式
-            const tkTargetPos = { row: gameRow, col: gameCol };
-            const tkDests = getForceDestinations(core, tkTargetPos, 1);
-            setAbilityMode(null);
-            eventCardModes.setTelekinesisTargetMode({
-              abilityId: 'telekinesis_instead',
-              sourceUnitId: abilityMode.sourceUnitId,
-              sourcePosition: findUnitPositionByInstanceId(core, abilityMode.sourceUnitId) ?? undefined,
-              targetPosition: tkTargetPos,
-              destinations: tkDests,
-            });
             return;
           } else {
             dispatch(SW_COMMANDS.ACTIVATE_ABILITY, {
@@ -879,62 +792,39 @@ export function useCellInteraction({
     // 结构变换第二步：选择推拉方向
     if (abilityMode && abilityMode.abilityId === 'structure_shift' && abilityMode.step === 'selectNewPosition') {
       const isValid = validAbilityPositions.some(p => p.row === gameRow && p.col === gameCol);
-      if (isValid && abilityMode.targetPosition) {
-        if (swInteraction?.type === 'after_move_structure_shift_direction') {
-          const option = swInteraction.options.find((opt) => {
-            const value = opt.value as { action?: string; targetPosition?: CellCoord; newPosition?: CellCoord } | undefined;
-            return value?.action === 'after_move_structure_shift_direction'
-              && value.targetPosition?.row === abilityMode.targetPosition?.row
-              && value.targetPosition?.col === abilityMode.targetPosition?.col
-              && value.newPosition?.row === gameRow
-              && value.newPosition?.col === gameCol;
-          });
-          if (option) {
-            dispatch(INTERACTION_COMMANDS.RESPOND, {
-              interactionId: swInteraction.id,
-              optionId: option.id,
-            });
-            setAbilityMode(null);
-          }
-          return;
-        }
-        dispatch(SW_COMMANDS.ACTIVATE_ABILITY, {
-          abilityId: 'structure_shift',
-          sourceUnitId: abilityMode.sourceUnitId,
-          targetPosition: abilityMode.targetPosition,
-          newPosition: { row: gameRow, col: gameCol },
-          _noSnapshot: true,
+      if (isValid && abilityMode.targetPosition && swInteraction?.type === 'after_move_structure_shift_direction') {
+        const option = swInteraction.options.find((opt) => {
+          const value = opt.value as { action?: string; targetPosition?: CellCoord; newPosition?: CellCoord } | undefined;
+          return value?.action === 'after_move_structure_shift_direction'
+            && value.targetPosition?.row === abilityMode.targetPosition?.row
+            && value.targetPosition?.col === abilityMode.targetPosition?.col
+            && value.newPosition?.row === gameRow
+            && value.newPosition?.col === gameCol;
         });
-        setAbilityMode(null);
+        if (option) {
+          dispatch(INTERACTION_COMMANDS.RESPOND, {
+            interactionId: swInteraction.id,
+            optionId: option.id,
+          });
+          setAbilityMode(null);
+        }
       }
       return;
 
     // 寒冰冲撞第二步：选择推拉方向（或跳过）
     } else if (abilityMode && abilityMode.abilityId === 'ice_ram' && abilityMode.step === 'selectPushDirection') {
       const isValid = validAbilityPositions.some(p => p.row === gameRow && p.col === gameCol);
-      if (isValid && abilityMode.targetPosition && abilityMode.structurePosition) {
-        if (swInteraction?.type === 'ice_ram_push') {
-          const optionId = swInteraction.options.find((opt) => {
-            const value = opt.value as { action?: string; pushNewPosition?: CellCoord } | undefined;
-            return value?.action === 'ice_ram_push'
-              && value.pushNewPosition?.row === gameRow
-              && value.pushNewPosition?.col === gameCol;
-          })?.id ?? null;
-          if (optionId) {
-            respondInteractionOption(optionId);
-            setAbilityMode(null);
-          }
-          return;
+      if (isValid && abilityMode.targetPosition && abilityMode.structurePosition && swInteraction?.type === 'ice_ram_push') {
+        const optionId = swInteraction.options.find((opt) => {
+          const value = opt.value as { action?: string; pushNewPosition?: CellCoord } | undefined;
+          return value?.action === 'ice_ram_push'
+            && value.pushNewPosition?.row === gameRow
+            && value.pushNewPosition?.col === gameCol;
+        })?.id ?? null;
+        if (optionId) {
+          respondInteractionOption(optionId);
+          setAbilityMode(null);
         }
-        dispatch(SW_COMMANDS.ACTIVATE_ABILITY, {
-          abilityId: 'ice_ram',
-          sourceUnitId: 'ice_ram',
-          targetPosition: abilityMode.targetPosition,
-          structurePosition: abilityMode.structurePosition,
-          pushNewPosition: { row: gameRow, col: gameCol },
-          _noSnapshot: true,
-        });
-        setAbilityMode(null);
       }
       return;
     }
@@ -942,27 +832,17 @@ export function useCellInteraction({
     // 技能目标选择模式（复活死灵、感染）
     if (abilityMode && abilityMode.step === 'selectPosition') {
       const isValid = validAbilityPositions.some(p => p.row === gameRow && p.col === gameCol);
-      if (isValid) {
-        if (abilityMode.abilityId === 'revive_undead' && swInteraction?.type === 'activated_ability_target') {
-          const option = findActivatedAbilityTargetOptionByPosition(
-            swInteraction,
-            'revive_undead',
-            { row: gameRow, col: gameCol },
-            'selectPosition',
-          );
-          if (option) {
-            respondInteractionOption(option.id);
-            setAbilityMode(null);
-          }
-          return;
+      if (isValid && abilityMode.abilityId === 'revive_undead' && swInteraction?.type === 'activated_ability_target') {
+        const option = findActivatedAbilityTargetOptionByPosition(
+          swInteraction,
+          'revive_undead',
+          { row: gameRow, col: gameCol },
+          'selectPosition',
+        );
+        if (option) {
+          respondInteractionOption(option.id);
+          setAbilityMode(null);
         }
-        dispatch(SW_COMMANDS.ACTIVATE_ABILITY, {
-          abilityId: abilityMode.abilityId,
-          sourceUnitId: abilityMode.sourceUnitId,
-          targetCardId: abilityMode.selectedCardId,
-          targetPosition: { row: gameRow, col: gameCol },
-        });
-        setAbilityMode(null);
       }
       return;
     }
@@ -985,27 +865,6 @@ export function useCellInteraction({
           }
         }
       }
-    }
-
-    // 火祀召唤：选中牺牲品单位后，直接召唤到牺牲品位置
-    if (currentPhase === 'summon' && fireSacrificeSummonMode) {
-      const isValidSacrifice = validAbilityUnits.some(p => p.row === gameRow && p.col === gameCol);
-      if (isValidSacrifice) {
-        const sacrificeUnit = core.board[gameRow]?.[gameCol]?.unit;
-        if (sacrificeUnit) {
-          // 位置传牺牲品位置（validate/execute 会用 sacrificeUnitId 覆盖）
-          dispatch(SW_COMMANDS.SUMMON_UNIT, {
-            cardId: fireSacrificeSummonMode.handCardId,
-            position: { row: gameRow, col: gameCol },
-            sacrificeUnitId: sacrificeUnit.instanceId,
-          });
-          setLocalFireSacrificeSummonMode(null);
-          setSelectedHandCardId(null);
-        }
-      } else {
-        showToast.warning(t('interaction.fireSacrifice.mustSelectAlly'));
-      }
-      return;
     }
 
     // 召唤阶段：执行召唤
@@ -1216,7 +1075,6 @@ export function useCellInteraction({
     // 如果点击的是已选中的卡牌，取消选中
     if (cardId && selectedHandCardId === cardId) {
       setSelectedHandCardId(null);
-      setLocalFireSacrificeSummonMode(null);
       return;
     }
 
@@ -1225,7 +1083,6 @@ export function useCellInteraction({
       eventCardModes.clearAllEventModes();
     }
 
-    setLocalFireSacrificeSummonMode(null);
     setSelectedHandCardId(cardId);
   };
 

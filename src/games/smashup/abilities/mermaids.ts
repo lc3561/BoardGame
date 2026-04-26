@@ -543,18 +543,14 @@ function mermaidsUltimateSongOnPlay(ctx: AbilityContext): AbilityResult {
 }
 
 function mermaidsSirenSongOnPlay(ctx: AbilityContext): AbilityResult {
-    const destinationBases = collectBasesWithOwnMinions(ctx.state, ctx.playerId);
-    if (destinationBases.length === 0) {
-        return { events: [buildAbilityFeedback(ctx.playerId, 'feedback.no_valid_targets', ctx.now)] };
-    }
-
     const sourceBases = ctx.state.bases
         .map((base, baseIndex) => ({
             baseIndex,
             label: getBaseLabel(ctx.state, baseIndex),
             opponentMinionCount: base.minions.filter(minion => minion.controller !== ctx.playerId).length,
+            destinationCount: collectBasesWithOwnMinions(ctx.state, ctx.playerId, baseIndex).length,
         }))
-        .filter(base => base.opponentMinionCount > 0);
+        .filter(base => base.opponentMinionCount > 0 && base.destinationCount > 0);
     if (sourceBases.length === 0) {
         return { events: [buildAbilityFeedback(ctx.playerId, 'feedback.no_valid_targets', ctx.now)] };
     }

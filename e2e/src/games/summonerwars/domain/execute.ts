@@ -56,6 +56,7 @@ import {
 import { executeActivateAbility } from './execute/abilities';
 import { executePlayEvent } from './execute/eventCards';
 import { getBaseCardId, CARD_IDS, isFortressUnit } from './ids';
+import { INTERACTION_COMMANDS } from '../../../engine/systems/InteractionSystem';
 
 // 辅助函数已迁移到 execute/helpers.ts
 // 保留 getPhaseDisplayName 的导出以保持向后兼容
@@ -979,6 +980,13 @@ export function executeCommand(
       }
       break;
     }
+
+    case INTERACTION_COMMANDS.RESPOND:
+    case INTERACTION_COMMANDS.CANCEL:
+    case INTERACTION_COMMANDS.TIMEOUT:
+    case INTERACTION_COMMANDS.STEP:
+    case INTERACTION_COMMANDS.CONFIRM:
+      break;
 
     default:
       console.warn('[SummonerWars] 未处理的命令:', command.type);

@@ -620,12 +620,17 @@ export function getPlayerEffectivePowerOnBase(
         && normalizeDefId(minion.defId) === 'mermaids_siren'
         && !isCardSuppressed(state, minion.uid),
     ).length;
-    const reefPenalty = (
+    const reefPenaltyPerMinion = (
         base.defId === 'base_mermaid_reef'
         && currentPlayerId
         && playerId !== currentPlayerId
         && !isBaseAbilitySuppressed(state, baseIndex)
     ) ? 1 : 0;
+    const desertIslandActive = base.ongoingActions.some(
+        action => normalizeDefId(action.defId) === 'mermaids_desert_island'
+            && !isCardSuppressed(state, action.uid),
+    );
+    const personalPenalty = opposingSirens + reefPenaltyPerMinion;
     const minionPower = base.minions
         .filter(m => m.controller === playerId)
         .reduce((sum, m) => {
@@ -634,11 +639,10 @@ export function getPlayerEffectivePowerOnBase(
 
             const charmedTurn = Number(m.metadata?.mermaidsCharmedSuppressedTurn ?? -1);
             const charmedActive = charmedTurn === state.turnNumber;
-            const desertIslandActive = base.ongoingActions.some(
-                action => normalizeDefId(action.defId) === 'mermaids_desert_island' && action.ownerId === m.controller,
-            );
             if (charmedActive || desertIslandActive) {
                 contribution = 0;
+            } else if (personalPenalty > 0) {
+                contribution = Math.max(0, contribution - personalPenalty);
             }
 
             return sum + contribution;
@@ -646,7 +650,7 @@ export function getPlayerEffectivePowerOnBase(
     const ongoingCardPower = getOngoingCardPowerContribution(base, playerId);
     const titanPower = getTitanPowerContribution(state, baseIndex, playerId);
     const basePowerBonus = getBasePowerModifiers(state, baseIndex, playerId);
-    return minionPower + ongoingCardPower + titanPower + basePowerBonus - opposingSirens - reefPenalty;
+    return minionPower + ongoingCardPower + titanPower + basePowerBonus;
 }
 
 /**

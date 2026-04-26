@@ -241,8 +241,8 @@ export interface AbilityDef {
     activationStep?: AbilityActivationStep;
     /** 激活模式的上下文标记 */
     activationContext?: AbilityActivationContext;
-    /** 激活类型：'abilityMode'（默认）| 'directExecute' | 'withdrawMode' | 'passiveTrigger' */
-    activationType?: 'abilityMode' | 'directExecute' | 'withdrawMode' | 'passiveTrigger';
+    /** 激活类型：'abilityMode'（默认）| 'directExecute' | 'passiveTrigger' */
+    activationType?: 'abilityMode' | 'directExecute' | 'passiveTrigger';
     /** 是否使用 validate 结果控制 disabled 状态（而非隐藏） */
     useValidateForDisabled?: boolean;
     /** 额外的前置条件（如 !unit.hasMoved），返回 false 则不显示 */

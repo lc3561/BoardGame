@@ -5,7 +5,7 @@ import { createInteractionSystem, createSimpleChoice, INTERACTION_COMMANDS } fro
 import { createSimpleChoiceSystem } from '../../systems/SimpleChoiceSystem';
 import { createResponseWindowSystem, RESPONSE_WINDOW_EVENTS } from '../../systems/ResponseWindowSystem';
 import { resolveLocalAiActionVisibility } from '../../ai/actionVisibility';
-import { resolveLocalAiActionDelayPlan } from '../../ai';
+import { resolveLocalAiActionDelayPlan, startCancelableAiDelay } from '../../ai';
 import * as aiModule from '../../ai';
 import { resolveOnlineAiDecisionView } from '../../ai/onlineDecisionView';
 import type {
@@ -948,6 +948,76 @@ describe('resolveLocalAiActionDelayPlan（单一延迟预算）', () => {
         expect(plan.observedStateAgeMs).toBe(600);
         expect(plan.delayBudgetElapsedMs).toBe(600);
         expect(plan.remainingDelayMs).toBe(400);
+    });
+
+    it('会忽略 timestamp=0 的占位事件，避免错误吃光可见动作延迟', () => {
+        const observedState = {
+            sys: {
+                eventStream: {
+                    entries: [
+                        { event: { timestamp: 0 } },
+                    ],
+                },
+                actionLog: {
+                    entries: [
+                        { timestamp: 0 },
+                    ],
+                },
+            },
+        } as any;
+
+        const plan = resolveLocalAiActionDelayPlan({
+            controller: { type: 'local-ai' },
+            actionVisibility: 'visible',
+            now: 8_600,
+            observedState,
+            extraElapsedBudgetMs: [200],
+        });
+
+        expect(plan.observedStateAgeMs).toBe(0);
+        expect(plan.delayBudgetElapsedMs).toBe(200);
+        expect(plan.remainingDelayMs).toBe(800);
+    });
+});
+
+describe('startCancelableAiDelay（可取消延迟）', () => {
+    it('取消时不会让等待悬空', async () => {
+        vi.useFakeTimers();
+        try {
+            const handle = startCancelableAiDelay(1000);
+            const resultPromise = handle.promise;
+
+            vi.advanceTimersByTime(300);
+            handle.cancel();
+            await vi.runAllTimersAsync();
+
+            await expect(resultPromise).resolves.toMatchObject({
+                outcome: 'cancelled',
+                targetDelayMs: 1000,
+                waitedMs: 300,
+            });
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('正常到点时会返回 elapsed', async () => {
+        vi.useFakeTimers();
+        try {
+            const handle = startCancelableAiDelay(400);
+            const resultPromise = handle.promise;
+
+            vi.advanceTimersByTime(400);
+            await vi.runAllTimersAsync();
+
+            await expect(resultPromise).resolves.toMatchObject({
+                outcome: 'elapsed',
+                targetDelayMs: 400,
+                waitedMs: 400,
+            });
+        } finally {
+            vi.useRealTimers();
+        }
     });
 });
 
@@ -3999,6 +4069,185 @@ describe('GameTransportServer（离座与重连）', () => {
             expect(feedbackReporter).toHaveBeenCalledWith(expect.objectContaining({
                 matchId: 'match-watchdog-faction-select-legal-action',
                 playerId: '2',
+                incidentKind: 'legal-action-recovered',
+                status: 'resolved',
+            }));
+        } finally {
+            executeSpy.mockRestore();
+            resolutionSpy.mockRestore();
+        }
+    });
+
+    it('online AI watchdog 在 summonerwars 公开选阵营阶段也应代 AI 执行 legal action', async () => {
+        const io = new MockIO();
+        const storage = new InMemoryStorage();
+        const feedbackReporter = vi.fn(async () => undefined);
+
+        await storage.createMatch('match-watchdog-summonerwars-pregame-legal-action', {
+            initialState: {
+                G: {
+                    core: {
+                        activePlayerId: '0',
+                        currentPlayerIndex: 0,
+                        turnOrder: ['0', '1'],
+                        hostStarted: false,
+                        hostPlayerId: '0',
+                        selectedFactions: {
+                            '0': 'necromancer',
+                            '1': 'unselected',
+                        },
+                        readyPlayers: {
+                            '0': false,
+                            '1': false,
+                        },
+                    },
+                    sys: {
+                        phase: 'summon',
+                        turnNumber: 1,
+                        eventStream: { nextId: 1 },
+                        interaction: {
+                            current: undefined,
+                            queue: [],
+                            isBlocked: false,
+                        },
+                        responseWindow: {
+                            current: undefined,
+                        },
+                    },
+                },
+                _stateID: 0,
+                randomSeed: 'seed',
+                randomCursor: 0,
+            },
+            metadata: createOnlineAiRecoveryMetadata({
+                gameName: 'summonerwars',
+            }),
+        });
+
+        const resolutionSpy = vi.spyOn(aiModule, 'resolveNextAiDispatch')
+            .mockResolvedValueOnce({
+                kind: 'action',
+                resolution: {
+                    playerId: '1',
+                    action: {
+                        actionId: 'sw:select-faction:paladin',
+                        kind: 'setup-select-faction',
+                        label: '选择阵营 paladin',
+                        commands: [{
+                            type: 'sw:select_faction',
+                            payload: { factionId: 'paladin' },
+                        }],
+                    },
+                    attemptKey: 'watchdog-summonerwars-pregame-step-1',
+                    source: 'local-ai',
+                },
+            })
+            .mockResolvedValueOnce({
+                kind: 'action',
+                resolution: {
+                    playerId: '1',
+                    action: {
+                        actionId: 'sw:select-faction:paladin',
+                        kind: 'setup-select-faction',
+                        label: '选择阵营 paladin',
+                        commands: [{
+                            type: 'sw:select_faction',
+                            payload: { factionId: 'paladin' },
+                        }],
+                    },
+                    attemptKey: 'watchdog-summonerwars-pregame-step-1-apply',
+                    source: 'local-ai',
+                },
+            })
+            .mockResolvedValueOnce({
+                kind: 'action',
+                resolution: {
+                    playerId: '1',
+                    action: {
+                        actionId: 'sw:select-faction:paladin',
+                        kind: 'setup-select-faction',
+                        label: '选择阵营 paladin',
+                        commands: [{
+                            type: 'sw:select_faction',
+                            payload: { factionId: 'paladin' },
+                        }],
+                    },
+                    attemptKey: 'watchdog-summonerwars-pregame-step-1-recover',
+                    source: 'local-ai',
+                },
+            })
+            .mockResolvedValueOnce({
+                kind: 'idle',
+                idleReason: 'no-action',
+            });
+
+        const server = new GameTransportServer({
+            io: io as unknown as any,
+            storage,
+            games: [createEngineConfigWithId('summonerwars')],
+            onlineAiRecoveryTickMs: 0,
+            onlineAiRecoveryTimeoutMs: 0,
+            onlineAiRecoveryFailureReportThreshold: 1,
+            onlineAiFeedbackReporter: feedbackReporter,
+        });
+
+        const serverInternal = server as unknown as {
+            loadMatch: (matchID: string) => Promise<any>;
+            runOnlineAiRecoveryTick: () => Promise<void>;
+            executeCommandInternal: (
+                match: any,
+                playerID: string,
+                commandType: string,
+                payload: unknown,
+                options?: { suppressBroadcast?: boolean },
+            ) => Promise<boolean>;
+        };
+
+        const executeSpy = vi.spyOn(serverInternal, 'executeCommandInternal').mockImplementation(async (
+            activeMatch,
+            playerID,
+            commandType,
+            payload,
+        ) => {
+            expect(playerID).toBe('1');
+            expect(commandType).toBe('sw:select_faction');
+            expect(payload).toEqual({ factionId: 'paladin' });
+
+            activeMatch.state = {
+                ...activeMatch.state,
+                core: {
+                    ...activeMatch.state.core,
+                    selectedFactions: {
+                        ...activeMatch.state.core.selectedFactions,
+                        '1': 'paladin',
+                    },
+                },
+                sys: {
+                    ...activeMatch.state.sys,
+                    eventStream: { nextId: 2 },
+                },
+            };
+
+            return true;
+        });
+
+        try {
+            const match = await serverInternal.loadMatch('match-watchdog-summonerwars-pregame-legal-action');
+            await serverInternal.runOnlineAiRecoveryTick();
+            await serverInternal.runOnlineAiRecoveryTick();
+            await nextTick();
+            await nextTick();
+
+            expect(resolutionSpy).toHaveBeenCalled();
+            expect(executeSpy.mock.calls.map(([, , commandType]) => commandType)).toEqual(['sw:select_faction']);
+            expect(match.state.core.selectedFactions).toMatchObject({
+                '0': 'necromancer',
+                '1': 'paladin',
+            });
+            expect(match.state.core.hostStarted).toBe(false);
+            expect(feedbackReporter).toHaveBeenCalledWith(expect.objectContaining({
+                matchId: 'match-watchdog-summonerwars-pregame-legal-action',
+                playerId: '1',
                 incidentKind: 'legal-action-recovered',
                 status: 'resolved',
             }));

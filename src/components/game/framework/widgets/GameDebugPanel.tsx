@@ -198,7 +198,20 @@ export const GameDebugPanel: React.FC<DebugPanelProps> = ({ G, dispatch, events,
     const formatSeatController = React.useCallback((controller: { type: string; policyId?: string; providerId?: string; difficulty?: string }) => {
         if (controller.type === 'local-ai') {
             const label = t('debug.ai.local');
-            const difficultyLabel = t(`lobby:ai.difficulties.${controller.difficulty ?? DEFAULT_LOCAL_AI_DIFFICULTY}`);
+            const difficultyKey = controller.difficulty === 'easy'
+                ? 'lobby:ai.difficulties.easy'
+                : controller.difficulty === 'hard'
+                    ? 'lobby:ai.difficulties.hard'
+                    : controller.difficulty === 'expert'
+                        ? 'lobby:ai.difficulties.expert'
+                        : DEFAULT_LOCAL_AI_DIFFICULTY === 'easy'
+                            ? 'lobby:ai.difficulties.easy'
+                            : DEFAULT_LOCAL_AI_DIFFICULTY === 'hard'
+                                ? 'lobby:ai.difficulties.hard'
+                                : DEFAULT_LOCAL_AI_DIFFICULTY === 'expert'
+                                    ? 'lobby:ai.difficulties.expert'
+                                    : 'lobby:ai.difficulties.normal';
+            const difficultyLabel = t(difficultyKey);
             return controller.policyId
                 ? `${label} · ${difficultyLabel} · ${t('debug.ai.policy', { value: controller.policyId })}`
                 : `${label} · ${difficultyLabel}`;

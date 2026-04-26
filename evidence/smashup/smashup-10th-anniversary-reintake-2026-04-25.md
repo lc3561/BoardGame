@@ -54,7 +54,7 @@
 | 8 | Charmer | 迷人的人 | 天赋：先可移动自己，再可把另一个玩家 3 力或以下仆从移动到它所在基地 |
 | 9 | Mermaid Queen | 人鱼女王 | 把其他玩家 1 个仆从移到这里，或选择这里 1 个 3 力或以下仆从，直到回合结束获得其控制权 |
 | 10 | Charmed | 魅惑 | 选择 3 力或以下仆从，可移到你有仆从的另一基地；其力量到回合结束不计入控制者总力量；额外打行动 |
-| 11 | Desert Island | 无人岛 | 持续：这里仆从都不计入力量；你的回合开始时摧毁此牌 |
+| 11 | Desert Island | 无人岛 | 持续：这里每个仆从都不能把自己的力量加到其控制者的总力量中；你的回合开始前移除这张牌 |
 
 ### Skeletons
 
@@ -153,6 +153,85 @@
     - `迷倒观众` 的“先选基地 -> 只选目标基地己方随从 -> +2 / 额外行动”链路
   - 这两条现在可以作为 `Mermaids` 的 L3 代表性玩法证据，但**不能外推成三新派系整包已收口**。
 
+### 2026-04-26 第四轮回写
+
+- `Mermaids`
+  - `诱惑者 / Temptress`
+    - 卡图切片：`temp/cards7-07.png`
+    - 新确认旧实现漏掉“**其他玩家在自己的回合把自己的仆从移动到这里**”这条合法触发链。
+    - 已改为基于 `minionsMovedToBaseThisTurn` 判定，并显式标注 `handlesPodInternally: true`，避免 `_pod` 自动映射把同一加成重复结算两次。
+  - `无人岛 / Desert Island`
+    - 卡图切片：`temp/cards7-11.png`
+    - 失效回写：此前“**只压制行动拥有者自己在这里的随从总力量**”的解释是错的。
+    - 卡图口径应为：**这里所有仆从都不能把自己的力量加到各自控制者的总力量中**；这不会改变基地总力量，只会同时压制双方/多方玩家在该基地的个人总力量。
+    - 已回写：`src/games/smashup/domain/ongoingModifiers.ts`、`e2e/src/games/smashup/domain/ongoingModifiers.ts`、`src/games/smashup/__tests__/ongoingModifiers.test.ts`、`e2e/src/games/smashup/__tests__/ongoingModifiers.test.ts`
+  - `塞壬的歌声 / Siren Song`
+    - 卡图切片：`temp/cards7-03.png`
+    - 新确认 1 个真实入口目标错误：旧来源基地候选只看“那里有没有其他玩家仆从”，没同时校验“是否存在另一个你有仆从的基地”，会把选了以后必然无效的来源基地也放进 prompt。
+    - 已修成：只有存在至少 1 个**别的**己方基地可去时，该来源基地才可选。
+  - `死亡海湾 / Toll Bay`
+    - 卡图切片：`temp/cards7-04.png`
+    - 本轮逐词复核后确认当前实现与卡图一致：**选择一个基地，按其他玩家在那里每有一个仆从抽一张牌**。
+    - 已补聚焦断言，锁死“只数其他玩家仆从、不数己方仆从”的抽牌数量语义。
+- 本轮验证：
+  - `npx vitest run src/games/smashup/__tests__/newFactionAbilities.test.ts --testNamePattern "Mermaids abilities"`
+  - `npx vitest run src/games/smashup/__tests__/ongoingModifiers.test.ts --testNamePattern "mermaids_temptress|mermaids_desert_island|mermaids_charmed"`
+- 本轮结果：
+  - `Mermaids abilities`：`10 passed`
+  - `ongoingModifiers` 聚焦：`3 passed`
+
+### 2026-04-26 第五轮回写
+
+- `Mermaids`
+  - `塞壬 / Siren`
+    - 卡图切片：`temp/cards7-06.png`
+    - 失效回写：此前“**同一玩家在这里有多个仆从时只减 1 次**”的审计结论是错的。
+    - 卡图口径应为：**其他玩家在这里的每个仆从都各自 -1 力量计入其控制者总力量**；不会改变基地总力量。
+  - `人鱼暗礁 / Mermaid Reef`
+    - 卡图切片：`temp/wangling-base-0.png`
+    - 失效回写：此前把基地效果解释成“**同一玩家只统一减 1 次**”同样是错的。
+    - 卡图口径应为：**你的回合内，其他玩家在这里的每个仆从都各自 -1 力量计入其控制者总力量**；不会改变基地总力量。
+  - `无人岛 / Desert Island`
+    - 延续第四轮失效回写，现已和 `塞壬 / 人鱼暗礁` 一并统一到 `getPlayerEffectivePowerOnBase` 的逐仆从口径。
+  - 已回写：
+    - `src/games/smashup/domain/ongoingModifiers.ts`
+    - `e2e/src/games/smashup/domain/ongoingModifiers.ts`
+    - `src/games/smashup/__tests__/ongoingModifiers.test.ts`
+    - `e2e/src/games/smashup/__tests__/ongoingModifiers.test.ts`
+- 本轮验证：
+  - `npx vitest run src/games/smashup/__tests__/ongoingModifiers.test.ts --testNamePattern "mermaids_siren|base_mermaid_reef|mermaids_desert_island|mermaids_charmed|mermaids_temptress"`
+- 本轮结果：
+  - `ongoingModifiers` 聚焦：`10 passed`
+
+### 2026-04-26 第六轮回写
+
+- `Mermaids`
+  - `安静的海岸 / Becalmed Shores`
+    - 卡图切片：`temp/cards7-02.png`
+    - 卡图口径：**打到基地上；持续：其他玩家在这里的仆从 -1 力量；天赋：把这张牌移到另一个基地。**
+    - 当前实现复核：
+      - 持续减力由 `registerOngoingPowerModifier('mermaids_becalmed_shores', 'base', 'opponentMinions', -1)` 覆盖；
+      - 天赋移动由 `mermaidsBecalmedShoresTalent` + `handleMermaidsOngoingMove` 覆盖；
+      - `newFactionAbilities.test.ts` 已覆盖真实交互 prompt。
+    - 结论：**当前代码与卡图一致，本轮无新增修复。**
+  - `沉船湾 / Shipwreck Cove`
+    - 卡图切片：`temp/cards7-05.png`
+    - 卡图口径：**打到基地上；持续：你在这里的仆从 +1 力量；特殊：这个基地计分后，你可以把这张牌移到另一个基地。**
+    - 当前实现复核：
+      - 持续加力由 `registerOngoingPowerModifier('mermaids_shipwreck_cove', 'base', 'ownerMinions', 1)` 覆盖；
+      - 计分后可移动由 `mermaidsShipwreckCoveAfterScoring` 覆盖，且含跳过选项；
+      - `newFactionAbilities.test.ts` 已覆盖打出后挂载 + 计分后迁移链路。
+    - 结论：**当前代码与卡图一致，本轮无新增修复。**
+  - `迷人的人 / Charmer`
+    - 卡图切片：`temp/cards7-08.png`
+    - 卡图口径：**天赋：你可以先把这个仆从移到另一个基地；然后你可以把另一个玩家一个力量 3 或以下的仆从移到相同的基地。**
+    - 当前实现复核：
+      - 第一段“先移动自己”由 `mermaidsCharmerTalent` / `handleMermaidsCharmerMove` 覆盖；
+      - 第二段“再把别人的 3 力或以下仆从移到相同基地”由 `queueCharmerTargetPrompt` / `handleMermaidsCharmerTarget` 覆盖；
+      - 若跳过第一段，自身留在原基地，第二段仍以该基地为目标，符合卡图语义；
+      - `newFactionAbilities.test.ts` 已覆盖“先移自己，再拉别人的 3 力仆从”真实链路。
+    - 结论：**当前代码与卡图一致，本轮无新增修复。**
+
 ### 2026-04-26 第二轮回写
 
 - `Mermaids`
@@ -190,3 +269,4 @@
 - 当前仍需明确标注的残余风险：
   - `复仇者` 图面是“你的回合中”，当前实现入口仍挂在 `onTurnStart`，属于**时机收窄**，不能算完全收口。
   - `Skeletons` 虽已补完当前聚焦单测，但整派系仍需和 `Mermaids / World Champs / 基地` 一起做最终整包重审，不能单独宣称三派系完成。
+

@@ -14,12 +14,15 @@ export interface InteractionAbilityDraft {
   selectedCardIds: string[];
 }
 
-type ActivatedAbilityId =
-  | 'revive_undead'
-  | 'fortress_power'
-  | 'telekinesis_instead'
-  | 'high_telekinesis_instead'
-  | 'vanish';
+export const ACTIVATED_ABILITY_IDS = [
+  'revive_undead',
+  'fortress_power',
+  'telekinesis_instead',
+  'high_telekinesis_instead',
+  'vanish',
+] as const;
+
+type ActivatedAbilityId = typeof ACTIVATED_ABILITY_IDS[number];
 
 const isCellCoord = (value: unknown): value is CellCoord => {
   if (!value || typeof value !== 'object') return false;
@@ -28,11 +31,7 @@ const isCellCoord = (value: unknown): value is CellCoord => {
 };
 
 const isActivatedAbilityId = (value: unknown): value is ActivatedAbilityId => (
-  value === 'revive_undead'
-  || value === 'fortress_power'
-  || value === 'telekinesis_instead'
-  || value === 'high_telekinesis_instead'
-  || value === 'vanish'
+  typeof value === 'string' && ACTIVATED_ABILITY_IDS.includes(value as ActivatedAbilityId)
 );
 
 export function isActivatedAbilityInteraction(

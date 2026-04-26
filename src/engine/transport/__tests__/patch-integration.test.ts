@@ -773,6 +773,10 @@ describe('Feature: incremental-state-sync (Server Integration)', () => {
          * Validates: Requirements 8.1
          */
         it('sync request returns full state:sync', async () => {
+            const originalEnv = process.env.NODE_ENV;
+            process.env.NODE_ENV = 'test';
+
+            try {
             const { io, storage, server, matchID } = await createTestEnv();
 
             // 连接玩家
@@ -780,6 +784,18 @@ describe('Feature: incremental-state-sync (Server Integration)', () => {
 
             // 执行命令建立缓存
             await socket.clientEmit('command', matchID, 'TEST_CMD', {}, 'cred-0');
+
+            await server.injectState(matchID, {
+                core: { currentPlayer: '0', counter: 1 },
+                sys: {
+                    phase: 'main',
+                    turnNumber: 1,
+                    eventStream: {
+                        entries: [{ id: 1, type: 'TEST_CMD' }],
+                        nextId: 2,
+                    },
+                },
+            } as any);
 
             // 再次发送 sync 请求（模拟重连）
             socket.clearSent();
@@ -801,7 +817,17 @@ describe('Feature: incremental-state-sync (Server Integration)', () => {
             expect(syncMatchID).toBe(matchID);
             expect(syncState.core).toBeTruthy();
             expect(syncState.sys).toBeTruthy();
-            expect(syncMeta.stateID).toBe(1);
+            expect(Array.isArray((syncState.sys as { eventStream?: { entries?: unknown[] } }).eventStream?.entries)).toBe(true);
+            expect((syncState.sys as {
+                eventStream?: { entries?: Array<{ id?: number; type?: string }>; nextId?: number };
+            }).eventStream?.entries).toEqual([{ id: 1, type: 'TEST_CMD' }]);
+            expect((syncState.sys as {
+                eventStream?: { entries?: Array<{ id?: number; type?: string }>; nextId?: number };
+            }).eventStream?.nextId).toBe(2);
+            expect(syncMeta.stateID).toBe(2);
+            } finally {
+                process.env.NODE_ENV = originalEnv;
+            }
         });
     });
 });

@@ -89,6 +89,7 @@ import {
     resolveNextAiDispatch,
     getGameAiRuntime,
     resolveOnlineAiDecisionView,
+    startCancelableAiDelay,
     type AiSeatController,
 } from '../engine/ai';
 import { resolveLocalAiActionVisibility } from '../engine/ai/actionVisibility';
@@ -498,6 +499,22 @@ const OnlineAiSeatBridge = ({
                     onlineAiTransportLogger.warn('transport-error', payload);
                     emitOnlineAiTransport('transport-error', payload);
                 },
+                onDebugEvent: (event) => {
+                    const payload = {
+                        matchId,
+                        gameId: engineConfig.gameId,
+                        playerId,
+                        ...event,
+                    };
+                    if (event.stage === 'sync-timeout'
+                        || event.stage === 'patch-discontinuity'
+                        || event.stage === 'patch-apply-failed') {
+                        onlineAiTransportLogger.warn(event.stage, payload);
+                    } else {
+                        onlineAiTransportLogger.info(event.stage, payload);
+                    }
+                    emitOnlineAiTransport(event.stage, payload);
+                },
             });
             client.connect();
             clientsRef.current[playerId] = client;
@@ -536,6 +553,7 @@ const OnlineAiSeatBridge = ({
 
         let cancelled = false;
         let delayTimer: ReturnType<typeof setTimeout> | null = null;
+        let pendingDelayHandle: ReturnType<typeof startCancelableAiDelay> | null = null;
 
         const runAiTurn = async () => {
             const startedAt = Date.now();
@@ -854,15 +872,82 @@ const OnlineAiSeatBridge = ({
             });
 
             if (delayPlan.remainingDelayMs > 0) {
-                await new Promise<void>((resolve) => {
-                    delayTimer = setTimeout(() => {
-                        delayTimer = null;
-                        resolve();
-                    }, delayPlan.remainingDelayMs);
+                pendingDelayHandle = startCancelableAiDelay(delayPlan.remainingDelayMs);
+                const delayResult = await pendingDelayHandle.promise;
+                pendingDelayHandle = null;
+                if (delayResult.outcome === 'cancelled') {
+                    onlineAiPerfLogger.warn('delay-cancelled', {
+                        gameId: engineConfig.gameId,
+                        matchId,
+                        playerId: resolution.playerId,
+                        source: resolution.source,
+                        actionKind: resolution.action.kind,
+                        commandTypes,
+                        ...delayPlan,
+                        waitedMs: delayResult.waitedMs,
+                        cancelled,
+                        clientConnected: client.isConnected,
+                    });
+                    emitOnlineAiPerf('delay-cancelled', {
+                        gameId: engineConfig.gameId,
+                        matchId,
+                        playerId: resolution.playerId,
+                        source: resolution.source,
+                        actionKind: resolution.action.kind,
+                        commandTypes,
+                        ...delayPlan,
+                        waitedMs: delayResult.waitedMs,
+                        cancelled,
+                        clientConnected: client.isConnected,
+                    });
+                    releaseAiAttemptKeyIfMatches(lastAiAttemptKeyRef, resolution.attemptKey);
+                    return;
+                }
+                onlineAiPerfLogger.info('delay-finished', {
+                    gameId: engineConfig.gameId,
+                    matchId,
+                    playerId: resolution.playerId,
+                    source: resolution.source,
+                    actionKind: resolution.action.kind,
+                    commandTypes,
+                    ...delayPlan,
+                    waitedMs: delayResult.waitedMs,
+                });
+                emitOnlineAiPerf('delay-finished', {
+                    gameId: engineConfig.gameId,
+                    matchId,
+                    playerId: resolution.playerId,
+                    source: resolution.source,
+                    actionKind: resolution.action.kind,
+                    commandTypes,
+                    ...delayPlan,
+                    waitedMs: delayResult.waitedMs,
                 });
             }
 
             if (cancelled || !client.isConnected) {
+                onlineAiPerfLogger.warn('submit-skipped', {
+                    gameId: engineConfig.gameId,
+                    matchId,
+                    playerId: resolution.playerId,
+                    source: resolution.source,
+                    actionKind: resolution.action.kind,
+                    commandTypes,
+                    cancelled,
+                    clientConnected: client.isConnected,
+                    ...delayPlan,
+                });
+                emitOnlineAiPerf('submit-skipped', {
+                    gameId: engineConfig.gameId,
+                    matchId,
+                    playerId: resolution.playerId,
+                    source: resolution.source,
+                    actionKind: resolution.action.kind,
+                    commandTypes,
+                    cancelled,
+                    clientConnected: client.isConnected,
+                    ...delayPlan,
+                });
                 releaseAiAttemptKeyIfMatches(lastAiAttemptKeyRef, resolution.attemptKey);
                 return;
             }
@@ -1018,6 +1103,8 @@ const OnlineAiSeatBridge = ({
             if (delayTimer) {
                 clearTimeout(delayTimer);
             }
+            pendingDelayHandle?.cancel();
+            pendingDelayHandle = null;
         };
     }, [aiRetryVersion, connectionVersion, engineConfig, matchId, seatControllers, state]);
 

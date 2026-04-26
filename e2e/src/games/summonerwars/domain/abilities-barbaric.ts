@@ -243,10 +243,6 @@ export const BARBARIC_ABILITIES: AbilityDef[] = [
     },
     ui: {
       requiresButton: false,
-      buttonPhase: 'attack',
-      buttonLabel: 'abilityButtons.withdraw',
-      buttonVariant: 'secondary',
-      activationType: 'withdrawMode',
       quickCheck: ({ core, unit, playerId }) => {
         const hasCharge = normalizeUnitBoosts(unit.boosts) >= 1;
         const hasMagic = core.players[playerId].magic >= 1;

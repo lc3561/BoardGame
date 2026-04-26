@@ -5,7 +5,7 @@
  * 使用引擎层 useEventStreamCursor 管理游标（自动处理首次挂载跳过 + Undo 重置）
  */
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import type { MatchState, EventStreamEntry } from '../../../engine/types';
 import type { SummonerWarsCore, PlayerId, CellCoord, UnitCard, StructureCard } from '../domain/types';
 import { SW_EVENTS } from '../domain/types';
@@ -205,26 +205,6 @@ export function useGameEvents({
   // 使用框架层 useVisualStateBuffer 替代内联 Map 实现
   const damageBuffer = useVisualStateBuffer();
 
-  // 技能模式
-  const [abilityMode, setAbilityMode] = useState<AbilityModeState | null>(null);
-
-  // 阶段切换时清理技能模式
-  useEffect(() => {
-    // 移动后技能（ancestral_bond, spirit_bond, structure_shift, frost_axe）只在移动阶段有效
-    if (abilityMode && currentPhase !== 'move') {
-      const movePhaseAbilities = ['ancestral_bond', 'spirit_bond', 'structure_shift', 'frost_axe'];
-      if (movePhaseAbilities.includes(abilityMode.abilityId)) {
-        setAbilityMode(null);
-      }
-    }
-    // 召唤阶段技能（revive_undead）只在召唤阶段有效
-    if (abilityMode && currentPhase !== 'summon') {
-      if (abilityMode.abilityId === 'revive_undead') {
-        setAbilityMode(null);
-      }
-    }
-  }, [currentPhase, abilityMode]);
-
   // 待播放的攻击效果队列
   const pendingAttackRef = useRef<PendingAttack | null>(null);
   const pendingAttackQueueRef = useRef<PendingAttack[]>([]);
@@ -335,72 +315,6 @@ export function useGameEvents({
     activateAttack(nextAttack);
   }, [activateAttack]);
 
-  // ============================================================================
-  // 刷新恢复：首次挂载时扫描 EventStream 历史，恢复未完成的交互型阶段技能
-  // ============================================================================
-  // 问题：useEventStreamCursor 首次调用跳过所有历史事件（防止重播动画），
-    // 但阶段开始/结束触发的交互型技能（幻化、鲜血符文）
-  // 需要玩家交互，跳过后 UI 不会进入选择模式，技能"丢失"。
-  // 解决：首次挂载时反向扫描历史，找到最后一个未处理的交互型技能事件并恢复。
-  const hasRecoveredRef = useRef(false);
-  useEffect(() => {
-    if (hasRecoveredRef.current) return;
-    hasRecoveredRef.current = true;
-    if (entries.length === 0) return;
-    if (activeSwInteractionType === 'on_phase_start_illusion' || activeSwInteractionType === 'on_phase_start_blood_rune') return;
-
-    // 可恢复的阶段技能映射：eventStream 中的 abilityId → UI 恢复配置
-    // 只包含阶段开始/结束触发的交互型技能，不包含攻击后/移动后技能
-    const RECOVERABLE_PHASE_ABILITIES: Record<string, {
-      phases: string[];  // 该技能有效的阶段
-      uiAbilityId: string;  // setAbilityMode 的 abilityId
-      step: string;
-    }> = {
-      'illusion_copy': { phases: ['move'], uiAbilityId: 'illusion', step: 'selectUnit' },
-      'blood_rune_choice': { phases: ['attack'], uiAbilityId: 'blood_rune', step: 'selectUnit' },
-    };
-
-    // 反向扫描：找最后一个可恢复的 ABILITY_TRIGGERED 事件
-    for (let i = entries.length - 1; i >= 0; i--) {
-      const entry = entries[i];
-      if (entry.event.type !== SW_EVENTS.ABILITY_TRIGGERED) continue;
-      const p = entry.event.payload as {
-        abilityId?: string; actionId?: string; sourceUnitId?: string; sourcePosition?: CellCoord;
-      };
-      const recoveryKey = p.actionId ?? p.abilityId;
-      if (!recoveryKey || !RECOVERABLE_PHASE_ABILITIES[recoveryKey]) continue;
-
-      const config = RECOVERABLE_PHASE_ABILITIES[recoveryKey];
-
-      // 检查当前阶段是否匹配
-      if (!config.phases.includes(currentPhase)) break;
-
-      // 检查后续是否已有 ACTIVATE_ABILITY 处理（说明技能已完成）
-      const hasBeenHandled = entries.slice(i + 1).some(e => {
-        if (e.event.type !== SW_EVENTS.ABILITY_TRIGGERED) return false;
-        const ep = e.event.payload as { abilityId?: string; skipUsageCount?: boolean };
-        // ACTIVATE_ABILITY 执行后会产生不带 skipUsageCount 的 ABILITY_TRIGGERED
-        return ep.abilityId === config.uiAbilityId && !ep.skipUsageCount;
-      });
-      if (hasBeenHandled) break;
-
-      // 检查源单位是否仍在场上且属于当前玩家
-      if (!p.sourcePosition) break;
-      const unit = core.board[p.sourcePosition.row]?.[p.sourcePosition.col]?.unit;
-      if (!unit || unit.owner !== myPlayerId) break;
-
-      // 恢复 UI 模式
-      setAbilityMode({
-        abilityId: config.uiAbilityId,
-        step: config.step as AbilityActivationStep,
-        sourceUnitId: p.sourceUnitId ?? '',
-      });
-      break;
-    }
-  // 仅首次挂载执行，依赖项为初始值
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   // 监听事件流
   useLayoutEffect(() => {
     if (entries.length >= EVENT_STREAM_WARN && entries.length >= eventStreamLogRef.current + EVENT_STREAM_STEP) {
@@ -430,9 +344,6 @@ export function useGameEvents({
       setDiceResult(null);
       setDyingEntities([]);
       damageBuffer.clear();
-      // 撤回导致 EventStream 回退时，清理所有 UI 交互状态
-      // 防止撤回后残留的技能按钮仍可点击（如锻造师 frost_axe 充能）
-      setAbilityMode(null);
       gateRef.current.reset();
       if (didReset) {
         processedAttackEventIdsRef.current.clear();
@@ -651,58 +562,7 @@ export function useGameEvents({
         if (p.interactionResolved) {
           continue;
         }
-        // custom action else 分支产生的事件用 actionId 匹配（abilityId 为父技能 ID，用于 ActionLog 国际化）
-        const matchId = p.actionId ?? p.abilityId;
-        // 幻化：移动阶段开始时自动进入目标选择模式
-        if (matchId === 'illusion_copy') {
-          const unit = core.board[p.sourcePosition?.row]?.[p.sourcePosition?.col]?.unit;
-          if (unit && unit.owner === myPlayerId) {
-            if (activeSwInteractionType === 'on_phase_start_illusion') continue;
-            const captured = { sourceUnitId: p.sourceUnitId };
-            gateRef.current.scheduleInteraction(() => {
-              setAbilityMode({
-                abilityId: 'illusion',
-                step: 'selectUnit',
-                sourceUnitId: captured.sourceUnitId,
-              });
-            });
-          }
-        }
         // 指引：召唤阶段开始时自动抓牌（已在 abilityResolver 中直接处理，无需 UI 交互）
-        // 鲜血符文：攻击阶段开始时进入选择模式
-        if (matchId === 'blood_rune_choice') {
-          const unit = core.board[p.sourcePosition?.row]?.[p.sourcePosition?.col]?.unit;
-          if (unit && unit.owner === myPlayerId) {
-            if (activeSwInteractionType === 'on_phase_start_blood_rune') continue;
-            const captured = { sourceUnitId: p.sourceUnitId };
-            gateRef.current.scheduleInteraction(() => {
-              setAbilityMode({
-                abilityId: 'blood_rune',
-                step: 'selectUnit', // 复用 selectUnit 步骤表示等待选择
-                sourceUnitId: captured.sourceUnitId,
-              });
-            });
-          }
-        }
-        // afterMove 系列（spirit_bond/ancestral_bond/structure_shift/frost_axe）
-        // 统一由 swInteraction(systemAbilityMode) 驱动，避免与本地 abilityMode 双通道并发导致重复弹窗。
-        // 寒冰冲撞：建筑移动/推拉后选择相邻单位
-        if (matchId === 'ice_ram_trigger') {
-          const iceRamOwner = (event.payload as Record<string, unknown>).iceRamOwner as string;
-          const structurePosition = (event.payload as Record<string, unknown>).structurePosition as CellCoord;
-          if (iceRamOwner === myPlayerId && structurePosition) {
-            if (activeSwInteractionType === 'ice_ram_target' || activeSwInteractionType === 'ice_ram_push') continue;
-            const captured = { structurePosition };
-            gateRef.current.scheduleInteraction(() => {
-              setAbilityMode({
-                abilityId: 'ice_ram',
-                step: 'selectUnit',
-                sourceUnitId: 'ice_ram',
-                structurePosition: captured.structurePosition,
-              });
-            });
-          }
-        }
       }
     }
   // 依赖数组不包含回调函数，回调通过 ref 访问，避免因回调引用变化导致 effect 重复执行
@@ -851,8 +711,6 @@ export function useGameEvents({
     dyingEntities,
     damageBuffer,
     isVisualBusy: gate.isVisualBusy,
-    abilityMode,
-    setAbilityMode,
     pendingAttackRef,
     handleCloseDiceResult,
     clearPendingAttack,

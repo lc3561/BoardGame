@@ -102,9 +102,9 @@ function submitSingleOnlineAiResolution(args: SubmitOnlineAiResolutionArgs): voi
             payload: command.payload,
         })),
         (authoritativeState) => {
-            if (authoritativeState && typeof authoritativeState === 'object') {
-                client.updateLatestState(authoritativeState);
-            }
+            // batch:confirmed 返回的是 stripEventStream 裁剪后的权威态，
+            // 不能拿来污染 transport patch baseline；后续真正的 state:update/state:patch
+            // 会继续把完整权威态同步到 client 内部缓存。
             onConfirmed?.(authoritativeState);
         },
         (reason) => {

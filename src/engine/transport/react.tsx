@@ -56,6 +56,7 @@ import {
     resolveNextAiAction,
     getAiSeatIds,
     getGameAiRuntime,
+    startCancelableAiDelay,
     type AiSeatController,
 } from '../ai';
 import { resolveLocalAiActionVisibility } from '../ai/actionVisibility';
@@ -1218,6 +1219,7 @@ export function LocalGameProvider({
 
         let cancelled = false;
         let delayTimer: ReturnType<typeof setTimeout> | null = null;
+        let pendingDelayHandle: ReturnType<typeof startCancelableAiDelay> | null = null;
 
         const runAiTurn = async () => {
             const startedAt = Date.now();
@@ -1318,15 +1320,78 @@ export function LocalGameProvider({
             });
 
             if (delayPlan.remainingDelayMs > 0) {
-                await new Promise<void>((resolve) => {
-                    delayTimer = setTimeout(() => {
-                        delayTimer = null;
-                        resolve();
-                    }, delayPlan.remainingDelayMs);
+                pendingDelayHandle = startCancelableAiDelay(delayPlan.remainingDelayMs);
+                const delayResult = await pendingDelayHandle.promise;
+                pendingDelayHandle = null;
+                if (delayResult.outcome === 'cancelled') {
+                    localAiPerfLogger.warn('delay-cancelled', {
+                        gameId: config.gameId,
+                        matchId: `local:${config.gameId}:${seed}`,
+                        playerId: resolution.playerId,
+                        source: resolution.source,
+                        actionKind: resolution.action.kind,
+                        commandTypes,
+                        ...delayPlan,
+                        waitedMs: delayResult.waitedMs,
+                        cancelled,
+                    });
+                    emitLocalAiPerf('delay-cancelled', {
+                        gameId: config.gameId,
+                        matchId: `local:${config.gameId}:${seed}`,
+                        playerId: resolution.playerId,
+                        source: resolution.source,
+                        actionKind: resolution.action.kind,
+                        commandTypes,
+                        ...delayPlan,
+                        waitedMs: delayResult.waitedMs,
+                        cancelled,
+                    });
+                    releaseAiAttemptKeyIfMatches(lastAiAttemptKeyRef, resolution.attemptKey);
+                    return;
+                }
+                localAiPerfLogger.info('delay-finished', {
+                    gameId: config.gameId,
+                    matchId: `local:${config.gameId}:${seed}`,
+                    playerId: resolution.playerId,
+                    source: resolution.source,
+                    actionKind: resolution.action.kind,
+                    commandTypes,
+                    ...delayPlan,
+                    waitedMs: delayResult.waitedMs,
+                });
+                emitLocalAiPerf('delay-finished', {
+                    gameId: config.gameId,
+                    matchId: `local:${config.gameId}:${seed}`,
+                    playerId: resolution.playerId,
+                    source: resolution.source,
+                    actionKind: resolution.action.kind,
+                    commandTypes,
+                    ...delayPlan,
+                    waitedMs: delayResult.waitedMs,
                 });
             }
 
             if (cancelled) {
+                localAiPerfLogger.warn('submit-skipped', {
+                    gameId: config.gameId,
+                    matchId: `local:${config.gameId}:${seed}`,
+                    playerId: resolution.playerId,
+                    source: resolution.source,
+                    actionKind: resolution.action.kind,
+                    commandTypes,
+                    cancelled,
+                    ...delayPlan,
+                });
+                emitLocalAiPerf('submit-skipped', {
+                    gameId: config.gameId,
+                    matchId: `local:${config.gameId}:${seed}`,
+                    playerId: resolution.playerId,
+                    source: resolution.source,
+                    actionKind: resolution.action.kind,
+                    commandTypes,
+                    cancelled,
+                    ...delayPlan,
+                });
                 releaseAiAttemptKeyIfMatches(lastAiAttemptKeyRef, resolution.attemptKey);
                 return;
             }
@@ -1579,6 +1644,8 @@ export function LocalGameProvider({
                 clearTimeout(delayTimer);
                 delayTimer = null;
             }
+            pendingDelayHandle?.cancel();
+            pendingDelayHandle = null;
         };
     }, [aiRetryVersion, config, dispatch, ensureAiTurnTimeline, localPregameControlledPlayerId, seatControllers, seed, state]);
 

@@ -86,7 +86,13 @@ type TypeOption = { value: FeedbackItem['type']; icon: IconComponent; iconColor:
 type TypeOptionWithLabel = TypeOption & { label: string };
 type ReporterTypeOption = { value: 'user' | 'system'; tone: string };
 type ReporterTypeOptionWithLabel = ReporterTypeOption & { label: string };
-type SourceOption = { value: string; label: string };
+type SourceOptionValue =
+    | 'feedback-modal'
+    | 'online-ai-watchdog'
+    | 'global-error-capture'
+    | 'system-unsatisfiable-interaction'
+    | 'unknown';
+type SourceOption = { value: SourceOptionValue; label: string };
 type SeverityConfig = Record<FeedbackItem['severity'], { label: string; dot: string; tone: string }>;
 
 const STATUS_OPTIONS: StatusOption[] = [
@@ -105,13 +111,6 @@ const TYPE_OPTIONS: TypeOption[] = [
 const REPORTER_TYPE_OPTIONS: ReporterTypeOption[] = [
     { value: 'user', tone: 'bg-zinc-100 text-zinc-600 border-zinc-200' },
     { value: 'system', tone: 'bg-amber-50 text-amber-700 border-amber-200' },
-];
-
-const SOURCE_OPTION_VALUES = [
-    'feedback-modal',
-    'online-ai-watchdog',
-    'global-error-capture',
-    'unknown',
 ];
 
 const SEVERITY_STYLES: Record<FeedbackItem['severity'], { dot: string; tone: string }> = {
@@ -146,10 +145,13 @@ const buildReporterTypeOptions = (t: TFunction<'admin'>): ReporterTypeOptionWith
 );
 
 const buildSourceOptions = (t: TFunction<'admin'>): SourceOption[] => (
-    SOURCE_OPTION_VALUES.map((value) => ({
-        value,
-        label: t(`feedback.source.${value === 'feedback-modal' ? 'feedbackModal' : value === 'online-ai-watchdog' ? 'onlineAiWatchdog' : value === 'global-error-capture' ? 'globalErrorCapture' : value === 'system-unsatisfiable-interaction' ? 'unsatAutoSkip' : 'unknown'}`),
-    }))
+    [
+        { value: 'feedback-modal', label: t('feedback.source.feedbackModal') },
+        { value: 'online-ai-watchdog', label: t('feedback.source.onlineAiWatchdog') },
+        { value: 'global-error-capture', label: t('feedback.source.globalErrorCapture') },
+        { value: 'system-unsatisfiable-interaction', label: t('feedback.source.unsatAutoSkip') },
+        { value: 'unknown', label: t('feedback.source.unknown') },
+    ]
 );
 
 const buildSeverityConfig = (t: TFunction<'admin'>): SeverityConfig => ({

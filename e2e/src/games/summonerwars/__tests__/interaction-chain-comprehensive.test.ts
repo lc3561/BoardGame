@@ -369,6 +369,18 @@ describe('SummonerWars 系统交互桥接回归', () => {
     clearRect(core, [2, 3, 4, 5, 6], [0, 1, 2, 3, 4, 5]);
     core.phase = 'move';
     core.currentPlayer = '0';
+    core.players['0'].activeEvents.push({
+      id: `${CARD_IDS.FROST_ICE_RAM}-0-0`,
+      cardType: 'event',
+      name: '寒冰冲撞',
+      eventType: 'normal',
+      faction: 'frost',
+      cost: 1,
+      playPhase: 'summon',
+      effect: '持续效果',
+      isActive: true,
+      deckSymbols: [],
+    });
 
     const structurePos = { row: 4, col: 3 };
     const targetPos = { row: 4, col: 4 };
@@ -432,9 +444,9 @@ describe('SummonerWars 系统交互桥接回归', () => {
 
     expect(state.sys.interaction.current).toBeUndefined();
     expect(state.sys.interaction.queue.length).toBe(0);
-    // 单测环境未注入寒冰冲撞 active event，上游执行会拒绝推拉；这里验证交互链能收口且不会重触发
-    expect(getUnitAt(state.core, targetPos)?.instanceId).toBe(target.instanceId);
-    expect(getUnitAt(state.core, pushPos)).toBeUndefined();
+    // 注入真实 active event 后，二步响应会实际完成推拉；这里验证交互链能收口且不会重触发
+    expect(getUnitAt(state.core, targetPos)).toBeUndefined();
+    expect(getUnitAt(state.core, pushPos)?.instanceId).toBe(target.instanceId);
   });
 
   it('[ice_ram] 首步 skip 后应直接收口且不进入二步推拉', () => {

@@ -46,6 +46,16 @@ export interface GameTransportClientConfig {
     onPlayerConnectionChange?: (playerID: string, connected: boolean) => void;
     /** 错误回调 */
     onError?: (error: string) => void;
+    /** 调试事件回调 */
+    onDebugEvent?: (event: {
+        stage: 'sync-requested' | 'sync-received' | 'sync-timeout' | 'patch-discontinuity' | 'patch-apply-failed' | 'reconnect-requested';
+        reason?: string;
+        retryCount?: number;
+        maxRetries?: number;
+        expectedStateID?: number | null;
+        receivedStateID?: number | null;
+        error?: string;
+    }) => void;
 }
 
 // ============================================================================
@@ -147,7 +157,7 @@ export class GameTransportClient {
             if (this._destroyed) return;
             this._terminalError = null;
             // 连接后立即发送 sync 请求
-            this.sendSync();
+            this.sendSync('socket-connect');
         });
 
         socket.on('state:sync', (matchID, state, matchPlayers, randomMeta, syncMeta) => {
@@ -159,6 +169,10 @@ export class GameTransportClient {
             this._matchPlayers = matchPlayers;
             // sync 是全量权威态，收到后立即建立 patch 连续性校验基线
             this._lastReceivedStateID = syncMeta?.stateID ?? null;
+            this.config.onDebugEvent?.({
+                stage: 'sync-received',
+                receivedStateID: syncMeta?.stateID ?? null,
+            });
             this.config.onConnectionChange?.(true);
             this.config.onStateUpdate?.(state, matchPlayers, syncMeta, randomMeta);
         });
@@ -184,7 +198,13 @@ export class GameTransportClient {
                     expected: this._lastReceivedStateID + 1,
                     received: meta.stateID,
                 });
-                this.sendSync();
+                this.config.onDebugEvent?.({
+                    stage: 'patch-discontinuity',
+                    reason: 'stateid-discontinuity',
+                    expectedStateID: this._lastReceivedStateID + 1,
+                    receivedStateID: meta.stateID,
+                });
+                this.sendSync('stateid-discontinuity');
                 return;
             }
 
@@ -196,7 +216,13 @@ export class GameTransportClient {
                     matchID,
                     error: result.error,
                 });
-                this.sendSync();
+                this.config.onDebugEvent?.({
+                    stage: 'patch-apply-failed',
+                    reason: 'patch-apply-failed',
+                    error: result.error,
+                    receivedStateID: meta.stateID,
+                });
+                this.sendSync('patch-apply-failed');
                 return;
             }
 
@@ -367,17 +393,27 @@ export class GameTransportClient {
         if (this._destroyed || this._terminalError || !this.socket) return;
         if (this.socket.connected) {
             // 连接正常：直接发送 sync 获取最新状态
-            this.sendSync();
+            this.sendSync('manual-resync');
         } else {
             // 连接已断：强制重连（socket.io 可能因后台节流未及时重连）
+            this.config.onDebugEvent?.({
+                stage: 'reconnect-requested',
+                reason: 'manual-resync-disconnected',
+            });
             this.socket.connect();
         }
     }
 
     /** 发送 sync 请求并启动超时重试 */
-    private sendSync(): void {
+    private sendSync(reason: string): void {
         if (this._destroyed || this._terminalError || !this.socket?.connected) return;
         this.clearSyncTimer();
+        this.config.onDebugEvent?.({
+            stage: 'sync-requested',
+            reason,
+            retryCount: this._syncRetries,
+            expectedStateID: this._lastReceivedStateID ?? null,
+        });
         this.socket.emit(
             'sync',
             this.config.matchID,
@@ -386,11 +422,18 @@ export class GameTransportClient {
         );
         // 如果 SYNC_TIMEOUT_MS 内没收到 state:sync，自动重试
         this._syncTimer = setTimeout(() => {
-            if (this._destroyed || this._connectionState === 'connected') return;
+            if (this._destroyed) return;
             this._syncRetries += 1;
+            this.config.onDebugEvent?.({
+                stage: 'sync-timeout',
+                reason,
+                retryCount: this._syncRetries,
+                maxRetries: GameTransportClient.SYNC_MAX_RETRIES,
+                expectedStateID: this._lastReceivedStateID ?? null,
+            });
             if (this._syncRetries <= GameTransportClient.SYNC_MAX_RETRIES) {
                 console.warn(`[GameTransport] sync 超时，重试 ${this._syncRetries}/${GameTransportClient.SYNC_MAX_RETRIES}`);
-                this.sendSync();
+                this.sendSync(`retry-after-timeout:${reason}`);
             } else {
                 console.error(`[GameTransport] sync 重试耗尽，matchID=${this.config.matchID}`);
                 this.config.onError?.('sync_timeout');
@@ -410,12 +453,7 @@ export class GameTransportClient {
         (this.config as { playerID: string | null }).playerID = playerID;
         // 重新 sync 以获取新视角的状态
         if (this.socket?.connected) {
-            this.socket.emit(
-                'sync',
-                this.config.matchID,
-                playerID,
-                this.config.credentials,
-            );
+            this.sendSync('update-player-id');
         }
     }
 

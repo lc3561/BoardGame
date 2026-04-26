@@ -1549,7 +1549,7 @@ describe('resolveNextAiAction 在线视角', () => {
 
 describe('submitOnlineAiResolution', () => {
 
-    it('batch confirmed 后会回写对应 seat 的最新状态', () => {
+    it('batch confirmed 只透传权威态，不直接回写 seat latestState', () => {
         const updateLatestState = vi.fn();
         const resync = vi.fn();
         const sendBatch = vi.fn((_batchId, _commands, onConfirmed) => {
@@ -1582,7 +1582,7 @@ describe('submitOnlineAiResolution', () => {
 
         expect(lastAiAttemptKeyRef.current).toBe('attempt-confirmed');
         expect(sendBatch).toHaveBeenCalledTimes(1);
-        expect(updateLatestState).toHaveBeenCalledWith({ sys: { phase: 'playCards' } });
+        expect(updateLatestState).not.toHaveBeenCalled();
     });
 
     it('batch rejected 后会清空 attemptKey 并安排重试；unauthorized 不重试', () => {

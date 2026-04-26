@@ -141,8 +141,15 @@ export function resolvePromptText(
     key: string | undefined,
     params: Record<string, string | number> | undefined,
     t: (key: string, opts?: any) => string,
+    i18n?: { exists: (key: string, opts?: Record<string, unknown>) => boolean },
 ): string {
     if (typeof key === 'string') {
+        if (i18n && i18n.exists(key, { ns: 'game-smashup' })) {
+            return t(key, {
+                ...(resolveI18nParams(params, t) ?? {}),
+                defaultValue: resolveI18nKeys(text, t),
+            });
+        }
         return t(key, {
             ...(resolveI18nParams(params, t) ?? {}),
             defaultValue: resolveI18nKeys(text, t),
@@ -200,7 +207,7 @@ function formatSliderText(template: string | undefined, value: number, max: numb
 
 export const PromptOverlay: React.FC<Props> = ({ interaction, dispatch, playerID, displayCards }) => {
     const prompt = asSimpleChoice(interaction);
-    const { t } = useTranslation('game-smashup');
+    const { t, i18n } = useTranslation('game-smashup');
     const [magnifyTarget, setMagnifyTarget] = useState<CardMagnifyTarget | null>(null);
 
     const { ref: revealScrollRef } = useHorizontalDragScroll();
@@ -293,6 +300,7 @@ export const PromptOverlay: React.FC<Props> = ({ interaction, dispatch, playerID
             promptTitleKey,
             promptTitleParams,
             t,
+            i18n,
         );
     }, [prompt?.title, promptTitleKey, promptTitleParams, t]);
 

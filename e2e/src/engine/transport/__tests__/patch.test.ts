@@ -810,5 +810,63 @@ describe('Feature: incremental-state-sync', () => {
 
       client.disconnect();
     });
+
+    it('resyncs when batch-confirmed stripEventStream state pollutes patch base', () => {
+      const onStateUpdate = vi.fn();
+      const { client } = createConnectedClient({ onStateUpdate });
+
+      const authoritativeStateAfterFirstAction = {
+        core: { hp: 10, readyPlayers: { '1': true } },
+        sys: {
+          eventStream: {
+            entries: [{ id: 1, type: 'SELECT_CHARACTER' }],
+            nextId: 2,
+          },
+        },
+      };
+      simulateSync(authoritativeStateAfterFirstAction);
+      simulateUpdate(authoritativeStateAfterFirstAction, { stateID: 1, randomCursor: 0 });
+
+      onStateUpdate.mockClear();
+      mockSocket.clearEmitted();
+
+      // 模拟 batch:confirmed 返回的 stripEventStream 权威态：
+      // nextId 已推进，但 entries 被裁剪为空。
+      const strippedBatchConfirmedState = {
+        core: { hp: 10, readyPlayers: { '1': true } },
+        sys: {
+          eventStream: {
+            entries: [],
+            nextId: 2,
+          },
+        },
+      };
+      client.updateLatestState(strippedBatchConfirmedState);
+
+      const authoritativeStateAfterSecondAction = {
+        core: { hp: 10, readyPlayers: { '1': true, '0': true } },
+        sys: {
+          eventStream: {
+            entries: [
+              { id: 1, type: 'SELECT_CHARACTER' },
+              { id: 2, type: 'PLAYER_READY' },
+            ],
+            nextId: 3,
+          },
+        },
+      };
+      const diff = computeDiff(authoritativeStateAfterFirstAction, authoritativeStateAfterSecondAction, Infinity);
+      expect(diff.type).toBe('patch');
+      expect(diff.patches).toBeDefined();
+      expect(diff.patches!.some((patch) => patch.path === '/sys/eventStream/entries/1')).toBe(true);
+
+      simulatePatch(diff.patches!, { stateID: 2, randomCursor: 0 });
+
+      expect(onStateUpdate).not.toHaveBeenCalled();
+      expect(mockSocket.findEmitted('sync').length).toBeGreaterThan(0);
+      expect(client.latestState).toEqual(strippedBatchConfirmedState);
+
+      client.disconnect();
+    });
   });
 });

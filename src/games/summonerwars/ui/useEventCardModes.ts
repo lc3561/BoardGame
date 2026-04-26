@@ -13,7 +13,7 @@ import {
   getPlayerUnits, isCellEmpty, getAdjacentCells,
   manhattanDistance, isInStraightLine,
   getStructureAt, isValidCoord, getSummoner, findUnitPositionByInstanceId,
-  hasStableAbility, getUnitAt, getUnitAbilities, getForceDestinations,
+  hasStableAbility, getUnitAt, getUnitAbilities,
 } from '../domain/helpers';
 import { BOARD_ROWS, BOARD_COLS } from '../config/board';
 import { getBaseCardId, CARD_IDS } from '../domain/ids';
@@ -86,24 +86,11 @@ export function useEventCardModes({
   const { t } = useTranslation('game-summonerwars');
   const showToast = useToast();
 
-  // ---------- 状态 ----------
-  const [localBloodSummonMode, setBloodSummonMode] = useState<BloodSummonModeState | null>(null);
-  const [localAnnihilateMode, setAnnihilateMode] = useState<AnnihilateModeState | null>(null);
-  const [localSneakMode, setSneakMode] = useState<SneakModeState | null>(null);
-  const [localGlacialShiftMode, setGlacialShiftMode] = useState<GlacialShiftModeState | null>(null);
-  const [localWithdrawMode, setLocalWithdrawMode] = useState<WithdrawModeState | null>(null);
-  const [localTelekinesisTargetMode, setLocalTelekinesisTargetMode] = useState<TelekinesisTargetModeState | null>(null);
   const [selectedMultiTargetOptionIds, setSelectedMultiTargetOptionIds] = useState<string[]>([]);
   const [selectedAnnihilateOptionIds, setSelectedAnnihilateOptionIds] = useState<string[]>([]);
 
   // ---------- 派生 ----------
   const clearAllEventModes = useCallback(() => {
-    setBloodSummonMode(null);
-    setAnnihilateMode(null);
-    setSneakMode(null);
-    setGlacialShiftMode(null);
-    setLocalWithdrawMode(null);
-    setLocalTelekinesisTargetMode(null);
     setSelectedMultiTargetOptionIds([]);
     setSelectedAnnihilateOptionIds([]);
     setSelectedHandCardId(null);
@@ -250,8 +237,14 @@ export function useEventCardModes({
     }
   }, []);
 
+  const setBloodSummonMode = useCallback((mode: BloodSummonModeState | null) => {
+    if (!mode) {
+      setSelectedHandCardId(null);
+    }
+  }, [setSelectedHandCardId]);
+
   const bloodSummonMode = useMemo<BloodSummonModeState | null>(() => {
-    if (!swInteraction) return localBloodSummonMode;
+    if (!swInteraction) return null;
     const cardId = typeof swInteraction.meta?.cardId === 'string' ? swInteraction.meta.cardId : undefined;
     switch (swInteraction.type) {
       case 'blood_summon_select_target':
@@ -282,9 +275,9 @@ export function useEventCardModes({
           completedCount: (swInteraction.meta?.completedCount as number | undefined) ?? 1,
         };
       default:
-        return localBloodSummonMode;
+        return null;
     }
-  }, [localBloodSummonMode, swInteraction]);
+  }, [swInteraction]);
 
   const annihilateOptions = useMemo(
     () => extractTargetPositionOptions('annihilate_select_targets', 'annihilate_target'),
@@ -292,7 +285,7 @@ export function useEventCardModes({
   );
 
   const annihilateMode = useMemo<AnnihilateModeState | null>(() => {
-    if (!swInteraction) return localAnnihilateMode;
+    if (!swInteraction) return null;
     if (swInteraction.type === 'annihilate_select_targets') {
       return {
         step: 'selectTargets',
@@ -313,8 +306,15 @@ export function useEventCardModes({
         damageTargets: (swInteraction.meta?.damageTargets as (CellCoord | null)[] | undefined) ?? [],
       };
     }
-    return localAnnihilateMode;
-  }, [annihilateOptions, localAnnihilateMode, selectedAnnihilateOptionIdSet, swInteraction]);
+    return null;
+  }, [annihilateOptions, selectedAnnihilateOptionIdSet, swInteraction]);
+
+  const setAnnihilateMode = useCallback((mode: AnnihilateModeState | null) => {
+    if (!mode) {
+      setSelectedAnnihilateOptionIds([]);
+      setSelectedHandCardId(null);
+    }
+  }, [setSelectedHandCardId]);
 
   const stunMode = useMemo<StunModeState | null>(() => {
     if (!swInteraction) return null;
@@ -384,10 +384,9 @@ export function useEventCardModes({
     return null;
   }, [swInteraction]);
 
-  const withdrawMode = systemWithdrawMode ?? localWithdrawMode;
+  const withdrawMode = systemWithdrawMode;
 
   const setWithdrawMode = useCallback((mode: WithdrawModeState | null) => {
-    setLocalWithdrawMode(mode);
     if (!mode) {
       setSelectedHandCardId(null);
     }
@@ -427,14 +426,12 @@ export function useEventCardModes({
     };
   }, [swInteraction]);
 
-  const telekinesisTargetMode = systemTelekinesisTargetMode ?? localTelekinesisTargetMode;
+  const telekinesisTargetMode = systemTelekinesisTargetMode;
 
-  const setTelekinesisTargetMode = useCallback((mode: TelekinesisTargetModeState | null) => {
-    setLocalTelekinesisTargetMode(mode);
-  }, []);
+  const setTelekinesisTargetMode = useCallback((_mode: TelekinesisTargetModeState | null) => {}, []);
 
   const sneakMode = useMemo<SneakModeState | null>(() => {
-    if (!swInteraction) return localSneakMode;
+    if (!swInteraction) return null;
     if (swInteraction.type === 'sneak_select_unit') {
       const validUnits = swInteraction.options
         .filter((option) => option.id !== 'finish')
@@ -456,11 +453,11 @@ export function useEventCardModes({
         recorded: (swInteraction.meta?.recorded as { position: CellCoord; newPosition: CellCoord }[] | undefined) ?? [],
       };
     }
-    return localSneakMode;
-  }, [localSneakMode, swInteraction]);
+    return null;
+  }, [swInteraction]);
 
   const glacialShiftMode = useMemo<GlacialShiftModeState | null>(() => {
-    if (!swInteraction) return localGlacialShiftMode;
+    if (!swInteraction) return null;
     if (swInteraction.type === 'glacial_shift_select_building') {
       const validBuildings = swInteraction.options
         .filter((option) => option.id !== 'finish')
@@ -482,8 +479,20 @@ export function useEventCardModes({
         recorded: (swInteraction.meta?.recorded as { position: CellCoord; newPosition: CellCoord }[] | undefined) ?? [],
       };
     }
-    return localGlacialShiftMode;
-  }, [localGlacialShiftMode, swInteraction]);
+    return null;
+  }, [swInteraction]);
+
+  const setSneakMode = useCallback((mode: SneakModeState | null) => {
+    if (!mode) {
+      setSelectedHandCardId(null);
+    }
+  }, [setSelectedHandCardId]);
+
+  const setGlacialShiftMode = useCallback((mode: GlacialShiftModeState | null) => {
+    if (!mode) {
+      setSelectedHandCardId(null);
+    }
+  }, [setSelectedHandCardId]);
 
   const hasActiveEventMode = !!(eventTargetMode || bloodSummonMode || annihilateMode
     || funeralPyreMode || mindControlMode || stunMode || hypnoticLureMode || chantEntanglementMode
@@ -745,25 +754,6 @@ export function useEventCardModes({
         } else if (swInteraction?.type === 'after_attack_telekinesis_target') {
           respondPositionOption({ row: gameRow, col: gameCol });
           setAfterAttackAbilityMode(null);
-        } else if (afterAttackAbilityMode.abilityId === 'mind_transmission') {
-          dispatch(SW_COMMANDS.ACTIVATE_ABILITY, {
-            abilityId: 'mind_transmission',
-            sourceUnitId: afterAttackAbilityMode.sourceUnitId,
-            targetPosition: { row: gameRow, col: gameCol },
-            _noSnapshot: true,
-          });
-          setAfterAttackAbilityMode(null);
-        } else {
-          setAfterAttackAbilityMode(null);
-          const tkTargetPos = { row: gameRow, col: gameCol };
-          const tkDests = getForceDestinations(core, tkTargetPos, 1);
-          setTelekinesisTargetMode({
-            abilityId: afterAttackAbilityMode.abilityId,
-            sourceUnitId: afterAttackAbilityMode.sourceUnitId,
-            sourcePosition: afterAttackAbilityMode.sourcePosition,
-            targetPosition: tkTargetPos,
-            destinations: tkDests,
-          });
         }
       }
       return true;
@@ -791,15 +781,6 @@ export function useEventCardModes({
             const optionId = findInteractionOptionId((option) => option.id === `pos:${gameRow},${gameCol}`);
             respondInteractionOption(optionId);
           }
-        } else {
-          dispatch(SW_COMMANDS.ACTIVATE_ABILITY, {
-            abilityId: telekinesisTargetMode.abilityId,
-            sourceUnitId: telekinesisTargetMode.sourceUnitId,
-            targetPosition: telekinesisTargetMode.targetPosition,
-            moveRow: dest.moveRow,
-            moveCol: dest.moveCol,
-            _noSnapshot: true,
-          });
         }
         setTelekinesisTargetMode(null);
       }

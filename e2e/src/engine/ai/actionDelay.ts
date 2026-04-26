@@ -12,13 +12,68 @@ export type LocalAiActionDelayPlan = {
     remainingDelayMs: number;
 };
 
+export type CancelableAiDelayResult = {
+    outcome: 'elapsed' | 'cancelled';
+    targetDelayMs: number;
+    waitedMs: number;
+};
+
+export type CancelableAiDelayHandle = {
+    promise: Promise<CancelableAiDelayResult>;
+    cancel: () => void;
+};
+
+export function startCancelableAiDelay(delayMs: number): CancelableAiDelayHandle {
+    const targetDelayMs = Math.max(0, Math.floor(delayMs));
+    const startedAt = Date.now();
+    let settled = false;
+    let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+    let resolvePromise: ((result: CancelableAiDelayResult) => void) | null = null;
+
+    const finish = (outcome: CancelableAiDelayResult['outcome']) => {
+        if (settled) {
+            return;
+        }
+        settled = true;
+        if (timeoutHandle) {
+            clearTimeout(timeoutHandle);
+            timeoutHandle = null;
+        }
+        resolvePromise?.({
+            outcome,
+            targetDelayMs,
+            waitedMs: Math.max(0, Date.now() - startedAt),
+        });
+        resolvePromise = null;
+    };
+
+    const promise = new Promise<CancelableAiDelayResult>((resolve) => {
+        resolvePromise = resolve;
+        if (targetDelayMs === 0) {
+            finish('elapsed');
+            return;
+        }
+        timeoutHandle = setTimeout(() => {
+            timeoutHandle = null;
+            finish('elapsed');
+        }, targetDelayMs);
+    });
+
+    return {
+        promise,
+        cancel: () => {
+            finish('cancelled');
+        },
+    };
+}
+
 export function resolveLatestStateEventTimestamp(state: MatchState<unknown>): number | null {
     const eventStreamEntries = Array.isArray(state.sys?.eventStream?.entries)
         ? state.sys.eventStream.entries
         : [];
     for (let index = eventStreamEntries.length - 1; index >= 0; index -= 1) {
         const timestamp = (eventStreamEntries[index] as { event?: { timestamp?: unknown } })?.event?.timestamp;
-        if (typeof timestamp === 'number' && Number.isFinite(timestamp)) {
+        if (typeof timestamp === 'number' && Number.isFinite(timestamp) && timestamp > 0) {
             return timestamp;
         }
     }
@@ -28,7 +83,7 @@ export function resolveLatestStateEventTimestamp(state: MatchState<unknown>): nu
         : [];
     for (let index = actionLogEntries.length - 1; index >= 0; index -= 1) {
         const timestamp = (actionLogEntries[index] as { timestamp?: unknown })?.timestamp;
-        if (typeof timestamp === 'number' && Number.isFinite(timestamp)) {
+        if (typeof timestamp === 'number' && Number.isFinite(timestamp) && timestamp > 0) {
             return timestamp;
         }
     }

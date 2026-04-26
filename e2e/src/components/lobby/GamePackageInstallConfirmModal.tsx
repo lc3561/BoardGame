@@ -70,20 +70,34 @@ export const GamePackageInstallConfirmModal = ({
     const isUpdatePreview = state.status === 'installed' && state.isUpdateAvailable === true;
     const isInstalled = state.status === 'installed' && !isUpdatePreview;
     const isPreview = state.status === 'not-installed' || isUpdatePreview;
+    const progressTitleKey = state.status === 'queued'
+        ? 'packageManager.progress.queuedTitle'
+        : state.status === 'manifest'
+            ? 'packageManager.progress.manifestTitle'
+            : state.status === 'downloading'
+                ? 'packageManager.progress.downloadTitle'
+                : 'packageManager.progress.verifyTitle';
+    const progressHintKey = state.status === 'queued'
+        ? 'packageManager.progress.queuedHint'
+        : state.status === 'manifest'
+            ? 'packageManager.progress.manifestHint'
+            : state.status === 'downloading'
+                ? 'packageManager.progress.downloadHint'
+                : 'packageManager.progress.verifyHint';
     const modalTitle = isPreview
         ? t('packageManager.confirmTitle', { game: gameName })
         : isFailed
             ? t('packageManager.failedTitle')
             : isInstalled
                 ? t('packageManager.installedTitle')
-                : t(`packageManager.progress.${state.status === 'queued' ? 'queuedTitle' : state.status === 'manifest' ? 'manifestTitle' : state.status === 'downloading' ? 'downloadTitle' : 'verifyTitle'}`);
+                : t(progressTitleKey);
     const modalDescription = isPreview
         ? t('packageManager.confirmDescription')
         : isFailed
             ? (state.errorMessage || t('packageManager.failedHint'))
             : isInstalled
                 ? t('packageManager.installedHint', { game: gameName })
-                : t(`packageManager.progress.${state.status === 'queued' ? 'queuedHint' : state.status === 'manifest' ? 'manifestHint' : state.status === 'downloading' ? 'downloadHint' : 'verifyHint'}`);
+                : t(progressHintKey);
     const PrimaryIcon = isInProgress ? X : isFailed ? RefreshCw : Download;
     const primaryActionLabel = isInProgress
         ? t('packageManager.cancelAction')

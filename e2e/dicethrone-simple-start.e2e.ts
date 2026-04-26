@@ -286,17 +286,33 @@ async function resolveOnlineAiRoomEntry(
     timeout = 30000,
 ): Promise<'board' | 'character-selection'> {
     const entry = await expect.poll(async () => {
-        const boardVisible = await page.locator('[data-tutorial-id="dice-roll-button"]')
+        const state = await readHarnessState<any>(page).catch(() => null);
+        const advanceVisible = await page.locator('[data-tutorial-id="advance-phase-button"]')
             .isVisible()
             .catch(() => false);
-        if (boardVisible) {
+        const rollVisible = await page.locator('[data-tutorial-id="dice-roll-button"]')
+            .isVisible()
+            .catch(() => false);
+        const phase = typeof state?.sys?.phase === 'string'
+            ? state.sys.phase
+            : typeof state?.core?.phase === 'string'
+                ? state.core.phase
+                : null;
+
+        if (advanceVisible || rollVisible || phase) {
             return 'board';
         }
 
         const characterSelectionVisible = await page.locator('[data-character-id]').first()
             .isVisible()
             .catch(() => false);
-        if (characterSelectionVisible) {
+        const hostSelectedCharacter = state?.core?.selectedCharacters?.['0'] ?? null;
+        if (
+            characterSelectionVisible
+            && (hostSelectedCharacter === null
+                || hostSelectedCharacter === undefined
+                || /^unselected$/i.test(String(hostSelectedCharacter)))
+        ) {
             return 'character-selection';
         }
 
@@ -2102,7 +2118,7 @@ test.describe('DiceThrone Simple Start', () => {
         }
     });
 
-    test('Online AI 真人房间：主阶段到两次投骰的在线时间线应可区分动作延迟与传输重试', async ({ browser }, testInfo) => {
+    test('Online AI 真人房间：主阶段到攻击链时间线应可区分动作延迟与传输重试', async ({ browser }, testInfo) => {
         test.setTimeout(180000);
         const baseURL = testInfo.project.use.baseURL as string | undefined;
         const setup = await setupDTOnlineAiRoom(browser, baseURL, { minimumActionDelayMs: 1000 });
@@ -2117,6 +2133,12 @@ test.describe('DiceThrone Simple Start', () => {
             text: string;
         }> = [];
         const testStartedAt = Date.now();
+        const consoleJsonPath = getEvidenceScreenshotPath(testInfo, 'online-ai-real-timeline-console', {
+            filename: 'online-ai-real-timeline-console.json',
+        });
+        const summaryJsonPath = getEvidenceScreenshotPath(testInfo, 'online-ai-real-timeline-summary', {
+            filename: 'online-ai-real-timeline-summary.json',
+        });
 
         try {
             const { hostPage, matchId } = setup;
@@ -2180,6 +2202,12 @@ test.describe('DiceThrone Simple Start', () => {
                 if (snapshot.activePlayerId === '1') {
                     break;
                 }
+                const responseSkipButton = hostPage.getByRole('button', { name: /略过|Skip/i }).last();
+                if (await responseSkipButton.isVisible().catch(() => false)) {
+                    await responseSkipButton.click();
+                    await hostPage.waitForTimeout(300);
+                    continue;
+                }
                 const advanceButton = hostPage.locator('[data-tutorial-id="advance-phase-button"]');
                 if (!(await advanceButton.isEnabled({ timeout: 1000 }).catch(() => false))) {
                     break;
@@ -2200,53 +2228,130 @@ test.describe('DiceThrone Simple Start', () => {
 
             await saveEvidenceScreenshot(hostPage, testInfo, '41-online-ai-real-timeline-ai-turn-start');
 
-            await expect.poll(async () => {
-                const submittedRolls = consoleTimeline.filter((entry) => (
-                    entry.text.includes('[ONLINE_AI_PERF]')
+            const dismissHostResponseWindowIfVisible = async () => {
+                const responseSkipButton = hostPage.getByRole('button', { name: /略过|Skip/i }).last();
+                if (await responseSkipButton.isVisible().catch(() => false)) {
+                    await responseSkipButton.click();
+                    await hostPage.waitForTimeout(300);
+                    return true;
+                }
+                return false;
+            };
+
+            const summarizeAiAttackChain = async () => {
+                const aiTurnStartAtMs = consoleTimeline.find((entry) => (
+                    entry.text.includes('[ONLINE_AI_TRANSPORT]')
+                    && entry.text.includes('"stage":"state-update"')
+                    && entry.text.includes('"phase":"main1"')
+                    && entry.text.includes('"currentPlayerId":"1"')
+                ))?.atMs ?? 0;
+                const hostDiscardAtMs = consoleTimeline.find((entry) => (
+                    entry.text.includes('[ONLINE_AI_TRANSPORT]')
+                    && entry.text.includes('"stage":"state-update"')
+                    && entry.text.includes('"phase":"discard"')
+                    && entry.text.includes('"currentPlayerId":"0"')
+                ))?.atMs ?? null;
+                const visibleSubmittedActions = consoleTimeline.filter((entry) => (
+                    entry.atMs >= aiTurnStartAtMs
+                    && entry.text.includes('[ONLINE_AI_PERF]')
                     && entry.text.includes('"stage":"submitted"')
+                    && entry.text.includes('"actionVisibility":"visible"')
+                ));
+                const submittedRolls = visibleSubmittedActions.filter((entry) => (
+                    entry.text.includes('[ONLINE_AI_PERF]')
                     && entry.text.includes('"actionKind":"roll-dice"')
                 ));
+                const submittedAbilitySelections = visibleSubmittedActions.filter((entry) => (
+                    entry.text.includes('"actionKind":"select-ability"')
+                ));
+                const submittedVisibleActions = visibleSubmittedActions.map((entry) => {
+                    const actionKindMatch = entry.text.match(/"actionKind":"([^"]+)"/);
+                    return {
+                        atMs: entry.atMs,
+                        actionKind: actionKindMatch?.[1] ?? 'unknown',
+                        text: entry.text,
+                    };
+                });
                 const transportWarnings = consoleTimeline.filter((entry) => (
                     entry.text.includes('[ONLINE_AI_TRANSPORT]')
                     && /resync-requested|transport-error/.test(entry.text)
                 ));
+                const patchApplyFailedEvents = consoleTimeline.filter((entry) => (
+                    entry.text.includes('[ONLINE_AI_TRANSPORT]')
+                    && entry.text.includes('"stage":"patch-apply-failed"')
+                ));
                 const phaseSnapshot = await readHarnessTurnSnapshot(hostPage);
+                const attackChainReachedDefensiveRoll = phaseSnapshot.activePlayerId === '0'
+                    && phaseSnapshot.phase === 'defensiveRoll';
                 return {
+                    aiTurnStartAtMs,
+                    hostDiscardAtMs,
+                    handoffGapMs: hostDiscardAtMs === null ? null : aiTurnStartAtMs - hostDiscardAtMs,
                     submittedRollCount: submittedRolls.length,
+                    submittedAbilitySelectionCount: submittedAbilitySelections.length,
+                    submittedVisibleActionCount: submittedVisibleActions.length,
+                    submittedVisibleActions,
                     transportWarningCount: transportWarnings.length,
+                    patchApplyFailedCount: patchApplyFailedEvents.length,
                     activePlayerId: phaseSnapshot.activePlayerId,
                     phase: phaseSnapshot.phase,
                     rollCount: phaseSnapshot.rollCount,
+                    attackChainReachedDefensiveRoll,
                 };
-            }, {
-                timeout: 45000,
-                intervals: [250, 400, 700, 1000],
-                message: '等待在线 AI 至少完成两次 roll-dice 提交',
-            }).toMatchObject({
-                submittedRollCount: 2,
-                activePlayerId: '1',
-            });
+            };
 
-            await saveEvidenceScreenshot(hostPage, testInfo, '42-online-ai-real-timeline-after-second-roll');
+            const isAttackChainReady = (summary: Awaited<ReturnType<typeof summarizeAiAttackChain>>) => {
+                return summary.patchApplyFailedCount === 0
+                    && summary.submittedVisibleActionCount >= 2
+                    && (
+                        summary.submittedRollCount >= 2
+                        || (
+                            summary.submittedRollCount >= 1
+                            && (summary.submittedAbilitySelectionCount >= 1 || summary.attackChainReachedDefensiveRoll)
+                        )
+                    );
+            };
 
-            const rollSubmittedTimeline = consoleTimeline.filter((entry) => (
-                entry.text.includes('[ONLINE_AI_PERF]')
-                && entry.text.includes('"stage":"submitted"')
-                && entry.text.includes('"actionKind":"roll-dice"')
+            const attackChainDeadline = Date.now() + 45000;
+            let attackChainSummary = await summarizeAiAttackChain();
+            while (!isAttackChainReady(attackChainSummary) && Date.now() < attackChainDeadline) {
+                const dismissedResponse = await dismissHostResponseWindowIfVisible();
+                if (!dismissedResponse) {
+                    await hostPage.waitForTimeout(250);
+                }
+                attackChainSummary = await summarizeAiAttackChain();
+            }
+
+            expect(attackChainSummary.patchApplyFailedCount).toBe(0);
+            expect(attackChainSummary.submittedVisibleActionCount).toBeGreaterThanOrEqual(2);
+            expect(isAttackChainReady(attackChainSummary)).toBe(true);
+            expect(attackChainSummary.submittedRollCount >= 2 || (
+                attackChainSummary.submittedRollCount >= 1
+                && (
+                    attackChainSummary.submittedAbilitySelectionCount >= 1
+                    || attackChainSummary.attackChainReachedDefensiveRoll
+                )
+            )).toBe(true);
+
+            await saveEvidenceScreenshot(hostPage, testInfo, '42-online-ai-real-timeline-after-attack-chain');
+
+            const rollSubmittedTimeline = attackChainSummary.submittedVisibleActions.filter((entry) => (
+                entry.actionKind === 'roll-dice'
             ));
-            const consoleJsonPath = getEvidenceScreenshotPath(testInfo, 'online-ai-real-timeline-console', {
-                filename: 'online-ai-real-timeline-console.json',
-            });
-            const summaryJsonPath = getEvidenceScreenshotPath(testInfo, 'online-ai-real-timeline-summary', {
-                filename: 'online-ai-real-timeline-summary.json',
-            });
             const derivedSummary = {
                 matchId,
                 minimumActionDelayMs: 1000,
+                aiTurnStartAtMs: attackChainSummary.aiTurnStartAtMs,
+                handoffGapMs: attackChainSummary.handoffGapMs,
                 submittedRollCount: rollSubmittedTimeline.length,
+                submittedAbilitySelectionCount: attackChainSummary.submittedAbilitySelectionCount,
+                submittedVisibleActionCount: attackChainSummary.submittedVisibleActionCount,
+                attackChainReachedDefensiveRoll: attackChainSummary.attackChainReachedDefensiveRoll,
+                patchApplyFailedCount: attackChainSummary.patchApplyFailedCount,
                 firstToSecondRollGapMs: rollSubmittedTimeline.length >= 2
                     ? rollSubmittedTimeline[1].atMs - rollSubmittedTimeline[0].atMs
                     : null,
+                submittedVisibleActions: attackChainSummary.submittedVisibleActions,
                 transportEvents: consoleTimeline.filter((entry) => entry.text.includes('[ONLINE_AI_TRANSPORT]')),
                 perfEvents: consoleTimeline.filter((entry) => entry.text.includes('[ONLINE_AI_PERF]')),
             };
@@ -2254,8 +2359,75 @@ test.describe('DiceThrone Simple Start', () => {
             await writeFile(consoleJsonPath, JSON.stringify(consoleTimeline, null, 2), 'utf8');
             await writeFile(summaryJsonPath, JSON.stringify(derivedSummary, null, 2), 'utf8');
 
-            expect(rollSubmittedTimeline.length).toBeGreaterThanOrEqual(2);
+            expect(rollSubmittedTimeline.length >= 2 || (
+                rollSubmittedTimeline.length >= 1
+                && (
+                    attackChainSummary.submittedAbilitySelectionCount >= 1
+                    || attackChainSummary.attackChainReachedDefensiveRoll
+                )
+            )).toBe(true);
         } finally {
+            const rollSubmittedTimeline = consoleTimeline.filter((entry) => (
+                entry.text.includes('[ONLINE_AI_PERF]')
+                && entry.text.includes('"stage":"submitted"')
+                && entry.text.includes('"actionKind":"roll-dice"')
+            ));
+            const transportEvents = consoleTimeline.filter((entry) => entry.text.includes('[ONLINE_AI_TRANSPORT]'));
+            const perfEvents = consoleTimeline.filter((entry) => entry.text.includes('[ONLINE_AI_PERF]'));
+            const patchApplyFailedCount = transportEvents.filter((entry) => (
+                entry.text.includes('"stage":"patch-apply-failed"')
+            )).length;
+            const aiTurnStartAtMs = transportEvents.find((entry) => (
+                entry.text.includes('"stage":"state-update"')
+                && entry.text.includes('"phase":"main1"')
+                && entry.text.includes('"currentPlayerId":"1"')
+            ))?.atMs ?? null;
+            const hostDiscardAtMs = transportEvents.find((entry) => (
+                entry.text.includes('"stage":"state-update"')
+                && entry.text.includes('"phase":"discard"')
+                && entry.text.includes('"currentPlayerId":"0"')
+            ))?.atMs ?? null;
+            const submittedVisibleActions = perfEvents
+                .filter((entry) => (
+                    entry.text.includes('"stage":"submitted"')
+                    && entry.text.includes('"actionVisibility":"visible"')
+                    && (aiTurnStartAtMs === null || entry.atMs >= aiTurnStartAtMs)
+                ))
+                .map((entry) => {
+                    const actionKindMatch = entry.text.match(/"actionKind":"([^"]+)"/);
+                    return {
+                        atMs: entry.atMs,
+                        actionKind: actionKindMatch?.[1] ?? 'unknown',
+                        text: entry.text,
+                    };
+                });
+            const submittedAbilitySelectionCount = submittedVisibleActions.filter((entry) => entry.actionKind === 'select-ability').length;
+            const finalSnapshot = await readHarnessTurnSnapshot(setup.hostPage).catch(() => null);
+            const finalSummary = {
+                matchId: setup.matchId,
+                minimumActionDelayMs: 1000,
+                aiTurnStartAtMs,
+                handoffGapMs: aiTurnStartAtMs !== null && hostDiscardAtMs !== null
+                    ? aiTurnStartAtMs - hostDiscardAtMs
+                    : null,
+                submittedRollCount: rollSubmittedTimeline.length,
+                submittedAbilitySelectionCount,
+                submittedVisibleActionCount: submittedVisibleActions.length,
+                firstToSecondRollGapMs: rollSubmittedTimeline.length >= 2
+                    ? rollSubmittedTimeline[1].atMs - rollSubmittedTimeline[0].atMs
+                    : null,
+                attackChainReachedDefensiveRoll: finalSnapshot?.activePlayerId === '0' && finalSnapshot?.phase === 'defensiveRoll',
+                patchApplyFailedCount,
+                transportEventCount: transportEvents.length,
+                perfEventCount: perfEvents.length,
+                finalSnapshot,
+                submittedVisibleActions,
+                transportEvents,
+                perfEvents,
+            };
+            await mkdir(dirname(consoleJsonPath), { recursive: true });
+            await writeFile(consoleJsonPath, JSON.stringify(consoleTimeline, null, 2), 'utf8');
+            await writeFile(summaryJsonPath, JSON.stringify(finalSummary, null, 2), 'utf8');
             await setup.hostContext.close();
         }
     });

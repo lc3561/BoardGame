@@ -83,14 +83,14 @@ describe('持续力量修正基础设施', () => {
         expect(getTotalEffectivePowerOnBase(state, base, 0)).toBe(6);
     });
 
-    it('mermaids_siren 对同一玩家多个随从只减少 1 次总力量', () => {
+    it('mermaids_siren 会让同一玩家在这里的每个随从都各减 1 点总力量贡献', () => {
         const siren = makeMinion('siren-1', 'mermaids_siren', '0', 2, { powerModifier: 0 });
         const victimA = makeMinion('victim-1', 'test_minion', '1', 4, { powerModifier: 0 });
         const victimB = makeMinion('victim-2', 'test_minion', '1', 3, { powerModifier: 0 });
         const base = { defId: 'base_a', minions: [siren, victimA, victimB], ongoingActions: [] };
         const state = makeState({ currentPlayerIndex: 0, bases: [base] });
 
-        expect(getPlayerEffectivePowerOnBase(state, base, 0, '1')).toBe(6);
+        expect(getPlayerEffectivePowerOnBase(state, base, 0, '1')).toBe(5);
         expect(getTotalEffectivePowerOnBase(state, base, 0)).toBe(9);
     });
 
@@ -105,18 +105,29 @@ describe('持续力量修正基础设施', () => {
         expect(getTotalEffectivePowerOnBase(state, base, 0)).toBe(6);
     });
 
-    it('base_mermaid_reef 对同一玩家多个随从只减少 1 次总力量', () => {
+    it('base_mermaid_reef 会让同一玩家在这里的每个随从都各减 1 点总力量贡献', () => {
         const mine = makeMinion('m1', 'test_minion', '0', 2, { powerModifier: 0 });
         const theirsA = makeMinion('m2', 'test_minion', '1', 4, { powerModifier: 0 });
         const theirsB = makeMinion('m3', 'test_minion', '1', 3, { powerModifier: 0 });
         const base = { defId: 'base_mermaid_reef', minions: [mine, theirsA, theirsB], ongoingActions: [] };
         const state = makeState({ currentPlayerIndex: 0, bases: [base] });
 
-        expect(getPlayerEffectivePowerOnBase(state, base, 0, '1')).toBe(6);
+        expect(getPlayerEffectivePowerOnBase(state, base, 0, '1')).toBe(5);
         expect(getTotalEffectivePowerOnBase(state, base, 0)).toBe(9);
     });
 
-    it('mermaids_desert_island 只压制拥有者自己在这里的随从总力量，不改变基地总力量', () => {
+    it('mermaids_siren 与 base_mermaid_reef 会按随从逐个叠加压低控制者总力量', () => {
+        const siren = makeMinion('siren-1', 'mermaids_siren', '0', 2, { powerModifier: 0 });
+        const victimA = makeMinion('victim-1', 'test_minion', '1', 4, { powerModifier: 0 });
+        const victimB = makeMinion('victim-2', 'test_minion', '1', 3, { powerModifier: 0 });
+        const base = { defId: 'base_mermaid_reef', minions: [siren, victimA, victimB], ongoingActions: [] };
+        const state = makeState({ currentPlayerIndex: 0, bases: [base] });
+
+        expect(getPlayerEffectivePowerOnBase(state, base, 0, '1')).toBe(3);
+        expect(getTotalEffectivePowerOnBase(state, base, 0)).toBe(9);
+    });
+
+    it('mermaids_desert_island 会压制这里所有随从对各自控制者总力量的贡献，但不改变基地总力量', () => {
         const m1 = makeMinion('m1', 'test_minion', '0', 3, { powerModifier: 0 });
         const m2 = makeMinion('m2', 'test_minion', '1', 4, { powerModifier: 0 });
         const base = {
@@ -127,7 +138,7 @@ describe('持续力量修正基础设施', () => {
         const state = makeState({ bases: [base] });
 
         expect(getPlayerEffectivePowerOnBase(state, base, 0, '0')).toBe(0);
-        expect(getPlayerEffectivePowerOnBase(state, base, 0, '1')).toBe(4);
+        expect(getPlayerEffectivePowerOnBase(state, base, 0, '1')).toBe(0);
         expect(getTotalEffectivePowerOnBase(state, base, 0)).toBe(7);
     });
 
@@ -909,4 +920,10 @@ describe('registerOngoingPowerModifier 通用叠加', () => {
         });
     });
 });
+
+
+
+
+
+
 

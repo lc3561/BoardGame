@@ -194,6 +194,23 @@ export const DiceThroneHeroSelection: React.FC<DiceThroneHeroSelectionProps> = (
     const renderSeatPlayerCard = (pid: PlayerId, seatIndex: number) => {
         const colors = PLAYER_COLORS[pid] || PLAYER_COLORS['0'];
         const hasSelected = selectedCharacters[pid] && selectedCharacters[pid] !== 'unselected';
+        const selectedCharacterNameKey = selectedCharacters[pid] === 'monk'
+            ? 'characters.monk'
+            : selectedCharacters[pid] === 'barbarian'
+                ? 'characters.barbarian'
+                : selectedCharacters[pid] === 'pyromancer'
+                    ? 'characters.pyromancer'
+                    : selectedCharacters[pid] === 'shadow_thief'
+                        ? 'characters.shadow_thief'
+                        : selectedCharacters[pid] === 'moon_elf'
+                            ? 'characters.moon_elf'
+                            : selectedCharacters[pid] === 'paladin'
+                                ? 'characters.paladin'
+                                : selectedCharacters[pid] === 'gunslinger'
+                                    ? 'characters.gunslinger'
+                                    : selectedCharacters[pid] === 'samurai'
+                                        ? 'characters.samurai'
+                                        : null;
         const isMe = pid === currentPlayerId;
         const controller = seatControllers?.[pid];
         const controllerType = controller?.type ?? 'human';
@@ -279,7 +296,7 @@ export const DiceThroneHeroSelection: React.FC<DiceThroneHeroSelectionProps> = (
                     className={clsx('truncate font-bold', hasSelected ? 'text-amber-300' : 'text-white/35')}
                     style={{ marginTop: inlineUnit(0.35), fontSize: inlineUnit(0.5) }}
                 >
-                    {hasSelected ? t(`characters.${selectedCharacters[pid]}`) : t('selection.notSelected')}
+                    {hasSelected && selectedCharacterNameKey ? t(selectedCharacterNameKey) : t('selection.notSelected')}
                 </div>
             </div>
         );
@@ -730,11 +747,29 @@ export const DiceThroneHeroSelection: React.FC<DiceThroneHeroSelectionProps> = (
                                     </div>
 
                                     <div className="flex flex-col">
-                                        <div className={clsx(
+                                    <div className={clsx(
                                             "font-black uppercase tracking-wide leading-tight",
                                             hasSelected ? "text-amber-400" : "text-white/50"
                                         )} style={{ fontSize: inlineUnit(0.9) }}>
-                                            {hasSelected ? t(`characters.${charId}`) : t('selection.notSelected')}
+                                            {hasSelected
+                                                ? t(
+                                                    charId === 'monk'
+                                                        ? 'characters.monk'
+                                                        : charId === 'barbarian'
+                                                            ? 'characters.barbarian'
+                                                            : charId === 'pyromancer'
+                                                                ? 'characters.pyromancer'
+                                                                : charId === 'shadow_thief'
+                                                                    ? 'characters.shadow_thief'
+                                                                    : charId === 'moon_elf'
+                                                                        ? 'characters.moon_elf'
+                                                                        : charId === 'paladin'
+                                                                            ? 'characters.paladin'
+                                                                            : charId === 'gunslinger'
+                                                                                ? 'characters.gunslinger'
+                                                                                : 'characters.samurai',
+                                                )
+                                                : t('selection.notSelected')}
                                         </div>
                                         <div className="text-white/50 truncate" style={{ fontSize: inlineUnit(0.6), maxWidth: inlineUnit(8) }}>
                                             {playerNames[pid as PlayerId]}

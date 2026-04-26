@@ -6721,6 +6721,56 @@ describe('Mermaids abilities', () => {
         expect(afterTurnEnded.bases[0].minions.find(minion => minion.uid === 'enemy-small')?.controller).toBe('1');
     });
 
+    it('mermaids_mermaid_queen 也可选择把其他玩家的一个仆从移到这里', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0', { hand: [makeCard('queen-1', 'mermaids_mermaid_queen', 'minion', '0')] }),
+                '1': makePlayer('1'),
+            },
+            bases: [
+                {
+                    defId: 'base_a',
+                    minions: [makeMinion('enemy-small', 'robot_microbot_alpha', '1', 1, { powerModifier: 0 })],
+                    ongoingActions: [],
+                },
+                {
+                    defId: 'base_b',
+                    minions: [makeMinion('enemy-other', 'robot_microbot_beta', '1', 4, { powerModifier: 0 })],
+                    ongoingActions: [],
+                },
+            ],
+        });
+
+        const played = runCommand(
+            makeMatchState(core),
+            { type: SU_COMMANDS.PLAY_MINION, playerId: '0', payload: { cardUid: 'queen-1', baseIndex: 0 } },
+            defaultTestRandom,
+        );
+        const modePrompt = getInteractionsFromMS(played.finalState)[0] as any;
+        expect(modePrompt?.data?.sourceId).toBe('mermaids_mermaid_queen_mode');
+        const moveMode = modePrompt.data.options.find((entry: any) => entry.value?.mode === 'move');
+        expect(moveMode).toBeDefined();
+
+        const afterMode = runCommand(
+            played.finalState,
+            { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: moveMode.id } } as any,
+            defaultTestRandom,
+        );
+        const movePrompt = getInteractionsFromMS(afterMode.finalState)[0] as any;
+        expect(movePrompt?.data?.sourceId).toBe('mermaids_mermaid_queen_move');
+        const moveOption = movePrompt.data.options.find((entry: any) => entry.value?.minionUid === 'enemy-other');
+        expect(moveOption).toBeDefined();
+        expect(movePrompt.data.options.some((entry: any) => entry.value?.minionUid === 'enemy-small')).toBe(false);
+
+        const resolved = runCommand(
+            afterMode.finalState,
+            { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: moveOption.id } } as any,
+            defaultTestRandom,
+        );
+        expect(resolved.finalState.core.bases[0].minions.some(minion => minion.uid === 'enemy-other')).toBe(true);
+        expect(resolved.finalState.core.bases[1].minions.some(minion => minion.uid === 'enemy-other')).toBe(false);
+    });
+
     it('mermaids_captive_audience 会按目标基地不属于你的随从数量给你的随从加力量并额外打行动', () => {
         expect(getCardDef('mermaids_captive_audience')?.playNeedsBase).toBe(true);
 
@@ -6872,6 +6922,101 @@ describe('Mermaids abilities', () => {
         );
         expect(resolved.finalState.core.bases[1].minions.some(minion => minion.uid === 'enemy-1')).toBe(true);
         expect(resolved.finalState.core.bases[1].minions.some(minion => minion.uid === 'enemy-2')).toBe(true);
+    });
+
+    it('mermaids_siren_song 不应把没有其他己方基地可去的来源基地放进候选', () => {
+        const core = makeState({
+            turnOrder: ['0', '1'],
+            players: {
+                '0': makePlayer('0', { hand: [makeCard('song-1', 'mermaids_siren_song', 'action', '0')] }),
+                '1': makePlayer('1'),
+            },
+            bases: [
+                {
+                    defId: 'base_a',
+                    minions: [
+                        makeMinion('ally-anchor', 'robot_microbot_gamma', '0', 3, { powerModifier: 0 }),
+                        makeMinion('enemy-stuck', 'robot_microbot_alpha', '1', 1, { powerModifier: 0 }),
+                    ],
+                    ongoingActions: [],
+                },
+                {
+                    defId: 'base_b',
+                    minions: [makeMinion('enemy-movable', 'robot_microbot_beta', '1', 2, { powerModifier: 0 })],
+                    ongoingActions: [],
+                },
+            ],
+        });
+
+        const played = runCommand(
+            makeMatchState(core),
+            { type: SU_COMMANDS.PLAY_ACTION, playerId: '0', payload: { cardUid: 'song-1' } },
+            defaultTestRandom,
+        );
+        const sourcePrompt = getInteractionsFromMS(played.finalState)[0] as any;
+        expect(sourcePrompt?.data?.sourceId).toBe('mermaids_siren_song_base');
+        expect(sourcePrompt.data.options.some((entry: any) => entry.value?.baseIndex === 0)).toBe(false);
+        const sourceOption = sourcePrompt.data.options.find((entry: any) => entry.value?.baseIndex === 1);
+        expect(sourceOption).toBeDefined();
+
+        const afterSource = runCommand(
+            played.finalState,
+            { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: sourceOption.id } } as any,
+            defaultTestRandom,
+        );
+        const destinationPrompt = getInteractionsFromMS(afterSource.finalState)[0] as any;
+        expect(destinationPrompt?.data?.sourceId).toBe('mermaids_siren_song_destination');
+        const destinationOption = destinationPrompt.data.options.find((entry: any) => entry.value?.baseIndex === 0);
+        expect(destinationOption).toBeDefined();
+
+        const afterDestination = runCommand(
+            afterSource.finalState,
+            { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: destinationOption.id } } as any,
+            defaultTestRandom,
+        );
+        const targetPrompt = getInteractionsFromMS(afterDestination.finalState)[0] as any;
+        expect(targetPrompt?.data?.sourceId).toBe('mermaids_siren_song_target');
+        const targetOption = targetPrompt.data.options.find((entry: any) => entry.value?.minionUid === 'enemy-movable');
+        expect(targetOption).toBeDefined();
+    });
+
+    it('mermaids_toll_bay 按目标基地其他玩家的仆从数量抽牌', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0', {
+                    hand: [makeCard('toll-1', 'mermaids_toll_bay', 'action', '0')],
+                    deck: [
+                        makeCard('draw-1', 'robot_microbot_alpha', 'minion', '0'),
+                        makeCard('draw-2', 'robot_microbot_beta', 'minion', '0'),
+                        makeCard('draw-3', 'robot_microbot_gamma', 'minion', '0'),
+                    ],
+                }),
+                '1': makePlayer('1'),
+            },
+            bases: [{
+                defId: 'base_a',
+                minions: [
+                    makeMinion('enemy-1', 'robot_microbot_alpha', '1', 1, { powerModifier: 0 }),
+                    makeMinion('enemy-2', 'robot_microbot_beta', '1', 2, { powerModifier: 0 }),
+                    makeMinion('ally-1', 'robot_microbot_gamma', '0', 3, { powerModifier: 0 }),
+                ],
+                ongoingActions: [],
+            }],
+        });
+
+        const played = runCommand(
+            makeMatchState(core),
+            { type: SU_COMMANDS.PLAY_ACTION, playerId: '0', payload: { cardUid: 'toll-1', targetBaseIndex: 0, targetType: 'base' } as any },
+            defaultTestRandom,
+        );
+
+        const drawEvent = played.events.find(event => event.type === SU_EVENTS.CARDS_DRAWN) as any;
+        expect(drawEvent).toBeDefined();
+        expect(drawEvent.payload?.count).toBe(2);
+        expect(played.finalState.core.players['0'].hand.some(card => card.uid === 'draw-1')).toBe(true);
+        expect(played.finalState.core.players['0'].hand.some(card => card.uid === 'draw-2')).toBe(true);
+        expect(played.finalState.core.players['0'].deck.some(card => card.uid === 'draw-1')).toBe(false);
+        expect(played.finalState.core.players['0'].deck.some(card => card.uid === 'draw-2')).toBe(false);
     });
 
     it('mermaids_shipwreck_cove 在计分后可把这张持续行动移到另一个基地', () => {
