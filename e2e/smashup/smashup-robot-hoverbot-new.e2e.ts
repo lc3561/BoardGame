@@ -254,6 +254,58 @@ test.describe('Smash Up 牌库检索交互', () => {
         await game.screenshot('akye-transfer-and-draw-resolved', testInfo);
     });
 
+    test('武士 陈打出后不应触发海龟阿凯的交牌抽二交互', async ({ page, game }, testInfo) => {
+        test.setTimeout(60000);
+
+        await page.goto('/play/smashup');
+        await page.waitForFunction(
+            () => (window as any).__BG_TEST_HARNESS__?.state?.isRegistered?.() === true,
+            { timeout: 15000 },
+        );
+
+        await game.setupScene({
+            gameId: 'smashup',
+            player0: {
+                hand: ['world_champs_samurai_chan'],
+                deck: ['robot_microbot_alpha', 'robot_microbot_beta'],
+                discard: [],
+                factions: ['world_champs', 'robots'],
+            },
+            player1: {
+                hand: [],
+                deck: [],
+                discard: [],
+                factions: ['pirates', 'dinosaurs'],
+            },
+            currentPlayer: '0',
+            phase: 'playCards',
+        });
+
+        await game.playCard('world_champs_samurai_chan', { targetBaseIndex: 0 });
+        await game.waitForNoInteraction();
+        await page.waitForTimeout(300);
+
+        const settledState = await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const state = harness?.state?.get?.();
+            return {
+                interactionSource: state?.sys?.interaction?.current?.data?.sourceId ?? null,
+                player0Hand: (state?.core?.players?.['0']?.hand ?? []).map((card: any) => card.defId),
+                player1Hand: (state?.core?.players?.['1']?.hand ?? []).map((card: any) => card.defId),
+                base0Minions: (state?.core?.bases?.[0]?.minions ?? []).map((minion: any) => minion.defId),
+            };
+        });
+
+        expect(settledState.interactionSource).not.toBe('world_champs_akye_the_turtle_player');
+        expect(settledState.interactionSource).not.toBe('world_champs_akye_the_turtle_card');
+        expect(settledState.player0Hand).toHaveLength(0);
+        expect(settledState.player1Hand).toHaveLength(0);
+        expect(settledState.base0Minions).toContain('world_champs_samurai_chan');
+        await expect(page.getByText(/海龟阿凯：选择一位玩家并交给其一张手牌/i)).toHaveCount(0);
+
+        await game.screenshot('samurai-chan-play-no-akye-prompt', testInfo);
+    });
+
     test('盾牌少女打出后应选择对手并拿走其牌库顶的合格卡牌', async ({ page, game }, testInfo) => {
         test.setTimeout(60000);
 

@@ -502,6 +502,39 @@ describe('systemInteractionAdapter', () => {
     });
   });
 
+  it('infection / ice_shards / feed_beast 不再派生 abilityMode，而是走各自系统专用态', () => {
+    expect(deriveSystemAbilityMode({
+      id: 'sw-infection-1',
+      type: 'infection',
+      meta: {
+        type: 'infection',
+        sourceUnitId: 'plague-1',
+        targetPosition: { row: 5, col: 3 },
+      },
+      options: [],
+    }, null)).toBeNull();
+
+    expect(deriveSystemAbilityMode({
+      id: 'sw-ice-shards-1',
+      type: 'ice_shards',
+      meta: {
+        type: 'ice_shards',
+        sourceUnitId: 'jarmund-1',
+      },
+      options: [],
+    }, null)).toBeNull();
+
+    expect(deriveSystemAbilityMode({
+      id: 'sw-feed-beast-1',
+      type: 'feed_beast',
+      meta: {
+        type: 'feed_beast',
+        sourceUnitId: 'beast-1',
+      },
+      options: [],
+    }, null)).toBeNull();
+  });
+
   it('能按卡牌和位置匹配 activated_ability_target 选项', () => {
     const swInteraction: SwSimpleChoiceInteraction = {
       id: 'sw-activated-1',

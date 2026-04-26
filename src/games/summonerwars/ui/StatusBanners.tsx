@@ -229,14 +229,10 @@ export const StatusBanners: React.FC<StatusBannersProps> = ({
           {abilityMode.abilityId === 'revive_undead' && abilityMode.step === 'selectCard' && t('statusBanners.ability.reviveUndead.selectCard')}
           {abilityMode.abilityId === 'revive_undead' && abilityMode.step === 'selectPosition' && t('statusBanners.ability.reviveUndead.selectPosition')}
           {abilityMode.abilityId === 'life_drain' && t('statusBanners.ability.lifeDrain')}
-          {abilityMode.abilityId === 'infection' && abilityMode.step === 'selectCard' && t('statusBanners.ability.infection.selectCard')}
-          {abilityMode.abilityId === 'infection' && abilityMode.step === 'selectPosition' && t('statusBanners.ability.infection.selectPosition')}
           {abilityMode.abilityId === 'holy_arrow' && abilityMode.step === 'selectCards' && t('statusBanners.ability.holyArrow.selectCards')}
           {abilityMode.abilityId === 'healing' && abilityMode.step === 'selectCards' && t('statusBanners.ability.healing.selectCards')}
           {abilityMode.abilityId === 'illusion' && t('statusBanners.ability.illusion')}
           {abilityMode.abilityId === 'blood_rune' && t('statusBanners.ability.bloodRune')}
-          {abilityMode.abilityId === 'ice_shards' && t('statusBanners.ability.iceShards')}
-          {abilityMode.abilityId === 'feed_beast' && t('statusBanners.ability.feedBeast')}
           {abilityMode.abilityId === 'spirit_bond' && (
             sourceUnitBoosts < 1
               ? t('statusBanners.ability.spiritBondChargeOnly', '祖灵交流：充能不足，只能充能自身')
@@ -282,23 +278,6 @@ export const StatusBanners: React.FC<StatusBannersProps> = ({
             </GameButton>
           </>
         )}
-        {abilityMode.abilityId === 'ice_shards' && (
-          <>
-            <GameButton 
-              onClick={onConfirmIceShards} 
-              variant="primary" 
-              size="sm"
-              disabled={sourceUnitBoosts < 1}
-              title={sourceUnitBoosts < 1 ? t('statusBanners.insufficientCharge') : undefined}
-            >
-              {t('actions.confirm')}
-            </GameButton>
-            <GameButton onClick={onCancelAbility} variant="secondary" size="sm">{t('actions.skip')}</GameButton>
-          </>
-        )}
-        {abilityMode.abilityId === 'feed_beast' && (
-          <GameButton onClick={onConfirmFeedBeastSelfDestroy} variant="secondary" size="sm">{t('actions.feedBeastSelfDestroy')}</GameButton>
-        )}
         {(abilityMode.abilityId === 'spirit_bond' || abilityMode.abilityId === 'frost_axe') && (
           <GameButton onClick={onAfterMoveSelfCharge} variant="primary" size="sm">{t('actions.chargeSelf')}</GameButton>
         )}
@@ -315,7 +294,7 @@ export const StatusBanners: React.FC<StatusBannersProps> = ({
         {abilityMode.abilityId === 'life_drain' && abilityMode.context === 'beforeAttack' && abilityMode.step === 'selectUnit' && (
           <GameButton onClick={onCancelBeforeAttack} variant="secondary" size="sm">{t('actions.skip')}</GameButton>
         )}
-        {!['blood_rune', 'ice_shards', 'feed_beast', 'spirit_bond', 'ancestral_bond', 'structure_shift', 'frost_axe', 'vanish', 'ice_ram', 'life_drain'].includes(abilityMode.abilityId) && (
+        {!['blood_rune', 'spirit_bond', 'ancestral_bond', 'structure_shift', 'frost_axe', 'vanish', 'ice_ram', 'life_drain'].includes(abilityMode.abilityId) && (
           <GameButton onClick={onCancelAbility} variant="secondary" size="sm">{t('actions.cancel')}</GameButton>
         )}
         {/* life_drain 在非 beforeAttack 上下文中显示"取消"按钮 */}
