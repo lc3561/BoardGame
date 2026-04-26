@@ -1129,11 +1129,6 @@ export function useEventCardModes({
     respondInteractionOption(null, selectedMultiTargetOptionIds);
   }, [chantEntanglementMode, respondInteractionOption, selectedMultiTargetOptionIds, swInteraction]);
 
-  const handleConfirmTelekinesis = useCallback((_direction?: 'push' | 'pull', _axis?: 'row' | 'col') => {
-    // 念力已改为棋盘点击终点模式，dispatch 在 handleEventModeClick 中完成
-    // 此回调保留为空实现，供 StatusBanners 向后兼容
-  }, []);
-
   // ---------- 副作用 ----------
 
   // ---------- 返回 ----------
@@ -1162,6 +1157,6 @@ export function useEventCardModes({
     handleEventModeClick, handlePlayEvent,
     handleConfirmMindControl, handleConfirmStun,
     handleConfirmGlacialShift, handleConfirmSneak,
-    handleConfirmEntanglement, handleConfirmTelekinesis,
+    handleConfirmEntanglement,
   };
 }

@@ -344,15 +344,16 @@ function formatDiceThroneActionEntry({
         const phaseChanged = [...events]
             .reverse()
             .find(event => event.type === 'SYS_PHASE_CHANGED') as
-            | { payload?: { to?: string } }
+            | { payload?: { to?: string; activePlayerId?: string } }
             | undefined;
         const currentPhase = (state as MatchState<DiceThroneCore>).sys?.phase as TurnPhase | undefined;
         const nextPhase = phaseChanged?.payload?.to ?? (currentPhase ? getNextPhase(core, currentPhase) : undefined);
         const phaseI18nKey = nextPhase ? `phase.${nextPhase}.label` : '';
+        const actorId = phaseChanged?.payload?.activePlayerId ?? command.playerId;
         entries.push({
             id: `${command.type}-${command.playerId}-${timestamp}`,
             timestamp,
-            actorId: command.playerId,
+            actorId,
             kind: command.type,
             segments: [i18nSeg('actionLog.advancePhase', { phase: phaseI18nKey }, ['phase'])],
         });

@@ -27,13 +27,12 @@ interface Props {
   bloodSummonMode: unknown;
   eventTargetMode: unknown;
   dispatch: (type: string, payload?: unknown) => void;
-  setAbilityMode: (mode: AbilityModeState | null) => void;
 }
 
 export const AbilityButtonsPanel: React.FC<Props> = ({
   core, currentPhase, isMyTurn, myPlayerId, myHand,
   abilityMode, bloodSummonMode, eventTargetMode,
-  dispatch, setAbilityMode,
+  dispatch,
 }) => {
   const { t } = useTranslation('game-summonerwars');
   const validationTimestamp = 0;

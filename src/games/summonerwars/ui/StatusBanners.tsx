@@ -104,7 +104,6 @@ interface StatusBannersProps {
   onCancelAfterAttackAbility: () => void;
   onConfirmRapidFire: () => void;
   onCancelRapidFire: () => void;
-  onConfirmTelekinesis: (direction: 'push' | 'pull', axis?: 'row' | 'col') => void;
   onCancelTelekinesis: () => void;
   onAfterMoveSelfCharge: () => void;
   onPlayMagicEvent: () => void;
@@ -167,7 +166,7 @@ export const StatusBanners: React.FC<StatusBannersProps> = ({
   onCancelHypnoticLure,
   onConfirmMindCapture, onCancelAfterAttackAbility,
   onConfirmRapidFire, onCancelRapidFire,
-  onConfirmTelekinesis: _onConfirmTelekinesis, onCancelTelekinesis,
+  onCancelTelekinesis,
   onAfterMoveSelfCharge,
   onPlayMagicEvent, onDiscardMagicEvent, onCancelMagicEventChoice,
   onCancelEventTargetInteraction,

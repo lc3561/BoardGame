@@ -1,5 +1,21 @@
 # Smash Up Skeletons Wiki 语义复审（2026-04-25）
 
+## 2026-04-26 第七轮回写：旧“12/12 全错配”结论失效
+
+- **结论等级更新**：`旧结论失效` + `仍有残余范围`。
+- **失效结论**：本文旧版把 `Skeletons` 记成“**12/12 张牌能力语义与 Wiki / 卡图不一致**”。这条结论现在已经失效，不能继续当作当前真相。
+- **失效原因**：后续按**卡图优先**逐张重录与复审后，`墓碑 / 墓地爆发 / 他们出来了 / 往下埋 / 墓园 / 灵车队伍 / 诡异。可怕。 / 轮回者 / 守墓人` 已确认与当前实现一致或已被修正到一致，不再属于“整派系全错”。
+- **本轮新确认并已修复**：
+  1. `骸骨之王 / Lord of Bones`：卡图 `temp/skeletons-card-18.png` 写的是“**挖掘这里的一张牌**”，旧实现却只允许挖掘“你的埋葬牌”；现已改为可挖掘该基地任意埋葬牌，并补行为测试。
+  2. `殉葬品 / Grave Goods`：卡图 `temp/skeletons-card-20.png` 写的是“**弃一张牌来额外埋葬另一张牌**”，旧实现却把“弃掉”和“额外埋葬”错误并到同一张牌；现已拆成“先选弃牌，再选另一张额外埋葬牌”，并收紧为**首埋后至少还要有两张手牌**才允许走额外埋葬分支。
+- **当前残余范围**：`复仇者 / Revenant` 仍不能写成已收口。它现在已不只是 `onTurnStart`，还挂了 `onActionPlayed / onMinionPlayed / onCardsDiscarded`，但这仍只是对“你的回合中”的近似实现，缺完整 during-turn 窗口建模与新的真实入口 L3 证据。
+- **本轮验证**：
+  - `npx vitest run src/games/smashup/__tests__/newFactionAbilities.test.ts --testNamePattern "skeletons_(lord_of_bones|grave_goods|revenant)"` → `8 passed`
+  - `npx vitest run src/games/smashup/__tests__/newFactionAbilities.test.ts --testNamePattern "Skeletons abilities"` → `18 passed`
+  - `npx eslint src/games/smashup/abilities/skeletons.ts e2e/src/games/smashup/abilities/skeletons.ts src/games/smashup/__tests__/newFactionAbilities.test.ts e2e/src/games/smashup/__tests__/newFactionAbilities.test.ts` → `0 errors`（仅仓库既有 warnings）
+- **如何阅读本文旧内容**：下文 2026-04-25 的“12/12 错配”“整派系全错录”部分，现只保留为**当时的历史诊断记录**，不得再引用为当前骷髅派系的审计结论。
+
+
 ## 2026-04-25 补充：按用户要求改为“卡图优先”
 
 - 真相源调整：

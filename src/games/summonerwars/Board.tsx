@@ -558,9 +558,6 @@ export const SummonerWarsBoard: React.FC<Props> = ({
 
   const systemFeedBeastMode = !!swInteraction && swInteraction.type === 'feed_beast';
 
-  const noopSetGrabFollowMode = useCallback(() => {}, []);
-  const noopSetMindCaptureMode = useCallback(() => {}, []);
-
   // 格子交互 Hook
   const interaction = useCellInteraction({
     core, dispatch,
@@ -569,11 +566,9 @@ export const SummonerWarsBoard: React.FC<Props> = ({
     undoSnapshotCount: getUndoSnapshotCount(G.sys?.undo),
     interaction: currentInteraction,
     abilityMode, setAbilityMode, soulTransferMode,
-    mindCaptureMode, setMindCaptureMode: noopSetMindCaptureMode,
+    mindCaptureMode,
     afterAttackAbilityMode,
     rapidFireMode: effectiveRapidFireMode,
-    grabFollowMode: null,
-    setGrabFollowMode: noopSetGrabFollowMode,
   });
 
   const engineInteractionBusy = !!currentInteraction && currentInteraction.playerId === (myPlayerId as PlayerId);
@@ -1026,10 +1021,6 @@ export const SummonerWarsBoard: React.FC<Props> = ({
     });
     respondInteractionOption(optionId);
   }, [findInteractionOptionId, respondInteractionOption, swInteraction]);
-  const handleConfirmTelekinesis = useCallback((_direction?: 'push' | 'pull', _axis?: 'row' | 'col') => {
-    // 念力已改为棋盘点击终点模式，此回调为空实现
-    interaction.handleConfirmTelekinesis();
-  }, [interaction]);
   const handleCancelTelekinesis = useCallback(() => {
     if (
       swInteraction?.type === 'after_attack_telekinesis_target'
@@ -1444,7 +1435,6 @@ export const SummonerWarsBoard: React.FC<Props> = ({
                     rapidFireMode={effectiveRapidFireMode}
                     onConfirmRapidFire={handleConfirmRapidFire}
                     onCancelRapidFire={handleCancelRapidFire}
-                    onConfirmTelekinesis={handleConfirmTelekinesis}
                     onCancelTelekinesis={handleCancelTelekinesis}
                     onAfterMoveSelfCharge={handleAfterMoveSelfCharge}
                     onPlayMagicEvent={interaction.handlePlayMagicEvent}
@@ -1547,7 +1537,6 @@ export const SummonerWarsBoard: React.FC<Props> = ({
                 bloodSummonMode={interaction.bloodSummonMode}
                 eventTargetMode={interaction.eventTargetMode}
                 dispatch={dispatch}
-                setAbilityMode={setAbilityMode}
               />
 
               {/* 卡牌放大预览 */}

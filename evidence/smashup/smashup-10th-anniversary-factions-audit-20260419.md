@@ -1,5 +1,20 @@
 # Smash Up 10 周年三派系专项审计（2026-04-19）
 
+## 2026-04-26 第七轮修订：Skeletons 审计口径再收紧
+
+- **失效回写 1**：本文此前引用 `smashup-skeletons-wiki-semantic-audit-2026-04-25.md` 时，把 `Skeletons` 记成“**12/12 张牌语义错配**”。这条总括结论现在已经失效；后续卡图优先重录后，当前不再是整派系全错。
+- **失效回写 2**：本文此前把 `复仇者 / Revenant` 残余风险写成“**当前实现入口仍挂在 onTurnStart**”。这条表述也已过时；当前实现已经额外挂了 `onActionPlayed / onMinionPlayed / onCardsDiscarded`，只是仍未形成完整的“你的回合中”窗口。
+- **本轮新修复并回写到审计口径**：
+  1. `骸骨之王 / Lord of Bones`：卡图 `temp/skeletons-card-18.png` 明确是“挖掘这里的一张牌”，旧实现却只允许挖自己的埋葬牌；现已修正。
+  2. `殉葬品 / Grave Goods`：卡图 `temp/skeletons-card-20.png` 明确要求“弃一张牌，再额外埋葬另一张牌”，旧实现却把两件事错误压在同一张牌上；现已修正为三段交互，并补断言锁死“弃牌 uid != 额外埋葬 uid”。
+- **新的验证证据**：
+  - `npx vitest run src/games/smashup/__tests__/newFactionAbilities.test.ts --testNamePattern "skeletons_(lord_of_bones|grave_goods|revenant)"` → `8 passed`
+  - `npx vitest run src/games/smashup/__tests__/newFactionAbilities.test.ts --testNamePattern "Skeletons abilities"` → `18 passed`
+  - `npx eslint src/games/smashup/abilities/skeletons.ts e2e/src/games/smashup/abilities/skeletons.ts src/games/smashup/__tests__/newFactionAbilities.test.ts e2e/src/games/smashup/__tests__/newFactionAbilities.test.ts` → `0 errors`（仅仓库既有 warnings）
+- **当前结论等级保持**：`仍有残余范围`。
+- **原因**：本轮虽继续清掉了 `Skeletons` 的两条真实低级错误，但 `复仇者` 仍未形成发布级 L3 收口证据，三派系整包也仍不能恢复成“专项已收口”。
+
+
 ## 2026-04-26 卡图优先第二轮修订：三派系重录回写
 
 - 本轮继续以 `temp/cards7-00.png` ~ `temp/cards7-43.png` 为主真相源，Wiki 仅做辅助交叉核对。

@@ -67,11 +67,8 @@ interface UseCellInteractionParams {
   setAbilityMode: (mode: AbilityModeState | null) => void;
   soulTransferMode: SoulTransferModeState | null;
   mindCaptureMode: MindCaptureModeState | null;
-  setMindCaptureMode: (mode: MindCaptureModeState | null) => void;
   afterAttackAbilityMode: AfterAttackAbilityModeState | null;
   rapidFireMode: import('./modeTypes').RapidFireModeState | null;
-  grabFollowMode: import('./useGameEvents').GrabFollowModeState | null;
-  setGrabFollowMode: (mode: import('./useGameEvents').GrabFollowModeState | null) => void;
 }
 
 const ADVANCE_PHASE_THROTTLE_MS = 700;
@@ -87,10 +84,9 @@ export function useCellInteraction({
   undoSnapshotCount,
   interaction,
   abilityMode, setAbilityMode, soulTransferMode,
-  mindCaptureMode, setMindCaptureMode: _setMindCaptureMode,
+  mindCaptureMode,
   afterAttackAbilityMode,
   rapidFireMode,
-  grabFollowMode, setGrabFollowMode,
 }: UseCellInteractionParams) {
   const { t } = useTranslation('game-summonerwars');
   const showToast = useToast();
@@ -242,11 +238,6 @@ export function useCellInteraction({
   // 技能目标位置（复活死灵、感染、结构变换推拉方向、抓附跟随）
   const validAbilityPositions = useMemo(() => {
     if (interactionPositions.length > 0) return interactionPositions;
-    // 抓附跟随：移动后的单位相邻的空格
-    if (grabFollowMode) {
-      const adj = getAdjacentCells(grabFollowMode.movedTo);
-      return adj.filter(p => isCellEmpty(core, p));
-    }
     if (!abilityMode) return [];
     // 结构变换第二步：选择推拉方向（目标建筑相邻的空格）
     if (abilityMode.abilityId === 'structure_shift' && abilityMode.step === 'selectNewPosition' && abilityMode.targetPosition) {
@@ -271,7 +262,7 @@ export function useCellInteraction({
       return adj.filter(p => isCellEmpty(core, p));
     }
     return [];
-  }, [abilityMode, core, grabFollowMode, interactionPositions]);
+  }, [abilityMode, core, interactionPositions]);
 
   // 技能可选单位（火祀召唤、吸取生命、幻化、结构变换等）
   const validAbilityUnits = useMemo(() => {
@@ -730,21 +721,6 @@ export function useCellInteraction({
           }
           setAbilityMode(null);
         }
-      }
-      return;
-    }
-
-    // 抓附跟随：选择跟随目标位置
-    if (grabFollowMode) {
-      const isValid = validAbilityPositions.some(p => p.row === gameRow && p.col === gameCol);
-      if (isValid) {
-        dispatch(SW_COMMANDS.ACTIVATE_ABILITY, {
-          abilityId: 'grab',
-          sourceUnitId: grabFollowMode.grabberUnitId,
-          targetPosition: { row: gameRow, col: gameCol },
-          _noSnapshot: true,
-        });
-        setGrabFollowMode(null);
       }
       return;
     }
@@ -1362,7 +1338,6 @@ export function useCellInteraction({
     handleConfirmEntanglement: eventCardModes.handleConfirmEntanglement,
     handleConfirmSneak: eventCardModes.handleConfirmSneak,
     handleConfirmGlacialShift: eventCardModes.handleConfirmGlacialShift,
-    handleConfirmTelekinesis: eventCardModes.handleConfirmTelekinesis,
     handleConfirmMindCapture,
     handleConfirmBeforeAttackCards, handleCancelBeforeAttack,
     handlePlayMagicEvent, handleDiscardMagicEvent, handleCancelMagicEventChoice, handleCancelEventTargetInteraction,

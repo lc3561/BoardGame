@@ -331,6 +331,33 @@ describe('formatDiceThroneActionEntry', () => {
         expect(seg?.paramI18nKeys).toContain('phase');
     });
 
+    it('discard 后自动切人时 ADVANCE_PHASE 日志应归属下一位 activePlayer', () => {
+        const state = createState();
+        const command: Command = {
+            type: 'ADVANCE_PHASE',
+            playerId: '1',
+            payload: {},
+            timestamp: 40,
+        };
+        const phaseEvent: GameEvent = {
+            type: 'SYS_PHASE_CHANGED',
+            payload: { from: 'discard', to: 'upkeep', activePlayerId: '0' },
+            timestamp: 40,
+        };
+
+        const result = formatDiceThroneActionEntry({
+            command,
+            state,
+            events: [phaseEvent],
+        });
+        const entries = normalizeEntries(result);
+
+        expect(entries).toHaveLength(1);
+        expect(entries[0].actorId).toBe('0');
+        const seg = findI18nSegment(entries[0].segments, 'actionLog.advancePhase');
+        expect(seg?.params?.phase).toBe('phase.upkeep.label');
+    });
+
     it('SYS_INTERACTION_RESPOND 选择暴击时应生成明确的 Token 使用日志', () => {
         const state = createState();
         const command: Command = {
