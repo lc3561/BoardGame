@@ -15,7 +15,7 @@ import { resolveAiDifficultyProfile } from '../../../engine/ai/difficulty';
 import { createSimpleChoice, INTERACTION_COMMANDS, INTERACTION_EVENTS } from '../../../engine/systems/InteractionSystem';
 import { executePipeline } from '../../../engine/pipeline';
 import type { CardsDrawnEvent, SmashUpCore, SmashUpCommand, SmashUpEvent } from '../domain/types';
-import { MADNESS_CARD_DEF_ID, SU_COMMANDS, SU_EVENTS, getCurrentPlayerId } from '../domain/types';
+import { MADNESS_CARD_DEF_ID, SU_COMMANDS, SU_EVENTS, TEAM_VP_TO_WIN_2V2, getCurrentPlayerId } from '../domain/types';
 import { SMASHUP_FACTION_IDS } from '../domain/ids';
 import { getCardDef, getTitanDef } from '../data/cards';
 import { TITAN_CARD_DEFS } from '../data/titans';
@@ -232,6 +232,58 @@ describe('smashup', () => {
 
         expect(result.finalState.core.enabledExpansions).toEqual([]);
         expect(result.finalState.core.titans ?? []).toEqual([]);
+    });
+
+    it('4 人房间开启 2v2 后按团队模式初始化座位与规则', () => {
+        const runner = createRunner(['0', '1', '2', '3'], {
+            teamMode: '2v2',
+            setupSelections: {
+                expansions: ['titans'],
+                teamMode: '2v2',
+            },
+        });
+
+        const result = runner.run({
+            name: '开启 2v2 团队模式',
+            commands: [],
+        });
+
+        expect(result.finalState.core.teamMode).toBe('2v2');
+        expect(result.finalState.core.seatOrder).toEqual(['0', '1', '2', '3']);
+        expect(result.finalState.core.turnOrder).toHaveLength(4);
+    });
+
+    it('4 人 2v2 模式下 1/3 队总 VP 达到 25 时按团队获胜', () => {
+        const runner = createRunner(['0', '1', '2', '3'], {
+            teamMode: '2v2',
+            setupSelections: {
+                expansions: ['titans'],
+                teamMode: '2v2',
+            },
+        });
+
+        const state = SmashUpDomain.setup(['0', '1', '2', '3'], FIXED_RANDOM, {
+            teamMode: '2v2',
+            setupSelections: {
+                expansions: ['titans'],
+                teamMode: '2v2',
+            },
+        });
+
+        state.players['0'] = {
+            ...state.players['0'],
+            vp: 13,
+        };
+        state.players['2'] = {
+            ...state.players['2'],
+            vp: 12,
+        };
+
+        const gameOver = SmashUpDomain.isGameOver!(state);
+        expect(gameOver).toBeDefined();
+        expect(gameOver!.winners).toEqual(['0', '2']);
+        expect((gameOver!.scores?.['0'] ?? 0) + (gameOver!.scores?.['2'] ?? 0)).toBeGreaterThanOrEqual(TEAM_VP_TO_WIN_2V2);
+        expect(runner).toBeDefined();
     });
 
     it('基地清场时泰坦回到牌库旁并清空指示物', () => {

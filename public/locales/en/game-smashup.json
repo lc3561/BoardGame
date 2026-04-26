@@ -6,6 +6,11 @@
     "expansions": {
       "label": "Expansion Rules",
       "titans": "Titans"
+    },
+    "teamMode": {
+      "label": "Match Mode",
+      "off": "Free-for-All",
+      "2v2": "2v2 Team Mode"
     }
   },
   "phases": {
@@ -28,6 +33,9 @@
     "you": "YOU",
     "opp": "OPP",
     "score_sheet": "Score Sheet",
+    "team_13": "Seats 1/3",
+    "team_24": "Seats 2/4",
+    "team_total": "{{score}} / {{target}}",
     "finish_turn": "Finish Turn",
     "deck": "Deck",
     "discard": "Discard",

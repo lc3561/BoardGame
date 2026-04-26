@@ -65,6 +65,12 @@ import {
     isCardMinionLike,
 } from './domain/utils';
 import { validate } from './domain/commands';
+import {
+    SMASHUP_TEAM_IDS,
+    getSmashUpTeamScores,
+    getSmashUpVictoryTarget,
+    isSmashUpTwoVsTwoMode,
+} from './domain/teamMode';
 import { SMASHUP_AUDIO_CONFIG } from './audio.config';
 import { useTutorialBridge, useTutorial } from '../../contexts/TutorialContext';
 import { UndoProvider } from '../../contexts/UndoContext';
@@ -259,6 +265,13 @@ const SmashUpBoard: FC<Props> = ({ G, dispatch, playerID: rawPlayerID, reset, ma
     // 观战模式下默认显示玩家 0 的视角
     const myPlayer = corePlayers[rootPid];
     const isGameOver = G?.sys?.gameover;
+    const winningPlayerIds = useMemo(
+        () => (
+            isGameOver?.winners?.map(String)
+            ?? (isGameOver?.winner !== undefined ? [String(isGameOver.winner)] : [])
+        ),
+        [isGameOver],
+    );
     const activeDuelParticipantUids = useMemo(() => {
         const duel = core?.activeDuel;
         if (!duel) return new Set<string>();
@@ -276,7 +289,15 @@ const SmashUpBoard: FC<Props> = ({ G, dispatch, playerID: rawPlayerID, reset, ma
             subtitle: t('ui.duel_in_progress', { defaultValue: '决斗进行中：依次处理平克顿加指示物、从手牌打出决斗牌、弃副警长加力量，最后再结算胜负' }),
         };
     }, [core, t]);
-    const isWinner = !!isGameOver && isGameOver.winner === rootPid;
+    const isWinner = winningPlayerIds.includes(rootPid);
+    const isTeamMode = !!core && isSmashUpTwoVsTwoMode(core);
+    const victoryTarget = core ? getSmashUpVictoryTarget(core) : 15;
+    const teamScores = useMemo(
+        () => (core && isTeamMode ? getSmashUpTeamScores(core, Object.fromEntries(
+            core.turnOrder.map((pid) => [pid, core.players[pid]?.vp ?? 0]),
+        )) : null),
+        [core, isTeamMode],
+    );
     const isMobileViewport = useMobileViewport();
     const runtimeViewport = useRuntimeViewport({ syncCssVars: false });
     
@@ -2489,6 +2510,24 @@ const SmashUpBoard: FC<Props> = ({ G, dispatch, playerID: rawPlayerID, reset, ma
                         style={scoreboardStyle}
                     >
                         <div className="text-xs font-bold text-slate-400 uppercase tracking-widest text-center mb-2 border-b border-slate-200">{t('ui.score_sheet')}</div>
+                        {isTeamMode && teamScores && (
+                            <div className="mb-2 flex flex-wrap justify-center gap-2 text-[10px] font-black uppercase tracking-wide">
+                                {SMASHUP_TEAM_IDS.map((teamId) => (
+                                    <div
+                                        key={teamId}
+                                        className="rounded-full border border-slate-300 bg-slate-100 px-2 py-1 text-slate-700"
+                                    >
+                                        {t(teamId === 'team_13' ? 'ui.team_13' : 'ui.team_24')}
+                                        {' · '}
+                                        {t('ui.team_total', {
+                                            score: teamScores[teamId],
+                                            target: victoryTarget,
+                                            defaultValue: '{{score}} / {{target}}',
+                                        })}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                         <div className="flex gap-5">
                             {core.turnOrder.map(pid => {
                                 const conf = PLAYER_CONFIG[parseInt(pid) % PLAYER_CONFIG.length];

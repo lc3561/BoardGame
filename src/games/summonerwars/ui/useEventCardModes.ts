@@ -1044,10 +1044,6 @@ export function useEventCardModes({
     respondInteractionOption(null, selectedMultiTargetOptionIds);
   }, [mindControlMode, respondInteractionOption, selectedMultiTargetOptionIds, swInteraction]);
 
-  const handleConfirmStun = useCallback(() => {
-    // 不再需要：dispatch 已在 handleEventModeClick 中直接完成
-  }, []);
-
   const handleConfirmGlacialShift = useCallback(() => {
     if (!glacialShiftMode || glacialShiftMode.recorded.length === 0) return;
     if (swInteraction?.type !== 'glacial_shift_select_building') return;
@@ -1100,7 +1096,7 @@ export function useEventCardModes({
     withdrawHighlights, afterAttackAbilityHighlights, telekinesisHighlights,
     // 回调
     handleEventModeClick, handlePlayEvent,
-    handleConfirmMindControl, handleConfirmStun,
+    handleConfirmMindControl,
     handleConfirmGlacialShift, handleConfirmSneak,
     handleConfirmEntanglement,
   };

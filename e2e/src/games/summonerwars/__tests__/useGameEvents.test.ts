@@ -292,6 +292,216 @@ describe('systemInteractionAdapter', () => {
     });
   });
 
+  it('为现役 selectUnit 系统交互派生对应 abilityMode', () => {
+    const cases: Array<{
+      interaction: SwSimpleChoiceInteraction;
+      expected: Record<string, unknown>;
+    }> = [
+      {
+        interaction: {
+          id: 'sw-spirit-bond-1',
+          type: 'after_move_spirit_bond',
+          meta: {
+            type: 'after_move_spirit_bond',
+            sourceUnitId: 'shaman-1',
+            sourcePosition: { row: 5, col: 2 },
+          },
+          options: [],
+        },
+        expected: {
+          abilityId: 'spirit_bond',
+          step: 'selectUnit',
+          sourceUnitId: 'shaman-1',
+        },
+      },
+      {
+        interaction: {
+          id: 'sw-ancestral-bond-1',
+          type: 'after_move_ancestral_bond',
+          meta: {
+            type: 'after_move_ancestral_bond',
+            sourceUnitId: 'elder-1',
+            sourcePosition: { row: 4, col: 2 },
+          },
+          options: [],
+        },
+        expected: {
+          abilityId: 'ancestral_bond',
+          step: 'selectUnit',
+          sourceUnitId: 'elder-1',
+        },
+      },
+      {
+        interaction: {
+          id: 'sw-frost-axe-1',
+          type: 'after_move_frost_axe',
+          meta: {
+            type: 'after_move_frost_axe',
+            sourceUnitId: 'smith-1',
+            sourcePosition: { row: 3, col: 3 },
+          },
+          options: [],
+        },
+        expected: {
+          abilityId: 'frost_axe',
+          step: 'selectUnit',
+          sourceUnitId: 'smith-1',
+        },
+      },
+      {
+        interaction: {
+          id: 'sw-vanish-1',
+          type: 'activated_ability_target',
+          meta: {
+            type: 'activated_ability_target',
+            abilityId: 'vanish',
+            sourceUnitId: 'sneeks-1',
+            sourcePosition: { row: 7, col: 2 },
+            step: 'selectUnit',
+          },
+          options: [],
+        },
+        expected: {
+          abilityId: 'vanish',
+          step: 'selectUnit',
+          sourceUnitId: 'sneeks-1',
+        },
+      },
+      {
+        interaction: {
+          id: 'sw-tele-1',
+          type: 'activated_ability_target',
+          meta: {
+            type: 'activated_ability_target',
+            abilityId: 'telekinesis_instead',
+            sourceUnitId: 'kala-1',
+            sourcePosition: { row: 4, col: 2 },
+            step: 'selectUnit',
+          },
+          options: [],
+        },
+        expected: {
+          abilityId: 'telekinesis_instead',
+          step: 'selectUnit',
+          sourceUnitId: 'kala-1',
+        },
+      },
+      {
+        interaction: {
+          id: 'sw-tele-2',
+          type: 'activated_ability_target',
+          meta: {
+            type: 'activated_ability_target',
+            abilityId: 'high_telekinesis_instead',
+            sourceUnitId: 'kala-2',
+            sourcePosition: { row: 4, col: 2 },
+            step: 'selectUnit',
+          },
+          options: [],
+        },
+        expected: {
+          abilityId: 'high_telekinesis_instead',
+          step: 'selectUnit',
+          sourceUnitId: 'kala-2',
+        },
+      },
+      {
+        interaction: {
+          id: 'sw-structure-shift-1',
+          type: 'after_move_structure_shift_target',
+          meta: {
+            type: 'after_move_structure_shift_target',
+            sourceUnitId: 'builder-1',
+            sourcePosition: { row: 5, col: 2 },
+          },
+          options: [],
+        },
+        expected: {
+          abilityId: 'structure_shift',
+          step: 'selectUnit',
+          sourceUnitId: 'builder-1',
+        },
+      },
+      {
+        interaction: {
+          id: 'sw-life-drain-1',
+          type: 'before_attack_life_drain',
+          meta: {
+            type: 'before_attack_life_drain',
+            sourceUnitId: 'drainer-1',
+            sourcePosition: { row: 6, col: 1 },
+            targetPosition: { row: 6, col: 2 },
+          },
+          options: [],
+        },
+        expected: {
+          abilityId: 'life_drain',
+          step: 'selectUnit',
+          sourceUnitId: 'drainer-1',
+          context: 'beforeAttack',
+          pendingAttackTarget: { row: 6, col: 2 },
+        },
+      },
+      {
+        interaction: {
+          id: 'sw-ice-ram-1',
+          type: 'ice_ram_target',
+          meta: {
+            type: 'ice_ram_target',
+            sourceUnitId: 'interaction-source',
+            structurePosition: { row: 2, col: 2 },
+          },
+          options: [],
+        },
+        expected: {
+          abilityId: 'ice_ram',
+          step: 'selectUnit',
+          sourceUnitId: 'ice_ram',
+          structurePosition: { row: 2, col: 2 },
+        },
+      },
+    ];
+
+    for (const { interaction, expected } of cases) {
+      expect(deriveSystemAbilityMode(interaction, null)).toEqual(expected);
+    }
+
+    expect(deriveSystemAbilityMode({
+      id: 'sw-structure-shift-2',
+      type: 'after_move_structure_shift_direction',
+      meta: {
+        type: 'after_move_structure_shift_direction',
+        sourceUnitId: 'builder-1',
+        sourcePosition: { row: 5, col: 2 },
+        targetPosition: { row: 5, col: 3 },
+      },
+      options: [],
+    }, null)).toEqual({
+      abilityId: 'structure_shift',
+      step: 'selectNewPosition',
+      sourceUnitId: 'builder-1',
+      targetPosition: { row: 5, col: 3 },
+    });
+
+    expect(deriveSystemAbilityMode({
+      id: 'sw-ice-ram-2',
+      type: 'ice_ram_push',
+      meta: {
+        type: 'ice_ram_push',
+        sourceUnitId: 'interaction-source',
+        structurePosition: { row: 2, col: 2 },
+        targetPosition: { row: 2, col: 3 },
+      },
+      options: [],
+    }, null)).toEqual({
+      abilityId: 'ice_ram',
+      step: 'selectPushDirection',
+      sourceUnitId: 'ice_ram',
+      structurePosition: { row: 2, col: 2 },
+      targetPosition: { row: 2, col: 3 },
+    });
+  });
+
   it('能按卡牌和位置匹配 activated_ability_target 选项', () => {
     const swInteraction: SwSimpleChoiceInteraction = {
       id: 'sw-activated-1',

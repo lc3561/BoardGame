@@ -654,3 +654,13 @@
   - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\smashup\smashup-robot-hoverbot-new.e2e\斗志奖杯打出后应抽两张并给两个己方随从各放一个-+1-指示物\fighting-spirit-prize-resolved.png`
   - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\smashup\smashup-robot-hoverbot-new.e2e\鼠、鸟与香肠应先选锚点再给同基地同派系至多两个随从-+2\mouse-bird-sausage-targets-prompt.png`
   - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\smashup\smashup-robot-hoverbot-new.e2e\鼠、鸟与香肠应先选锚点再给同基地同派系至多两个随从-+2\mouse-bird-sausage-resolved.png`
+
+## 2026-04-26 骷髅《复仇者》真实入口口径回写
+- 旧 E2E 失败不是《复仇者》逻辑回归，而是**测试还停留在旧 prompt 模型**。
+- 当前真实实现已经不是 `waitForInteraction('skeletons_revenant_base')` 这条链，而是：
+  1. 你的出牌阶段，弃牌堆存在《复仇者》；
+  2. 弃牌堆面板中出现可选《复仇者》；
+  3. 选中后出现“点击基地埋葬这张牌”提示；
+  4. 点基地直接 `ACTIVATE_SPECIAL({ discardCardUid, baseIndex })`；
+  5. `usedDiscardPlayAbilities` 记账后，同回合第二次不再暴露入口。
+- 因此这里被补上的不是单纯一条 E2E，而是**审计口径纠偏**：旧“Revenant 仍缺 during-turn/L3”结论已经失效。

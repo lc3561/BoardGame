@@ -4,7 +4,7 @@
 
 - `Skeletons / 骷髅` 本轮新增两条**失效回写**：
   1. 旧“`殉葬品` 已修正为先首埋再进后续分支，因此可视为收口”的说法失效。旧实现虽然修回了“先首埋”，但仍把“**弃一张牌来额外埋葬另一张牌**”做成了**同一张牌既弃又埋**。
-  2. 旧“`复仇者` 仍只挂 `onTurnStart`”的说法也失效。当前实现已扩成 `onTurnStart + onActionPlayed + onMinionPlayed + onCardsDiscarded`，只是仍不足以完整代表“你的回合中”。
+  2. 旧“`复仇者` 仍只挂 `onTurnStart`”的说法也失效。当前实现已不再走那组近似 trigger，而是改成**弃牌堆主动特殊能力**。
 - 本轮新修复：
   - `骸骨之王 / Lord of Bones`：卡图 `temp/skeletons-card-18.png` 明确是“挖掘这里的一张牌”，现已从“只允许挖你的埋葬牌”改成“允许挖该基地任意埋葬牌”。
   - `殉葬品 / Grave Goods`：卡图 `temp/skeletons-card-20.png` 明确是“弃一张牌，再额外埋葬另一张牌”；现已拆成**弃牌 prompt → 额外埋葬牌 prompt → 目标基地 prompt** 三段，且只有在首埋后**至少还剩两张手牌**时才允许进入额外埋葬分支。
@@ -15,10 +15,11 @@
 - 本轮验证：
   - `npx vitest run src/games/smashup/__tests__/newFactionAbilities.test.ts --testNamePattern "skeletons_(lord_of_bones|grave_goods|revenant)"` → `8 passed`
   - `npx vitest run src/games/smashup/__tests__/newFactionAbilities.test.ts --testNamePattern "Skeletons abilities"` → `18 passed`
+  - `npm run test:e2e:ci:file -- e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "复仇者应可在回合中触发埋葬且同回合不重复触发"` → `1 passed`
   - `npx eslint src/games/smashup/abilities/skeletons.ts e2e/src/games/smashup/abilities/skeletons.ts src/games/smashup/__tests__/newFactionAbilities.test.ts e2e/src/games/smashup/__tests__/newFactionAbilities.test.ts` → `0 errors`（仅仓库既有 warnings）
 - 当前 Skeletons 口径：
-  - **已收敛**：`骸骨之王`、`殉葬品` 的本轮低级语义错误已修掉。
-  - **仍有残余范围**：`复仇者` 仍缺完整 during-turn 建模与新的真实入口 L3 证据；因此本文件不能把 `Skeletons` 写成整派系已收口。
+  - **已收敛**：`骸骨之王`、`殉葬品` 的本轮低级语义错误已修掉；`复仇者` 也已改成弃牌堆主动特殊能力并补到真实入口 L3 证据（`evidence/smashup/smashup-skeletons-revenant-e2e-2026-04-26.md`）。
+  - **仍有残余范围**：本文件仍不能把 `Skeletons` 写成整派系已收口；原因已不再是 `复仇者` 缺 L3，而是三新派系整包审计还保留总文档里的整体残余范围。
 
 
 ## 审计范围
@@ -288,6 +289,6 @@
   - `守墓人`：补成“每回合一次，你的其他牌被埋葬或挖掘后抽 1”
   - `复仇者`：已改成“从弃牌堆埋葬到基地”的入口，不再沿用旧的“别处离场牌被埋葬”错语义
 - 当前仍需明确标注的残余风险：
-  - `复仇者` 图面是“你的回合中”，当前实现入口仍挂在 `onTurnStart`，属于**时机收窄**，不能算完全收口。
-  - `Skeletons` 虽已补完当前聚焦单测，但整派系仍需和 `Mermaids / World Champs / 基地` 一起做最终整包重审，不能单独宣称三派系完成。
+  - `复仇者` 图面“你的回合中”这条旧残余已失效：当前实现已改成弃牌堆主动特殊能力，并补了真实入口证据，见 `evidence/smashup/smashup-skeletons-revenant-e2e-2026-04-26.md`。
+  - `Skeletons` 虽已补到更完整的 L2 + L3 证据，但整派系仍需和 `Mermaids / World Champs / 基地` 一起看最终整包重审，不能单独外推出“三派系完成”。
 

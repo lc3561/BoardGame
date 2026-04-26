@@ -3,16 +3,17 @@
 ## 2026-04-26 第七轮修订：Skeletons 审计口径再收紧
 
 - **失效回写 1**：本文此前引用 `smashup-skeletons-wiki-semantic-audit-2026-04-25.md` 时，把 `Skeletons` 记成“**12/12 张牌语义错配**”。这条总括结论现在已经失效；后续卡图优先重录后，当前不再是整派系全错。
-- **失效回写 2**：本文此前把 `复仇者 / Revenant` 残余风险写成“**当前实现入口仍挂在 onTurnStart**”。这条表述也已过时；当前实现已经额外挂了 `onActionPlayed / onMinionPlayed / onCardsDiscarded`，只是仍未形成完整的“你的回合中”窗口。
+- **失效回写 2**：本文此前把 `复仇者 / Revenant` 残余风险写成“**当前实现入口仍挂在 onTurnStart**”。这条表述也已过时；当前实现已改成**弃牌堆主动特殊能力**，旧 `onTurnStart / onActionPlayed / onMinionPlayed / onCardsDiscarded` 近似入口已移除。
 - **本轮新修复并回写到审计口径**：
   1. `骸骨之王 / Lord of Bones`：卡图 `temp/skeletons-card-18.png` 明确是“挖掘这里的一张牌”，旧实现却只允许挖自己的埋葬牌；现已修正。
   2. `殉葬品 / Grave Goods`：卡图 `temp/skeletons-card-20.png` 明确要求“弃一张牌，再额外埋葬另一张牌”，旧实现却把两件事错误压在同一张牌上；现已修正为三段交互，并补断言锁死“弃牌 uid != 额外埋葬 uid”。
 - **新的验证证据**：
   - `npx vitest run src/games/smashup/__tests__/newFactionAbilities.test.ts --testNamePattern "skeletons_(lord_of_bones|grave_goods|revenant)"` → `8 passed`
   - `npx vitest run src/games/smashup/__tests__/newFactionAbilities.test.ts --testNamePattern "Skeletons abilities"` → `18 passed`
+  - `npm run test:e2e:ci:file -- e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "复仇者应可在回合中触发埋葬且同回合不重复触发"` → `1 passed`
   - `npx eslint src/games/smashup/abilities/skeletons.ts e2e/src/games/smashup/abilities/skeletons.ts src/games/smashup/__tests__/newFactionAbilities.test.ts e2e/src/games/smashup/__tests__/newFactionAbilities.test.ts` → `0 errors`（仅仓库既有 warnings）
 - **当前结论等级保持**：`仍有残余范围`。
-- **原因**：本轮虽继续清掉了 `Skeletons` 的两条真实低级错误，但 `复仇者` 仍未形成发布级 L3 收口证据，三派系整包也仍不能恢复成“专项已收口”。
+- **原因**：本轮虽已把 `复仇者` 也补到真实入口 L3，但三派系整包仍未达到“当前发布口径已收口”的全量覆盖要求，因此本文仍保持 `仍有残余范围`。
 
 
 ## 2026-04-26 卡图优先第二轮修订：三派系重录回写
@@ -181,7 +182,7 @@
 - 当前残余范围：
   - `World Champs` 仍缺整派系级真实入口玩法覆盖；`斯坦福` 单卡缺口已补齐，但不能替代其它关键能力与整包收口。
   - `Skeletons` 当前已确认为整派系语义错录，必须按整派系重新 intake / 重新实现；旧文档中关于 `Skeletons` 的“0 缺口 / 已收口”口径全部失效。
-  - 截至 `2026-04-25`，`Skeletons` 已有新的聚焦修复与单测证据回写到 `evidence/smashup/smashup-10th-anniversary-reintake-2026-04-25.md`，但其中 `复仇者` 仍存在“卡图为你的回合中，当前实现入口收窄为 onTurnStart”的残余风险，因此本文件仍不得恢复为“专项已收口”。
+  - 截至 `2026-04-26`，`Skeletons` 已有新的聚焦修复与单测证据回写到 `evidence/smashup/smashup-10th-anniversary-reintake-2026-04-25.md`，且《复仇者》真实入口 L3 已补齐，见 `evidence/smashup/smashup-skeletons-revenant-e2e-2026-04-26.md`；本文件仍不得恢复为“专项已收口”，原因已变成“三派系整包仍有整体残余范围”，而不是《复仇者》单卡仍缺 during-turn 入口。
   - 旧文档中的“三派系整体已收口”不能继续引用；后续若引用本文件，必须连同本失效记录一起看。
 
 ## 审计范围

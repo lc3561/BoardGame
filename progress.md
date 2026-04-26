@@ -566,3 +566,12 @@
     - 新增证据文档：`evidence/smashup/smashup-world-champs-fighting-spirit-mouse-bird-e2e-2026-04-26.md`。
     - 已回写主审计：`evidence/smashup/smashup-10th-anniversary-factions-audit-20260419.md`（L3 补证（三））。
   - Next: 继续推进三派系整包剩余审计与最终收口判定（保持“仍有残余范围”口径，直到整包证据满足发布级门禁）。
+
+- **[2026-04-26 18:55:00] Action**: 骷髅《复仇者》真实入口 E2E 修正与 L3 补证
+  - Result:
+    - 修正 `e2e/smashup/smashup-robot-hoverbot-new.e2e.ts`：旧用例还在等 `skeletons_revenant_base` prompt，已改成匹配当前真实链路“打开弃牌堆 -> 选中《复仇者》 -> 点击基地埋葬 -> 同回合第二次不再出现”。
+    - `npm run test:e2e:ci:file -- e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "复仇者应可在回合中触发埋葬且同回合不重复触发"`：`1 passed`。
+    - `npx eslint e2e/smashup/smashup-robot-hoverbot-new.e2e.ts`：0 errors（warnings 为文件既有存量）。
+    - 新增证据文档：`evidence/smashup/smashup-skeletons-revenant-e2e-2026-04-26.md`。
+    - 已回写：`evidence/smashup/smashup-skeletons-wiki-semantic-audit-2026-04-25.md`、`evidence/smashup/smashup-10th-anniversary-reintake-2026-04-25.md`、`evidence/smashup/smashup-10th-anniversary-factions-audit-20260419.md`，移除旧的 `onTurnStart` 近似残余口径。
+  - Next: 继续三新派系整包残余范围收拢，保持“仍有残余范围”口径，直到整包 L3/L4 证据满足发布门禁。

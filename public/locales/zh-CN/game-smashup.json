@@ -20,6 +20,9 @@
     "you": "你自己",
     "opp": "对手",
     "score_sheet": "记分板",
+    "team_13": "1/3队",
+    "team_24": "2/4队",
+    "team_total": "{{score}} / {{target}}",
     "finish_turn": "结束回合",
     "deck": "牌库",
     "discard": "弃牌",
@@ -3623,6 +3626,11 @@
     "expansions": {
       "label": "扩展规则",
       "titans": "泰坦"
+    },
+    "teamMode": {
+      "label": "对局模式",
+      "off": "标准自由混战",
+      "2v2": "2v2 团队模式"
     }
   }
 }

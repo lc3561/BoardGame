@@ -730,30 +730,32 @@ test.describe('Smash Up 牌库检索交互', () => {
         });
 
         await game.playCard('robot_microbot_alpha', { targetBaseIndex: 0 });
-        await game.waitForInteraction('skeletons_revenant_base');
+        await game.waitForNoInteraction();
+        await expect(page.locator('[data-testid="su-discard-toggle"]')).toBeVisible();
+        await page.locator('[data-testid="su-discard-toggle"]').click();
+        await expect(page.locator('[data-discard-view-panel]')).toBeVisible();
+        await expect(page.locator('[data-card-def-id="skeletons_revenant"]')).toBeVisible();
+        await expect(page.getByText('点击基地埋葬这张牌')).toHaveCount(0);
 
-        const promptMeta = await page.evaluate(() => {
+        await page.locator('[data-card-def-id="skeletons_revenant"]').click();
+        await expect(page.getByText('点击基地埋葬这张牌')).toBeVisible();
+
+        const boardStateBeforeBury = await page.evaluate(() => {
             const harness = (window as any).__BG_TEST_HARNESS__;
-            const current = harness?.state?.get?.()?.sys?.interaction?.current;
+            const state = harness?.state?.get?.();
             return {
-                sourceId: current?.data?.sourceId,
-                options: (current?.data?.options ?? []).map((option: any) => ({
-                    id: option.id,
-                    baseIndex: option.value?.baseIndex ?? null,
-                    skip: option.value?.skip === true,
-                })),
+                interactionSource: state?.sys?.interaction?.current?.data?.sourceId ?? null,
+                usedDiscardPlayAbilities: state?.core?.players?.['0']?.usedDiscardPlayAbilities ?? [],
+                buriedOnBase1: (state?.core?.bases?.[1]?.buriedCards ?? []).map((card: any) => card.defId),
             };
         });
-        expect(promptMeta.sourceId).toBe('skeletons_revenant_base');
-        expect(promptMeta.options.some((option: any) => option.baseIndex === 1)).toBe(true);
-        expect(promptMeta.options.some((option: any) => option.skip)).toBe(true);
+        expect(boardStateBeforeBury.interactionSource).toBeNull();
+        expect(boardStateBeforeBury.usedDiscardPlayAbilities).not.toContain('skeletons_revenant');
+        expect(boardStateBeforeBury.buriedOnBase1).not.toContain('skeletons_revenant');
 
-        await game.screenshot('skeletons-revenant-prompt-after-minion', testInfo);
+        await game.screenshot('skeletons-revenant-discard-panel-selected', testInfo);
 
-        await game.selectInteractionOptionBy(
-            (option: any) => option.value?.baseIndex === 1,
-            '复仇者选择埋葬到基地 2',
-        );
+        await game.selectBase(1);
         await game.waitForNoInteraction();
 
         const stateAfterBury = await game.getState();
@@ -768,10 +770,19 @@ test.describe('Smash Up 牌库检索交互', () => {
 
         const interactionSourceAfterSecondCard = await page.evaluate(() => {
             const harness = (window as any).__BG_TEST_HARNESS__;
-            return harness?.state?.get?.()?.sys?.interaction?.current?.data?.sourceId ?? null;
+            const state = harness?.state?.get?.();
+            return {
+                interactionSource: state?.sys?.interaction?.current?.data?.sourceId ?? null,
+                usedDiscardPlayAbilities: state?.core?.players?.['0']?.usedDiscardPlayAbilities ?? [],
+                buriedOnBase1: (state?.core?.bases?.[1]?.buriedCards ?? []).map((card: any) => card.defId),
+            };
         });
-        expect(interactionSourceAfterSecondCard).not.toBe('skeletons_revenant_base');
-        expect(interactionSourceAfterSecondCard).not.toBe('skeletons_revenant_card');
+        expect(interactionSourceAfterSecondCard.interactionSource).not.toBe('skeletons_revenant_base');
+        expect(interactionSourceAfterSecondCard.interactionSource).not.toBe('skeletons_revenant_card');
+        expect(interactionSourceAfterSecondCard.usedDiscardPlayAbilities).toContain('skeletons_revenant');
+        expect(interactionSourceAfterSecondCard.buriedOnBase1.filter((defId: string) => defId === 'skeletons_revenant')).toHaveLength(1);
+
+        await game.screenshot('skeletons-revenant-second-card-no-repeat', testInfo);
     });
 
     test('殉葬品打出后应先强制埋一张，再允许把额外埋葬牌放到不同基地', async ({ page, game }, testInfo) => {

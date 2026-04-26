@@ -97,7 +97,6 @@ interface StatusBannersProps {
   onCancelGlacialShift: () => void;
   onWithdrawCostSelect: (costType: 'charge' | 'magic') => void;
   onCancelWithdraw: () => void;
-  onConfirmStun: () => void;
   onCancelStun: () => void;
   onCancelHypnoticLure: () => void;
   onConfirmMindCapture: (choice: 'control' | 'damage') => void;

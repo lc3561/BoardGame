@@ -34,6 +34,7 @@ import {
     SU_EVENTS,
     SU_EVENT_TYPES,
     SU_COMMANDS,
+    TEAM_VP_TO_WIN_2V2,
     DRAW_PER_TURN,
     HAND_LIMIT,
     VP_TO_WIN,
@@ -61,6 +62,13 @@ import {
     getTitansOnBase,
     removeTitanFromPlay,
 } from './abilityHelpers';
+import {
+    getSmashUpRawTeamVpTotals,
+    getSmashUpTeamMembers,
+    getSmashUpTeamScores,
+    isSmashUpTwoVsTwoMode,
+    readSmashUpTeamMode,
+} from './teamMode';
 import { triggerBaseAbility, triggerExtendedBaseAbility, hasBaseAbility } from './baseAbilities';
 import { collectBaseAbilityTriggers, collectExtendedBaseAbilityTriggers } from './baseAbilityQueue';
 import { buildBaseTargetOptions, isSpecialLimitBlocked } from './abilityHelpers';
@@ -969,6 +977,8 @@ function readEnabledExpansions(setupData?: Record<string, unknown>): string[] {
 function setup(playerIds: PlayerId[], random: RandomFn, setupData?: Record<string, unknown>): SmashUpCore {
     const nextUid = 1;
     const enabledExpansions = readEnabledExpansions(setupData);
+    const seatOrder = [...playerIds];
+    const teamMode = readSmashUpTeamMode(setupData, playerIds.length);
 
     const players: Record<PlayerId, PlayerState> = {};
     const playerSelections: Record<PlayerId, string[]> = {};
@@ -1042,8 +1052,10 @@ function setup(playerIds: PlayerId[], random: RandomFn, setupData?: Record<strin
 
     return {
         players,
+        seatOrder,
         turnOrder: initialTurnOrder,
         currentPlayerIndex: 0,
+        teamMode,
         bases: activeBases,
         titans: [],
         enabledExpansions,
@@ -1650,6 +1662,40 @@ function playerView(state: SmashUpCore, playerId: PlayerId): Partial<SmashUpCore
 function isGameOver(state: SmashUpCore): GameOverResult | undefined {
     if (state.gameResult) return state.gameResult;
 
+    if (isSmashUpTwoVsTwoMode(state)) {
+        const rawTeamTotals = getSmashUpRawTeamVpTotals(state);
+        const candidateTeams = Object.entries(rawTeamTotals)
+            .filter(([, total]) => total >= TEAM_VP_TO_WIN_2V2)
+            .map(([teamId]) => teamId as import('./types').SmashUpTeamId);
+        if (candidateTeams.length === 0) {
+            return undefined;
+        }
+
+        const scores = getScores(state);
+        const teamScores = getSmashUpTeamScores(state, scores);
+
+        if (candidateTeams.length === 1) {
+            const winners = getSmashUpTeamMembers(state, candidateTeams[0]);
+            return {
+                winner: winners[0],
+                winners,
+                scores,
+            };
+        }
+
+        const sortedTeams = [...candidateTeams].sort((left, right) => teamScores[right] - teamScores[left]);
+        if (teamScores[sortedTeams[0]] > teamScores[sortedTeams[1]]) {
+            const winners = getSmashUpTeamMembers(state, sortedTeams[0]);
+            return {
+                winner: winners[0],
+                winners,
+                scores,
+            };
+        }
+
+        return undefined;
+    }
+
     const winners = state.turnOrder.filter(pid => state.players[pid]?.vp >= VP_TO_WIN);
     if (winners.length === 0) return undefined;
 
@@ -2212,6 +2258,19 @@ export const SmashUpDomain: DomainCore<SmashUpCore, SmashUpCommand, SmashUpEvent
 
 export type { SmashUpCommand, SmashUpCore, SmashUpEvent } from './types';
 export { SU_COMMANDS, SU_EVENTS } from './types';
+export {
+    DEFAULT_SMASHUP_TEAM_MODE,
+    SMASHUP_TEAM_IDS,
+    SMASHUP_TEAM_MODE_OPTIONS,
+    getSmashUpSeatOrder,
+    getSmashUpTeamIdForPlayer,
+    getSmashUpTeamMembers,
+    getSmashUpTeamScores,
+    getSmashUpVictoryTarget,
+    getSmashUpRawTeamVpTotals,
+    isSmashUpTwoVsTwoMode,
+    readSmashUpTeamMode,
+} from './teamMode';
 export { registerAbility, resolveAbility, resolveOnPlay, resolveTalent, resolveSpecial, resolveOngoingActivation, resolveOnDestroy, clearRegistry } from './abilityRegistry';
 export type { AbilityContext, AbilityResult, AbilityExecutor } from './abilityRegistry';
 export {

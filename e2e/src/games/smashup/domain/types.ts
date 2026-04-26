@@ -5,7 +5,7 @@
  * - 每位玩家选 2 个派系混搭成 40 张牌库
  * - 回合制：出牌 → 基地记分 → 抽牌
  * - 基地力量达到临界点时记分，前三名获 VP
- * - 先到 15 VP 胜出
+ * - 默认先到 15 VP 胜出；可选 2v2 模式下按团队 25 VP 胜出
  */
 
 import type { Command, GameEvent, GameOverResult, PlayerId } from '../../../engine/types';
@@ -33,6 +33,9 @@ export type GamePhase =
 export const PHASE_ORDER: GamePhase[] = [
     'factionSelect', 'startTurn', 'playCards', 'scoreBases', 'draw', 'endTurn',
 ];
+
+export type SmashUpTeamMode = 'ffa' | '2v2';
+export type SmashUpTeamId = 'team_13' | 'team_24';
 
 // ============================================================================
 // 卡牌定义（静态数据）
@@ -426,6 +429,7 @@ export const HAND_LIMIT = 10;
 export const STARTING_HAND_SIZE = 5;
 export const DRAW_PER_TURN = 2;
 export const VP_TO_WIN = 15;
+export const TEAM_VP_TO_WIN_2V2 = 25;
 /** 疯狂牌库初始数量 */
 export const MADNESS_DECK_SIZE = 30;
 /** 疯狂卡 defId */
@@ -615,10 +619,14 @@ export interface ActiveDuel {
 
 export interface SmashUpCore {
     players: Record<PlayerId, PlayerState>;
+    /** 固定座位顺序（不随先手/轮转变化），用于 2v2 队伍推导。 */
+    seatOrder?: PlayerId[];
     /** 玩家回合顺序 */
     turnOrder: PlayerId[];
     /** 当前玩家索引 */
     currentPlayerIndex: number;
+    /** 对局规则模式 */
+    teamMode?: SmashUpTeamMode;
     /** 场上基地 */
     bases: BaseInPlay[];
     /** 全局泰坦状态（牌库旁 / 在场） */

@@ -24,6 +24,23 @@ const entry: GameManifestEntry = {
             ],
             default: ['titans'],
         },
+        teamMode: {
+            type: 'select',
+            labelKey: 'games.smashup.setup.teamMode.label',
+            optionsByPlayerCount: {
+                2: [
+                    { value: 'off', labelKey: 'games.smashup.setup.teamMode.off' },
+                ],
+                3: [
+                    { value: 'off', labelKey: 'games.smashup.setup.teamMode.off' },
+                ],
+                4: [
+                    { value: 'off', labelKey: 'games.smashup.setup.teamMode.off' },
+                    { value: '2v2', labelKey: 'games.smashup.setup.teamMode.2v2' },
+                ],
+            },
+            default: 'off',
+        },
     },
     ai: {
         capture: true,

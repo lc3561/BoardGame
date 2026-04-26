@@ -310,6 +310,15 @@ describe('i18n 静态检查工具', () => {
                             { value: 'titans', labelKey: 'games.smashup.setup.expansions.titans' },
                         ],
                     },
+                    teamMode: {
+                        labelKey: 'games.smashup.setup.teamMode.label',
+                        optionsByPlayerCount: {
+                            4: [
+                                { value: 'off', labelKey: 'games.smashup.setup.teamMode.off' },
+                                { value: '2v2', labelKey: 'games.smashup.setup.teamMode.2v2' },
+                            ],
+                        },
+                    },
                 },
             };
         `;
@@ -339,6 +348,18 @@ describe('i18n 静态检查工具', () => {
             }),
             expect.objectContaining({
                 key: 'setup.expansions.titans',
+                namespaces: ['game-smashup'],
+            }),
+            expect.objectContaining({
+                key: 'setup.teamMode.label',
+                namespaces: ['game-smashup'],
+            }),
+            expect.objectContaining({
+                key: 'setup.teamMode.off',
+                namespaces: ['game-smashup'],
+            }),
+            expect.objectContaining({
+                key: 'setup.teamMode.2v2',
                 namespaces: ['game-smashup'],
             }),
         ]));

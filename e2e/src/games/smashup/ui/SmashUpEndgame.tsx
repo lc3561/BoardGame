@@ -15,14 +15,12 @@ import { useNavigate } from 'react-router-dom';
 import { Trophy } from 'lucide-react';
 import type { ContentSlotProps, ActionsSlotProps } from '../../../components/game/framework/widgets/EndgameOverlay';
 import type { SmashUpCore, PlayerState } from '../domain/types';
-import { VP_TO_WIN, MADNESS_CARD_DEF_ID } from '../domain/types';
+import { MADNESS_CARD_DEF_ID } from '../domain/types';
 import { PLAYER_CONFIG } from './playerConfig';
 import { getFactionMeta } from './factionMeta';
 import { getScores } from '../domain/index';
+import { SMASHUP_TEAM_IDS, getSmashUpTeamMembers, getSmashUpTeamScores, getSmashUpVictoryTarget, isSmashUpTwoVsTwoMode } from '../domain/teamMode';
 import { GameButton } from './GameButton';
-
-/** 胜利分数线（用于终点虚线标记） */
-const VP_WIN_LINE = VP_TO_WIN;
 
 /** 计算玩家的疯狂卡数量（仅用于前端展示；真实结算由领域层完成） */
 function countMadness(player: PlayerState): number {
@@ -33,9 +31,14 @@ function countMadness(player: PlayerState): number {
     return count;
 }
 
-/** 计算计分轨最大刻度（跟随最高分，至少 VP_TO_WIN） */
-function getTrackMax(finalScores: Record<string, number>): number {
-    const maxScore = Math.max(VP_TO_WIN, ...Object.values(finalScores));
+/** 计算计分轨最大刻度（跟随最高分与胜利线） */
+function getTrackMax(
+    finalScores: Record<string, number>,
+    victoryTarget: number,
+    teamScores?: Record<string, number> | null,
+): number {
+    const teamValues = teamScores ? Object.values(teamScores) : [];
+    const maxScore = Math.max(victoryTarget, ...Object.values(finalScores), ...teamValues);
     return maxScore;
 }
 
@@ -51,8 +54,20 @@ interface SmashUpEndgameContentProps extends ContentSlotProps {
 export function SmashUpEndgameContent({ core, myPlayerId, result }: SmashUpEndgameContentProps) {
     const { t: tSmashUp } = useTranslation('game-smashup');
     const finalScores = useMemo(() => getScores(core), [core]);
-    const winner = result?.winner;
-    const trackMax = useMemo(() => getTrackMax(finalScores), [finalScores]);
+    const isTeamMode = useMemo(() => isSmashUpTwoVsTwoMode(core), [core]);
+    const winners = useMemo(
+        () => new Set(result?.winners?.map(String) ?? (result?.winner !== undefined ? [String(result.winner)] : [])),
+        [result],
+    );
+    const victoryTarget = useMemo(() => getSmashUpVictoryTarget(core), [core]);
+    const teamScores = useMemo(
+        () => (isTeamMode ? getSmashUpTeamScores(core, finalScores) : null),
+        [core, finalScores, isTeamMode],
+    );
+    const trackMax = useMemo(
+        () => getTrackMax(finalScores, victoryTarget, teamScores),
+        [finalScores, teamScores, victoryTarget],
+    );
 
     // 按最终分数排序（高→低）
     const rankedPlayers = useMemo(() => {
@@ -68,13 +83,40 @@ export function SmashUpEndgameContent({ core, myPlayerId, result }: SmashUpEndga
                 transition={{ delay: 0.2, type: 'spring', stiffness: 200, damping: 20 }}
                 className="bg-white text-slate-900 p-5 shadow-[3px_4px_10px_rgba(0,0,0,0.3)] rotate-[0.5deg] w-full rounded-sm relative"
             >
+                {isTeamMode && teamScores && (
+                    <div className="mb-4 flex flex-wrap items-center justify-center gap-2">
+                        {SMASHUP_TEAM_IDS.map((teamId) => {
+                            const labelKey = teamId === 'team_13' ? 'ui.team_13' : 'ui.team_24';
+                            const teamMembers = getSmashUpTeamMembers(core, teamId);
+                            const isWinningTeam = teamMembers.some((pid) => winners.has(pid));
+                            return (
+                                <div
+                                    key={teamId}
+                                    className={`rounded-full border px-3 py-1 text-xs font-black uppercase tracking-wide ${
+                                        isWinningTeam
+                                            ? 'border-amber-300 bg-amber-50 text-amber-800'
+                                            : 'border-slate-300 bg-slate-100 text-slate-700'
+                                    }`}
+                                >
+                                    {tSmashUp(labelKey)}
+                                    {' · '}
+                                    {tSmashUp('ui.team_total', {
+                                        score: teamScores[teamId],
+                                        target: victoryTarget,
+                                        defaultValue: '{{score}} / {{target}}',
+                                    })}
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
                 {/* 轨道 */}
                 <div className="relative mb-6">
                     {/* 刻度线 */}
                     <div className="flex justify-between items-end px-1 mb-1">
                         {Array.from({ length: trackMax + 1 }, (_, i) => (
                             <div key={i} className="flex flex-col items-center" style={{ width: `${100 / (trackMax + 1)}%` }}>
-                                <span className={`text-[9px] font-mono ${i === VP_WIN_LINE ? 'text-amber-600 font-black text-[11px]' : i % 5 === 0 ? 'text-slate-600 font-bold' : 'text-slate-300'}`}>
+                                <span className={`text-[9px] font-mono ${i === victoryTarget ? 'text-amber-600 font-black text-[11px]' : i % 5 === 0 ? 'text-slate-600 font-bold' : 'text-slate-300'}`}>
                                     {i}
                                 </span>
                             </div>
@@ -92,10 +134,10 @@ export function SmashUpEndgameContent({ core, myPlayerId, result }: SmashUpEndga
                             />
                         ))}
 
-                        {/* 胜利分数线（15VP 虚线标记） */}
+                        {/* 胜利分数线 */}
                         <div
                             className="absolute top-0 bottom-0 w-[1px] border-l-2 border-dashed border-amber-400"
-                            style={{ left: `${(VP_WIN_LINE / (trackMax + 1)) * 100}%` }}
+                            style={{ left: `${(victoryTarget / (trackMax + 1)) * 100}%` }}
                         />
 
                         {/* 玩家标记 */}
@@ -138,7 +180,7 @@ export function SmashUpEndgameContent({ core, myPlayerId, result }: SmashUpEndga
                         const madnessCount = countMadness(player);
                         const penalty = rawVp - finalVp;
                         const isMe = pid === myPlayerId;
-                        const isThisWinner = pid === winner;
+                        const isThisWinner = winners.has(pid);
                         const factionIcons = (player.factions ?? []).map(fid => getFactionMeta(fid)).filter(Boolean);
 
                         return (

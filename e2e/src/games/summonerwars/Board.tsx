@@ -904,9 +904,6 @@ export const SummonerWarsBoard: React.FC<Props> = ({
       cancelSwInteraction(true);
     }
   }, [cancelSwInteraction, swInteraction]);
-  const handleConfirmStun = useCallback(() => {
-    interaction.handleConfirmStun();
-  }, [interaction]);
   const handleCancelStun = useCallback(() => {
     if (swInteraction?.type === 'stun_select_target' || swInteraction?.type === 'stun_select_destination') {
       dispatch(INTERACTION_COMMANDS.CANCEL, { interactionId: swInteraction.id });
@@ -948,14 +945,8 @@ export const SummonerWarsBoard: React.FC<Props> = ({
         return value?.action === 'after_attack_rapid_fire' && value.skip !== true;
       });
       respondInteractionOption(optionId);
-      return;
     }
-    if (!effectiveRapidFireMode) return;
-    console.warn('[SummonerWars] 未处理的连续射击系统确认分支', {
-      swInteractionType: swInteraction?.type ?? null,
-      sourceUnitId: effectiveRapidFireMode.sourceUnitId,
-    });
-  }, [dispatch, effectiveRapidFireMode, findInteractionOptionId, respondInteractionOption, swInteraction]);
+  }, [findInteractionOptionId, respondInteractionOption, swInteraction]);
   const handleCancelRapidFire = useCallback(() => {
     if (swInteraction?.type === 'after_attack_rapid_fire') {
       cancelSwInteraction(true);
@@ -1407,7 +1398,6 @@ export const SummonerWarsBoard: React.FC<Props> = ({
                     onCancelGlacialShift={handleCancelGlacialShift}
                     onWithdrawCostSelect={handleWithdrawCostSelect}
                     onCancelWithdraw={handleCancelWithdraw}
-                    onConfirmStun={handleConfirmStun}
                     onCancelStun={handleCancelStun}
                     onCancelHypnoticLure={handleCancelHypnoticLure}
                     onConfirmMindCapture={handleConfirmMindCapture}

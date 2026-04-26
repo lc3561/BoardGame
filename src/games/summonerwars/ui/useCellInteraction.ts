@@ -33,13 +33,6 @@ import {
   type SwSimpleChoiceInteraction,
 } from './systemInteractionAdapter';
 
-// 从 modeTypes 重新导出类型（保持 StatusBanners 等消费方的导入路径兼容）
-export type {
-  EventTargetModeState, MindControlModeState, ChantEntanglementModeState,
-  WithdrawModeState, GlacialShiftModeState, SneakModeState,
-  StunModeState, HypnoticLureModeState,
-} from './modeTypes';
-
 // ============================================================================
 // 辅助函数
 // ============================================================================
@@ -1299,7 +1292,6 @@ export function useCellInteraction({
     handleCellClick, handleCardClick, handleCardSelect,
     handleConfirmDiscard, handlePlayEvent: eventCardModes.handlePlayEvent, handleEndPhase,
     handleConfirmMindControl: eventCardModes.handleConfirmMindControl,
-    handleConfirmStun: eventCardModes.handleConfirmStun,
     handleConfirmEntanglement: eventCardModes.handleConfirmEntanglement,
     handleConfirmSneak: eventCardModes.handleConfirmSneak,
     handleConfirmGlacialShift: eventCardModes.handleConfirmGlacialShift,
