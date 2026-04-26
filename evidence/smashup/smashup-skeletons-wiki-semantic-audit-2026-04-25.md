@@ -8,10 +8,11 @@
 - **本轮新确认并已修复**：
   1. `骸骨之王 / Lord of Bones`：卡图 `temp/skeletons-card-18.png` 写的是“**挖掘这里的一张牌**”，旧实现却只允许挖掘“你的埋葬牌”；现已改为可挖掘该基地任意埋葬牌，并补行为测试。
   2. `殉葬品 / Grave Goods`：卡图 `temp/skeletons-card-20.png` 写的是“**弃一张牌来额外埋葬另一张牌**”，旧实现却把“弃掉”和“额外埋葬”错误并到同一张牌；现已拆成“先选弃牌，再选另一张额外埋葬牌”，并收紧为**首埋后至少还要有两张手牌**才允许走额外埋葬分支。
-- **当前残余范围**：`复仇者 / Revenant` 仍不能写成已收口。它现在已不只是 `onTurnStart`，还挂了 `onActionPlayed / onMinionPlayed / onCardsDiscarded`，但这仍只是对“你的回合中”的近似实现，缺完整 during-turn 窗口建模与新的真实入口 L3 证据。
+- **当前残余范围**：`复仇者 / Revenant` 的核心实现口径已改为**弃牌堆中的主动特殊能力**：只有在你的出牌阶段、且本回合尚未使用过该能力时，弃牌堆里的 `复仇者` 才会在 UI 弃牌条中出现，点击基地后会直接把它埋葬到该基地，并通过 `DISCARD_ABILITY_USED` 事件记账“每回合一次”。旧的 `onTurnStart / onActionPlayed / onMinionPlayed / onCardsDiscarded` 近似触发入口已移除。当前剩余缺口主要是**还没有新的真实浏览器 L3 证据**，因此仍不写成整派系最终收口。
 - **本轮验证**：
-  - `npx vitest run src/games/smashup/__tests__/newFactionAbilities.test.ts --testNamePattern "skeletons_(lord_of_bones|grave_goods|revenant)"` → `8 passed`
+  - `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/newFactionAbilities.test.ts --testNamePattern "skeletons_revenant" --configLoader native --maxWorkers 1` → `1 passed`
   - `npx vitest run src/games/smashup/__tests__/newFactionAbilities.test.ts --testNamePattern "Skeletons abilities"` → `18 passed`
+  - `npm run typecheck` → 通过
   - `npx eslint src/games/smashup/abilities/skeletons.ts e2e/src/games/smashup/abilities/skeletons.ts src/games/smashup/__tests__/newFactionAbilities.test.ts e2e/src/games/smashup/__tests__/newFactionAbilities.test.ts` → `0 errors`（仅仓库既有 warnings）
 - **如何阅读本文旧内容**：下文 2026-04-25 的“12/12 错配”“整派系全错录”部分，现只保留为**当时的历史诊断记录**，不得再引用为当前骷髅派系的审计结论。
 
@@ -98,7 +99,7 @@
 | `temp/skeletons-card-19.png` | `诡异，可怕...`：从弃牌堆埋葬 1 张力量 3 或更少的仆从并抽 1 张牌 | 与当前实现不符 |
 | `temp/skeletons-card-20.png` | `殉葬品`：从手中埋葬 1 张牌并可弃 1 再埋 1；或挖掘 1 张埋葬牌，若是仆从则放 2 个 +1 | 与当前实现不符 |
 | `temp/skeletons-card-21.png` | `轮回者`：你可以将这个仆从埋葬到这里；挖掘后可再挖 1 张其他埋葬牌 | 与当前实现不符 |
-| `temp/skeletons-card-22.png` | `复仇者`：你的回合可从弃牌堆埋葬这张牌；每回合只能用一次 | 与当前实现不符 |
+| `temp/skeletons-card-22.png` | `复仇者`：你的回合可从弃牌堆埋葬这张牌；每回合只能用一次 | ✅ 已改为弃牌堆主动特殊能力，与你的回合窗口一致 |
 | `temp/skeletons-card-23.png` | `守墓人`：每回合一次，你的其他牌被埋葬或挖掘后抽 1 张牌 | 与当前实现不符 |
 
 说明：

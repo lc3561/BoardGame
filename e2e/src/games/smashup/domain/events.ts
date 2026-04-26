@@ -100,6 +100,7 @@ export const SU_EVENTS = defineEvents({
   
   'su:base_ability_used': { audio: 'immediate', sound: UPDATE_CHIME_KEY },
   'su:talent_used': { audio: 'immediate', sound: TALENT_KEY },
+  'su:discard_ability_used': { audio: 'immediate', sound: UPDATE_CHIME_KEY },
   'su:minion_play_effect_queued': 'silent',
   'su:minion_play_effect_consumed': 'silent',
   
@@ -189,6 +190,7 @@ export const SU_EVENT_TYPES = {
   ONGOING_CARD_COUNTER_CHANGED: SU_EVENTS['su:ongoing_card_counter_changed'].type,
   BASE_ABILITY_USED: SU_EVENTS['su:base_ability_used'].type,
   TALENT_USED: SU_EVENTS['su:talent_used'].type,
+  DISCARD_ABILITY_USED: SU_EVENTS['su:discard_ability_used'].type,
   CARD_TO_DECK_TOP: SU_EVENTS['su:card_to_deck_top'].type,
   CARD_TO_DECK_BOTTOM: SU_EVENTS['su:card_to_deck_bottom'].type,
   CARD_TRANSFERRED: SU_EVENTS['su:card_transferred'].type,

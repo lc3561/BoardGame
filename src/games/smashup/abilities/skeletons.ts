@@ -7,17 +7,17 @@ import { registerTrigger } from '../domain/ongoingEffects';
 import type { TriggerContext } from '../domain/ongoingEffects';
 import { buildBuryCardEvents, uncoverBuriedCard } from '../domain/bury';
 import { addPowerCounter, buildAbilityFeedback, buildBaseTargetOptions, buildStandardDrawEvents, createSkipOption } from '../domain/abilityHelpers';
+import { registerDiscardSpecialProvider } from '../domain/discardSpecialAbilities';
 import { getBaseDef, getCardDef } from '../data/cards';
 import { reduce } from '../domain/reduce';
 import { SU_EVENTS } from '../domain/types';
-import type { CardInstance, CardsDiscardedEvent, MinionCardDef, MinionMetadataUpdatedEvent, SmashUpCore, SmashUpEvent } from '../domain/types';
+import type { CardInstance, CardsDiscardedEvent, DiscardAbilityUsedEvent, MinionCardDef, MinionMetadataUpdatedEvent, SmashUpCore, SmashUpEvent } from '../domain/types';
 
 type CardChoice = { cardUid?: string; defId?: string; buriedFrom?: 'hand' | 'discard' | 'play'; skip?: boolean };
 type BaseChoice = { baseIndex?: number; skip?: boolean };
 type BuriedChoice = { cardUid?: string; defId?: string; baseIndex?: number; skip?: boolean };
 type ModeChoice = { mode?: 'bury' | 'uncover' | 'to_base' | 'from_base' | 'extra_bury'; skip?: boolean };
 type CounterChoice = { apply?: boolean; skip?: boolean };
-type RevenantCardChoice = { cardUid?: string; defId?: string; skip?: boolean };
 
 const SKELETONS_REVENANT_USAGE_SOURCE = 'skeletons_revenant';
 const SKELETONS_GRAVETENDER_TRIGGERED_TURN_META = 'skeletonsGravetenderTriggeredTurn';
@@ -168,25 +168,6 @@ function buildOptionalCounterPrompt(
     );
     (interaction.data as any).continuationContext = { targetMinionUid, targetBaseIndex };
     return queueInteraction(matchState, interaction);
-}
-
-function markDiscardAbilityUsed(state: any, playerId: PlayerId, sourceId: string) {
-    const player = state.core.players[playerId];
-    if (!player) return state;
-    if (player.usedDiscardPlayAbilities?.includes(sourceId)) return state;
-    return {
-        ...state,
-        core: {
-            ...state.core,
-            players: {
-                ...state.core.players,
-                [playerId]: {
-                    ...player,
-                    usedDiscardPlayAbilities: [...(player.usedDiscardPlayAbilities ?? []), sourceId],
-                },
-            },
-        },
-    };
 }
 
 function skeletonsReturnedOneOnPlay(ctx: AbilityContext): AbilityResult {
@@ -384,49 +365,26 @@ function skeletonsGravetenderTriggered(ctx: TriggerContext): AbilityResult {
     };
 }
 
-function skeletonsRevenantDuringTurn(ctx: TriggerContext): AbilityResult {
-    if (!ctx.matchState) return { events: [] };
-    const currentTurnPlayerId = ctx.state.turnOrder[ctx.state.currentPlayerIndex];
-    if (!currentTurnPlayerId || ctx.playerId !== currentTurnPlayerId) return { events: [] };
+function skeletonsRevenantSpecial(ctx: AbilityContext): AbilityResult {
     const player = ctx.state.players[ctx.playerId];
     if (!player) return { events: [] };
     if (player.usedDiscardPlayAbilities?.includes(SKELETONS_REVENANT_USAGE_SOURCE)) return { events: [] };
-
-    const revenants = player.discard.filter(card => card.defId === 'skeletons_revenant');
-    if (revenants.length === 0) return { events: [] };
-
-    const baseOptions = buildBaseTargetOptions(getBaseOptions(ctx.state), ctx.state);
-    if (baseOptions.length === 0) return { events: [] };
-
-    if (revenants.length === 1) {
-        const interaction = createSimpleChoice(
-            `skeletons_revenant_base_${ctx.now}`,
-            ctx.playerId,
-            '复仇者：选择埋葬到的基地',
-            [createSkipOption('跳过'), ...baseOptions] as any[],
-            { sourceId: 'skeletons_revenant_base', targetType: 'base' },
-        );
-        (interaction.data as any).continuationContext = { cardUid: revenants[0].uid, defId: revenants[0].defId };
-        return { events: [], matchState: queueInteraction(ctx.matchState, interaction) };
-    }
-
-    const interaction = createSimpleChoice(
-        `skeletons_revenant_card_${ctx.now}`,
-        ctx.playerId,
-        '复仇者：选择弃牌堆中的复仇者',
-        [
-            ...revenants.map((card, index) => ({
-                id: `discard-${index}`,
-                label: getCardDef(card.defId)?.name ?? card.defId,
-                value: { cardUid: card.uid, defId: card.defId },
-                _source: 'discard' as const,
-                displayMode: 'card' as const,
-            })),
-            createSkipOption('跳过'),
-        ] as any[],
-        { sourceId: 'skeletons_revenant_card', targetType: 'generic' },
-    );
-    return { events: [], matchState: queueInteraction(ctx.matchState, interaction) };
+    const discardCard = player.discard.find(card => card.uid === ctx.cardUid && card.defId === ctx.defId);
+    if (!discardCard) return { events: [] };
+    const markUsedEvent: DiscardAbilityUsedEvent = {
+        type: SU_EVENTS.DISCARD_ABILITY_USED,
+        payload: {
+            playerId: ctx.playerId,
+            sourceId: SKELETONS_REVENANT_USAGE_SOURCE,
+        },
+        timestamp: ctx.now,
+    };
+    return {
+        events: [
+            markUsedEvent,
+            ...buildDiscardBuryEvents(ctx.state, ctx.playerId, discardCard.uid, discardCard.defId, ctx.baseIndex, ctx.random, ctx.now),
+        ],
+    };
 }
 
 export function registerSkeletonAbilities(): void {
@@ -452,7 +410,26 @@ export function registerSkeletonAbilities(): void {
     registerAbility('skeletons_hearse_fleet', 'special', skeletonsHearseFleetSpecial);
     registerAbility('skeletons_gravestones', 'special', () => ({ events: [] }));
     registerAbility('skeletons_gravetender', 'ongoing', () => ({ events: [] }));
-    registerAbility('skeletons_revenant', 'special', () => ({ events: [] }));
+    registerAbility('skeletons_revenant', 'special', skeletonsRevenantSpecial);
+    registerDiscardSpecialProvider({
+        id: 'skeletons_revenant',
+        getActivatableCards(core, playerId) {
+            const currentTurnPlayerId = core.turnOrder[core.currentPlayerIndex];
+            if (!currentTurnPlayerId || currentTurnPlayerId !== playerId) return [];
+            const player = core.players[playerId];
+            if (!player) return [];
+            if (player.usedDiscardPlayAbilities?.includes(SKELETONS_REVENANT_USAGE_SOURCE)) return [];
+            return player.discard
+                .filter(card => card.defId === 'skeletons_revenant')
+                .map(card => ({
+                    card,
+                    allowedBaseIndices: 'all' as const,
+                    sourceId: SKELETONS_REVENANT_USAGE_SOURCE,
+                    defId: card.defId,
+                    name: getCardDef(card.defId)?.name ?? card.defId,
+                }));
+        },
+    });
 
     registerTrigger('skeletons_gravetender', 'onCardBuried', skeletonsGravetenderTriggered, { perInstance: true });
     registerTrigger('skeletons_gravetender', 'onBuriedCardUncovered', skeletonsGravetenderTriggered, { perInstance: true });
@@ -473,26 +450,6 @@ export function registerSkeletonAbilities(): void {
         optional: true,
         perInstance: true,
         sourceScope: 'triggerBase',
-    });
-    registerTrigger('skeletons_revenant', 'onTurnStart', skeletonsRevenantDuringTurn, {
-        optional: true,
-        global: true,
-        globalZones: ['discard'],
-    });
-    registerTrigger('skeletons_revenant', 'onActionPlayed', skeletonsRevenantDuringTurn, {
-        optional: true,
-        global: true,
-        globalZones: ['discard'],
-    });
-    registerTrigger('skeletons_revenant', 'onMinionPlayed', skeletonsRevenantDuringTurn, {
-        optional: true,
-        global: true,
-        globalZones: ['discard'],
-    });
-    registerTrigger('skeletons_revenant', 'onCardsDiscarded', skeletonsRevenantDuringTurn, {
-        optional: true,
-        global: true,
-        globalZones: ['discard'],
     });
 }
 
@@ -860,43 +817,6 @@ const handleSkeletonsGraveGoodsCounter: InteractionHandler = (state, _playerId, 
     };
 };
 
-const handleSkeletonsRevenantCard: InteractionHandler = (state, playerId, value, _data, _random, now) => {
-    const selected = value as RevenantCardChoice;
-    if (selected.skip || !selected.cardUid || !selected.defId) return { state, events: [] };
-    const interaction = createSimpleChoice(
-        `skeletons_revenant_base_${now}`,
-        playerId,
-        '复仇者：选择埋葬到的基地',
-        buildBaseTargetOptions(getBaseOptions(state.core), state.core),
-        { sourceId: 'skeletons_revenant_base', targetType: 'base' },
-    );
-    (interaction.data as any).continuationContext = { cardUid: selected.cardUid, defId: selected.defId };
-    return { state: queueInteraction(state, interaction), events: [] };
-};
-
-const handleSkeletonsRevenantBase: InteractionHandler = (state, playerId, value, data, random, now) => {
-    const selected = value as BaseChoice;
-    const continuation = data?.continuationContext as { cardUid?: string; defId?: string } | undefined;
-    if (selected.skip || selected.baseIndex === undefined || !continuation?.cardUid || !continuation.defId) return { state, events: [] };
-    const nextState = markDiscardAbilityUsed(state, playerId, SKELETONS_REVENANT_USAGE_SOURCE);
-    return {
-        state: nextState,
-        events: buildBuryCardEvents({
-            core: nextState.core,
-            matchState: nextState,
-            playerId,
-            cardUid: continuation.cardUid,
-            defId: continuation.defId,
-            baseIndex: selected.baseIndex,
-            trueOwnerId: playerId,
-            buriedFrom: 'discard',
-            reason: 'skeletons_revenant',
-            random,
-            now,
-        }),
-    };
-};
-
 export function registerSkeletonInteractionHandlers(): void {
     registerInteractionHandler('skeletons_returned_one', handleSkeletonsReturnedOne);
     registerInteractionHandler('skeletons_returned_one_uncover', handleSkeletonsReturnedOneUncover);
@@ -930,6 +850,4 @@ export function registerSkeletonInteractionHandlers(): void {
     registerInteractionHandler('skeletons_lord_of_bones_ongoing', handleSkeletonsLordOfBonesOngoing);
     registerInteractionHandler('skeletons_gravestones_counter', handleSkeletonsGravestonesCounter);
     registerInteractionHandler('skeletons_gravestones_after_scoring', handleSkeletonsGravestonesAfterScoring);
-    registerInteractionHandler('skeletons_revenant_card', handleSkeletonsRevenantCard);
-    registerInteractionHandler('skeletons_revenant_base', handleSkeletonsRevenantBase);
 }

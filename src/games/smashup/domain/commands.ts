@@ -12,6 +12,7 @@ import {
     getPlayerEffectivePowerOnBase,
 } from './ongoingModifiers';
 import { canPlayFromDiscard } from './discardPlayability';
+import { canActivateSpecialFromDiscard } from './discardSpecialAbilities';
 import { getTitanByUid, isSpecialLimitBlocked } from './abilityHelpers';
 import { canUseActiveBaseAbility, getActiveBaseAbilityOptions, hasActiveBaseAbility } from './baseAbilities';
 import { getActionPlayRestrictionError, getMinionPlayRestrictionError, validateActionPlaySemantics } from './playLegality';
@@ -786,14 +787,49 @@ export function validate(
             if (command.playerId !== currentResponderOrTurnPlayer) {
                 return { valid: false, error: 'player_mismatch' };
             }
-            const { minionUid: spMinionUid, titanUid: spTitanUid, baseIndex: spBaseIndex } = command.payload;
-            const targetCount = [spMinionUid, spTitanUid].filter(Boolean).length;
+            const {
+                minionUid: spMinionUid,
+                titanUid: spTitanUid,
+                discardCardUid: spDiscardCardUid,
+                baseIndex: spBaseIndex,
+            } = command.payload;
+            const targetCount = [spMinionUid, spTitanUid, spDiscardCardUid].filter(Boolean).length;
             if (targetCount !== 1) {
                 return { valid: false, error: '蹇呴』涓旀墜鑳藉彧鑳芥寚瀹氫竴涓壒娈婅兘鍔涚洰鏍?' };
             }
             const afterScoringSourceBaseIndex = getAfterScoringSourceBaseIndex(state);
             const spBase = core.bases[spBaseIndex];
             if (!spBase) return { valid: false, error: '无效的基地索引' };
+            if (spDiscardCardUid) {
+                if (phase !== 'playCards') {
+                    return { valid: false, error: '弃牌堆中的特殊能力只能在出牌阶段激活' };
+                }
+                const player = core.players[command.playerId];
+                if (!player) return { valid: false, error: '玩家不存在' };
+                const discardCard = player.discard.find(card => card.uid === spDiscardCardUid);
+                if (!discardCard) {
+                    return { valid: false, error: '弃牌堆中没有该随从' };
+                }
+                const spDef = getCardDef(discardCard.defId);
+                const hasSpecialTag = (() => {
+                    if (!spDef) return false;
+                    if (spDef.type === 'fusion') {
+                        return spDef.minionAbilityTags?.includes('special') ?? false;
+                    }
+                    if ('abilityTags' in spDef) {
+                        return spDef.abilityTags?.includes('special') ?? false;
+                    }
+                    return false;
+                })();
+                if (!hasSpecialTag) {
+                    return { valid: false, error: '该弃牌堆随从没有特殊能力' };
+                }
+                const discardSpecialCheck = canActivateSpecialFromDiscard(core, command.playerId, spDiscardCardUid, spBaseIndex);
+                if (!discardSpecialCheck) {
+                    return { valid: false, error: '该弃牌堆随从当前不能这样激活特殊能力' };
+                }
+                return { valid: true };
+            }
             if (spTitanUid) {
                 const titanValidation = validateTitanAbility(
                     state,

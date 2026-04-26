@@ -212,36 +212,6 @@ export function useEventCardModes({
     };
   }, [chantEntanglementOptions, selectedMultiTargetOptionIdSet, swInteraction]);
 
-  const setFuneralPyreMode = useCallback((mode: FuneralPyreModeState | null) => {
-    if (!mode) {
-      setSelectedHandCardId(null);
-    }
-  }, [setSelectedHandCardId]);
-
-  const setMindControlMode = useCallback((mode: MindControlModeState | null) => {
-    if (!mode) {
-      setSelectedMultiTargetOptionIds([]);
-    }
-  }, []);
-
-  const setHypnoticLureMode = useCallback((mode: HypnoticLureModeState | null) => {
-    if (!mode) {
-      setSelectedHandCardId(null);
-    }
-  }, [setSelectedHandCardId]);
-
-  const setChantEntanglementMode = useCallback((mode: ChantEntanglementModeState | null) => {
-    if (!mode) {
-      setSelectedMultiTargetOptionIds([]);
-    }
-  }, []);
-
-  const setBloodSummonMode = useCallback((mode: BloodSummonModeState | null) => {
-    if (!mode) {
-      setSelectedHandCardId(null);
-    }
-  }, [setSelectedHandCardId]);
-
   const bloodSummonMode = useMemo<BloodSummonModeState | null>(() => {
     if (!swInteraction) return null;
     const cardId = typeof swInteraction.meta?.cardId === 'string' ? swInteraction.meta.cardId : undefined;
@@ -308,13 +278,6 @@ export function useEventCardModes({
     return null;
   }, [annihilateOptions, selectedAnnihilateOptionIdSet, swInteraction]);
 
-  const setAnnihilateMode = useCallback((mode: AnnihilateModeState | null) => {
-    if (!mode) {
-      setSelectedAnnihilateOptionIds([]);
-      setSelectedHandCardId(null);
-    }
-  }, [setSelectedHandCardId]);
-
   const stunMode = useMemo<StunModeState | null>(() => {
     if (!swInteraction) return null;
     const cardId = typeof swInteraction.meta?.cardId === 'string' ? swInteraction.meta.cardId : '';
@@ -354,12 +317,6 @@ export function useEventCardModes({
     }
     return null;
   }, [swInteraction]);
-
-  const setStunMode = useCallback((mode: StunModeState | null) => {
-    if (!mode) {
-      setSelectedHandCardId(null);
-    }
-  }, [setSelectedHandCardId]);
 
   const systemWithdrawMode = useMemo<WithdrawModeState | null>(() => {
     if (!swInteraction) return null;
@@ -472,18 +429,6 @@ export function useEventCardModes({
     }
     return null;
   }, [swInteraction]);
-
-  const setSneakMode = useCallback((mode: SneakModeState | null) => {
-    if (!mode) {
-      setSelectedHandCardId(null);
-    }
-  }, [setSelectedHandCardId]);
-
-  const setGlacialShiftMode = useCallback((mode: GlacialShiftModeState | null) => {
-    if (!mode) {
-      setSelectedHandCardId(null);
-    }
-  }, [setSelectedHandCardId]);
 
   const hasActiveEventMode = !!(eventTargetMode || bloodSummonMode || annihilateMode
     || funeralPyreMode || mindControlMode || stunMode || hypnoticLureMode || chantEntanglementMode
@@ -1135,15 +1080,15 @@ export function useEventCardModes({
 
   return {
     // 模式状态
-    eventTargetMode, bloodSummonMode, setBloodSummonMode,
-    annihilateMode, setAnnihilateMode,
-    funeralPyreMode, setFuneralPyreMode,
-    mindControlMode, setMindControlMode,
-    stunMode, setStunMode,
-    hypnoticLureMode, setHypnoticLureMode,
-    chantEntanglementMode, setChantEntanglementMode,
-    sneakMode, setSneakMode,
-    glacialShiftMode, setGlacialShiftMode,
+    eventTargetMode, bloodSummonMode,
+    annihilateMode,
+    funeralPyreMode,
+    mindControlMode,
+    stunMode,
+    hypnoticLureMode,
+    chantEntanglementMode,
+    sneakMode,
+    glacialShiftMode,
     withdrawMode,
     telekinesisTargetMode,
     // 派生

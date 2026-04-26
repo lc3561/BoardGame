@@ -791,9 +791,6 @@ export const SummonerWarsBoard: React.FC<Props> = ({
       }
       return;
     }
-    interaction.setBloodSummonMode(null);
-    // 清除血契召唤期间选中的手牌高亮
-    interaction.handleCardSelect(null);
   }, [dispatch, findInteractionOptionId, interaction, respondInteractionOption, swInteraction]);
   const handleContinueBloodSummon = useCallback(() => {
     if (swInteraction?.type === 'blood_summon_confirm') {
@@ -809,8 +806,6 @@ export const SummonerWarsBoard: React.FC<Props> = ({
       dispatch(INTERACTION_COMMANDS.CANCEL, { interactionId: swInteraction.id });
       return;
     }
-    interaction.setAnnihilateMode(null);
-    interaction.handleCardSelect(null);
   }, [dispatch, interaction, swInteraction]);
   const handleConfirmAnnihilateTargets = useCallback(() => {
     if (!interaction.annihilateMode || interaction.annihilateMode.selectedTargets.length === 0) return;
@@ -862,12 +857,6 @@ export const SummonerWarsBoard: React.FC<Props> = ({
       respondInteractionOption(optionId);
       return;
     }
-    if (!interaction.funeralPyreMode) return;
-    dispatch(SW_COMMANDS.FUNERAL_PYRE_HEAL, {
-      cardId: interaction.funeralPyreMode.cardId,
-      skip: true,
-    });
-    interaction.setFuneralPyreMode(null);
   }, [dispatch, findInteractionOptionId, interaction, respondInteractionOption, swInteraction]);
 
   // 欺心巫族事件卡回调
@@ -877,8 +866,6 @@ export const SummonerWarsBoard: React.FC<Props> = ({
       dispatch(INTERACTION_COMMANDS.CANCEL, { interactionId: swInteraction.id });
       return;
     }
-    interaction.setMindControlMode(null);
-    interaction.handleCardSelect(null);
   }, [dispatch, interaction, swInteraction]);
   const handleConfirmEntanglement = useCallback(() => interaction.handleConfirmEntanglement(), [interaction]);
   const handleCancelEntanglement = useCallback(() => {
@@ -886,8 +873,6 @@ export const SummonerWarsBoard: React.FC<Props> = ({
       dispatch(INTERACTION_COMMANDS.CANCEL, { interactionId: swInteraction.id });
       return;
     }
-    interaction.setChantEntanglementMode(null);
-    interaction.handleCardSelect(null);
   }, [dispatch, interaction, swInteraction]);
   const handleConfirmSneak = useCallback(() => interaction.handleConfirmSneak(), [interaction]);
   const handleCancelSneak = useCallback(() => {
@@ -895,8 +880,6 @@ export const SummonerWarsBoard: React.FC<Props> = ({
       dispatch(INTERACTION_COMMANDS.CANCEL, { interactionId: swInteraction.id });
       return;
     }
-    interaction.setSneakMode(null);
-    interaction.handleCardSelect(null);
   }, [dispatch, interaction, swInteraction]);
   const handleConfirmGlacialShift = useCallback(() => interaction.handleConfirmGlacialShift(), [interaction]);
   const handleCancelGlacialShift = useCallback(() => {
@@ -904,8 +887,6 @@ export const SummonerWarsBoard: React.FC<Props> = ({
       dispatch(INTERACTION_COMMANDS.CANCEL, { interactionId: swInteraction.id });
       return;
     }
-    interaction.setGlacialShiftMode(null);
-    interaction.handleCardSelect(null);
   }, [dispatch, interaction, swInteraction]);
   const handleWithdrawCostSelect = useCallback((costType: 'charge' | 'magic') => {
     if (!interaction.withdrawMode) return;
@@ -931,16 +912,12 @@ export const SummonerWarsBoard: React.FC<Props> = ({
       dispatch(INTERACTION_COMMANDS.CANCEL, { interactionId: swInteraction.id });
       return;
     }
-    interaction.setStunMode(null);
-    interaction.handleCardSelect(null);
   }, [dispatch, interaction, swInteraction]);
   const handleCancelHypnoticLure = useCallback(() => {
     if (swInteraction?.type === 'hypnotic_lure_select_target') {
       dispatch(INTERACTION_COMMANDS.CANCEL, { interactionId: swInteraction.id });
       return;
     }
-    interaction.setHypnoticLureMode(null);
-    interaction.handleCardSelect(null);
   }, [dispatch, interaction, swInteraction]);
 
   // 心灵捕获 + 攻击后技能回调
@@ -974,7 +951,10 @@ export const SummonerWarsBoard: React.FC<Props> = ({
       return;
     }
     if (!effectiveRapidFireMode) return;
-    dispatch(SW_COMMANDS.ACTIVATE_ABILITY, { abilityId: 'rapid_fire', sourceUnitId: effectiveRapidFireMode.sourceUnitId, _noSnapshot: true });
+    console.warn('[SummonerWars] 未处理的连续射击系统确认分支', {
+      swInteractionType: swInteraction?.type ?? null,
+      sourceUnitId: effectiveRapidFireMode.sourceUnitId,
+    });
   }, [dispatch, effectiveRapidFireMode, findInteractionOptionId, respondInteractionOption, swInteraction]);
   const handleCancelRapidFire = useCallback(() => {
     if (swInteraction?.type === 'after_attack_rapid_fire') {

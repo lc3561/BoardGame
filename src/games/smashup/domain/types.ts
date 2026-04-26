@@ -925,6 +925,7 @@ export interface ActivateSpecialCommand extends Command<typeof SU_COMMANDS.ACTIV
     payload: {
         minionUid?: string;
         titanUid?: string;
+        discardCardUid?: string;
         baseIndex: number;
     };
 }
@@ -1335,6 +1336,7 @@ export type SmashUpEvent =
     | OngoingAttachedEvent
     | OngoingDetachedEvent
     | TalentUsedEvent
+    | DiscardAbilityUsedEvent
     | TitanMetadataUpdatedEvent
     | CardRemovedFromDeckEvent
     | CardRemovedFromGameEvent
@@ -1834,6 +1836,13 @@ export interface SpecialLimitUsedEvent extends GameEvent<typeof SU_EVENTS.SPECIA
         limitGroup: string;
         /** 触发的能力 defId */
         abilityDefId: string;
+    };
+}
+
+export interface DiscardAbilityUsedEvent extends GameEvent<typeof SU_EVENTS.DISCARD_ABILITY_USED> {
+    payload: {
+        playerId: PlayerId;
+        sourceId: string;
     };
 }
 

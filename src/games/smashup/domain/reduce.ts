@@ -15,6 +15,7 @@ import type {
     OngoingDetachedEvent,
     OngoingCardCounterChangedEvent,
     TalentUsedEvent,
+    DiscardAbilityUsedEvent,
     CardToDeckTopEvent,
     CardToDeckBottomEvent,
     CardBoxedEvent,
@@ -2291,6 +2292,23 @@ export function reduce(state: SmashUpCore, event: SmashUpEvent): SmashUpCore {
                 players: nextPlayer
                     ? { ...state.players, [playerId]: nextPlayer }
                     : state.players,
+            };
+        }
+
+        case SU_EVENTS.DISCARD_ABILITY_USED: {
+            const { playerId, sourceId } = (event as DiscardAbilityUsedEvent).payload;
+            const player = state.players[playerId];
+            if (!player) return state;
+            if (player.usedDiscardPlayAbilities?.includes(sourceId)) return state;
+            return {
+                ...state,
+                players: {
+                    ...state.players,
+                    [playerId]: {
+                        ...player,
+                        usedDiscardPlayAbilities: [...(player.usedDiscardPlayAbilities ?? []), sourceId],
+                    },
+                },
             };
         }
 

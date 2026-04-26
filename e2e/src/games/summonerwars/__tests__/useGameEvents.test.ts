@@ -219,6 +219,79 @@ describe('systemInteractionAdapter', () => {
     });
   });
 
+  it('为 before_attack_holy_arrow 交互派生系统选牌 abilityMode', () => {
+    const swInteraction: SwSimpleChoiceInteraction = {
+      id: 'sw-holy-arrow-1',
+      type: 'before_attack_holy_arrow',
+      meta: {
+        type: 'before_attack_holy_arrow',
+        sourceUnitId: 'archer-1',
+        targetPosition: { row: 4, col: 3 },
+      },
+      options: [
+        {
+          id: 'card-unit-a',
+          label: 'Discard Unit A',
+          value: { action: 'before_attack_holy_arrow', cardId: 'card-unit-a' },
+        },
+        {
+          id: 'card-unit-b',
+          label: 'Discard Unit B',
+          value: { action: 'before_attack_holy_arrow', cardId: 'card-unit-b' },
+        },
+      ],
+    };
+
+    expect(
+      deriveSystemAbilityMode(swInteraction, {
+        interactionId: 'sw-holy-arrow-1',
+        selectedCardIds: ['card-unit-a', 'other-card'],
+      }),
+    ).toEqual({
+      abilityId: 'holy_arrow',
+      step: 'selectCards',
+      sourceUnitId: 'archer-1',
+      context: 'beforeAttack',
+      selectedCardIds: ['card-unit-a'],
+      selectableCardIds: ['card-unit-a', 'card-unit-b'],
+      pendingAttackTarget: { row: 4, col: 3 },
+    });
+  });
+
+  it('为 before_attack_healing 交互派生系统选牌 abilityMode', () => {
+    const swInteraction: SwSimpleChoiceInteraction = {
+      id: 'sw-healing-1',
+      type: 'before_attack_healing',
+      meta: {
+        type: 'before_attack_healing',
+        sourceUnitId: 'priest-1',
+        targetPosition: { row: 2, col: 1 },
+      },
+      options: [
+        {
+          id: 'card-heal-a',
+          label: 'Heal A',
+          value: { action: 'before_attack_healing', cardId: 'card-heal-a' },
+        },
+      ],
+    };
+
+    expect(
+      deriveSystemAbilityMode(swInteraction, {
+        interactionId: 'sw-healing-1',
+        selectedCardIds: ['card-heal-a'],
+      }),
+    ).toEqual({
+      abilityId: 'healing',
+      step: 'selectCards',
+      sourceUnitId: 'priest-1',
+      context: 'beforeAttack',
+      selectedCardIds: ['card-heal-a'],
+      selectableCardIds: ['card-heal-a'],
+      pendingAttackTarget: { row: 2, col: 1 },
+    });
+  });
+
   it('能按卡牌和位置匹配 activated_ability_target 选项', () => {
     const swInteraction: SwSimpleChoiceInteraction = {
       id: 'sw-activated-1',

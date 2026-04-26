@@ -61,6 +61,7 @@ import { registerAllOngoingModifiers } from './ongoing_modifiers';
 import { clearPowerModifierRegistry, registerPodPowerModifierAliases } from '../domain/ongoingModifiers';
 import { clearOngoingEffectRegistry, registerPodOngoingAliases } from '../domain/ongoingEffects';
 import { clearDiscardPlayProviders } from '../domain/discardPlayability';
+import { clearDiscardSpecialProviders } from '../domain/discardSpecialAbilities';
 import { clearRegistry, registerPodAbilityAliases } from '../domain/abilityRegistry';
 import { clearInteractionHandlers, registerPodInteractionAliases } from '../domain/abilityInteractionHandlers';
 import { clearTitanAbilityValidators } from '../domain/titanAbilityValidators';
@@ -79,6 +80,7 @@ export function initAllAbilities(): void {
     clearPowerModifierRegistry();
     clearOngoingEffectRegistry();
     clearDiscardPlayProviders();
+    clearDiscardSpecialProviders();
     clearTitanAbilityValidators();
 
     // 基础?8 派系

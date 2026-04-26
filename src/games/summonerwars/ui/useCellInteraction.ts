@@ -596,16 +596,11 @@ export function useCellInteraction({
               setAbilityMode(null);
               return;
             }
-            if (!abilityMode.pendingAttackTarget || !core.selectedUnit) return;
-            dispatch(SW_COMMANDS.DECLARE_ATTACK, {
-              attacker: core.selectedUnit,
-              target: abilityMode.pendingAttackTarget,
-              beforeAttack: {
-                abilityId: abilityMode.abilityId,
-                targetUnitId: targetUnit.instanceId,
-              },
+            console.warn('[SummonerWars] 未处理的系统攻击前选目标分支', {
+              abilityId: abilityMode.abilityId,
+              swInteractionType: swInteraction?.type ?? null,
+              targetUnitId: targetUnit.instanceId,
             });
-            setAbilityMode(null);
           } else if (abilityMode.abilityId === 'illusion') {
             if (swInteraction?.type !== 'on_phase_start_illusion') return;
             const option = swInteraction.options.find((opt) => {
@@ -1155,33 +1150,12 @@ export function useCellInteraction({
       return;
     }
     
-    if (abilityMode.abilityId === 'holy_arrow') {
-      // "任意数量"包括 0，允许不选择任何卡直接确认
-      if (!abilityMode.pendingAttackTarget || !core.selectedUnit) return;
-      dispatch(SW_COMMANDS.DECLARE_ATTACK, {
-        attacker: core.selectedUnit,
-        target: abilityMode.pendingAttackTarget,
-        beforeAttack: selected.length > 0 ? {
-          abilityId: 'holy_arrow',
-          discardCardIds: selected,
-        } : undefined,
+    if (abilityMode.abilityId === 'holy_arrow' || abilityMode.abilityId === 'healing') {
+      console.warn('[SummonerWars] 未处理的系统攻击前选牌确认分支', {
+        abilityId: abilityMode.abilityId,
+        swInteractionType: swInteraction?.type ?? null,
+        selectedCardIds: selected,
       });
-      setAbilityMode(null);
-      return;
-    }
-    
-    if (abilityMode.abilityId === 'healing') {
-      // "你可以"弃牌，允许不选择任何卡直接确认
-      if (!abilityMode.pendingAttackTarget || !core.selectedUnit) return;
-      dispatch(SW_COMMANDS.DECLARE_ATTACK, {
-        attacker: core.selectedUnit,
-        target: abilityMode.pendingAttackTarget,
-        beforeAttack: selected.length > 0 ? {
-          abilityId: 'healing',
-          targetCardId: selected[0],
-        } : undefined,
-      });
-      setAbilityMode(null);
       return;
     }
     
@@ -1209,10 +1183,10 @@ export function useCellInteraction({
       setAbilityMode(null);
       return;
     }
-    if (abilityMode && abilityMode.pendingAttackTarget && core.selectedUnit) {
-      dispatch(SW_COMMANDS.DECLARE_ATTACK, {
-        attacker: core.selectedUnit,
-        target: abilityMode.pendingAttackTarget,
+    if (abilityMode) {
+      console.warn('[SummonerWars] 未处理的系统攻击前取消分支', {
+        abilityId: abilityMode.abilityId,
+        swInteractionType: swInteraction?.type ?? null,
       });
       setAbilityMode(null);
       return;
@@ -1295,23 +1269,14 @@ export function useCellInteraction({
     // 事件卡模式（透传）
     eventTargetMode: eventCardModes.eventTargetMode,
     bloodSummonMode: eventCardModes.bloodSummonMode,
-    setBloodSummonMode: eventCardModes.setBloodSummonMode,
     annihilateMode: eventCardModes.annihilateMode,
-    setAnnihilateMode: eventCardModes.setAnnihilateMode,
     funeralPyreMode: eventCardModes.funeralPyreMode,
-    setFuneralPyreMode: eventCardModes.setFuneralPyreMode,
     mindControlMode: eventCardModes.mindControlMode,
-    setMindControlMode: eventCardModes.setMindControlMode,
     stunMode: eventCardModes.stunMode,
-    setStunMode: eventCardModes.setStunMode,
     hypnoticLureMode: eventCardModes.hypnoticLureMode,
-    setHypnoticLureMode: eventCardModes.setHypnoticLureMode,
     chantEntanglementMode: eventCardModes.chantEntanglementMode,
-    setChantEntanglementMode: eventCardModes.setChantEntanglementMode,
     sneakMode: eventCardModes.sneakMode,
-    setSneakMode: eventCardModes.setSneakMode,
     glacialShiftMode: eventCardModes.glacialShiftMode,
-    setGlacialShiftMode: eventCardModes.setGlacialShiftMode,
     withdrawMode: eventCardModes.withdrawMode,
     telekinesisTargetMode: eventCardModes.telekinesisTargetMode,
     // 计算值

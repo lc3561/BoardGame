@@ -50,6 +50,7 @@ import { CardMagnifyOverlay, type CardMagnifyTarget } from './ui/CardMagnifyOver
 import { GameButton as SmashUpGameButton } from './ui/GameButton';
 import { DeckDiscardZone } from './ui/DeckDiscardZone';
 import { getDiscardPlayOptions } from './domain/discardPlayability';
+import { getDiscardSpecialOptions } from './domain/discardSpecialAbilities';
 import {
     actionLikeNeedsPlayBase,
     actionLikeNeedsPlayMinion,
@@ -481,6 +482,10 @@ const SmashUpBoard: FC<Props> = ({ G, dispatch, playerID: rawPlayerID, reset, ma
             });
         });
     }, [core, isMyTurn, phase, playerID, myPlayer]);
+    const discardSpecialOptions = useMemo(() => {
+        if (!isMyTurn || phase !== 'playCards' || !playerID) return [];
+        return getDiscardSpecialOptions(core, playerID);
+    }, [core, isMyTurn, phase, playerID]);
 
     // 手牌交互语义分流：
     // - direct: 单选 hand prompt，由手牌区直接承接点击
@@ -845,24 +850,36 @@ const SmashUpBoard: FC<Props> = ({ G, dispatch, playerID: rawPlayerID, reset, ma
     }, [currentPrompt]);
 
     // 统一弃牌堆出牌：合并正常弃牌堆出牌 + interaction 驱动的弃牌堆随从选择
-    const discardStripCards = useMemo<{ uid: string; defId: string; label: string; optionId?: string; optionValue?: unknown }[]>(() => {
+    const discardStripCards = useMemo<Array<{
+        uid: string;
+        defId: string;
+        label: string;
+        optionId?: string;
+        optionValue?: unknown;
+        mode: 'interaction' | 'play_minion' | 'activate_special';
+    }>>(() => {
         // interaction 驱动模式优先（僵尸领主等）
         if (isDiscardMinionPrompt && currentPrompt) {
             return currentPrompt.options
                 .filter(opt => !(opt.value as Record<string, unknown>)?.done)
                 .map(opt => {
                     const val = opt.value as { cardUid: string; defId: string };
-                    return { uid: val.cardUid, defId: val.defId, label: opt.label, optionId: opt.id, optionValue: opt.value };
+                    return { uid: val.cardUid, defId: val.defId, label: opt.label, optionId: opt.id, optionValue: opt.value, mode: 'interaction' as const };
                 });
         }
         // 正常弃牌堆出牌模式
-        if (discardPlayOptions.length > 0) {
-            return discardPlayOptions.map(opt => ({
-                uid: opt.card.uid, defId: opt.defId, label: opt.name,
-            }));
+        if (discardPlayOptions.length > 0 || discardSpecialOptions.length > 0) {
+            return [
+                ...discardPlayOptions.map(opt => ({
+                    uid: opt.card.uid, defId: opt.defId, label: opt.name, mode: 'play_minion' as const,
+                })),
+                ...discardSpecialOptions.map(opt => ({
+                    uid: opt.card.uid, defId: opt.defId, label: opt.name, mode: 'activate_special' as const,
+                })),
+            ];
         }
         return [];
-    }, [isDiscardMinionPrompt, currentPrompt, discardPlayOptions]);
+    }, [isDiscardMinionPrompt, currentPrompt, discardPlayOptions, discardSpecialOptions]);
 
     // 弃牌堆出牌横排的"完成"选项（interaction 模式下的 done 选项）
     const discardStripDoneOption = useMemo(() => {
@@ -889,13 +906,17 @@ const SmashUpBoard: FC<Props> = ({ G, dispatch, playerID: rawPlayerID, reset, ma
         // interaction 模式：从 interaction data 读取
         if (isDiscardMinionPrompt) return discardMinionAllowedBases;
         // 正常弃牌堆出牌：从 discardPlayOptions 读取
-        const opt = discardPlayOptions.find(o => o.card.uid === discardStripSelectedUid);
-        if (!opt) return new Set();
-        if (opt.allowedBaseIndices === 'all') {
+        const discardCard = discardStripCards.find(card => card.uid === discardStripSelectedUid);
+        if (!discardCard) return new Set();
+        const allowedBaseIndices = discardCard.mode === 'activate_special'
+            ? discardSpecialOptions.find(option => option.card.uid === discardStripSelectedUid)?.allowedBaseIndices
+            : discardPlayOptions.find(option => option.card.uid === discardStripSelectedUid)?.allowedBaseIndices;
+        if (!allowedBaseIndices) return new Set();
+        if (allowedBaseIndices === 'all') {
             return new Set(coreBases.map((_, i) => i));
         }
-        return new Set(opt.allowedBaseIndices);
-    }, [discardStripSelectedUid, isDiscardMinionPrompt, discardMinionAllowedBases, discardPlayOptions, coreBases]);
+        return new Set(allowedBaseIndices);
+    }, [discardStripSelectedUid, isDiscardMinionPrompt, discardMinionAllowedBases, discardPlayOptions, discardSpecialOptions, discardStripCards, coreBases]);
 
 
     // 响应窗口状态判断（meFirst 或 afterScoring）
@@ -1727,12 +1748,21 @@ const SmashUpBoard: FC<Props> = ({ G, dispatch, playerID: rawPlayerID, reset, ma
                 toast(t('ui.invalid_base_target', { defaultValue: '该基地不可选择' }));
                 return;
             }
+            const discardCard = discardStripCards.find(card => card.uid === discardStripSelectedUid);
+            if (!discardCard) {
+                setDiscardStripSelectedUid(null);
+                return;
+            }
             // interaction 驱动模式（僵尸领主等）：合并 cardUid + baseIndex 响应
             if (isDiscardMinionPrompt && currentPrompt) {
-                const card = discardStripCards.find(c => c.uid === discardStripSelectedUid);
-                if (card?.optionId) {
-                    dispatch(INTERACTION_COMMANDS.RESPOND, { optionId: card.optionId, mergedValue: { ...card.optionValue as Record<string, unknown>, baseIndex: index } });
+                if (discardCard.optionId) {
+                    dispatch(INTERACTION_COMMANDS.RESPOND, { optionId: discardCard.optionId, mergedValue: { ...discardCard.optionValue as Record<string, unknown>, baseIndex: index } });
                 }
+                setDiscardStripSelectedUid(null);
+                return;
+            }
+            if (discardCard.mode === 'activate_special') {
+                dispatch(SU_COMMANDS.ACTIVATE_SPECIAL, { discardCardUid: discardStripSelectedUid, baseIndex: index });
                 setDiscardStripSelectedUid(null);
                 return;
             }
@@ -3269,12 +3299,20 @@ const SmashUpBoard: FC<Props> = ({ G, dispatch, playerID: rawPlayerID, reset, ma
                                 discard={viewMode === 'opponent' ? opponentPlayer.discard : myPlayer.discard}
                                 compactLayout={isMobileViewport}
                                 isMyTurn={isMyTurn}
-                                hasPlayableFromDiscard={discardPlayOptions.length > 0 || isDiscardMinionPrompt}
+                                hasPlayableFromDiscard={discardPlayOptions.length > 0 || discardSpecialOptions.length > 0 || isDiscardMinionPrompt}
                                 autoOpenPanel={isDiscardMinionPrompt}
                                 playableCards={discardStripCards.map(c => ({ uid: c.uid, defId: c.defId, label: c.label }))}
                                 selectedUid={discardStripSelectedUid}
                                 onSelectCard={setDiscardStripSelectedUid}
-                                selectHint={discardStripSelectedUid ? t('ui.click_base_to_deploy', { defaultValue: '点击基地放置随从' }) : undefined}
+                                selectHint={discardStripSelectedUid
+                                    ? (() => {
+                                        const selected = discardStripCards.find(card => card.uid === discardStripSelectedUid);
+                                        if (selected?.mode === 'activate_special') {
+                                            return t('ui.click_base_to_bury', { defaultValue: '点击基地埋葬这张牌' });
+                                        }
+                                        return t('ui.click_base_to_deploy', { defaultValue: '点击基地放置随从' });
+                                    })()
+                                    : undefined}
                                 onClosePanel={isDiscardMinionPrompt
                                     ? (discardStripDoneOption
                                         ? () => dispatch(INTERACTION_COMMANDS.RESPOND, { optionId: discardStripDoneOption!.id })

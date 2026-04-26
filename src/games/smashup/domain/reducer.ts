@@ -732,7 +732,7 @@ function executeCommand(
         }
 
         case SU_COMMANDS.ACTIVATE_SPECIAL: {
-            const { minionUid: spUid, titanUid: spTitanUid, baseIndex: spIdx } = command.payload;
+            const { minionUid: spUid, titanUid: spTitanUid, discardCardUid: spDiscardUid, baseIndex: spIdx } = command.payload;
             const spBase = core.bases[spIdx];
             if (spTitanUid) {
                 const titan = findTitanByUid(core, spTitanUid);
@@ -747,6 +747,30 @@ function executeCommand(
                     playerId: command.playerId,
                     cardUid: spTitanUid,
                     defId: titan.defId,
+                    baseIndex: spIdx,
+                    random,
+                    now,
+                };
+                const result = executor(ctx);
+                if (result.matchState) {
+                    return { events: result.events, updatedState: result.matchState };
+                }
+                return { events: result.events };
+            }
+            if (spDiscardUid) {
+                const player = core.players[command.playerId];
+                const discardCard = player?.discard.find(card => card.uid === spDiscardUid);
+                if (!discardCard) return { events: [] };
+
+                const executor = resolveSpecial(discardCard.defId);
+                if (!executor) return { events: [] };
+
+                const ctx: AbilityContext = {
+                    state: core,
+                    matchState: state,
+                    playerId: command.playerId,
+                    cardUid: spDiscardUid,
+                    defId: discardCard.defId,
                     baseIndex: spIdx,
                     random,
                     now,

@@ -23,6 +23,7 @@ import { initAllAbilities, resetAbilityInit } from '../abilities';
 import { clearRegistry, resolveSpecial } from '../domain/abilityRegistry';
 import { clearBaseAbilityRegistry } from '../domain/baseAbilities';
 import { clearInteractionHandlers, getInteractionHandler } from '../domain/abilityInteractionHandlers';
+import { getDiscardSpecialOptions } from '../domain/discardSpecialAbilities';
 import { startDuel } from '../domain/duel';
 import { clearOngoingEffectRegistry, collectTriggers, fireTriggers, interceptEvent, isMinionProtected } from '../domain/ongoingEffects';
 import { getEffectivePower, getPlayerEffectivePowerOnBase, getTotalEffectivePowerOnBase } from '../domain/ongoingModifiers';
@@ -7876,72 +7877,32 @@ describe('Skeletons abilities', () => {
             ],
         });
 
-        const triggered = fireTriggers(core, 'onTurnStart', {
-            state: core,
-            matchState: makeMatchState(core),
-            playerId: '0',
-            random: defaultTestRandom,
-            now: 4100,
-        });
-
-        const prompt = getInteractionsFromMS(triggered.matchState ?? makeMatchState(core))[0] as any;
-        expect(prompt?.data?.sourceId).toBe('skeletons_revenant_base');
-        const skipOption = prompt.data.options.find((entry: any) => entry.value?.skip === true);
-        const baseOption = prompt.data.options.find((entry: any) => entry.value?.baseIndex === 1);
-        expect(skipOption).toBeDefined();
-        expect(baseOption).toBeDefined();
-
-        const skipped = runCommand(
-            triggered.matchState ?? makeMatchState(core),
-            { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: skipOption.id } } as any,
-            defaultTestRandom,
-        );
-        expect(skipped.finalState.core.players['0'].usedDiscardPlayAbilities ?? []).not.toContain('skeletons_revenant');
-
-        const midTurnTriggered = fireTriggers(skipped.finalState.core, 'onActionPlayed', {
-            state: skipped.finalState.core,
-            matchState: skipped.finalState,
-            playerId: '0',
-            baseIndex: 0,
-            actionCardDefId: 'wizard_summon',
-            random: defaultTestRandom,
-            now: 4101,
-        });
-
-        const midTurnPrompt = getInteractionsFromMS(midTurnTriggered.matchState ?? skipped.finalState)[0] as any;
-        expect(midTurnPrompt?.data?.sourceId).toBe('skeletons_revenant_base');
-        const midTurnBaseOption = midTurnPrompt.data.options.find((entry: any) => entry.value?.baseIndex === 1);
-        expect(midTurnBaseOption).toBeDefined();
+        const options = getDiscardSpecialOptions(core, '0');
+        expect(options).toHaveLength(1);
+        expect(options[0]?.card.uid).toBe('revenant-1');
+        expect(options[0]?.sourceId).toBe('skeletons_revenant');
 
         const resolved = runCommand(
-            midTurnTriggered.matchState ?? skipped.finalState,
-            { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: midTurnBaseOption.id } } as any,
+            makeMatchState(core),
+            { type: SU_COMMANDS.ACTIVATE_SPECIAL, playerId: '0', payload: { discardCardUid: 'revenant-1', baseIndex: 1 } } as any,
             defaultTestRandom,
         );
         expect((resolved.finalState.core.bases[1].buriedCards ?? []).some(card => card.uid === 'revenant-1')).toBe(true);
         expect(resolved.finalState.core.players['0'].usedDiscardPlayAbilities).toContain('skeletons_revenant');
+        expect(getDiscardSpecialOptions(resolved.finalState.core, '0')).toHaveLength(0);
 
-        const secondTry = fireTriggers(resolved.finalState.core, 'onActionPlayed', {
-            state: resolved.finalState.core,
-            matchState: resolved.finalState,
+        const secondTryValidation = validate(resolved.finalState, {
+            type: SU_COMMANDS.ACTIVATE_SPECIAL,
             playerId: '0',
-            baseIndex: 0,
-            actionCardDefId: 'wizard_summon',
-            random: defaultTestRandom,
-            now: 4102,
-        });
-        expect(getInteractionsFromMS(secondTry.matchState ?? resolved.finalState)).toHaveLength(0);
+            payload: { discardCardUid: 'revenant-1', baseIndex: 0 },
+        } as any);
+        expect(secondTryValidation.valid).toBe(false);
 
-        const opponentTurnTry = fireTriggers(resolved.finalState.core, 'onActionPlayed', {
-            state: resolved.finalState.core,
-            matchState: resolved.finalState,
-            playerId: '1',
-            baseIndex: 0,
-            actionCardDefId: 'wizard_summon',
-            random: defaultTestRandom,
-            now: 4103,
-        });
-        expect(getInteractionsFromMS(opponentTurnTry.matchState ?? resolved.finalState)).toHaveLength(0);
+        const opponentTurnCore = {
+            ...core,
+            currentPlayerIndex: 1,
+        };
+        expect(getDiscardSpecialOptions(opponentTurnCore, '0')).toHaveLength(0);
     });
 
     it('skeletons_gravestones 计分后可把自己埋葬到另一个基地', () => {
