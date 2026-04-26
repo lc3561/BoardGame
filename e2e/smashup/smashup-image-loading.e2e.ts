@@ -1,7 +1,8 @@
 import { test, expect } from '../framework';
 import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { dismissViteOverlay, initContext } from '../helpers/common';
+import { getEvidenceScreenshotPath } from '../framework/evidenceScreenshots';
 import {
     setupTwoPlayerMatch,
     completeFactionSelection,
@@ -9,7 +10,7 @@ import {
     cleanupTwoPlayerMatch,
 } from './smashup-helpers';
 import { readCoreState, applyCoreState } from '../helpers/smashup';
-import type { Page } from '@playwright/test';
+import type { Page, TestInfo } from '@playwright/test';
 
 
 type __ThreeAxeGameMarker = {
@@ -22,6 +23,17 @@ const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
   await game.setupScene({ gameId: 'smashup' });
 };
 void __ensureThreeAxesMarker;
+
+const saveEvidenceScreenshot = async (
+    page: Page,
+    testInfo: TestInfo,
+    name: string,
+): Promise<string> => {
+    const path = getEvidenceScreenshotPath(testInfo, name);
+    mkdirSync(dirname(path), { recursive: true });
+    await page.screenshot({ path, fullPage: true });
+    return path;
+};
 
 /**
  * SmashUp 图片加载测试
@@ -81,6 +93,18 @@ test.describe('SmashUp Image Loading', () => {
         }
     };
 
+    test('首页应正常显示大杀四方入口图', async ({ page }, testInfo) => {
+        await page.goto('/');
+        const smashupEntry = page.locator('[data-game-id="smashup"]').first();
+        await expect(smashupEntry).toBeVisible({ timeout: 20000 });
+
+        const homePreviews = await collectPreviewStats(page, '[data-game-id="smashup"]');
+        expect(homePreviews.visible).toBeGreaterThan(0);
+        expect(homePreviews.rendered).toBeGreaterThan(0);
+
+        await saveEvidenceScreenshot(page, testInfo, 'home-smashup-entry');
+    });
+
     test('应该加载带 i18n/zh-CN/ 前缀的卡牌图片', async ({ page }) => {
         const imageRequests: string[] = [];
         const wrongPaths: string[] = [];
@@ -106,7 +130,7 @@ test.describe('SmashUp Image Loading', () => {
         expect(wrongPaths).toHaveLength(0);
     });
 
-    test('应该成功加载派系选择界面的卡牌图片', async ({ page }) => {
+    test('应该成功加载派系选择界面的卡牌图片', async ({ page }, testInfo) => {
         await page.goto('/play/smashup');
         await expect(page.locator('h1').filter({ hasText: /Draft Your Factions|选择你的派系/i }))
             .toBeVisible({ timeout: 20000 });
@@ -115,6 +139,77 @@ test.describe('SmashUp Image Loading', () => {
         const draftPreviews = await collectPreviewStats(page, '[data-testid^="faction-option-"]');
         expect(draftPreviews.visible).toBeGreaterThan(0);
         expect(draftPreviews.rendered).toBeGreaterThan(0);
+
+        await saveEvidenceScreenshot(page, testInfo, 'draft-faction-previews');
+    });
+
+    test('巨蚁加海盗本地对局应正常显示关键卡图', async ({ page, game }, testInfo) => {
+        test.setTimeout(90000);
+
+        await game.openTestGame('smashup', {
+            p0: 'giant_ants,pirates',
+            p1: 'robots,ninjas',
+            skipFactionSelect: true,
+            skipInitialization: false,
+            seed: 24680,
+        }, 45000);
+
+        await game.setupScene({
+            gameId: 'smashup',
+            player0: {
+                hand: [
+                    { uid: 'hand-ant-worker', defId: 'giant_ant_worker', type: 'minion', owner: '0' },
+                    { uid: 'hand-first-mate', defId: 'pirate_first_mate', type: 'minion', owner: '0' },
+                ],
+                deck: [],
+                discard: [],
+                factions: ['giant_ants', 'pirates'],
+                minionsPlayed: 0,
+                minionLimit: 1,
+                actionsPlayed: 0,
+                actionLimit: 1,
+            },
+            player1: {
+                hand: [],
+                deck: [],
+                discard: [],
+                factions: ['robots', 'ninjas'],
+                minionsPlayed: 0,
+                minionLimit: 1,
+                actionsPlayed: 0,
+                actionLimit: 1,
+            },
+            bases: [
+                {
+                    defId: 'base_the_homeworld',
+                    minions: [
+                        { uid: 'board-ant-soldier', defId: 'giant_ant_soldier', baseIndex: 0, owner: '0', controller: '0', basePower: 3, powerCounters: 1 },
+                        { uid: 'board-pirate-mate', defId: 'pirate_first_mate', baseIndex: 0, owner: '0', controller: '0', basePower: 2 },
+                    ],
+                },
+                { defId: 'base_tortuga' },
+            ],
+            currentPlayer: '0',
+            phase: 'playCards',
+        });
+
+        await game.waitForPhase('playCards');
+        await game.waitForCurrentPlayer('0');
+        await expect(page.getByTestId('su-hand-area')).toBeVisible({ timeout: 10000 });
+        await expect(page.locator('[data-card-uid="hand-ant-worker"]')).toBeVisible({ timeout: 5000 });
+        await expect(page.locator('[data-card-uid="hand-first-mate"]')).toBeVisible({ timeout: 5000 });
+
+        const handPreviews = await collectPreviewStats(
+            page,
+            '[data-card-uid="hand-ant-worker"], [data-card-uid="hand-first-mate"]',
+        );
+        expect(handPreviews.visible).toBe(2);
+        expect(handPreviews.rendered).toBe(handPreviews.visible);
+
+        const player0 = await game.getPlayerState('0');
+        expect(player0?.factions).toEqual(['giant_ants', 'pirates']);
+
+        await saveEvidenceScreenshot(page, testInfo, 'giant-ants-pirates-local-board');
     });
 
     test('应该成功加载手牌区域的卡牌图片', async ({ browser }, testInfo) => {

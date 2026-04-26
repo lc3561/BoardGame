@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
     clearGameAssetBaseOverrides,
+    getLocalizedImageCandidateUrls,
     getLocalizedImageUrls,
     getPreloadedImageElement,
     isImagePreloaded,
@@ -9,6 +10,7 @@ import {
     setAssetHashesForTesting,
     setAssetsBaseUrl,
     setGameAssetBaseOverride,
+    setLocalizedImageIndexForTesting,
 } from '../AssetLoader';
 import { registerCriticalImageResolver } from '../CriticalImageResolverRegistry';
 
@@ -30,6 +32,7 @@ class MockImage {
 beforeEach(() => {
     setAssetsBaseUrl('/assets');
     setAssetHashesForTesting({});
+    setLocalizedImageIndexForTesting({});
     clearGameAssetBaseOverrides();
     vi.stubGlobal('Image', MockImage);
 });
@@ -159,5 +162,19 @@ describe('preloadCriticalImages', () => {
         expect(isImagePreloaded(hashedUrl)).toBe(true);
         expect(getPreloadedImageElement(hashedUrl)).not.toBeNull();
         expect(getPreloadedImageElement('smashup/cards/cards1', 'en')).not.toBeNull();
+    });
+
+    it('游戏包本地候选命中 _capacitor_file_ 时，应在带版本参数 URL 后补无 query 回退', () => {
+        setAssetsBaseUrl('https://assets.easyboardgame.top/official');
+        setGameAssetBaseOverride('smashup', 'http://localhost/_capacitor_file_/data/user/0/top.easyboardgame.app/files/game-packages/smashup/current/assets');
+        setAssetHashesForTesting({
+            'i18n/en/smashup/cards/compressed/cards1.webp': 'hash1234',
+        });
+
+        const candidates = getLocalizedImageCandidateUrls('smashup/cards/cards1', 'en');
+
+        expect(candidates[0]).toBe('http://localhost/_capacitor_file_/data/user/0/top.easyboardgame.app/files/game-packages/smashup/current/assets/i18n/en/smashup/cards/compressed/cards1.webp?v=hash1234');
+        expect(candidates[1]).toBe('http://localhost/_capacitor_file_/data/user/0/top.easyboardgame.app/files/game-packages/smashup/current/assets/i18n/en/smashup/cards/compressed/cards1.webp');
+        expect(candidates).toContain('https://assets.easyboardgame.top/official/i18n/en/smashup/cards/compressed/cards1.webp');
     });
 });

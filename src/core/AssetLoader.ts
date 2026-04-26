@@ -71,6 +71,7 @@ export function resolveAssetsBaseUrlFromEnv(env?: AssetEnvLike): string {
  */
 let assetsBaseUrl = resolveAssetsBaseUrlFromEnv(import.meta.env);
 let assetHashes: Record<string, string> = typeof __ASSET_HASHES__ !== 'undefined' ? __ASSET_HASHES__ : {};
+let localizedImageIndex: Record<string, 1> = typeof __LOCALIZED_IMAGE_INDEX__ !== 'undefined' ? __LOCALIZED_IMAGE_INDEX__ : {};
 const gameAssetBaseOverrides = new Map<string, string>();
 let commonAudioAssetBaseOverride: string | undefined;
 
@@ -111,6 +112,14 @@ export function clearGameAssetBaseOverrides(): void {
  */
 export function setAssetHashesForTesting(value?: Record<string, string>): void {
     assetHashes = value ?? {};
+}
+
+/**
+ * 允许测试环境覆盖构建期注入的语言化图片存在索引。
+ * 生产运行时不需要调用。
+ */
+export function setLocalizedImageIndexForTesting(value?: Record<string, 1>): void {
+    localizedImageIndex = value ?? {};
 }
 
 // ============================================================================
@@ -991,12 +1000,17 @@ const isPassthroughSource = (src: unknown) => {
     return false;
 };
 const isSvgSource = (src: string) => /\.svg(\?|#|$)/i.test(src);
+const isCapacitorFileAssetUrl = (src: string) => {
+    const { path } = splitUrlParts(src);
+    return /^https?:\/\/[^/]+\/_capacitor_file_\//i.test(path)
+        || path.startsWith('/_capacitor_file_/');
+};
 
 /** 移除扩展名 */
 const stripExtension = (src: string) => {
     if (isPassthroughSource(src)) return src;
     const { path } = splitUrlParts(src);
-    return path.replace(/\.(webp|png|jpe?g)$/i, '');
+    return path.replace(/\.(avif|webp|png|jpe?g|gif|svg)$/i, '');
 };
 
 const stripAssetsBasePrefix = (normalized: string) => {
@@ -1165,6 +1179,51 @@ export function getLocalizedImageUrls(src: string, locale?: string): LocalizedIm
     return { primary, fallback };
 }
 
+const toLocalizedImageIndexKeyFromUrl = (value: string) => {
+    if (!isString(value) || !value) {
+        return undefined;
+    }
+
+    const relative = stripKnownAssetPrefixes(splitUrlParts(value).path);
+    if (!relative.startsWith(`${LOCALIZED_ASSETS_SUBDIR}/`)) {
+        return undefined;
+    }
+
+    return relative.replace(/\.(avif|webp|png|jpe?g|gif|svg)$/i, '');
+};
+
+const getLocalizedImageIndexKey = (src: string, locale: string) => {
+    if (!isString(src) || !src || !locale || isPassthroughSource(src)) {
+        return undefined;
+    }
+
+    const localizedPath = getLocalizedAssetPath(src, locale);
+    const localizedUrl = getOptimizedImageUrls(localizedPath).webp;
+    return toLocalizedImageIndexKeyFromUrl(localizedUrl);
+};
+
+const hasLocalizedImageAsset = (src: string, locale: string) => {
+    const key = getLocalizedImageIndexKey(src, locale);
+    return key ? localizedImageIndex[key] === 1 : false;
+};
+
+const resolveLocalizedImageLocales = (src: string, locale: string): string[] => {
+    const effectiveLocale = locale || 'zh-CN';
+    const fallbackLocale = getImageFallbackLocale(effectiveLocale);
+
+    if (hasLocalizedImageAsset(src, effectiveLocale)) {
+        return [effectiveLocale];
+    }
+
+    if (fallbackLocale !== effectiveLocale && hasLocalizedImageAsset(src, fallbackLocale)) {
+        return [fallbackLocale];
+    }
+
+    return fallbackLocale === effectiveLocale
+        ? [effectiveLocale]
+        : [effectiveLocale, fallbackLocale];
+};
+
 const toLocalizedCompressedRelativePath = (src: string, locale: string): string => {
     const relative = stripKnownAssetPrefixes(splitUrlParts(src).path);
     if (!relative) {
@@ -1197,28 +1256,37 @@ export function getLocalizedImageCandidateUrls(src: string, locale: string): str
     }
 
     const effectiveLocale = locale || 'zh-CN';
-    const fallbackLocale = getImageFallbackLocale(effectiveLocale);
-    const localizedUrls = getLocalizedImageUrls(src, effectiveLocale);
     const remoteBaseUrl = getAssetsBaseUrl();
-    const remotePrimaryRelative = toLocalizedCompressedRelativePath(src, effectiveLocale);
-    const remoteFallbackRelative = toLocalizedCompressedRelativePath(src, fallbackLocale);
-    const remotePrimary = /^https?:\/\//i.test(remoteBaseUrl)
-        ? `${remoteBaseUrl}/${remotePrimaryRelative}`
-        : '';
-    const remoteFallback = /^https?:\/\//i.test(remoteBaseUrl)
-        ? `${remoteBaseUrl}/${remoteFallbackRelative}`
-        : '';
-    const publicPrimary = resolveVersionedAssetUrl(`/assets/${remotePrimaryRelative}`);
-    const publicFallback = resolveVersionedAssetUrl(`/assets/${remoteFallbackRelative}`);
+    const candidateLocales = resolveLocalizedImageLocales(src, effectiveLocale);
+    const candidates: string[] = [];
+    const pushCandidate = (url: string) => {
+        if (!url) return;
+        candidates.push(url);
+        if (!isCapacitorFileAssetUrl(url)) {
+            return;
+        }
 
-    return [
-        localizedUrls.primary.webp,
-        localizedUrls.fallback.webp,
-        remotePrimary,
-        remoteFallback,
-        publicPrimary,
-        publicFallback,
-    ].filter((url, index, list): url is string => Boolean(url) && list.indexOf(url) === index);
+        const unversionedUrl = stripVersionParam(url);
+        if (unversionedUrl && unversionedUrl !== url) {
+            candidates.push(unversionedUrl);
+        }
+    };
+
+    candidateLocales.forEach((candidateLocale) => {
+        const localizedPath = getLocalizedAssetPath(src, candidateLocale);
+        const localizedUrl = getOptimizedImageUrls(localizedPath).webp;
+        const remoteRelative = toLocalizedCompressedRelativePath(src, candidateLocale);
+        const remoteUrl = /^https?:\/\//i.test(remoteBaseUrl)
+            ? `${remoteBaseUrl}/${remoteRelative}`
+            : '';
+        const publicUrl = resolveVersionedAssetUrl(`/assets/${remoteRelative}`);
+
+        pushCandidate(localizedUrl);
+        pushCandidate(remoteUrl);
+        pushCandidate(publicUrl);
+    });
+
+    return candidates.filter((url, index, list): url is string => Boolean(url) && list.indexOf(url) === index);
 }
 
 /**

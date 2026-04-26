@@ -2,16 +2,20 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { setPublicFileHashesForTesting, versionedPublicFileUrl } from '../../lib/publicFileUrl';
 import {
     getLocalAssetPath,
+    getLocalizedImageCandidateUrls,
     getLocalizedImageUrls,
     getOptimizedImageUrls,
     setAssetHashesForTesting,
     setAssetsBaseUrl,
+    setGameAssetBaseOverride,
+    setLocalizedImageIndexForTesting,
 } from '../AssetLoader';
 
 describe('AssetLoader.getOptimizedImageUrls', () => {
     beforeEach(() => {
         setAssetsBaseUrl('/assets');
         setAssetHashesForTesting({});
+        setLocalizedImageIndexForTesting({});
         setPublicFileHashesForTesting({});
     });
 
@@ -82,5 +86,55 @@ describe('AssetLoader.getOptimizedImageUrls', () => {
         });
         expect(versionedPublicFileUrl('/game-data/summonerwars.layout.json'))
             .toBe('/game-data/summonerwars.layout.json');
+    });
+
+    it('当前语言素材存在时，不生成语言 fallback 候选', () => {
+        setLocalizedImageIndexForTesting({
+            'i18n/zh-CN/splendor/compressed/picture': 1,
+            'i18n/en/splendor/compressed/picture': 1,
+        });
+
+        const candidates = getLocalizedImageCandidateUrls('splendor/picture', 'zh-CN');
+
+        expect(candidates).toEqual(['/assets/i18n/zh-CN/splendor/compressed/picture.webp']);
+    });
+
+    it('当前语言缺图但 fallback 语言存在时，应直接使用 fallback 语言', () => {
+        setLocalizedImageIndexForTesting({
+            'i18n/en/splendor/compressed/picture': 1,
+        });
+
+        const candidates = getLocalizedImageCandidateUrls('splendor/picture', 'zh-CN');
+
+        expect(candidates).toEqual(['/assets/i18n/en/splendor/compressed/picture.webp']);
+    });
+
+    it('索引缺失时保留旧行为，同时包含当前语言与 fallback 语言候选', () => {
+        const candidates = getLocalizedImageCandidateUrls('splendor/picture', 'zh-CN');
+
+        expect(candidates).toEqual([
+            '/assets/i18n/zh-CN/splendor/compressed/picture.webp',
+            '/assets/i18n/en/splendor/compressed/picture.webp',
+        ]);
+    });
+
+    it('移动端游戏包候选仍优先同语言，并为 _capacitor_file_ 追加无 query 回退', () => {
+        setAssetsBaseUrl('https://assets.easyboardgame.top/official');
+        setGameAssetBaseOverride('smashup', 'http://localhost/_capacitor_file_/data/user/0/top.easyboardgame.app/files/game-packages/smashup/current/assets');
+        setAssetHashesForTesting({
+            'i18n/en/smashup/cards/compressed/cards1.webp': 'hash1234',
+        });
+        setLocalizedImageIndexForTesting({
+            'i18n/en/smashup/cards/compressed/cards1': 1,
+        });
+
+        const candidates = getLocalizedImageCandidateUrls('smashup/cards/cards1', 'en');
+
+        expect(candidates).toEqual([
+            'http://localhost/_capacitor_file_/data/user/0/top.easyboardgame.app/files/game-packages/smashup/current/assets/i18n/en/smashup/cards/compressed/cards1.webp?v=hash1234',
+            'http://localhost/_capacitor_file_/data/user/0/top.easyboardgame.app/files/game-packages/smashup/current/assets/i18n/en/smashup/cards/compressed/cards1.webp',
+            'https://assets.easyboardgame.top/official/i18n/en/smashup/cards/compressed/cards1.webp',
+            '/assets/i18n/en/smashup/cards/compressed/cards1.webp?v=hash1234',
+        ]);
     });
 });
