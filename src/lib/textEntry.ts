@@ -121,13 +121,20 @@ export const isTextEntryElement = (candidate: Element | null): candidate is HTML
     return !blockedTypes.has(input.type.toLowerCase());
 };
 
-const isWithinTextEntryProxyScope = (candidate: HTMLElement) => {
-    const modalRoot = document.getElementById('modal-root');
-    if (modalRoot?.contains(candidate)) {
-        return true;
+export const isMobileTextEntryRuntime = () => {
+    if (typeof window === 'undefined' || typeof document === 'undefined') {
+        return false;
     }
 
-    return candidate.closest('.modal-base-container') !== null;
+    try {
+        if (window.matchMedia?.('(pointer: coarse)')?.matches) {
+            return true;
+        }
+    } catch {
+        // ignore matchMedia failures and fall back to runtime keyboard signal
+    }
+
+    return readKeyboardInsetHeight() >= 72;
 };
 
 export const isTextEntryProxyEligible = (candidate: Element | null): candidate is HTMLElement => {
@@ -138,21 +145,7 @@ export const isTextEntryProxyEligible = (candidate: Element | null): candidate i
         return false;
     }
 
-    if (!isWithinTextEntryProxyScope(candidate)) {
-        return false;
-    }
-
-    const keyboardInsetHeight = readKeyboardInsetHeight();
-
-    try {
-        if (window.matchMedia?.('(pointer: coarse)')?.matches) {
-            return true;
-        }
-    } catch {
-        // ignore matchMedia failures and fall back to runtime keyboard signal
-    }
-
-    return keyboardInsetHeight >= 72;
+    return isMobileTextEntryRuntime();
 };
 
 export const readTextEntryValue = (candidate: Element | null): string => {

@@ -457,7 +457,7 @@ describe('Runtime viewport helpers', () => {
         expect(button.scrollIntoView).not.toHaveBeenCalled();
     });
 
-    it('仅在 modal 作用域 + coarse pointer 或键盘 inset 下启用输入代理', () => {
+    it('仅在移动端运行时（coarse pointer 或键盘 inset）启用输入代理', () => {
         const matchMediaMock = vi.fn().mockReturnValue({ matches: true });
         Object.defineProperty(window, 'matchMedia', {
             value: matchMediaMock,
@@ -484,16 +484,17 @@ describe('Runtime viewport helpers', () => {
 
         expect(isTextEntryProxyEligible(modalInput)).toBe(true);
         expect(isTextEntryProxyEligible(nestedModalInput)).toBe(true);
-        expect(isTextEntryProxyEligible(outsideInput)).toBe(false);
+        expect(isTextEntryProxyEligible(outsideInput)).toBe(true);
 
         matchMediaMock.mockReturnValue({ matches: false });
         expect(isTextEntryProxyEligible(modalInput)).toBe(false);
         expect(isTextEntryProxyEligible(nestedModalInput)).toBe(false);
+        expect(isTextEntryProxyEligible(outsideInput)).toBe(false);
 
         document.documentElement.style.setProperty('--keyboard-inset-height', '280px');
         expect(isTextEntryProxyEligible(modalInput)).toBe(true);
         expect(isTextEntryProxyEligible(nestedModalInput)).toBe(true);
-        expect(isTextEntryProxyEligible(outsideInput)).toBe(false);
+        expect(isTextEntryProxyEligible(outsideInput)).toBe(true);
     });
 
     it('代理输入会把值同步回原始输入目标', () => {
