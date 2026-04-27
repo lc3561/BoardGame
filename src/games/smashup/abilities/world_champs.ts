@@ -524,10 +524,6 @@ function worldChampsEhSpecial(ctx: AbilityContext): AbilityResult {
     return { events: [], matchState: queueInteraction(ctx.matchState, interaction) };
 }
 
-function worldChampsNoopSpecial(): AbilityResult {
-    return { events: [] };
-}
-
 function worldChampsAramisOnMinionAffected(ctx: TriggerContext): SmashUpEvent[] {
     if (!ctx.sourceCardUid || ctx.sourceBaseIndex === undefined || ctx.sourceControllerId === undefined) return [];
     if (ctx.triggerMinionUid !== ctx.sourceCardUid) return [];
@@ -883,7 +879,6 @@ function worldChampsSharkTattooTurnStart(ctx: TriggerContext): SmashUpEvent[] {
 }
 
 export function registerWorldChampsAbilities(): void {
-    registerAbility('world_champs_sheriff', 'special', worldChampsNoopSpecial);
     registerAbility('world_champs_bewitched', 'onPlay', worldChampsBewitchedOnPlay);
     registerAbility('world_champs_stoneford', 'onPlay', worldChampsStonefordOnPlay);
     registerAbility('world_champs_akye_the_turtle', 'onPlay', worldChampsAkyeTheTurtleOnPlay);

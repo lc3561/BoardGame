@@ -9,7 +9,8 @@ export const WORLD_CHAMPS_MINIONS: MinionCardDef[] = [
         nameEn: 'Sheriff',
         faction: SMASHUP_FACTION_IDS.WORLD_CHAMPS,
         power: 5,
-        abilityTags: ['special'],
+        // 注意：警长是 beforeScoring 触发器，不是点击场上随从手动激活的普通 special。
+        // 保留卡面“特殊”语义给触发器链路处理，避免在 reaction choose 中错误暴露空 special 入口。
         count: 1,
         previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.CARDS7, index: 33 },
     },

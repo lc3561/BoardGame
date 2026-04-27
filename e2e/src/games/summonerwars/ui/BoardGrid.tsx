@@ -660,7 +660,7 @@ const UnitCell: React.FC<{
               const abilityNameKey = abilityRegistry.get(abilityId)?.name;
               if (!abilityNameKey) return abilityId;
               return i18n.exists(abilityNameKey, { ns: 'game-summonerwars' })
-                ? t(abilityNameKey, { defaultValue: abilityId })
+                ? t(abilityNameKey)
                 : abilityId;
             }}
             core={core}

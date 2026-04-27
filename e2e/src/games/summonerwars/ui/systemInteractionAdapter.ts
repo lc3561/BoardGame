@@ -14,6 +14,18 @@ export interface InteractionAbilityDraft {
   selectedCardIds: string[];
 }
 
+export type InteractionDispatchPlan =
+  | { command: 'respond'; optionId: string }
+  | { command: 'respondMany'; optionIds: string[] }
+  | { command: 'cancel' };
+
+export type SystemAbilityUiRoute =
+  | 'status-banner-choice'
+  | 'board-cell-unit'
+  | 'board-cell-position'
+  | 'hand-card-select'
+  | 'card-selector';
+
 export const ACTIVATED_ABILITY_IDS = [
   'revive_undead',
   'fortress_power',
@@ -113,6 +125,64 @@ export function listActivatedAbilityTargetCardIds(
     .filter((targetCardId): targetCardId is string => !!targetCardId);
 }
 
+export function resolveBeforeAttackCardConfirmation(
+  swInteraction: SwSimpleChoiceInteraction | null | undefined,
+  abilityMode: AbilityModeState | null | undefined,
+  selectedCardIds: string[],
+): InteractionDispatchPlan | null {
+  if (!swInteraction || !abilityMode || abilityMode.context !== 'beforeAttack' || abilityMode.step !== 'selectCards') {
+    return null;
+  }
+
+  if (abilityMode.abilityId === 'holy_arrow' && swInteraction.type === 'before_attack_holy_arrow') {
+    const optionIds = selectedCardIds
+      .map((cardId) => swInteraction.options.find((opt) => {
+        const value = opt.value as { action?: string; cardId?: string } | undefined;
+        return value?.action === 'before_attack_holy_arrow' && value.cardId === cardId;
+      })?.id ?? null)
+      .filter((id): id is string => !!id);
+    return { command: 'respondMany', optionIds };
+  }
+
+  if (abilityMode.abilityId === 'healing' && swInteraction.type === 'before_attack_healing') {
+    const pickedCardId = selectedCardIds[0];
+    if (!pickedCardId) {
+      const skipOption = swInteraction.options.find((opt) => {
+        const value = opt.value as { skip?: boolean } | undefined;
+        return opt.id === 'skip' || value?.skip === true;
+      });
+      return skipOption ? { command: 'respond', optionId: skipOption.id } : null;
+    }
+    const option = swInteraction.options.find((opt) => {
+      const value = opt.value as { action?: string; cardId?: string } | undefined;
+      return value?.action === 'before_attack_healing' && value.cardId === pickedCardId;
+    });
+    return option ? { command: 'respond', optionId: option.id } : null;
+  }
+
+  return null;
+}
+
+export function resolveBeforeAttackCancellation(
+  swInteraction: SwSimpleChoiceInteraction | null | undefined,
+): InteractionDispatchPlan | null {
+  if (
+    swInteraction?.type !== 'before_attack_life_drain'
+    && swInteraction?.type !== 'before_attack_holy_arrow'
+    && swInteraction?.type !== 'before_attack_healing'
+  ) {
+    return null;
+  }
+
+  const skipOption = swInteraction.options.find((opt) => {
+    const value = opt.value as { skip?: boolean } | undefined;
+    return opt.id === 'skip' || value?.skip === true;
+  });
+  return skipOption
+    ? { command: 'respond', optionId: skipOption.id }
+    : { command: 'cancel' };
+}
+
 export function findActivatedAbilityDirectionOptionByPosition(
   swInteraction: SwSimpleChoiceInteraction | null | undefined,
   abilityId: Extract<ActivatedAbilityId, 'telekinesis_instead' | 'high_telekinesis_instead'>,
@@ -129,6 +199,180 @@ export function findActivatedAbilityDirectionOptionByPosition(
       && Number(match[1]) === position.row
       && Number(match[2]) === position.col;
   }) ?? null;
+}
+
+export function findSystemAbilityUnitOptionByPosition(
+  swInteraction: SwSimpleChoiceInteraction | null | undefined,
+  abilityMode: AbilityModeState | null | undefined,
+  position: CellCoord,
+  targetUnitId?: string,
+): PromptOption | null {
+  if (!swInteraction || !abilityMode || abilityMode.step !== 'selectUnit') return null;
+
+  if (abilityMode.abilityId === 'ice_ram' && swInteraction.type === 'ice_ram_target') {
+    return swInteraction.options.find((option) => {
+      const value = option.value as { action?: string; targetPosition?: CellCoord } | undefined;
+      return value?.action === 'ice_ram_target'
+        && value.targetPosition?.row === position.row
+        && value.targetPosition?.col === position.col;
+    }) ?? null;
+  }
+
+  if (abilityMode.abilityId === 'structure_shift' && swInteraction.type === 'after_move_structure_shift_target') {
+    return swInteraction.options.find((option) => {
+      const value = option.value as { action?: string; targetPosition?: CellCoord } | undefined;
+      return value?.action === 'after_move_structure_shift_target'
+        && value.targetPosition?.row === position.row
+        && value.targetPosition?.col === position.col;
+    }) ?? null;
+  }
+
+  if (abilityMode.context === 'beforeAttack' && swInteraction.type === 'before_attack_life_drain') {
+    return swInteraction.options.find((option) => {
+      const value = option.value as {
+        action?: string;
+        targetUnitId?: string;
+        targetPosition?: CellCoord;
+      } | undefined;
+      return value?.action === 'before_attack_life_drain'
+        && (
+          (typeof targetUnitId === 'string' && value.targetUnitId === targetUnitId)
+          || (value.targetPosition?.row === position.row && value.targetPosition?.col === position.col)
+        );
+    }) ?? null;
+  }
+
+  if (abilityMode.abilityId === 'illusion' && swInteraction.type === 'on_phase_start_illusion') {
+    return swInteraction.options.find((option) => {
+      const value = option.value as { action?: string; targetPosition?: CellCoord } | undefined;
+      return value?.action === 'on_phase_start_illusion'
+        && value.targetPosition?.row === position.row
+        && value.targetPosition?.col === position.col;
+    }) ?? null;
+  }
+
+  if (abilityMode.abilityId === 'ancestral_bond' && swInteraction.type === 'after_move_ancestral_bond') {
+    return swInteraction.options.find((option) => {
+      const value = option.value as { action?: string; targetPosition?: CellCoord } | undefined;
+      return value?.action === 'after_move_ancestral_bond'
+        && value.targetPosition?.row === position.row
+        && value.targetPosition?.col === position.col;
+    }) ?? null;
+  }
+
+  if (abilityMode.abilityId === 'spirit_bond' && swInteraction.type === 'after_move_spirit_bond') {
+    return swInteraction.options.find((option) => {
+      const value = option.value as {
+        action?: string;
+        choice?: string;
+        targetPosition?: CellCoord;
+      } | undefined;
+      return value?.action === 'after_move_spirit_bond'
+        && value.choice === 'transfer'
+        && value.targetPosition?.row === position.row
+        && value.targetPosition?.col === position.col;
+    }) ?? null;
+  }
+
+  if (abilityMode.abilityId === 'frost_axe' && swInteraction.type === 'after_move_frost_axe') {
+    return swInteraction.options.find((option) => {
+      const value = option.value as {
+        action?: string;
+        choice?: string;
+        targetPosition?: CellCoord;
+      } | undefined;
+      return value?.action === 'after_move_frost_axe'
+        && value.choice === 'attach'
+        && value.targetPosition?.row === position.row
+        && value.targetPosition?.col === position.col;
+    }) ?? null;
+  }
+
+  if (abilityMode.abilityId === 'vanish') {
+    return findActivatedAbilityTargetOptionByPosition(
+      swInteraction,
+      'vanish',
+      position,
+      'selectUnit',
+    );
+  }
+
+  if (abilityMode.abilityId === 'high_telekinesis_instead') {
+    return findActivatedAbilityTargetOptionByPosition(
+      swInteraction,
+      'high_telekinesis_instead',
+      position,
+      'selectUnit',
+    );
+  }
+
+  if (abilityMode.abilityId === 'telekinesis_instead') {
+    return findActivatedAbilityTargetOptionByPosition(
+      swInteraction,
+      'telekinesis_instead',
+      position,
+      'selectUnit',
+    );
+  }
+
+  return null;
+}
+
+export function getSystemAbilityUiRoute(
+  abilityMode: AbilityModeState | null | undefined,
+): SystemAbilityUiRoute | null {
+  if (!abilityMode) return null;
+
+  if (abilityMode.context === 'beforeAttack') {
+    if (abilityMode.abilityId === 'life_drain' && abilityMode.step === 'selectUnit') {
+      return 'board-cell-unit';
+    }
+    if (
+      (abilityMode.abilityId === 'holy_arrow' || abilityMode.abilityId === 'healing')
+      && abilityMode.step === 'selectCards'
+    ) {
+      return 'hand-card-select';
+    }
+    return null;
+  }
+
+  if (abilityMode.step === 'selectCard') {
+    if (abilityMode.abilityId === 'revive_undead' || abilityMode.abilityId === 'fortress_power') {
+      return 'card-selector';
+    }
+    return null;
+  }
+
+  if (
+    (abilityMode.abilityId === 'structure_shift' && abilityMode.step === 'selectUnit')
+    || (abilityMode.abilityId === 'structure_shift' && abilityMode.step === 'selectNewPosition')
+    || (abilityMode.abilityId === 'revive_undead' && abilityMode.step === 'selectPosition')
+    || (abilityMode.abilityId === 'ice_ram' && abilityMode.step === 'selectUnit')
+    || (abilityMode.abilityId === 'ice_ram' && abilityMode.step === 'selectPushDirection')
+  ) {
+    return 'board-cell-position';
+  }
+
+  if (
+    abilityMode.step === 'selectUnit'
+    && (
+      abilityMode.abilityId === 'illusion'
+      || abilityMode.abilityId === 'spirit_bond'
+      || abilityMode.abilityId === 'ancestral_bond'
+      || abilityMode.abilityId === 'frost_axe'
+      || abilityMode.abilityId === 'vanish'
+      || abilityMode.abilityId === 'telekinesis_instead'
+      || abilityMode.abilityId === 'high_telekinesis_instead'
+    )
+  ) {
+    return 'board-cell-unit';
+  }
+
+  if (abilityMode.abilityId === 'blood_rune' && abilityMode.step === 'selectUnit') {
+    return 'status-banner-choice';
+  }
+
+  return null;
 }
 
 export function deriveSystemAbilityMode(

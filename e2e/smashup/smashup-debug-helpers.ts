@@ -442,17 +442,8 @@ const completeFactionSelectionOnline = async (
         { page: hostPage, factionId: factionIds[3] },
     ];
 
-    // 派系 ID → FACTION_METADATA 索引映射（与 FactionSelection 渲染顺序一致）
-    const factionIndexMap: Record<string, number> = {
-        pirates: 0, ninjas: 1, dinosaurs: 2, aliens: 3, robots: 4, zombies: 5,
-        wizards: 6, tricksters: 7, steampunks: 8, ghosts: 9, killer_plants: 10,
-        bear_cavalry: 11, minions_of_cthulhu: 12, elder_things: 13, innsmouth: 14,
-        miskatonic_university: 15,
-    };
-
     for (let i = 0; i < picks.length; i++) {
         const { page, factionId } = picks[i];
-        const idx = factionIndexMap[factionId] ?? 0;
 
         // 如果不是第一轮，等待上一轮的玩家确认完成
         if (i > 0) {
@@ -490,9 +481,9 @@ const completeFactionSelectionOnline = async (
         }
 
         // 点击派系卡片打开详情弹窗
-        const factionCards = page.locator('[data-tutorial-id="su-faction-select"] .grid > div');
-        await expect(factionCards.nth(idx)).toBeVisible({ timeout: 10000 });
-        await factionCards.nth(idx).click();
+        const factionCard = page.getByTestId(`faction-option-${factionId}`);
+        await expect(factionCard).toBeVisible({ timeout: 10000 });
+        await factionCard.click({ force: true });
         await page.waitForTimeout(500);
 
         // 等待确认按钮出现并点击

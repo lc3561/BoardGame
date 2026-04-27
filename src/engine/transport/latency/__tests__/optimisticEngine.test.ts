@@ -508,6 +508,29 @@ describe('OptimisticEngine 单元测试', () => {
         expect(result.didRollback).toBe(false);
     });
 
+    it('服务端一次确认多条本地 pending 时，应直接收敛到最终权威状态而不是重复重放', () => {
+        const engine = createTestEngine();
+
+        engine.reconcile(createTestState(0), { stateID: 0, lastCommandPlayerId: null, randomCursor: 0 });
+
+        const first = engine.processCommand('INCREMENT', {}, '0');
+        const second = engine.processCommand('INCREMENT', {}, '0');
+
+        expect((first.stateToRender!.core as CounterCore).value).toBe(1);
+        expect((second.stateToRender!.core as CounterCore).value).toBe(2);
+        expect(engine.hasPendingCommands()).toBe(true);
+
+        const result = engine.reconcile(createTestState(2), {
+            stateID: 2,
+            lastCommandPlayerId: '0',
+            randomCursor: 0,
+        });
+
+        expect(result.didRollback).toBe(false);
+        expect((result.stateToRender.core as CounterCore).value).toBe(2);
+        expect(engine.hasPendingCommands()).toBe(false);
+    });
+
     it('连续多次 reconcile', () => {
         const engine = createTestEngine();
 

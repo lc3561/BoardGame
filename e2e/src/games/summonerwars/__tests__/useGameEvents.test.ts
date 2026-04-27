@@ -2,18 +2,24 @@
  * 召唤师战争 - useGameEvents 辅助函数测试
  */
 
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import type { EventStreamEntry, GameEvent } from '../../../engine/types';
-import { computeEventStreamDelta } from '../ui/useGameEvents';
+import { computeEventStreamDelta, type AbilityModeState } from '../ui/useGameEvents';
 import {
   ACTIVATED_ABILITY_IDS,
   deriveSystemAbilityMode,
   findActivatedAbilityDirectionOptionByPosition,
   findActivatedAbilityTargetOptionByCardId,
   findActivatedAbilityTargetOptionByPosition,
+  getSystemAbilityUiRoute,
+  findSystemAbilityUnitOptionByPosition,
   listActivatedAbilityTargetCardIds,
+  resolveBeforeAttackCancellation,
+  resolveBeforeAttackCardConfirmation,
   type SwSimpleChoiceInteraction,
 } from '../ui/systemInteractionAdapter';
+import { getAbilityModeBannerFallbackText } from '../ui/StatusBanners';
 
 function makeEntry(id: number): EventStreamEntry {
   const event: GameEvent = { type: 'TEST_EVENT', payload: {}, timestamp: id };
@@ -71,6 +77,47 @@ describe('computeEventStreamDelta', () => {
 });
 
 describe('systemInteractionAdapter', () => {
+  // 注意：interactionChainAudit.test.ts 默认会被 vitest exclude 的 *audit*.test 规则排除，
+  // 所以 system ability -> UI 路由矩阵必须在这个真实会执行的门禁文件里重复声明。
+  type SystemAbilityUiRoute =
+    | 'status-banner-choice'
+    | 'board-cell-unit'
+    | 'board-cell-position'
+    | 'hand-card-select'
+    | 'card-selector';
+
+  const SYSTEM_ABILITY_UI_ROUTE_MATRIX: Array<{
+    label: string;
+    route: SystemAbilityUiRoute;
+    step: string;
+    context?: 'beforeAttack';
+  }> = [
+    { label: 'illusion/selectUnit', route: 'board-cell-unit', step: 'selectUnit' },
+    { label: 'blood_rune/selectUnit', route: 'status-banner-choice', step: 'selectUnit' },
+    { label: 'spirit_bond/selectUnit', route: 'board-cell-unit', step: 'selectUnit' },
+    { label: 'ancestral_bond/selectUnit', route: 'board-cell-unit', step: 'selectUnit' },
+    { label: 'structure_shift/selectUnit', route: 'board-cell-position', step: 'selectUnit' },
+    { label: 'structure_shift/selectNewPosition', route: 'board-cell-position', step: 'selectNewPosition' },
+    { label: 'frost_axe/selectUnit', route: 'board-cell-unit', step: 'selectUnit' },
+    { label: 'vanish/selectUnit', route: 'board-cell-unit', step: 'selectUnit' },
+    { label: 'telekinesis_instead/selectUnit', route: 'board-cell-unit', step: 'selectUnit' },
+    { label: 'high_telekinesis_instead/selectUnit', route: 'board-cell-unit', step: 'selectUnit' },
+    { label: 'revive_undead/selectCard', route: 'card-selector', step: 'selectCard' },
+    { label: 'revive_undead/selectPosition', route: 'board-cell-position', step: 'selectPosition' },
+    { label: 'fortress_power/selectCard', route: 'card-selector', step: 'selectCard' },
+    { label: 'ice_ram/selectUnit', route: 'board-cell-position', step: 'selectUnit' },
+    { label: 'ice_ram/selectPushDirection', route: 'board-cell-position', step: 'selectPushDirection' },
+    { label: 'life_drain/selectUnit', route: 'board-cell-unit', step: 'selectUnit', context: 'beforeAttack' },
+    { label: 'holy_arrow/selectCards', route: 'hand-card-select', step: 'selectCards', context: 'beforeAttack' },
+    { label: 'healing/selectCards', route: 'hand-card-select', step: 'selectCards', context: 'beforeAttack' },
+  ];
+
+  const getRouteLabels = (route: SystemAbilityUiRoute) => (
+    SYSTEM_ABILITY_UI_ROUTE_MATRIX
+      .filter((entry) => entry.route === route)
+      .map((entry) => entry.label)
+  );
+
   it('activated_ability_target 适配白名单与系统交互保持一致', () => {
     expect(ACTIVATED_ABILITY_IDS).toEqual([
       'revive_undead',
@@ -650,5 +697,558 @@ describe('systemInteractionAdapter', () => {
         { row: 6, col: 2 },
       )?.id,
     ).toBe('pos:6,2');
+  });
+
+  it('findSystemAbilityUnitOptionByPosition 能命中现役 selectUnit 系统交互', () => {
+    const cases = [
+      {
+        label: 'ice_ram',
+        interaction: {
+          id: 'sw-ice-ram-target',
+          type: 'ice_ram_target',
+          meta: { type: 'ice_ram_target', sourceUnitId: 'ice-ram' },
+          options: [
+            {
+              id: 'pos:3,4',
+              label: '(3,4)',
+              value: { action: 'ice_ram_target', targetPosition: { row: 3, col: 4 } },
+            },
+          ],
+        } satisfies SwSimpleChoiceInteraction,
+        abilityMode: { abilityId: 'ice_ram', step: 'selectUnit', sourceUnitId: 'ice_ram' },
+        position: { row: 3, col: 4 },
+        expectedOptionId: 'pos:3,4',
+      },
+      {
+        label: 'structure_shift',
+        interaction: {
+          id: 'sw-structure-shift-target',
+          type: 'after_move_structure_shift_target',
+          meta: { type: 'after_move_structure_shift_target', sourceUnitId: 'builder-1' },
+          options: [
+            {
+              id: 'pos:1,2',
+              label: '(1,2)',
+              value: { action: 'after_move_structure_shift_target', targetPosition: { row: 1, col: 2 } },
+            },
+          ],
+        } satisfies SwSimpleChoiceInteraction,
+        abilityMode: { abilityId: 'structure_shift', step: 'selectUnit', sourceUnitId: 'builder-1' },
+        position: { row: 1, col: 2 },
+        expectedOptionId: 'pos:1,2',
+      },
+      {
+        label: 'life_drain',
+        interaction: {
+          id: 'sw-life-drain-target',
+          type: 'before_attack_life_drain',
+          meta: {
+            type: 'before_attack_life_drain',
+            sourceUnitId: 'drainer-1',
+            targetPosition: { row: 6, col: 3 },
+          },
+          options: [
+            {
+              id: 'unit:ally-1',
+              label: 'Ally',
+              value: {
+                action: 'before_attack_life_drain',
+                targetUnitId: 'ally-1',
+                targetPosition: { row: 6, col: 2 },
+              },
+            },
+          ],
+        } satisfies SwSimpleChoiceInteraction,
+        abilityMode: {
+          abilityId: 'life_drain',
+          step: 'selectUnit',
+          sourceUnitId: 'drainer-1',
+          context: 'beforeAttack',
+          pendingAttackTarget: { row: 6, col: 3 },
+        },
+        position: { row: 6, col: 2 },
+        targetUnitId: 'ally-1',
+        expectedOptionId: 'unit:ally-1',
+      },
+      {
+        label: 'illusion',
+        interaction: {
+          id: 'sw-illusion-target',
+          type: 'on_phase_start_illusion',
+          meta: { type: 'on_phase_start_illusion', sourceUnitId: 'illusionist-1' },
+          options: [
+            {
+              id: 'pos:4,3',
+              label: '(4,3)',
+              value: { action: 'on_phase_start_illusion', targetPosition: { row: 4, col: 3 } },
+            },
+          ],
+        } satisfies SwSimpleChoiceInteraction,
+        abilityMode: { abilityId: 'illusion', step: 'selectUnit', sourceUnitId: 'illusionist-1' },
+        position: { row: 4, col: 3 },
+        expectedOptionId: 'pos:4,3',
+      },
+      {
+        label: 'ancestral_bond',
+        interaction: {
+          id: 'sw-ancestral-target',
+          type: 'after_move_ancestral_bond',
+          meta: { type: 'after_move_ancestral_bond', sourceUnitId: 'elder-1' },
+          options: [
+            {
+              id: 'pos:5,1',
+              label: '(5,1)',
+              value: { action: 'after_move_ancestral_bond', targetPosition: { row: 5, col: 1 } },
+            },
+          ],
+        } satisfies SwSimpleChoiceInteraction,
+        abilityMode: { abilityId: 'ancestral_bond', step: 'selectUnit', sourceUnitId: 'elder-1' },
+        position: { row: 5, col: 1 },
+        expectedOptionId: 'pos:5,1',
+      },
+      {
+        label: 'spirit_bond',
+        interaction: {
+          id: 'sw-spirit-target',
+          type: 'after_move_spirit_bond',
+          meta: { type: 'after_move_spirit_bond', sourceUnitId: 'shaman-1' },
+          options: [
+            {
+              id: 'pos:2,5',
+              label: '(2,5)',
+              value: { action: 'after_move_spirit_bond', choice: 'transfer', targetPosition: { row: 2, col: 5 } },
+            },
+          ],
+        } satisfies SwSimpleChoiceInteraction,
+        abilityMode: { abilityId: 'spirit_bond', step: 'selectUnit', sourceUnitId: 'shaman-1' },
+        position: { row: 2, col: 5 },
+        expectedOptionId: 'pos:2,5',
+      },
+      {
+        label: 'frost_axe',
+        interaction: {
+          id: 'sw-frost-axe-target',
+          type: 'after_move_frost_axe',
+          meta: { type: 'after_move_frost_axe', sourceUnitId: 'smith-1' },
+          options: [
+            {
+              id: 'pos:3,1',
+              label: '(3,1)',
+              value: { action: 'after_move_frost_axe', choice: 'attach', targetPosition: { row: 3, col: 1 } },
+            },
+          ],
+        } satisfies SwSimpleChoiceInteraction,
+        abilityMode: { abilityId: 'frost_axe', step: 'selectUnit', sourceUnitId: 'smith-1' },
+        position: { row: 3, col: 1 },
+        expectedOptionId: 'pos:3,1',
+      },
+      {
+        label: 'vanish',
+        interaction: {
+          id: 'sw-vanish-target',
+          type: 'activated_ability_target',
+          meta: {
+            type: 'activated_ability_target',
+            abilityId: 'vanish',
+            sourceUnitId: 'sneeks-1',
+            step: 'selectUnit',
+          },
+          options: [
+            {
+              id: 'pos:6,2',
+              label: '(6,2)',
+              value: { action: 'activated_ability_target', abilityId: 'vanish', targetPosition: { row: 6, col: 2 } },
+            },
+          ],
+        } satisfies SwSimpleChoiceInteraction,
+        abilityMode: { abilityId: 'vanish', step: 'selectUnit', sourceUnitId: 'sneeks-1' },
+        position: { row: 6, col: 2 },
+        expectedOptionId: 'pos:6,2',
+      },
+      {
+        label: 'telekinesis_instead',
+        interaction: {
+          id: 'sw-tele-target',
+          type: 'activated_ability_target',
+          meta: {
+            type: 'activated_ability_target',
+            abilityId: 'telekinesis_instead',
+            sourceUnitId: 'kala-1',
+            step: 'selectUnit',
+          },
+          options: [
+            {
+              id: 'pos:2,3',
+              label: '(2,3)',
+              value: { action: 'after_attack_telekinesis_target', targetPosition: { row: 2, col: 3 } },
+            },
+          ],
+        } satisfies SwSimpleChoiceInteraction,
+        abilityMode: { abilityId: 'telekinesis_instead', step: 'selectUnit', sourceUnitId: 'kala-1' },
+        position: { row: 2, col: 3 },
+        expectedOptionId: 'pos:2,3',
+      },
+      {
+        label: 'high_telekinesis_instead',
+        interaction: {
+          id: 'sw-high-tele-target',
+          type: 'activated_ability_target',
+          meta: {
+            type: 'activated_ability_target',
+            abilityId: 'high_telekinesis_instead',
+            sourceUnitId: 'kala-2',
+            step: 'selectUnit',
+          },
+          options: [
+            {
+              id: 'pos:1,4',
+              label: '(1,4)',
+              value: { action: 'after_attack_telekinesis_target', targetPosition: { row: 1, col: 4 } },
+            },
+          ],
+        } satisfies SwSimpleChoiceInteraction,
+        abilityMode: { abilityId: 'high_telekinesis_instead', step: 'selectUnit', sourceUnitId: 'kala-2' },
+        position: { row: 1, col: 4 },
+        expectedOptionId: 'pos:1,4',
+      },
+    ];
+
+    for (const testCase of cases) {
+      expect(
+        findSystemAbilityUnitOptionByPosition(
+          testCase.interaction,
+          testCase.abilityMode,
+          testCase.position,
+          testCase.targetUnitId,
+        )?.id,
+        testCase.label,
+      ).toBe(testCase.expectedOptionId);
+    }
+  });
+
+  it('findSystemAbilityUnitOptionByPosition 在 step 或 interaction type 不匹配时返回 null', () => {
+    const interaction: SwSimpleChoiceInteraction = {
+      id: 'sw-mismatch-1',
+      type: 'after_move_frost_axe',
+      meta: { type: 'after_move_frost_axe', sourceUnitId: 'smith-1' },
+      options: [
+        {
+          id: 'pos:3,1',
+          label: '(3,1)',
+          value: { action: 'after_move_frost_axe', choice: 'attach', targetPosition: { row: 3, col: 1 } },
+        },
+      ],
+    };
+
+    expect(
+      findSystemAbilityUnitOptionByPosition(
+        interaction,
+        { abilityId: 'frost_axe', step: 'selectPosition', sourceUnitId: 'smith-1' },
+        { row: 3, col: 1 },
+      ),
+    ).toBeNull();
+
+    expect(
+      findSystemAbilityUnitOptionByPosition(
+        interaction,
+        { abilityId: 'illusion', step: 'selectUnit', sourceUnitId: 'illusionist-1' },
+        { row: 3, col: 1 },
+      ),
+    ).toBeNull();
+  });
+
+  it('beforeAttack 选牌确认 helper 只消费现役 holy_arrow / healing 路由', () => {
+    const holyArrowInteraction: SwSimpleChoiceInteraction = {
+      id: 'sw-holy-arrow-confirm',
+      type: 'before_attack_holy_arrow',
+      meta: {
+        type: 'before_attack_holy_arrow',
+        sourceUnitId: 'jacob-1',
+        targetPosition: { row: 5, col: 2 },
+      },
+      options: [
+        {
+          id: 'discard-1',
+          label: 'Discard 1',
+          value: { action: 'before_attack_holy_arrow', cardId: 'card-1' },
+        },
+        {
+          id: 'discard-2',
+          label: 'Discard 2',
+          value: { action: 'before_attack_holy_arrow', cardId: 'card-2' },
+        },
+      ],
+    };
+    const holyArrowMode: AbilityModeState = {
+      abilityId: 'holy_arrow',
+      step: 'selectCards',
+      sourceUnitId: 'jacob-1',
+      context: 'beforeAttack',
+      selectedCardIds: ['card-1', 'card-2'],
+    };
+
+    expect(
+      resolveBeforeAttackCardConfirmation(holyArrowInteraction, holyArrowMode, ['card-1', 'card-2']),
+    ).toEqual({
+      command: 'respondMany',
+      optionIds: ['discard-1', 'discard-2'],
+    });
+
+    const healingInteraction: SwSimpleChoiceInteraction = {
+      id: 'sw-healing-confirm',
+      type: 'before_attack_healing',
+      meta: {
+        type: 'before_attack_healing',
+        sourceUnitId: 'sera-1',
+        targetPosition: { row: 4, col: 3 },
+      },
+      options: [
+        {
+          id: 'skip',
+          label: 'Skip',
+          value: { skip: true },
+        },
+        {
+          id: 'discard-heal',
+          label: 'Discard Heal',
+          value: { action: 'before_attack_healing', cardId: 'heal-card' },
+        },
+      ],
+    };
+    const healingMode: AbilityModeState = {
+      abilityId: 'healing',
+      step: 'selectCards',
+      sourceUnitId: 'sera-1',
+      context: 'beforeAttack',
+      selectedCardIds: [],
+    };
+
+    expect(
+      resolveBeforeAttackCardConfirmation(healingInteraction, healingMode, []),
+    ).toEqual({
+      command: 'respond',
+      optionId: 'skip',
+    });
+
+    expect(
+      resolveBeforeAttackCardConfirmation(healingInteraction, healingMode, ['heal-card']),
+    ).toEqual({
+      command: 'respond',
+      optionId: 'discard-heal',
+    });
+
+    expect(
+      resolveBeforeAttackCardConfirmation(healingInteraction, holyArrowMode, ['card-1']),
+    ).toBeNull();
+  });
+
+  it('beforeAttack 取消 helper 只消费现役 skip/cancel 语义', () => {
+    expect(resolveBeforeAttackCancellation({
+      id: 'sw-life-drain-skip',
+      type: 'before_attack_life_drain',
+      meta: {
+        type: 'before_attack_life_drain',
+        sourceUnitId: 'ret-talus-1',
+        targetPosition: { row: 5, col: 3 },
+      },
+      options: [
+        {
+          id: 'skip',
+          label: 'Skip',
+          value: { skip: true },
+        },
+      ],
+    })).toEqual({
+      command: 'respond',
+      optionId: 'skip',
+    });
+
+    expect(resolveBeforeAttackCancellation({
+      id: 'sw-healing-cancel',
+      type: 'before_attack_healing',
+      meta: {
+        type: 'before_attack_healing',
+        sourceUnitId: 'sera-1',
+        targetPosition: { row: 4, col: 3 },
+      },
+      options: [],
+    })).toEqual({
+      command: 'cancel',
+    });
+
+    expect(resolveBeforeAttackCancellation({
+      id: 'sw-structure-shift',
+      type: 'after_move_structure_shift_target',
+      meta: { type: 'after_move_structure_shift_target', sourceUnitId: 'builder-1' },
+      options: [],
+    })).toBeNull();
+  });
+
+  it('getSystemAbilityUiRoute 只为当前已登记的系统交互返回 UI 路由', () => {
+    expect(getSystemAbilityUiRoute({
+      abilityId: 'life_drain',
+      step: 'selectUnit',
+      sourceUnitId: 'ret-talus-1',
+      context: 'beforeAttack',
+    })).toBe('board-cell-unit');
+
+    expect(getSystemAbilityUiRoute({
+      abilityId: 'holy_arrow',
+      step: 'selectCards',
+      sourceUnitId: 'jacob-1',
+      context: 'beforeAttack',
+    })).toBe('hand-card-select');
+
+    expect(getSystemAbilityUiRoute({
+      abilityId: 'fortress_power',
+      step: 'selectCard',
+      sourceUnitId: 'savior-1',
+    })).toBe('card-selector');
+
+    expect(getSystemAbilityUiRoute({
+      abilityId: 'revive_undead',
+      step: 'selectPosition',
+      sourceUnitId: 'sneeks-1',
+    })).toBe('board-cell-position');
+
+    expect(getSystemAbilityUiRoute({
+      abilityId: 'blood_rune',
+      step: 'selectUnit',
+      sourceUnitId: 'blood-mage-1',
+    })).toBe('status-banner-choice');
+
+    expect(getSystemAbilityUiRoute({
+      abilityId: 'future_ability',
+      step: 'selectCards',
+      sourceUnitId: 'future-1',
+      context: 'beforeAttack',
+    })).toBeNull();
+
+    expect(getSystemAbilityUiRoute({
+      abilityId: 'future_ability',
+      step: 'selectCard',
+      sourceUnitId: 'future-1',
+    })).toBeNull();
+  });
+
+  it('现役 abilityMode 顶部横幅文案回退到已存在的文案源', () => {
+    const t = (key: string, options?: Record<string, unknown> | string): string => {
+      if (key === 'cardSelector.fortressPower') {
+        return 'Fortress Power: Select a fortress unit from the discard pile';
+      }
+      if (key === 'statusBanners.abilityNames.telekinesis_instead') {
+        return 'Telekinesis Instead of Attack';
+      }
+      if (key === 'statusBanners.abilityNames.high_telekinesis_instead') {
+        return 'High Telekinesis Instead of Attack';
+      }
+      if (key === 'statusBanners.afterAttack.message' && options && typeof options === 'object') {
+        return `${String(options.ability)}: Select a target`;
+      }
+      return typeof options === 'string' ? options : key;
+    };
+    const makeAbilityMode = (
+      abilityId: string,
+      step: AbilityModeState['step'],
+    ): AbilityModeState => ({
+      abilityId,
+      step,
+      sourceUnitId: 'source-1',
+    });
+
+    expect(getAbilityModeBannerFallbackText(
+      t,
+      makeAbilityMode('fortress_power', 'selectCard'),
+    )).toBe('Fortress Power: Select a fortress unit from the discard pile');
+
+    expect(getAbilityModeBannerFallbackText(
+      t,
+      makeAbilityMode('telekinesis_instead', 'selectUnit'),
+    )).toBe('Telekinesis Instead of Attack: Select a target');
+
+    expect(getAbilityModeBannerFallbackText(
+      t,
+      makeAbilityMode('high_telekinesis_instead', 'selectUnit'),
+    )).toBe('High Telekinesis Instead of Attack: Select a target');
+  });
+
+  it('当前 system ability 派生分支已全部登记到 UI 路由矩阵', () => {
+    expect(SYSTEM_ABILITY_UI_ROUTE_MATRIX.map((entry) => entry.label)).toEqual([
+      'illusion/selectUnit',
+      'blood_rune/selectUnit',
+      'spirit_bond/selectUnit',
+      'ancestral_bond/selectUnit',
+      'structure_shift/selectUnit',
+      'structure_shift/selectNewPosition',
+      'frost_axe/selectUnit',
+      'vanish/selectUnit',
+      'telekinesis_instead/selectUnit',
+      'high_telekinesis_instead/selectUnit',
+      'revive_undead/selectCard',
+      'revive_undead/selectPosition',
+      'fortress_power/selectCard',
+      'ice_ram/selectUnit',
+      'ice_ram/selectPushDirection',
+      'life_drain/selectUnit',
+      'holy_arrow/selectCards',
+      'healing/selectCards',
+    ]);
+  });
+
+  it('当前护栏只应覆盖未来分支，不应吞掉现役 beforeAttack 路由', () => {
+    const beforeAttackUnitRoutes = SYSTEM_ABILITY_UI_ROUTE_MATRIX
+      .filter((entry) => entry.context === 'beforeAttack' && entry.step === 'selectUnit')
+      .map((entry) => entry.label);
+    const beforeAttackCardRoutes = SYSTEM_ABILITY_UI_ROUTE_MATRIX
+      .filter((entry) => entry.context === 'beforeAttack' && entry.step === 'selectCards')
+      .map((entry) => entry.label);
+
+    expect(beforeAttackUnitRoutes).toEqual(['life_drain/selectUnit']);
+    expect(beforeAttackCardRoutes).toEqual(['holy_arrow/selectCards', 'healing/selectCards']);
+  });
+
+  it('棋盘点击、手牌选择和状态横幅职责边界保持清晰', () => {
+    expect(getRouteLabels('board-cell-unit')).toEqual([
+      'illusion/selectUnit',
+      'spirit_bond/selectUnit',
+      'ancestral_bond/selectUnit',
+      'frost_axe/selectUnit',
+      'vanish/selectUnit',
+      'telekinesis_instead/selectUnit',
+      'high_telekinesis_instead/selectUnit',
+      'life_drain/selectUnit',
+    ]);
+    expect(getRouteLabels('board-cell-position')).toEqual([
+      'structure_shift/selectUnit',
+      'structure_shift/selectNewPosition',
+      'revive_undead/selectPosition',
+      'ice_ram/selectUnit',
+      'ice_ram/selectPushDirection',
+    ]);
+    expect(getRouteLabels('hand-card-select')).toEqual([
+      'holy_arrow/selectCards',
+      'healing/selectCards',
+    ]);
+    expect(getRouteLabels('card-selector')).toEqual([
+      'revive_undead/selectCard',
+      'fortress_power/selectCard',
+    ]);
+    expect(getRouteLabels('status-banner-choice')).toEqual([
+      'blood_rune/selectUnit',
+    ]);
+  });
+
+  it('关键 UI 文案入口不再依赖 fallback/defaultValue 掩盖缺 key', () => {
+    const uiSources = [
+      '../ui/StatusBanners.tsx',
+      '../ui/HandArea.tsx',
+      '../ui/CustomDeckCard.tsx',
+      '../ui/deckbuilder/MyDeckPanel.tsx',
+    ].map((relativePath) => readFileSync(new URL(relativePath, import.meta.url), 'utf-8'));
+
+    for (const source of uiSources) {
+      expect(source).not.toMatch(/defaultValue\s*:/);
+      expect(source).not.toMatch(/t\(\s*['"`][^'"`]+['"`]\s*,\s*['"`]/);
+    }
   });
 });

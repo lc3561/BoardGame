@@ -16,7 +16,6 @@ import type { GameBoardProps } from '../../engine/transport/protocol';
 import type { SummonerWarsCore } from './domain';
 import { SW_COMMANDS } from './domain';
 import './cursor'; // Register cursor themes
-import { isUndeadCard, isFortressUnit } from './domain/ids';
 import { GameDebugPanel } from '../../components/game/framework/widgets/GameDebugPanel';
 import { SummonerWarsDebugConfig } from './debug-config';
 import { EndgameOverlay } from '../../components/game/framework/widgets/EndgameOverlay';
@@ -64,6 +63,7 @@ import { AbilityButtonsPanel } from './ui/AbilityButtonsPanel';
 import { PathTrailEffect } from './ui/PathTrailEffect';
 import {
   deriveSystemAbilityMode,
+  getSystemAbilityUiRoute,
   listActivatedAbilityTargetCardIds,
   findActivatedAbilityTargetOptionByCardId,
   type SwSimpleChoiceInteraction,
@@ -526,6 +526,10 @@ export const SummonerWarsBoard: React.FC<Props> = ({
   }, [swInteraction]);
 
   const abilityMode = systemAbilityMode;
+  const abilityUiRoute = useMemo(
+    () => getSystemAbilityUiRoute(abilityMode),
+    [abilityMode],
+  );
   const systemSelectableAbilityId = abilityMode?.abilityId === 'revive_undead' || abilityMode?.abilityId === 'fortress_power'
     ? abilityMode.abilityId
     : null;
@@ -535,6 +539,17 @@ export const SummonerWarsBoard: React.FC<Props> = ({
       return ids.length > 0 ? new Set(ids) : null;
     })()
     : null;
+  useEffect(() => {
+    if (abilityMode?.step === 'selectCard' && abilityUiRoute !== 'card-selector') {
+      console.warn('[SummonerWars] 未处理的系统能力卡牌选择器分支', {
+        abilityId: abilityMode.abilityId,
+        step: abilityMode.step,
+        context: abilityMode.context,
+        swInteractionType: swInteraction?.type ?? null,
+        route: abilityUiRoute,
+      });
+    }
+  }, [abilityMode, abilityUiRoute, swInteraction]);
 
   const systemIceShardsMode = useMemo(() => {
     if (!swInteraction || swInteraction.type !== 'ice_shards') return null;
@@ -556,6 +571,7 @@ export const SummonerWarsBoard: React.FC<Props> = ({
       .filter((card): card is Card => !!card);
   }, [core.players, myPlayerId, swInteraction]);
 
+  const systemGrabFollowMode = !!swInteraction && swInteraction.type === 'grab_follow';
   const systemFeedBeastMode = !!swInteraction && swInteraction.type === 'feed_beast';
 
   // 格子交互 Hook
@@ -971,6 +987,14 @@ export const SummonerWarsBoard: React.FC<Props> = ({
     });
     respondInteractionOption(optionId);
   }, [findInteractionOptionId, respondInteractionOption, swInteraction]);
+  const handleSkipGrabFollow = useCallback(() => {
+    if (!swInteraction || swInteraction.type !== 'grab_follow') return;
+    const optionId = findInteractionOptionId((option) => {
+      const value = option.value as { skip?: boolean } | undefined;
+      return option.id === 'skip' || value?.skip === true;
+    });
+    respondInteractionOption(optionId);
+  }, [findInteractionOptionId, respondInteractionOption, swInteraction]);
   // 喂养巨食兽自毁回调
   const handleConfirmFeedBeastSelfDestroy = useCallback(() => {
     if (!swInteraction || swInteraction.type !== 'feed_beast') return;
@@ -1372,11 +1396,13 @@ export const SummonerWarsBoard: React.FC<Props> = ({
                     telekinesisTargetMode={interaction.telekinesisTargetMode}
                     magicEventChoiceMode={interaction.magicEventChoiceMode}
                     eventTargetMode={interaction.eventTargetMode}
+                    systemGrabFollowMode={systemGrabFollowMode}
                     systemIceShardsMode={systemIceShardsMode}
                     systemFeedBeastMode={systemFeedBeastMode}
                     onCancelAbility={handleCancelAbility}
                     onConfirmBeforeAttackCards={interaction.handleConfirmBeforeAttackCards}
                     onConfirmBloodRune={handleConfirmBloodRune}
+                    onSkipGrabFollow={handleSkipGrabFollow}
                     onConfirmIceShards={handleConfirmIceShards}
                     onConfirmFeedBeastSelfDestroy={handleConfirmFeedBeastSelfDestroy}
                     onCancelBeforeAttack={handleCancelBeforeAttack}
@@ -1446,7 +1472,7 @@ export const SummonerWarsBoard: React.FC<Props> = ({
                 </div>
 
               {/* 技能卡牌选择器 */}
-              {abilityMode && abilityMode.step === 'selectCard' && (
+              {abilityMode && abilityMode.step === 'selectCard' && abilityUiRoute === 'card-selector' && (
                 <CardSelectorOverlay
                   title={
                     abilityMode.abilityId === 'revive_undead' ? t('cardSelector.reviveUndead') :
@@ -1454,24 +1480,21 @@ export const SummonerWarsBoard: React.FC<Props> = ({
                   }
                   cards={core.players[myPlayerId]?.discard.filter(c => {
                     if (
-                      systemAbilitySelectableCardIds
-                      && (abilityMode.abilityId === 'revive_undead' || abilityMode.abilityId === 'fortress_power')
+                      !systemAbilitySelectableCardIds
+                      || (abilityMode.abilityId !== 'revive_undead' && abilityMode.abilityId !== 'fortress_power')
                     ) {
-                      return systemAbilitySelectableCardIds.has(c.id);
+                      return false;
                     }
-                    if (abilityMode.abilityId === 'revive_undead') {
-                      return isUndeadCard(c);
-                    }
-                    if (abilityMode.abilityId === 'fortress_power') {
-                      return c.cardType === 'unit' && isFortressUnit(c);
-                    }
-                    return true;
+                    return systemAbilitySelectableCardIds.has(c.id);
                   }) ?? []}
                   onSelect={(card) => {
                     if (swInteraction?.type !== 'activated_ability_target') return;
+                    if (abilityMode.abilityId !== 'revive_undead' && abilityMode.abilityId !== 'fortress_power') {
+                      return;
+                    }
                     const option = findActivatedAbilityTargetOptionByCardId(
                       swInteraction,
-                      abilityMode.abilityId === 'fortress_power' ? 'fortress_power' : 'revive_undead',
+                      abilityMode.abilityId,
                       card.id,
                       'selectCard',
                     );

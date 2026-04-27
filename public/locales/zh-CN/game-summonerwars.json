@@ -449,6 +449,7 @@
       },
       "illusion": "幻化：选择3格内的一个士兵复制其技能",
       "bloodRune": "鲜血符文：选择自伤1点或消耗1魔力充能",
+      "fortressPower": "城塞之力：从弃牌堆选择一个城塞单位",
       "iceShards": "寒冰碎屑：消耗1充能，对建筑相邻敌方造成1伤？",
       "feedBeast": "喂养巨食兽：选择相邻友方单位移除，或自毁",
       "spiritBond": "祖灵交流：选择3格内目标转移充能，或充能自身",
@@ -460,6 +461,8 @@
       "frostAxeSelectTarget": "冰霜战斧：选择3格内友方士兵",
       "iceRamSelectTarget": "寒冰冲撞：选择建筑相邻的一个单位",
       "iceRamSelectPush": "寒冰冲撞：选择推拉方向（或跳过）",
+      "telekinesisInstead": "念力代替攻击：选择一个目标进行推拉",
+      "highTelekinesisInstead": "高阶念力代替攻击：选择一个目标进行推拉",
       "vanish": "神出鬼没：选择一个0费友方单位交换位置"
     },
     "beforeAttack": {

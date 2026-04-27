@@ -73,7 +73,7 @@ export const CustomDeckCard: React.FC<CustomDeckCardProps> = ({
   
   // 占位模式下显示"自定义牌组"文本
   const displayName = isPlaceholder 
-    ? t('factionSelection.customDeck', '自定义牌组')
+    ? t('factionSelection.customDeck')
     : deck.name;
 
   return (

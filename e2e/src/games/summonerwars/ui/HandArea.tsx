@@ -435,7 +435,7 @@ export const HandArea: React.FC<HandAreaProps> = ({
     if (magicPhaseClickRoute === 'blocked-by-interaction') {
       playDeniedSound();
       showToast.warning(
-        t('handArea.interactionBusy', '请先完成当前操作'),
+        t('handArea.interactionBusy'),
         undefined,
         { dedupeKey: 'summonerwars.interactionBusy' },
       );

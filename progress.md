@@ -575,3 +575,39 @@
     - 新增证据文档：`evidence/smashup/smashup-skeletons-revenant-e2e-2026-04-26.md`。
     - 已回写：`evidence/smashup/smashup-skeletons-wiki-semantic-audit-2026-04-25.md`、`evidence/smashup/smashup-10th-anniversary-reintake-2026-04-25.md`、`evidence/smashup/smashup-10th-anniversary-factions-audit-20260419.md`，移除旧的 `onTurnStart` 近似残余口径。
   - Next: 继续三新派系整包残余范围收拢，保持“仍有残余范围”口径，直到整包 L3/L4 证据满足发布门禁。
+
+- **[2026-04-26 19:40:00] Action**: 世界冠军《武士 陈》负路径 E2E 补证与总文档同步
+  - Result:
+    - 新增 `e2e/smashup/smashup-robot-hoverbot-new.e2e.ts` 用例：`武士 陈打出后不应触发海龟阿凯的交牌抽二交互`。
+    - `npm run test:e2e:ci:file -- e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "武士 陈打出后不应触发海龟阿凯的交牌抽二交互"`：`1 passed`。
+    - `npx eslint e2e/smashup/smashup-robot-hoverbot-new.e2e.ts`：0 errors（仅既有 `no-explicit-any` warnings）。
+    - 新增证据文档：`evidence/smashup/smashup-world-champs-samurai-chan-no-akye-e2e-2026-04-26.md`。
+    - 已回写：`evidence/smashup/smashup-feedback-69e61a97-world-champs-card-index-fix-2026-04-25.md`、`evidence/smashup/smashup-10th-anniversary-factions-audit-20260419.md`、`evidence/smashup/smashup-10th-anniversary-final-closeout-20260419.md`、`evidence/smashup/smashup-10th-anniversary-reintake-2026-04-25.md`。
+  - Next: 继续补三新派系整包残余的对象级真实入口证据，不把单张/单负路径补证误报成整包收口。
+
+- **[2026-04-26 22:31:00] Action**: World Champs《金币猫 / 鲨鱼纹身》对象级 L3 补证，并修复《鲨鱼纹身》重复加计数根因
+  - Result:
+    - 更新 `src/games/smashup/domain/index.ts`：新增 `keepSysUpdatesOnly(...)`，避免 `onPhaseExit/endTurn` 与 `onPhaseEnter/startTurn` 把已预先 reduce 的 core 连同 sys 一起塞回 `updatedState`，导致返回事件被引擎再次 reduce。
+    - 更新 `src/games/smashup/__tests__/newFactionAbilities.test.ts`：
+      - 新增《鲨鱼纹身》“唯一己方随从时下个自己回合开始只加 1”；
+      - 新增《鲨鱼纹身》“同基地仍有你的其他随从时不再加”；
+      - 当前定向回归 `world_champs_calicoin|world_champs_shark_tattoo` → `4 passed`。
+    - 更新 `e2e/smashup/smashup-robot-hoverbot-new.e2e.ts`：
+      - 新增《金币猫》真实入口 E2E；
+      - 新增《鲨鱼纹身》真实入口 E2E。
+    - 验证：
+      - `npx eslint src/games/smashup/domain/index.ts src/games/smashup/__tests__/newFactionAbilities.test.ts e2e/smashup/smashup-robot-hoverbot-new.e2e.ts` → `0 errors`（warnings 为既有存量）
+      - `$env:BG_BYPASS_GLOBAL_HEAVY_BUDGET='1'; npm run test:e2e:ci:file -- e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "金币猫打出后应可选择这里的其他随从"` → `1 passed`
+      - `$env:BG_BYPASS_GLOBAL_HEAVY_BUDGET='1'; npm run test:e2e:ci:file -- e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "鲨鱼纹身打出后应附着到己方随从并在下个自己回合开始时再放一个"` → `1 passed`
+    - 新增证据文档：`evidence/smashup/smashup-world-champs-calicoin-shark-tattoo-e2e-2026-04-26.md`
+    - 已回写：`evidence/smashup/smashup-10th-anniversary-factions-audit-20260419.md`、`evidence/smashup/smashup-10th-anniversary-reintake-2026-04-25.md`、`evidence/smashup/smashup-10th-anniversary-final-closeout-20260419.md`、`findings.md`
+  - Next: 继续按“卡图优先 + 对象级真证据 + 阶段切换链路抽样”推进三新派系剩余重审，不把当前 World Champs 的补证误报成整包最终收口。
+
+- **[2026-04-26 23:13:00] Action**: World Champs《警长 / 木乃伊》真实入口 E2E 补证
+  - Result:
+    - `$env:BG_BYPASS_GLOBAL_HEAVY_BUDGET='1'; npm run test:e2e:ci:file -- e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "警长应在基地计分前发起决斗并摧毁落败随从"` → `1 passed`
+    - `$env:BG_BYPASS_GLOBAL_HEAVY_BUDGET='1'; npm run test:e2e:ci:file -- e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "木乃伊应在基地计分后埋葬到另一个基地"` → `1 passed`
+    - 新增证据文档：`evidence/smashup/smashup-world-champs-sheriff-mummy-e2e-2026-04-26.md`
+    - 稳定截图实际落点为 `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-world-champs-*.png`
+    - 已回写三份总文档：`smashup-10th-anniversary-factions-audit-20260419.md`、`smashup-10th-anniversary-final-closeout-20260419.md`、`smashup-10th-anniversary-reintake-2026-04-25.md`
+  - Next: 继续推进三新派系整包重审；当前仍不能把 World Champs 单派系补证写成三派系最终收口。

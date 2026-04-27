@@ -412,6 +412,7 @@
       },
       "illusion": "Illusion: Select a common unit within 3 spaces to copy abilities",
       "bloodRune": "Blood Rune: Take 1 damage or spend 1 magic to charge",
+      "fortressPower": "Fortress Power: Select a fortress unit from the discard pile",
       "iceShards": "Ice Shards: Spend 1 charge to deal 1 damage to enemies adjacent to buildings?",
       "feedBeast": "Feed the Beast: Remove an adjacent ally, or self-destruct",
       "spiritBond": "Spirit Bond: Select target within 3 to transfer charge, or charge self",
@@ -423,6 +424,8 @@
       "frostAxeSelectTarget": "Frost Axe: Select a friendly soldier within 3 spaces",
       "iceRamSelectTarget": "Ice Ram: Select a unit adjacent to a building",
       "iceRamSelectPush": "Ice Ram: Choose push/pull direction (or skip)",
+      "telekinesisInstead": "Telekinesis Instead of Attack: Select a target to push or pull",
+      "highTelekinesisInstead": "High Telekinesis Instead of Attack: Select a target to push or pull",
       "vanish": "Vanish: Select a 0-cost friendly unit to swap positions"
     },
     "beforeAttack": {

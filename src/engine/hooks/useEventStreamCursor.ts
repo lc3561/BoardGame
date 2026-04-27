@@ -219,18 +219,14 @@ export function useEventStreamCursor(config: UseEventStreamCursorConfig): UseEve
             return { entries: [], didReset: false, didOptimisticRollback: false };
         }
 
-        // ── entries 为空：检查是否需要重置游标 ──
-        // 乐观引擎的 wait-confirm 模式会暂时剥离 EventStream，
-        // 这不是 Undo 回退，不应重置游标。
-        // 但如果游标已经推进过（lastSeenIdRef > -1），且 entries 为空，
-        // 说明 EventStream 被清空了，需要重置游标，防止后续新事件被跳过。
+        // ── entries 为空：保持游标不变 ──
+        // 乐观引擎的 wait-confirm / rollback filter / transport resync 都可能暂时给出空 EventStream，
+        // 这不等价于 Undo 回退。若此时把游标重置为 -1，后续服务端恢复完整 entries 时，
+        // 旧事件会被重新当成“新事件”消费，导致特效/动画整包重播。
+        // 真正的回退由下方 maxId < cursor 分支在 entries 恢复后统一识别。
         if (curLen === 0) {
             if (suppressEmptyResetRef.current) {
                 return { entries: [], didReset: false, didOptimisticRollback: false };
-            }
-            if (lastSeenIdRef.current > -1) {
-                // EventStream 被清空，重置游标
-                lastSeenIdRef.current = -1;
             }
             return { entries: [], didReset: false, didOptimisticRollback: false };
         }

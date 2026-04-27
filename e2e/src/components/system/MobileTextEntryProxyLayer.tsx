@@ -29,6 +29,8 @@ interface TargetProxySnapshot {
 
 const KEYBOARD_PROXY_MIN_INSET = 72;
 const TARGET_PROXY_ATTR = 'data-mobile-text-entry-proxy-source';
+const DEFAULT_PROXY_BACKGROUND = 'rgba(255, 248, 240, 0.98)';
+const DEFAULT_PROXY_BOX_SHADOW = '0 18px 40px rgba(15, 23, 42, 0.18)';
 
 const readKeyboardInset = () => {
     if (typeof window === 'undefined' || typeof document === 'undefined') {
@@ -46,6 +48,18 @@ const isProxyUiElement = (candidate: EventTarget | Element | null | undefined): 
             || candidate.dataset.testid === 'mobile-text-entry-proxy-textarea'
             || candidate.dataset.testid === 'mobile-text-entry-proxy'
             || candidate.closest('[data-testid="mobile-text-entry-proxy"]') !== null);
+};
+
+const isTransparentColor = (value: string | null | undefined) => {
+    if (!value) {
+        return true;
+    }
+
+    const normalized = value.trim().toLowerCase();
+    return normalized === ''
+        || normalized === 'transparent'
+        || normalized === 'rgba(0, 0, 0, 0)'
+        || normalized === 'rgba(0,0,0,0)';
 };
 
 const buildProxyState = (target: HTMLElement): ProxyState => {
@@ -75,13 +89,13 @@ const buildProxyState = (target: HTMLElement): ProxyState => {
             borderWidth: computed.borderWidth,
             borderStyle: computed.borderStyle,
             borderColor: computed.borderColor,
-            background: computed.background,
-            backgroundColor: computed.backgroundColor,
+            background: isTransparentColor(computed.backgroundColor) ? DEFAULT_PROXY_BACKGROUND : computed.background,
+            backgroundColor: isTransparentColor(computed.backgroundColor) ? DEFAULT_PROXY_BACKGROUND : computed.backgroundColor,
             color: computed.color,
             font: computed.font,
             letterSpacing: computed.letterSpacing,
             lineHeight: computed.lineHeight,
-            boxShadow: computed.boxShadow,
+            boxShadow: computed.boxShadow === 'none' ? DEFAULT_PROXY_BOX_SHADOW : computed.boxShadow,
             textAlign: computed.textAlign,
         },
     };
@@ -134,6 +148,7 @@ export const MobileTextEntryProxyLayer = () => {
     const proxiedTargetRef = useRef<HTMLElement | null>(null);
     const proxiedSnapshotRef = useRef<TargetProxySnapshot | null>(null);
     const blurCleanupTimerRef = useRef<number | null>(null);
+    const proxyTarget = proxyState?.target ?? null;
 
     useEffect(() => {
         if (typeof window === 'undefined' || typeof document === 'undefined') {
@@ -259,39 +274,39 @@ export const MobileTextEntryProxyLayer = () => {
 
     useEffect(() => {
         const previousTarget = proxiedTargetRef.current;
-        if (previousTarget && previousTarget !== proxyState?.target) {
+        if (previousTarget && previousTarget !== proxyTarget) {
             restoreTargetAfterProxy(previousTarget, proxiedSnapshotRef.current);
             proxiedTargetRef.current = null;
             proxiedSnapshotRef.current = null;
         }
 
-        if (!proxyState) {
+        if (!proxyTarget) {
             return undefined;
         }
 
-        if (proxiedTargetRef.current !== proxyState.target) {
-            proxiedSnapshotRef.current = freezeTargetForProxy(proxyState.target);
-            proxiedTargetRef.current = proxyState.target;
+        if (proxiedTargetRef.current !== proxyTarget) {
+            proxiedSnapshotRef.current = freezeTargetForProxy(proxyTarget);
+            proxiedTargetRef.current = proxyTarget;
         }
 
         const next = inputRef.current;
         if (next) {
             next.focus({ preventScroll: true });
-            const selectionEnd = proxyState.value.length;
+            const selectionEnd = readTextEntryValue(proxyTarget).length;
             next.setSelectionRange?.(selectionEnd, selectionEnd);
         }
 
         return () => {
-            if (!proxyState) {
+            if (!proxyTarget) {
                 return;
             }
-            if (proxiedTargetRef.current === proxyState.target) {
-                restoreTargetAfterProxy(proxyState.target, proxiedSnapshotRef.current);
+            if (proxiedTargetRef.current === proxyTarget) {
+                restoreTargetAfterProxy(proxyTarget, proxiedSnapshotRef.current);
                 proxiedTargetRef.current = null;
                 proxiedSnapshotRef.current = null;
             }
         };
-    }, [proxyState]);
+    }, [proxyTarget]);
 
     if (!portalRoot || !proxyState) {
         return null;

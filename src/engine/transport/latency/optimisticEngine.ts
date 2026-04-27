@@ -641,10 +641,24 @@ export function createOptimisticEngine(config: OptimisticEngineConfig): Optimist
             const baseForReplay = serverState;
             let commandsToReplay = pendingCommands;
             let firstCommandConfirmed = false;
+            let settledPrefixCountByCoreMatch = 0;
+
+            for (let i = pendingCommands.length - 1; i >= 0; i--) {
+                if (isCoreStateEqual(pendingCommands[i].predictedState.core, serverState.core)) {
+                    settledPrefixCountByCoreMatch = i + 1;
+                    break;
+                }
+            }
+
+            if (settledPrefixCountByCoreMatch > 0) {
+                commandsToReplay = pendingCommands.slice(settledPrefixCountByCoreMatch);
+                firstCommandConfirmed = true;
+            }
 
             const firstPending = pendingCommands[0];
             let firstCommandSettledByMeta = false;
             if (
+                settledPrefixCountByCoreMatch === 0 &&
                 meta?.stateID !== undefined &&
                 firstPending.predictedStateID !== undefined
             ) {
@@ -674,7 +688,7 @@ export function createOptimisticEngine(config: OptimisticEngineConfig): Optimist
                         { serverStateID: meta.stateID, lastCommandPlayer: meta.lastCommandPlayerId, pendingPlayer: firstPending.playerId },
                     );
                 }
-            } else {
+            } else if (settledPrefixCountByCoreMatch === 0) {
                 // Fallback: JSON.stringify 深度比较
                 firstCommandConfirmed =
                     isCoreStateEqual(firstPending.predictedState.core, serverState.core);
@@ -694,7 +708,7 @@ export function createOptimisticEngine(config: OptimisticEngineConfig): Optimist
                 randomProbe = createRandomProbe(localRandom);
             }
 
-            if (firstCommandSettledByMeta || firstCommandConfirmed) {
+            if (settledPrefixCountByCoreMatch === 0 && (firstCommandSettledByMeta || firstCommandConfirmed)) {
                 // 服务端已结算 pending[0]：
                 // - coreMatch=true：本地预测准确，正常确认
                 // - coreMatch=false：本地预测错误，但服务端 stateID / playerId 已表明这条命令被权威执行

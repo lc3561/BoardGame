@@ -13,6 +13,8 @@ import { ActionBanner } from './ActionBanner';
 import type { AbilityModeState, SoulTransferModeState, MindCaptureModeState, AfterAttackAbilityModeState } from './useGameEvents';
 import type { MindControlModeState, StunModeState, HypnoticLureModeState, ChantEntanglementModeState, SneakModeState, GlacialShiftModeState, WithdrawModeState, TelekinesisTargetModeState } from './modeTypes';
 
+type BannerTranslate = (...args: any[]) => string;
+
 // ============================================================================
 // 类型定义
 // ============================================================================
@@ -39,6 +41,27 @@ export interface AnnihilateModeState {
 export interface FuneralPyreModeState {
   cardId: string;
   charges: number;
+}
+
+export function getAbilityModeBannerFallbackText(
+  t: BannerTranslate,
+  abilityMode: AbilityModeState,
+): string {
+  if (abilityMode.abilityId === 'fortress_power' && abilityMode.step === 'selectCard') {
+    return t('cardSelector.fortressPower');
+  }
+
+  if (abilityMode.abilityId === 'telekinesis_instead' && abilityMode.step === 'selectUnit') {
+    const abilityName = t('statusBanners.abilityNames.telekinesis_instead');
+    return t('statusBanners.afterAttack.message', { ability: abilityName });
+  }
+
+  if (abilityMode.abilityId === 'high_telekinesis_instead' && abilityMode.step === 'selectUnit') {
+    const abilityName = t('statusBanners.abilityNames.high_telekinesis_instead');
+    return t('statusBanners.afterAttack.message', { ability: abilityName });
+  }
+
+  return '';
 }
 
 // ============================================================================
@@ -70,12 +93,14 @@ interface StatusBannersProps {
   telekinesisTargetMode: TelekinesisTargetModeState | null;
   magicEventChoiceMode: { cardId: string } | null;
   eventTargetMode: { cardId: string } | null;
+  systemGrabFollowMode: boolean;
   systemIceShardsMode: { sourceBoosts: number } | null;
   systemFeedBeastMode: boolean;
   // 回调
   onCancelAbility: () => void;
   onConfirmBeforeAttackCards: () => void;
   onConfirmBloodRune: (choice: 'damage' | 'charge') => void;
+  onSkipGrabFollow: () => void;
   onConfirmIceShards: () => void;
   onConfirmFeedBeastSelfDestroy: () => void;
   onCancelBeforeAttack: () => void;
@@ -135,7 +160,7 @@ const StunBanner: React.FC<{
   // selectDestination 步骤：提示选择终点
   return (
     <div className="bg-yellow-900/95 px-4 py-2 rounded-lg border border-yellow-500/40 flex items-center gap-3 shadow-lg">
-      <span className="text-yellow-200 text-sm font-bold">{t('statusBanners.stun.selectDestination', '选择推拉终点')}</span>
+      <span className="text-yellow-200 text-sm font-bold">{t('statusBanners.stun.selectDestination')}</span>
       <GameButton onClick={onCancelStun} variant="secondary" size="sm">{t('actions.cancel')}</GameButton>
     </div>
   );
@@ -151,8 +176,8 @@ export const StatusBanners: React.FC<StatusBannersProps> = ({
   mindControlMode, chantEntanglementMode, sneakMode, glacialShiftMode, withdrawMode, stunMode, hypnoticLureMode,
   mindCaptureMode, afterAttackAbilityMode, rapidFireMode, telekinesisTargetMode, magicEventChoiceMode,
   eventTargetMode,
-  systemIceShardsMode, systemFeedBeastMode,
-  onCancelAbility, onConfirmBeforeAttackCards, onConfirmBloodRune, onConfirmIceShards, onConfirmFeedBeastSelfDestroy,
+  systemGrabFollowMode, systemIceShardsMode, systemFeedBeastMode,
+  onCancelAbility, onConfirmBeforeAttackCards, onConfirmBloodRune, onSkipGrabFollow, onConfirmIceShards, onConfirmFeedBeastSelfDestroy,
   onCancelBeforeAttack, onCancelBloodSummon, onContinueBloodSummon,
   onCancelAnnihilate, onConfirmAnnihilateTargets, onSkipAnnihilateDamage,
   onConfirmSoulTransfer, onSkipSoulTransfer, onSkipFuneralPyre,
@@ -177,10 +202,10 @@ export const StatusBanners: React.FC<StatusBannersProps> = ({
     return (
       <div className="bg-purple-900/95 px-4 py-2 rounded-lg border border-purple-500/40 flex items-center gap-3 shadow-lg">
         <span className="text-purple-200 text-sm font-bold">
-          {t('statusBanners.magicEventChoice.message', '选择：打出事件卡或弃牌换魔力')}
+          {t('statusBanners.magicEventChoice.message')}
         </span>
-        <GameButton onClick={onPlayMagicEvent} variant="primary" size="sm">{t('actions.playEvent', '打出')}</GameButton>
-        <GameButton onClick={onDiscardMagicEvent} variant="secondary" size="sm">{t('actions.discardForMagic', '弃牌')}</GameButton>
+        <GameButton onClick={onPlayMagicEvent} variant="primary" size="sm">{t('actions.playEvent')}</GameButton>
+        <GameButton onClick={onDiscardMagicEvent} variant="secondary" size="sm">{t('actions.discardForMagic')}</GameButton>
         <GameButton onClick={onCancelMagicEventChoice} variant="secondary" size="sm">{t('actions.cancel')}</GameButton>
       </div>
     );
@@ -190,9 +215,23 @@ export const StatusBanners: React.FC<StatusBannersProps> = ({
     return (
       <div className="bg-purple-900/95 px-4 py-2 rounded-lg border border-purple-500/40 flex items-center gap-3 shadow-lg">
         <span className="text-purple-200 text-sm font-bold">
-          {t('statusBanners.eventTarget.message', '选择事件目标，或取消')}
+          {t('statusBanners.eventTarget.message')}
         </span>
         <GameButton onClick={onCancelEventTargetInteraction} variant="secondary" size="sm">{t('actions.cancel')}</GameButton>
+      </div>
+    );
+  }
+
+  if (systemGrabFollowMode) {
+    return (
+      <div
+        data-testid="sw-ability-prompt"
+        className="bg-amber-900/90 backdrop-blur-sm px-4 py-2 rounded-lg border border-amber-500/40 flex items-center gap-3 shadow-lg"
+      >
+        <span className="text-amber-200 text-sm font-bold">
+          {t('interaction.sw.grabFollow')}
+        </span>
+        <GameButton onClick={onSkipGrabFollow} variant="secondary" size="sm">{t('actions.skip')}</GameButton>
       </div>
     );
   }
@@ -215,7 +254,7 @@ export const StatusBanners: React.FC<StatusBannersProps> = ({
     return (
       <div className="bg-red-900/90 backdrop-blur-sm px-4 py-2 rounded-lg border border-red-500/40 flex items-center gap-3 shadow-lg">
         <span className="text-red-200 text-sm font-bold">
-          {t('statusBanners.ability.fireSacrificeSummon', '火祀召唤：选择一个友方单位作为牺牲品')}
+          {t('statusBanners.ability.fireSacrificeSummon')}
         </span>
         <GameButton onClick={onCancelFireSacrifice} variant="secondary" size="sm">{t('actions.cancel')}</GameButton>
       </div>
@@ -224,7 +263,7 @@ export const StatusBanners: React.FC<StatusBannersProps> = ({
 
   if (abilityMode) {
     return (
-      <div className="bg-amber-900/90 backdrop-blur-sm px-4 py-2 rounded-lg border border-amber-500/40 flex items-center gap-3 shadow-lg">
+      <div data-testid="sw-ability-prompt" className="bg-amber-900/90 backdrop-blur-sm px-4 py-2 rounded-lg border border-amber-500/40 flex items-center gap-3 shadow-lg">
         <span className="text-amber-200 text-sm font-bold">
           {abilityMode.abilityId === 'revive_undead' && abilityMode.step === 'selectCard' && t('statusBanners.ability.reviveUndead.selectCard')}
           {abilityMode.abilityId === 'revive_undead' && abilityMode.step === 'selectPosition' && t('statusBanners.ability.reviveUndead.selectPosition')}
@@ -235,18 +274,19 @@ export const StatusBanners: React.FC<StatusBannersProps> = ({
           {abilityMode.abilityId === 'blood_rune' && t('statusBanners.ability.bloodRune')}
           {abilityMode.abilityId === 'spirit_bond' && (
             sourceUnitBoosts < 1
-              ? t('statusBanners.ability.spiritBondChargeOnly', '祖灵交流：充能不足，只能充能自身')
+              ? t('statusBanners.ability.spiritBondChargeOnly')
               : t('statusBanners.ability.spiritBond')
           )}
           {abilityMode.abilityId === 'ancestral_bond' && t('statusBanners.ability.ancestralBond')}
           {abilityMode.abilityId === 'structure_shift' && t('statusBanners.ability.structureShift')}
-          {abilityMode.abilityId === 'ice_ram' && abilityMode.step === 'selectUnit' && t('statusBanners.ability.iceRamSelectTarget', '寒冰冲撞：选择建筑相邻的一个单位')}
-          {abilityMode.abilityId === 'ice_ram' && abilityMode.step === 'selectPushDirection' && t('statusBanners.ability.iceRamSelectPush', '寒冰冲撞：选择推拉方向（或跳过）')}
+          {abilityMode.abilityId === 'ice_ram' && abilityMode.step === 'selectUnit' && t('statusBanners.ability.iceRamSelectTarget')}
+          {abilityMode.abilityId === 'ice_ram' && abilityMode.step === 'selectPushDirection' && t('statusBanners.ability.iceRamSelectPush')}
           {abilityMode.abilityId === 'frost_axe' && (
             sourceUnitBoosts < 1
-              ? t('statusBanners.ability.frostAxeChargeOnly', '冰霜战斧：充能不足，只能充能自身')
+              ? t('statusBanners.ability.frostAxeChargeOnly')
               : t('statusBanners.ability.frostAxe')
           )}
+          {getAbilityModeBannerFallbackText(t, abilityMode)}
           {abilityMode.abilityId === 'vanish' && t('statusBanners.ability.vanish')}
         </span>
         {abilityMode.step === 'selectCards' && (
@@ -288,7 +328,7 @@ export const StatusBanners: React.FC<StatusBannersProps> = ({
           <GameButton onClick={onCancelAbility} variant="secondary" size="sm">{t('actions.skip')}</GameButton>
         )}
         {abilityMode.abilityId === 'ice_ram' && abilityMode.step === 'selectPushDirection' && (
-          <GameButton onClick={onCancelAbility} variant="secondary" size="sm">{t('actions.skipPush', '跳过推拉')}</GameButton>
+          <GameButton onClick={onCancelAbility} variant="secondary" size="sm">{t('actions.skipPush')}</GameButton>
         )}
         {/* life_drain 在 beforeAttack 上下文中显示"跳过"按钮 */}
         {abilityMode.abilityId === 'life_drain' && abilityMode.context === 'beforeAttack' && abilityMode.step === 'selectUnit' && (
@@ -307,7 +347,7 @@ export const StatusBanners: React.FC<StatusBannersProps> = ({
 
   if (systemIceShardsMode) {
     return (
-      <div className="bg-amber-900/90 backdrop-blur-sm px-4 py-2 rounded-lg border border-amber-500/40 flex items-center gap-3 shadow-lg">
+      <div data-testid="sw-ability-prompt" className="bg-amber-900/90 backdrop-blur-sm px-4 py-2 rounded-lg border border-amber-500/40 flex items-center gap-3 shadow-lg">
         <span className="text-amber-200 text-sm font-bold">
           {t('statusBanners.ability.iceShards')}
         </span>
@@ -327,7 +367,7 @@ export const StatusBanners: React.FC<StatusBannersProps> = ({
 
   if (systemFeedBeastMode) {
     return (
-      <div className="bg-amber-900/90 backdrop-blur-sm px-4 py-2 rounded-lg border border-amber-500/40 flex items-center gap-3 shadow-lg">
+      <div data-testid="sw-ability-prompt" className="bg-amber-900/90 backdrop-blur-sm px-4 py-2 rounded-lg border border-amber-500/40 flex items-center gap-3 shadow-lg">
         <span className="text-amber-200 text-sm font-bold">
           {t('statusBanners.ability.feedBeast')}
         </span>
@@ -539,9 +579,9 @@ export const StatusBanners: React.FC<StatusBannersProps> = ({
   if (telekinesisTargetMode) {
     const abilityName = t(`statusBanners.abilityNames.${telekinesisTargetMode.abilityId}`);
     return (
-      <div className="bg-teal-900/95 px-4 py-2 rounded-lg border border-teal-500/40 flex items-center gap-3 shadow-lg">
+      <div data-testid="sw-ability-prompt" className="bg-teal-900/95 px-4 py-2 rounded-lg border border-teal-500/40 flex items-center gap-3 shadow-lg">
         <span className="text-teal-200 text-sm font-bold">
-          {t('statusBanners.telekinesis.selectDestination', { ability: abilityName, defaultValue: `${abilityName}：选择目标移动到的位置` })}
+          {t('statusBanners.telekinesis.selectDestination', { ability: abilityName })}
         </span>
         <GameButton onClick={onCancelTelekinesis} variant="secondary" size="sm">{t('actions.cancel')}</GameButton>
       </div>
@@ -551,7 +591,7 @@ export const StatusBanners: React.FC<StatusBannersProps> = ({
   if (afterAttackAbilityMode) {
     const abilityName = t(`statusBanners.abilityNames.${afterAttackAbilityMode.abilityId}`);
     return (
-      <div className="bg-teal-900/90 px-4 py-2 rounded-lg border border-teal-500/40 flex items-center gap-3 shadow-lg">
+      <div data-testid="sw-ability-prompt" className="bg-teal-900/90 px-4 py-2 rounded-lg border border-teal-500/40 flex items-center gap-3 shadow-lg">
         <span className="text-teal-200 text-sm font-bold">
           {t('statusBanners.afterAttack.message', { ability: abilityName })}
         </span>

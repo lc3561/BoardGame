@@ -126,8 +126,8 @@ export const MyDeckPanel: React.FC<MyDeckPanelProps> = ({
                     >
                         <div className={`absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white transition-transform ${freeMode ? 'translate-x-4' : ''}`} />
                     </div>
-                    <span className="text-xs text-white/60">{t('deckBuilder.freeMode', '自由组卡')}</span>
-                    {freeMode && <span className="text-[10px] text-amber-400 bg-amber-500/20 px-1.5 py-0.5 rounded border border-amber-500/30">{t('deckBuilder.freeModeOn', '已开启')}</span>}
+                    <span className="text-xs text-white/60">{t('deckBuilder.freeMode')}</span>
+                    {freeMode && <span className="text-[10px] text-amber-400 bg-amber-500/20 px-1.5 py-0.5 rounded border border-amber-500/30">{t('deckBuilder.freeModeOn')}</span>}
                 </label>
             </div>
 
@@ -202,7 +202,7 @@ export const MyDeckPanel: React.FC<MyDeckPanelProps> = ({
                     onClick={handleSave}
                     disabled={!validationResult.valid || !deckName || isSaving}
                 >
-                    {isSaving ? t('deckBuilder.saving', '保存中...') : t('deckBuilder.save')}
+                    {isSaving ? t('deckBuilder.saving') : t('deckBuilder.save')}
                 </GameButton>
 
                 {/* 使用此牌组 */}
@@ -226,7 +226,7 @@ export const MyDeckPanel: React.FC<MyDeckPanelProps> = ({
                                 <div key={deck.id} className="flex items-center justify-between group text-xs text-white/70 hover:bg-white/5 px-2 py-1 rounded">
                                     <span className="truncate flex items-center gap-1 flex-1 cursor-pointer" onClick={() => onLoad(deck.id)}>
                                         {deck.name}
-                                        {deck.freeMode && <span className="text-[9px] text-amber-400/70 bg-amber-500/10 px-1 rounded">{t('deckBuilder.free', '自由')}</span>}
+                                        {deck.freeMode && <span className="text-[9px] text-amber-400/70 bg-amber-500/10 px-1 rounded">{t('deckBuilder.free')}</span>}
                                     </span>
                                     <div className="flex items-center gap-1 flex-shrink-0">
                                         {/* 使用按钮 */}
@@ -239,14 +239,14 @@ export const MyDeckPanel: React.FC<MyDeckPanelProps> = ({
                                                 className="text-[10px] text-amber-400 hover:text-amber-300 px-2 py-0.5 rounded bg-amber-500/10 hover:bg-amber-500/20 transition-colors"
                                                 title={t('deckBuilder.useDeck')}
                                             >
-                                                {t('deckBuilder.use', '使用')}
+                                                {t('deckBuilder.use')}
                                             </button>
                                         )}
                                         {/* 删除按钮 */}
                                         <button
                                             onClick={(e) => { e.stopPropagation(); onDelete(deck.id); }}
                                             className="text-white/20 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
-                                            title={t('deckBuilder.delete', '删除')}
+                                            title={t('deckBuilder.delete')}
                                         >
                                             ✕
                                         </button>
@@ -255,7 +255,7 @@ export const MyDeckPanel: React.FC<MyDeckPanelProps> = ({
                             ))}
                             {savedDecks.length > 5 && (
                                 <div className="text-[10px] text-white/20 text-center py-1">
-                                    {t('deckBuilder.showingFirst', '显示前 5 个牌组')}
+                                    {t('deckBuilder.showingFirst')}
                                 </div>
                             )}
                         </div>

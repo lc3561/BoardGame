@@ -1,5 +1,29 @@
 # Smash Up 10 周年三派系专项审计（2026-04-19）
 
+## 2026-04-26 继续重审记录：World Champs《警长 / 木乃伊》真实入口补证 + 误判根因回写
+
+- 触发原因：
+  - 用户继续追问《警长》《木乃伊》为什么看起来像“效果没触发/像数据录错”，要求把这两张卡也补到对象级真实入口证据。
+  - 本轮重放后确认：这两张牌的问题和《武士 陈》那条“错图索引”不是同一种根因，不能再混写成“世界冠军可能又是卡图录错”。
+- 本轮实现：
+  - `e2e/smashup/smashup-robot-hoverbot-new.e2e.ts`
+    - 重跑并稳定化：
+      - `警长应在基地计分前发起决斗并摧毁落败随从`
+      - `木乃伊应在基地计分后埋葬到另一个基地`
+    - 稳定截图通过 `saveStableScreenshot(...)` 落在 `e2e/evidence/screenshots/`。
+- 本轮验证：
+  - `$env:BG_BYPASS_GLOBAL_HEAVY_BUDGET='1'; npm run test:e2e:ci:file -- e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "警长应在基地计分前发起决斗并摧毁落败随从"` → `1 passed`
+  - `$env:BG_BYPASS_GLOBAL_HEAVY_BUDGET='1'; npm run test:e2e:ci:file -- e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "木乃伊应在基地计分后埋葬到另一个基地"` → `1 passed`
+- 新增证据：
+  - `evidence/smashup/smashup-world-champs-sheriff-mummy-e2e-2026-04-26.md`
+- 本轮新结论：
+  1. 《警长》当前已补齐“计分前反应 -> 选敌方仆从 -> 进入决斗牌交互 -> 落败者被摧毁”的 L3 证据。
+  2. 《木乃伊》当前已补齐“计分后 -> 选另一个基地 -> 自身被埋葬过去”的 L3 证据。
+  3. 这两张牌此前更像是**旧 E2E 链路不真**，不是卡图录错：
+     - 《警长》旧误判主因是 helper 只看 host 视角、没消费 guest 私有决斗 prompt，且错误点击了泛化 `Pass`；
+     - 《木乃伊》旧误判主因是场景里混入《警长》beforeScoring 反应，污染了 afterScoring 入口。
+  4. 因而这轮回写后，`World Champs` 当前至少已有 `斯坦福 / 海龟阿凯 / 盾牌少女 / 战斗精神奖 / 老鼠、鸟和香肠 / 金币猫 / 鲨鱼纹身 / 警长 / 木乃伊` 多条对象级 L3 证据，但三派系整包仍维持 **仍有残余范围**。
+
 ## 2026-04-26 第七轮修订：Skeletons 审计口径再收紧
 
 - **失效回写 1**：本文此前引用 `smashup-skeletons-wiki-semantic-audit-2026-04-25.md` 时，把 `Skeletons` 记成“**12/12 张牌语义错配**”。这条总括结论现在已经失效；后续卡图优先重录后，当前不再是整派系全错。
@@ -804,3 +828,56 @@
   - `World Champs` 当前至少已有 `斯坦福 / 海龟阿凯 / 盾牌少女 / 战斗精神奖 / 老鼠、鸟和香肠` 五条关键链路的 L3 证据。
   - 三派系整包仍按“仍有残余范围”管理：本轮是增量补证，不把单派系关键样本扩写成整包发布级收口。
 
+### 复核记录（2026-04-26 19:32）：World Champs 历史错图反馈负路径补证（武士 陈）
+
+- 触发原因：用户最早的直接体验反馈之一就是“看起来像打出《武士 陈》，却触发《海龟阿凯》效果”。此前我们已有图集索引根因与单测证据，但还缺浏览器级**负路径**证明。
+- 本轮实现：
+  - `e2e/smashup/smashup-robot-hoverbot-new.e2e.ts`
+    - 新增：`武士 陈打出后不应触发海龟阿凯的交牌抽二交互`
+- 本轮验证：
+  1. `npm run test:e2e:ci:file -- e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "武士 陈打出后不应触发海龟阿凯的交牌抽二交互"`
+     - 结果：`1 passed`
+- 关键截图（绝对路径）：
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\smashup\smashup-robot-hoverbot-new.e2e\武士-陈打出后不应触发海龟阿凯的交牌抽二交互\samurai-chan-play-no-akye-prompt.png`
+- 结论：
+  - 当前真实对局基线下，打出《武士 陈》后不会再错误弹出《海龟阿凯》的交牌抽二交互。
+  - 这条负路径证据和 `smashup-feedback-69e61a97-world-champs-card-index-fix-2026-04-25.md` 一起看时，可以把“武士 陈 -> 海龟阿凯效果”明确归为**历史 cards7 图集索引错位**，而不是当前能力实现仍串线。
+  - `World Champs` 当前至少已有 `斯坦福 / 海龟阿凯 / 盾牌少女 / 战斗精神奖 / 老鼠、鸟和香肠` 五条正路径 L3 证据，外加《武士 陈》这条关键负路径 L3 证据；但三派系整包仍不因此直接升级成“已收口”。
+
+### 复核记录（2026-04-26 22:31）：World Champs《金币猫 / 鲨鱼纹身》补证 + 《鲨鱼纹身》真实根因修复
+
+- 触发原因：
+  - 继续把 `World Champs` 剩余对象级真证据往前推进，优先补《金币猫》《鲨鱼纹身》。
+  - 在补《鲨鱼纹身》时发现这不是数据录入错误，而是**回合推进链路会把同一条 startTurn 事件重复 reduce 到 core** 的真实实现 bug。
+- 本轮实现：
+  1. `e2e/smashup/smashup-robot-hoverbot-new.e2e.ts`
+     - 新增：`金币猫打出后应可选择这里的其他随从并放置 +1 指示物`
+     - 新增：`鲨鱼纹身打出后应附着到己方随从并在下个自己回合开始时再放一个 +1 指示物`
+  2. `src/games/smashup/__tests__/newFactionAbilities.test.ts`
+     - 新增《鲨鱼纹身》两条回合开始行为断言：
+       - 这里是你唯一随从时，下个自己回合开始只再放 `1` 个指示物
+       - 这里还有你的其他随从时，不再额外放置指示物
+  3. `src/games/smashup/domain/index.ts`
+     - 新增 `keepSysUpdatesOnly(...)`
+     - `onPhaseExit(endTurn)` / `onPhaseEnter(startTurn)` 返回 `updatedState` 时，不再把已经预先 reduce 过的 core 一起带回引擎，只保留 `sys` 变更，避免同一批事件再次被引擎 reduce
+- 根因裁定：
+  - 《鲨鱼纹身》此前出现的是：事件流里只有 `1` 条 `POWER_COUNTER_ADDED`，但宿主力量指示物从 `1` 跳到 `3`。
+  - 这说明问题不在卡图、不在 `world_champs_shark_tattoo` 数据录入，也不在触发器发了两次，而在 **Flow hook 把已变更 core 塞回 `updatedState`，随后引擎又把同一批返回事件再 reduce 一遍**。
+  - 因此该问题属于 **引擎/领域边界缺陷**，不是“审计维度不够导致漏掉一张卡图”的单一录入失误。
+- 本轮验证：
+  1. `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/newFactionAbilities.test.ts -t "world_champs_calicoin|world_champs_shark_tattoo" --configLoader native --maxWorkers 1`
+     - 结果：`4 passed`
+  2. `$env:BG_BYPASS_GLOBAL_HEAVY_BUDGET='1'; npm run test:e2e:ci:file -- e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "金币猫打出后应可选择这里的其他随从"`
+     - 结果：`1 passed`
+  3. `$env:BG_BYPASS_GLOBAL_HEAVY_BUDGET='1'; npm run test:e2e:ci:file -- e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "鲨鱼纹身打出后应附着到己方随从并在下个自己回合开始时再放一个"`
+     - 结果：`1 passed`
+- 关键截图（绝对路径）：
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\smashup\smashup-robot-hoverbot-new.e2e\金币猫打出后应可选择这里的其他随从并放置-+1-指示物\calicoin-prompt-visible.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\smashup\smashup-robot-hoverbot-new.e2e\金币猫打出后应可选择这里的其他随从并放置-+1-指示物\calicoin-resolved-enemy-countered.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\smashup\smashup-robot-hoverbot-new.e2e\鲨鱼纹身打出后应附着到己方随从并在下个自己回合开始时再放一个-+1-指示物\shark-tattoo-attached-initial.png`
+  - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\smashup\smashup-robot-hoverbot-new.e2e\鲨鱼纹身打出后应附着到己方随从并在下个自己回合开始时再放一个-+1-指示物\shark-tattoo-next-turn-counter-added.png`
+- 结论：
+  - 《金币猫》已补齐真实入口“打出 -> 选择这里的其他随从 -> +1 落地”的 L3 证据。
+  - 《鲨鱼纹身》已补齐真实入口“附着 -> 当下 +1 -> 下个自己回合开始再 +1”的 L3 证据。
+  - 《鲨鱼纹身》本轮确认是**真实实现 bug 已修复**，不是数据录入错字或卡图索引错位。
+  - 但三派系整包仍保持“仍有残余范围”口径；当前是 `World Champs` 对象级补证继续扩展，不把这些样本直接上升成整包最终收口。

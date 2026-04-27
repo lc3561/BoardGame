@@ -664,3 +664,40 @@
   4. 点基地直接 `ACTIVATE_SPECIAL({ discardCardUid, baseIndex })`；
   5. `usedDiscardPlayAbilities` 记账后，同回合第二次不再暴露入口。
 - 因此这里被补上的不是单纯一条 E2E，而是**审计口径纠偏**：旧“Revenant 仍缺 during-turn/L3”结论已经失效。
+
+## 2026-04-26 世界冠军《武士 陈》负路径证据
+- 当前浏览器基线下，真实打出《武士 陈》后不会再出现《海龟阿凯》的“选择玩家 -> 交牌 -> 抽两张”交互。
+- 这说明用户当时看到的“武士 陈卡面却触发海龟阿凯效果”在当前基线上已不再复现，能够继续支撑“根因是 cards7 图集索引错位，而不是当前能力实现串线”的结论。
+- 这条证据的价值是**负路径**：不是再证明《海龟阿凯》能正常触发，而是证明《武士 陈》不会误触发《海龟阿凯》。
+
+## 2026-04-26 World Champs《金币猫 / 鲨鱼纹身》补证与根因升级
+- 《金币猫》当前浏览器级真实入口已确认：
+  - 打出后 prompt 会同时给出同基地己方/敌方其他随从；
+  - 选择敌方后，只有敌方目标获得 `+1`，没有误加到己方。
+- 《鲨鱼纹身》当前卡图语义与实现录入本身一致，问题不在数据录入：
+  - 打出时附着并立即给宿主 `+1`；
+  - 下个自己回合开始时若这里确实只有你这一张随从，则再给 `+1`；
+  - 若这里还有你的其他随从，则不会额外加。
+- 本轮真正定位到的根因比“卡图/配置录错”更深一层：
+  - `src/games/smashup/domain/index.ts` 的 flow hook 会把**已被事件预先 reduce 过的 core**夹带进 `updatedState` 返回；
+  - 引擎随后又会对返回事件再 reduce 一遍；
+  - 对《鲨鱼纹身》表现成“事件只有 1 条，结果却多算 1 次”。
+- 结论：
+  - 这次不是“审计维度只有卡图/文本不够”，而是**对象级重审把问题从表面卡牌怀疑，推进到了 flow hook / updatedState / core 双算边界缺陷**。
+  - 也因此，后续三派系重审不能只看“卡图对上了没”，还必须继续抽样覆盖“startTurn / endTurn / afterScoring”这类阶段切换链路。
+
+## 2026-04-26 World Champs《警长 / 木乃伊》补证与误判根因回写
+- 《警长》与《木乃伊》当前都已补到浏览器级真实入口证据：
+  - `警长应在基地计分前发起决斗并摧毁落败随从` → `1 passed`
+  - `木乃伊应在基地计分后埋葬到另一个基地` → `1 passed`
+- 新证据文档：
+  - `evidence/smashup/smashup-world-champs-sheriff-mummy-e2e-2026-04-26.md`
+- 关键截图绝对路径：
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-world-champs-sheriff-duel-card-prompt-2026-04-26.png`
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-world-champs-sheriff-duel-resolved-2026-04-26.png`
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-world-champs-mummy-after-scoring-prompt-2026-04-26.png`
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-world-champs-mummy-buried-on-other-base-2026-04-26.png`
+- 本轮收紧后的根因结论：
+  - 《警长》此前更像是 **E2E helper 只看 host 视角 + 错点泛化 Pass + 场景残留 titan 污染**；
+  - 《木乃伊》此前更像是 **beforeScoring 场景污染 afterScoring 入口**；
+  - 这两张牌当前都**不应再被粗暴归类成“卡图录错 / 数据录错”**。

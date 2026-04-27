@@ -243,4 +243,72 @@ describe('useEventStreamCursor', () => {
 
         expect(consumedTypes).toEqual([]);
     });
+
+    it('rollback 过滤后 entries 暂时为空时，不应把旧事件重新当成新事件消费', () => {
+        let rollbackValue: EventStreamRollbackValue = {
+            watermark: null,
+            seq: 0,
+            reconcileSeq: 0,
+        };
+
+        const wrapper = ({ children }: { children: React.ReactNode }) =>
+            React.createElement(
+                EventStreamRollbackContext.Provider,
+                { value: rollbackValue },
+                children,
+            );
+
+        const initialEntries = [
+            createEntry(1, 'SUMMON_A'),
+            createEntry(2, 'SUMMON_B'),
+        ];
+
+        const { result, rerender } = renderHook(
+            ({ entries }: { entries: EventStreamEntry[] }) =>
+                useEventStreamCursor({ entries }),
+            {
+                initialProps: { entries: initialEntries },
+                wrapper,
+            },
+        );
+
+        act(() => {
+            expect(result.current.consumeNew().entries).toEqual([]);
+        });
+
+        rollbackValue = {
+            watermark: 2,
+            seq: 1,
+            reconcileSeq: 0,
+        };
+
+        rerender({ entries: [] });
+
+        act(() => {
+            const consumed = result.current.consumeNew();
+            expect(consumed.entries).toEqual([]);
+            expect(consumed.didOptimisticRollback).toBe(true);
+        });
+
+        rerender({ entries: [] });
+
+        act(() => {
+            expect(result.current.consumeNew().entries).toEqual([]);
+        });
+
+        rerender({
+            entries: [
+                createEntry(1, 'SUMMON_A'),
+                createEntry(2, 'SUMMON_B'),
+                createEntry(3, 'SUMMON_C'),
+            ],
+        });
+
+        let consumedTypes: string[] = [];
+        act(() => {
+            consumedTypes = result.current.consumeNew().entries.map((entry) => entry.event.type);
+        });
+
+        expect(consumedTypes).toEqual(['SUMMON_C']);
+    });
 });

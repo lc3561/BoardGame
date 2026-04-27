@@ -100,15 +100,15 @@
 | index | 英文名 | 图面中文名 | 关键结论 |
 | --- | --- | --- | --- |
 | 24 | Rainbow Girl | 彩虹女孩 | 现实现大体正确 |
-| 25 | Mummy | 木乃伊 | 现实现大体正确 |
+| 25 | Mummy | 木乃伊 | 2026-04-26 已补“基地计分后埋葬到另一个基地”的真实入口 E2E 证据 |
 | 26 | Calicoin | 金币猫 | 2026-04-26 已按卡图优先重录中文名 |
-| 27 | Samurai-Chan | 武士 陈 | 2026-04-26 已按卡图优先重录中文名 |
+| 27 | Samurai-Chan | 武士 陈 | 2026-04-26 已按卡图优先重录中文名，并补“打出后不会误触发海龟阿凯效果”的 L3 负路径证据 |
 | 28 | Diva | 女主角 | 2026-04-26 已按卡图优先重录中文名 |
 | 29 | Akye the Turtle | 海龟阿凯 | 2026-04-26 已补真实入口 E2E 证据 |
 | 30 | Shield Maiden | 盾牌少女 | 2026-04-26 已补真实入口 E2E 证据 |
 | 31 | Stoneford | 斯坦福 | 2026-04-26 已按卡图优先重录中文名，并修正为不额外洗牌 |
 | 32 | Aramis | 阿拉密斯 | 2026-04-26 已按卡图优先重录中文名 |
-| 33 | Sheriff | 警长 | 2026-04-26 已按卡图优先重录中文名 |
+| 33 | Sheriff | 警长 | 2026-04-26 已按卡图优先重录中文名，并补“基地计分前发起决斗并摧毁落败随从”的真实入口 E2E 证据 |
 | 34 | Fighting Spirit Prize | 战斗精神奖 | 2026-04-26 已按卡图优先重录中文名 |
 | 35 | Smart Set-Up | 聪明Set-Up | 2026-04-26 已按卡图优先重录中文名 |
 | 36 | Shark Tattoo | 鲨鱼纹身 | 2026-04-26 当前静态数据与 locale 已一致 |
@@ -125,6 +125,10 @@
 - 世界冠军静态数据、`public/locales/zh-CN/game-smashup.json`、Android 内置 locale 已统一到当前卡图优先口径：
   - `警长 / 阿拉密斯 / 斯坦福 / 女主角 / 盾牌少女 / 金币猫 / 武士 陈 / 着魔 / 战斗精神奖 / 现在是闪电时间！ / 怪兽冲击 / 老鼠、鸟和香肠 / 聪明Set-Up`
 - 当前 `鲨鱼纹身 / 嗯？ / 快如闪电 / 高速追逐 / 海龟阿凯` 在运行时数据、镜像数据、主 locale、Android 内置 locale 中也已对齐，不再保留旧错名。
+- 2026-04-26 再补记：
+  - 《金币猫》已用浏览器级真实入口证据确认：当前实现允许选择“这里的其他随从”，并不错误收窄成“仅己方随从”。
+  - 《鲨鱼纹身》已用浏览器级真实入口 + 定向单测确认：卡图语义本身录入无误；此前“下个自己回合开始多放了 1 个指示物”不是录入问题，而是 `startTurn` flow hook 把已 reduce 的 core 又带回引擎，导致同一 `POWER_COUNTER_ADDED` 被重复计入。
+  - 《警长》《木乃伊》已补浏览器级真实入口证据，见 `evidence/smashup/smashup-world-champs-sheriff-mummy-e2e-2026-04-26.md`；本轮确认它们此前的主要问题不是卡图录错，而是旧 E2E 链路观察面错误与 beforeScoring 场景污染。
 - 6 个新基地再次对照 `temp/wangling-base-title-0.png` ~ `temp/wangling-base-title-5.png`：
   - `Mermaid Reef / 人鱼暗礁 / 17`
   - `Mermaid Pool / 人鱼水池 / 23`
@@ -265,6 +269,7 @@
 - `World Champs`
   - `Stoneford / 斯坦福` 已去掉错误的“then shuffle / 洗牌”语义。
   - `Mummy / 木乃伊` 已按卡图维持 `ongoing + afterScoring` 口径，不再伪装成 `special`。
+  - 《警长 / 木乃伊》现在都已有对象级 L3 证据，不再只是“现实现大体正确”的静态判断。
 - 本轮验证：
   - `npx vitest run src/games/smashup/__tests__/newFactionAbilities.test.ts src/games/smashup/__tests__/smashup.smoke.test.ts src/games/smashup/__tests__/cardI18nIntegrity.test.ts`
   - `npm run i18n:check`

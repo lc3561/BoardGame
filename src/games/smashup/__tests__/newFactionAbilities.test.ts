@@ -5930,6 +5930,10 @@ describe('World Champs abilities', () => {
             { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: option.id } } as any,
             defaultTestRandom,
         );
+        expect(chosen.finalState.core.activeDuel?.challengerMinionUid).toBe('sheriff-1');
+        expect(chosen.finalState.core.activeDuel?.challengedMinionUid).toBe('enemy-1');
+        const duelPrompt = getInteractionsFromMS(chosen.finalState)[0] as any;
+        expect(duelPrompt?.data?.sourceId).toBe('smashup_duel_card');
         const duelResolved = resolveDuelChain(chosen.finalState);
         expect(duelResolved.events.some(event => event.type === SU_EVENTS.MINION_DESTROYED)).toBe(true);
         expect(duelResolved.finalState.core.bases[0].minions.some(minion => minion.uid === 'enemy-1')).toBe(false);
@@ -6515,6 +6519,91 @@ describe('World Champs abilities', () => {
         const target = played.finalState.core.bases[0].minions.find(minion => minion.uid === 'ally-1');
         expect(target?.attachedActions.some(action => action.defId === 'world_champs_shark_tattoo')).toBe(true);
         expect(target?.powerCounters).toBe(1);
+    });
+
+    it('world_champs_shark_tattoo 在你的回合开始时若这里是你唯一随从则再放置 1 个 +1 指示物', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0', { hand: [makeCard('shark-1', 'world_champs_shark_tattoo', 'action', '0')] }),
+                '1': makePlayer('1'),
+            },
+            bases: [{
+                defId: 'base_a',
+                minions: [makeMinion('ally-1', 'robot_microbot_alpha', '0', 1, { powerCounters: 0 })],
+                ongoingActions: [],
+            }],
+        });
+
+        const played = runCommand(
+            makeMatchState(core),
+            {
+                type: SU_COMMANDS.PLAY_ACTION,
+                playerId: '0',
+                payload: { cardUid: 'shark-1', targetBaseIndex: 0, targetMinionUid: 'ally-1' } as any,
+            },
+            defaultTestRandom,
+        );
+
+        const opponentTurn = runCommand(
+            played.finalState,
+            { type: 'ADVANCE_PHASE' as any, playerId: '0', payload: undefined } as any,
+            defaultTestRandom,
+        );
+        const nextOwnTurn = runCommand(
+            opponentTurn.finalState,
+            { type: 'ADVANCE_PHASE' as any, playerId: '1', payload: undefined } as any,
+            defaultTestRandom,
+        );
+
+        const target = nextOwnTurn.finalState.core.bases[0].minions.find(minion => minion.uid === 'ally-1');
+        const counterEvents = nextOwnTurn.events.filter((event: any) => event.type === SU_EVENTS.POWER_COUNTER_ADDED);
+        expect(target?.attachedActions.some(action => action.defId === 'world_champs_shark_tattoo')).toBe(true);
+        expect(counterEvents).toHaveLength(1);
+        expect(target?.powerCounters).toBe(2);
+    });
+
+    it('world_champs_shark_tattoo 在这里还有你的其他随从时回合开始不再放置指示物', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0', { hand: [makeCard('shark-1', 'world_champs_shark_tattoo', 'action', '0')] }),
+                '1': makePlayer('1'),
+            },
+            bases: [{
+                defId: 'base_a',
+                minions: [
+                    makeMinion('ally-1', 'robot_microbot_alpha', '0', 1, { powerCounters: 0 }),
+                    makeMinion('ally-2', 'robot_microbot_beta', '0', 1, { powerCounters: 0 }),
+                ],
+                ongoingActions: [],
+            }],
+        });
+
+        const played = runCommand(
+            makeMatchState(core),
+            {
+                type: SU_COMMANDS.PLAY_ACTION,
+                playerId: '0',
+                payload: { cardUid: 'shark-1', targetBaseIndex: 0, targetMinionUid: 'ally-1' } as any,
+            },
+            defaultTestRandom,
+        );
+
+        const opponentTurn = runCommand(
+            played.finalState,
+            { type: 'ADVANCE_PHASE' as any, playerId: '0', payload: undefined } as any,
+            defaultTestRandom,
+        );
+        const nextOwnTurn = runCommand(
+            opponentTurn.finalState,
+            { type: 'ADVANCE_PHASE' as any, playerId: '1', payload: undefined } as any,
+            defaultTestRandom,
+        );
+
+        const ally1 = nextOwnTurn.finalState.core.bases[0].minions.find(minion => minion.uid === 'ally-1');
+        const ally2 = nextOwnTurn.finalState.core.bases[0].minions.find(minion => minion.uid === 'ally-2');
+        expect(ally1?.attachedActions.some(action => action.defId === 'world_champs_shark_tattoo')).toBe(true);
+        expect(ally1?.powerCounters).toBe(1);
+        expect(ally2?.powerCounters ?? 0).toBe(0);
     });
 
     it('world_champs_eh special 响应后会给随从 +1 并把该牌回收到手牌', () => {

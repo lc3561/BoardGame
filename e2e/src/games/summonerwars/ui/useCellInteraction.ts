@@ -16,8 +16,8 @@ import {
   getValidMoveTargetsEnhanced, getValidAttackTargetsEnhanced,
   getPlayerUnits, hasAvailableActions, isCellEmpty,
   getAdjacentCells,
-  manhattanDistance, getStructureAt, findUnitPositionByInstanceId, getSummoner,
-  getUnitAbilities, hasStableAbility, normalizeUnitBoosts,
+  manhattanDistance, findUnitPositionByInstanceId, getSummoner,
+  getUnitAbilities,
 } from '../domain/helpers';
 import { isUndeadCard, getBaseCardId, CARD_IDS } from '../domain/ids';
 import { getSummonerWarsUIHints } from '../domain/uiHints';
@@ -30,6 +30,10 @@ import type { InteractionDescriptor, PromptOption } from '../../../engine/system
 import { INTERACTION_COMMANDS } from '../../../engine/systems/InteractionSystem';
 import {
   findActivatedAbilityTargetOptionByPosition,
+  findSystemAbilityUnitOptionByPosition,
+  getSystemAbilityUiRoute,
+  resolveBeforeAttackCancellation,
+  resolveBeforeAttackCardConfirmation,
   type SwSimpleChoiceInteraction,
 } from './systemInteractionAdapter';
 
@@ -228,36 +232,50 @@ export function useCellInteraction({
     return getValidBuildPositions(core, myPlayerId as '0' | '1');
   }, [core, currentPhase, isMyTurn, myPlayerId, selectedHandCard]);
 
-  // 技能目标位置（复活死灵、感染、结构变换推拉方向、抓附跟随）
+  // 技能目标位置（系统交互分支优先使用 InteractionSystem options 作为权威真相源）
   const validAbilityPositions = useMemo(() => {
     if (interactionPositions.length > 0) return interactionPositions;
-    if (!abilityMode) return [];
-    // 结构变换第二步：选择推拉方向（目标建筑相邻的空格）
-    if (abilityMode.abilityId === 'structure_shift' && abilityMode.step === 'selectNewPosition' && abilityMode.targetPosition) {
-      const adj = getAdjacentCells(abilityMode.targetPosition);
-      return adj.filter(p => isCellEmpty(core, p));
-    }
-    // 寒冰冲撞第二步：选择推拉方向（目标单位相邻的空格）
-    if (abilityMode.abilityId === 'ice_ram' && abilityMode.step === 'selectPushDirection' && abilityMode.targetPosition) {
-      const adj = getAdjacentCells(abilityMode.targetPosition);
-      return adj.filter(p => isCellEmpty(core, p));
-    }
-    if (abilityMode.step !== 'selectPosition') return [];
-    if (abilityMode.abilityId === 'revive_undead') {
-      const sourcePos = findUnitPositionByInstanceId(core, abilityMode.sourceUnitId);
-      if (!sourcePos) return [];
-      const adj: CellCoord[] = [
-        { row: sourcePos.row - 1, col: sourcePos.col },
-        { row: sourcePos.row + 1, col: sourcePos.col },
-        { row: sourcePos.row, col: sourcePos.col - 1 },
-        { row: sourcePos.row, col: sourcePos.col + 1 },
-      ];
-      return adj.filter(p => isCellEmpty(core, p));
-    }
-    return [];
-  }, [abilityMode, core, interactionPositions]);
+    if (!abilityMode || !swInteraction) return [];
 
-  // 技能可选单位（火祀召唤、吸取生命、幻化、结构变换等）
+    if (abilityMode.abilityId === 'structure_shift' && abilityMode.step === 'selectNewPosition') {
+      return swInteraction.options
+        .map((opt) => {
+          const value = opt.value as { action?: string; newPosition?: CellCoord } | undefined;
+          return value?.action === 'after_move_structure_shift_direction' && value.newPosition
+            ? value.newPosition
+            : null;
+        })
+        .filter((pos): pos is CellCoord => !!pos);
+    }
+
+    if (abilityMode.abilityId === 'ice_ram' && abilityMode.step === 'selectPushDirection') {
+      return swInteraction.options
+        .map((opt) => {
+          const value = opt.value as { action?: string; pushNewPosition?: CellCoord } | undefined;
+          return value?.action === 'ice_ram_push' && value.pushNewPosition
+            ? value.pushNewPosition
+            : null;
+        })
+        .filter((pos): pos is CellCoord => !!pos);
+    }
+
+    if (abilityMode.abilityId === 'revive_undead' && abilityMode.step === 'selectPosition') {
+      const positions: CellCoord[] = [];
+      for (let row = 0; row < BOARD_ROWS; row++) {
+        for (let col = 0; col < BOARD_COLS; col++) {
+          const position = { row, col };
+          if (findActivatedAbilityTargetOptionByPosition(swInteraction, 'revive_undead', position, 'selectPosition')) {
+            positions.push(position);
+          }
+        }
+      }
+      return positions;
+    }
+
+    return [];
+  }, [abilityMode, interactionPositions, swInteraction]);
+
+  // 技能可选单位（系统交互分支优先使用 InteractionSystem options 作为权威真相源）
   const validAbilityUnits = useMemo(() => {
     if (swInteraction?.type === 'fire_sacrifice_summon') {
       return swInteraction.options
@@ -276,135 +294,25 @@ export function useCellInteraction({
         .filter(u => u.card.unitClass !== 'summoner')
         .map(u => u.position);
     }
-    if (!abilityMode || abilityMode.step !== 'selectUnit') return [];
-    if (abilityMode.abilityId === 'life_drain') {
-      const sourcePos = findUnitPositionByInstanceId(core, abilityMode.sourceUnitId);
-      if (!sourcePos) return [];
-      return getPlayerUnits(core, myPlayerId as '0' | '1')
-        .filter(u => {
-          if (u.instanceId === abilityMode.sourceUnitId) return false;
-          return manhattanDistance(sourcePos, u.position) <= 2;
-        })
-        .map(u => u.position);
-    }
-    // 幻化：3格内的士兵（任意阵营）
-    if (abilityMode.abilityId === 'illusion') {
-      const sourcePos = findUnitPositionByInstanceId(core, abilityMode.sourceUnitId);
-      if (!sourcePos) return [];
-      const targets: CellCoord[] = [];
-      for (let row = 0; row < BOARD_ROWS; row++) {
-        for (let col = 0; col < BOARD_COLS; col++) {
-          const unit = core.board[row]?.[col]?.unit;
-          if (!unit) continue;
-          if (unit.card.unitClass !== 'common') continue;
-          const dist = manhattanDistance(sourcePos, { row, col });
-          if (dist > 0 && dist <= 3) {
-            targets.push({ row, col });
-          }
+    if (!abilityMode || abilityMode.step !== 'selectUnit' || !swInteraction) return [];
+
+    const targets: CellCoord[] = [];
+    for (let row = 0; row < BOARD_ROWS; row++) {
+      for (let col = 0; col < BOARD_COLS; col++) {
+        const targetPosition = { row, col };
+        const targetUnitId = core.board[row]?.[col]?.unit?.instanceId;
+        const option = findSystemAbilityUnitOptionByPosition(
+          swInteraction,
+          abilityMode,
+          targetPosition,
+          targetUnitId,
+        );
+        if (option) {
+          targets.push(targetPosition);
         }
       }
-      return targets;
     }
-    // 寒冰冲撞：建筑新位置相邻的所有单位（任意阵营）
-    if (abilityMode.abilityId === 'ice_ram' && abilityMode.structurePosition) {
-      const sp = abilityMode.structurePosition;
-      const adj = getAdjacentCells(sp);
-      return adj.filter(p => !!core.board[p.row]?.[p.col]?.unit);
-    }
-    // 结构变换：3格内友方建筑（含活体结构单位如寒冰魔像）
-    if (abilityMode.abilityId === 'structure_shift') {
-      const sourcePos = findUnitPositionByInstanceId(core, abilityMode.sourceUnitId);
-      if (!sourcePos) return [];
-      const targets: CellCoord[] = [];
-      for (let row = 0; row < BOARD_ROWS; row++) {
-        for (let col = 0; col < BOARD_COLS; col++) {
-          const pos = { row, col };
-          const structure = getStructureAt(core, pos);
-          const unit = core.board[row]?.[col]?.unit;
-          const isAllyStructure = (structure && structure.owner === (myPlayerId as '0' | '1'))
-            || (unit && unit.owner === (myPlayerId as '0' | '1')
-              && getUnitAbilities(unit, core).includes('mobile_structure'));
-          if (isAllyStructure) {
-            const dist = manhattanDistance(sourcePos, pos);
-            if (dist > 0 && dist <= 3) targets.push(pos);
-          }
-        }
-      }
-      return targets;
-    }
-    // 神出鬼没：全场0费友方单位（非自身）
-    if (abilityMode.abilityId === 'vanish') {
-      return getPlayerUnits(core, myPlayerId as '0' | '1')
-        .filter(u => u.instanceId !== abilityMode.sourceUnitId && u.card.cost === 0)
-        .map(u => u.position);
-    }
-    // 冰霜战斧：3格内友方士兵（非自身），充能不足时不高亮（禁止点击释放）
-    if (abilityMode.abilityId === 'frost_axe') {
-      const sourcePos = findUnitPositionByInstanceId(core, abilityMode.sourceUnitId);
-      if (!sourcePos) return [];
-      const sourceUnit = core.board[sourcePos.row]?.[sourcePos.col]?.unit;
-      if (!sourceUnit || normalizeUnitBoosts(sourceUnit.boosts) < 1) return [];
-      return getPlayerUnits(core, myPlayerId as '0' | '1')
-        .filter(u => {
-          if (u.instanceId === abilityMode.sourceUnitId) return false;
-          if (u.card.unitClass !== 'common') return false;
-          return manhattanDistance(sourcePos, u.position) <= 3;
-        })
-        .map(u => u.position);
-    }
-    // 祖灵羁绊 / 祖灵交流(transfer)：3格内友方单位（非自身）
-    if (abilityMode.abilityId === 'ancestral_bond' || abilityMode.abilityId === 'spirit_bond') {
-      const sourcePos = findUnitPositionByInstanceId(core, abilityMode.sourceUnitId);
-      if (!sourcePos) return [];
-      // spirit_bond 转移需要充能，充能不足时不高亮目标
-      if (abilityMode.abilityId === 'spirit_bond') {
-        const sourceUnit = core.board[sourcePos.row]?.[sourcePos.col]?.unit;
-        if (!sourceUnit || normalizeUnitBoosts(sourceUnit.boosts) < 1) return [];
-      }
-      return getPlayerUnits(core, myPlayerId as '0' | '1')
-        .filter(u => {
-          if (u.instanceId === abilityMode.sourceUnitId) return false;
-          return manhattanDistance(sourcePos, u.position) <= 3;
-        })
-        .map(u => u.position);
-    }
-    // 高阶念力（代替攻击）：3格内非召唤师单位（排除稳固）
-    if (abilityMode.abilityId === 'high_telekinesis_instead') {
-      const sourcePos = findUnitPositionByInstanceId(core, abilityMode.sourceUnitId);
-      if (!sourcePos) return [];
-      const targets: CellCoord[] = [];
-      for (let row = 0; row < BOARD_ROWS; row++) {
-        for (let col = 0; col < BOARD_COLS; col++) {
-          const unit = core.board[row]?.[col]?.unit;
-          if (!unit || unit.card.unitClass === 'summoner') continue;
-          if (hasStableAbility(unit, core)) continue;
-          const dist = manhattanDistance(sourcePos, { row, col });
-          if (dist > 0 && dist <= 3) {
-            targets.push({ row, col });
-          }
-        }
-      }
-      return targets;
-    }
-    // 念力（代替攻击）：2格内非召唤师单位（排除稳固）
-    if (abilityMode.abilityId === 'telekinesis_instead') {
-      const sourcePos = findUnitPositionByInstanceId(core, abilityMode.sourceUnitId);
-      if (!sourcePos) return [];
-      const targets: CellCoord[] = [];
-      for (let row = 0; row < BOARD_ROWS; row++) {
-        for (let col = 0; col < BOARD_COLS; col++) {
-          const unit = core.board[row]?.[col]?.unit;
-          if (!unit || unit.card.unitClass === 'summoner') continue;
-          if (hasStableAbility(unit, core)) continue;
-          const dist = manhattanDistance(sourcePos, { row, col });
-          if (dist > 0 && dist <= 2) {
-            targets.push({ row, col });
-          }
-        }
-      }
-      return targets;
-    }
-    return [];
+    return targets;
   }, [abilityMode, core, fireSacrificeSummonMode, myPlayerId, swInteraction]);
 
   // 获取可移动位置
@@ -535,180 +443,42 @@ export function useCellInteraction({
     if (abilityMode && abilityMode.step === 'selectUnit') {
       const isValid = validAbilityUnits.some(p => p.row === gameRow && p.col === gameCol);
       if (isValid) {
-        // 寒冰冲撞：选择目标后进入推拉方向选择
-        if (abilityMode.abilityId === 'ice_ram') {
-          if (swInteraction?.type !== 'ice_ram_target') return;
-          const optionId = swInteraction.options.find((opt) => {
-            const value = opt.value as { action?: string; targetPosition?: CellCoord } | undefined;
-            return value?.action === 'ice_ram_target'
-              && value.targetPosition?.row === gameRow
-              && value.targetPosition?.col === gameCol;
-          })?.id ?? null;
-          if (optionId) {
-            respondInteractionOption(optionId);
-            setAbilityMode(null);
-          }
-          return;
-        }
-        // 结构变换目标是建筑，进入选择推拉方向步骤
-        if (abilityMode.abilityId === 'structure_shift') {
-          if (swInteraction?.type !== 'after_move_structure_shift_target') return;
-          const option = swInteraction.options.find((opt) => {
-            const value = opt.value as { action?: string; targetPosition?: CellCoord } | undefined;
-            return value?.action === 'after_move_structure_shift_target'
-              && value.targetPosition?.row === gameRow
-              && value.targetPosition?.col === gameCol;
-          });
-          if (option) {
-            dispatch(INTERACTION_COMMANDS.RESPOND, {
-              interactionId: swInteraction.id,
-              optionId: option.id,
-            });
-            setAbilityMode(null);
-          }
-          return;
-        }
         const targetUnit = core.board[gameRow]?.[gameCol]?.unit;
-        if (targetUnit) {
-          if (abilityMode.context === 'beforeAttack') {
-            if (swInteraction?.type === 'before_attack_life_drain') {
-              const option = swInteraction.options.find((opt) => {
-                const value = opt.value as { action?: string; targetUnitId?: string; targetPosition?: CellCoord } | undefined;
-                return value?.action === 'before_attack_life_drain'
-                  && (
-                    value.targetUnitId === targetUnit.instanceId
-                    || (value.targetPosition?.row === gameRow && value.targetPosition?.col === gameCol)
-                  );
-              });
-              if (option) {
-                dispatch(INTERACTION_COMMANDS.RESPOND, {
-                  interactionId: swInteraction.id,
-                  optionId: option.id,
-                });
-              }
-              setAbilityMode(null);
-              return;
-            }
-            console.warn('[SummonerWars] 未处理的系统攻击前选目标分支', {
-              abilityId: abilityMode.abilityId,
-              swInteractionType: swInteraction?.type ?? null,
-              targetUnitId: targetUnit.instanceId,
-            });
-          } else if (abilityMode.abilityId === 'illusion') {
-            if (swInteraction?.type !== 'on_phase_start_illusion') return;
-            const option = swInteraction.options.find((opt) => {
-              const value = opt.value as { action?: string; targetPosition?: CellCoord } | undefined;
-              return value?.action === 'on_phase_start_illusion'
-                && value.targetPosition?.row === gameRow
-                && value.targetPosition?.col === gameCol;
-            });
-            if (option) {
-              dispatch(INTERACTION_COMMANDS.RESPOND, {
-                interactionId: swInteraction.id,
-                optionId: option.id,
-              });
-              setAbilityMode(null);
-            }
-          } else if (abilityMode.abilityId === 'ancestral_bond') {
-            if (swInteraction?.type !== 'after_move_ancestral_bond') return;
-            const option = swInteraction.options.find((opt) => {
-              const value = opt.value as { action?: string; targetPosition?: CellCoord } | undefined;
-              return value?.action === 'after_move_ancestral_bond'
-                && value.targetPosition?.row === gameRow
-                && value.targetPosition?.col === gameCol;
-            });
-            if (option) {
-              dispatch(INTERACTION_COMMANDS.RESPOND, {
-                interactionId: swInteraction.id,
-                optionId: option.id,
-              });
-              setAbilityMode(null);
-            }
-          } else if (abilityMode.abilityId === 'spirit_bond') {
-            if (swInteraction?.type !== 'after_move_spirit_bond') return;
-            const option = swInteraction.options.find((opt) => {
-              const value = opt.value as { action?: string; choice?: string; targetPosition?: CellCoord } | undefined;
-              return value?.action === 'after_move_spirit_bond'
-                && value.choice === 'transfer'
-                && value.targetPosition?.row === gameRow
-                && value.targetPosition?.col === gameCol;
-            });
-            if (option) {
-              dispatch(INTERACTION_COMMANDS.RESPOND, {
-                interactionId: swInteraction.id,
-                optionId: option.id,
-              });
-              setAbilityMode(null);
-            }
-          } else if (abilityMode.abilityId === 'frost_axe') {
-            if (swInteraction?.type !== 'after_move_frost_axe') return;
-            const option = swInteraction.options.find((opt) => {
-              const value = opt.value as { action?: string; choice?: string; targetPosition?: CellCoord } | undefined;
-              return value?.action === 'after_move_frost_axe'
-                && value.choice === 'attach'
-                && value.targetPosition?.row === gameRow
-                && value.targetPosition?.col === gameCol;
-            });
-            if (option) {
-              dispatch(INTERACTION_COMMANDS.RESPOND, {
-                interactionId: swInteraction.id,
-                optionId: option.id,
-              });
-              setAbilityMode(null);
-            }
-          } else if (abilityMode.abilityId === 'vanish') {
-            if (swInteraction?.type !== 'activated_ability_target') return;
-            const option = findActivatedAbilityTargetOptionByPosition(
-              swInteraction,
-              'vanish',
-              { row: gameRow, col: gameCol },
-              'selectUnit',
-            );
-            if (option) {
-              dispatch(INTERACTION_COMMANDS.RESPOND, {
-                interactionId: swInteraction.id,
-                optionId: option.id,
-              });
-              setAbilityMode(null);
-            }
-          } else if (abilityMode.abilityId === 'high_telekinesis_instead') {
-            if (swInteraction?.type !== 'activated_ability_target') return;
-            const option = findActivatedAbilityTargetOptionByPosition(
-              swInteraction,
-              'high_telekinesis_instead',
-              { row: gameRow, col: gameCol },
-              'selectUnit',
-            );
-            if (option) {
-              respondInteractionOption(option.id);
-              setAbilityMode(null);
-            }
-            return;
-          } else if (abilityMode.abilityId === 'telekinesis_instead') {
-            if (swInteraction?.type !== 'activated_ability_target') return;
-            const option = findActivatedAbilityTargetOptionByPosition(
-              swInteraction,
-              'telekinesis_instead',
-              { row: gameRow, col: gameCol },
-              'selectUnit',
-            );
-            if (option) {
-              respondInteractionOption(option.id);
-              setAbilityMode(null);
-            }
-            return;
-          } else {
-            console.warn('[SummonerWars] 未处理的系统能力单位选择分支', {
-              abilityId: abilityMode.abilityId,
-              step: abilityMode.step,
-              context: abilityMode.context,
-              swInteractionType: swInteraction?.type ?? null,
-              targetUnitId: targetUnit.instanceId,
-            });
-            return;
-          }
+        const option = findSystemAbilityUnitOptionByPosition(
+          swInteraction,
+          abilityMode,
+          { row: gameRow, col: gameCol },
+          targetUnit?.instanceId,
+        );
+        if (option) {
+          respondInteractionOption(option.id);
           setAbilityMode(null);
+          return;
         }
+
+        if (abilityMode.context === 'beforeAttack') {
+          // 现役 beforeAttack 选目标分支已由 useGameEvents.test.ts 的路由矩阵门禁覆盖；
+          // 落到这里说明新增了系统交互分支，但没有同步补齐棋盘点击消费逻辑。
+          console.warn('[SummonerWars] 未处理的系统攻击前选目标分支', {
+            abilityId: abilityMode.abilityId,
+            swInteractionType: swInteraction?.type ?? null,
+            targetUnitId: targetUnit?.instanceId ?? null,
+            targetPosition: { row: gameRow, col: gameCol },
+          });
+          return;
+        }
+
+        // 现役 selectUnit 分支已由 useGameEvents.test.ts 的路由矩阵门禁覆盖；
+        // 落到这里说明新增 abilityMode 路由后，没有同步补齐单位点击消费逻辑。
+        console.warn('[SummonerWars] 未处理的系统能力单位选择分支', {
+          abilityId: abilityMode.abilityId,
+          step: abilityMode.step,
+          context: abilityMode.context,
+          swInteractionType: swInteraction?.type ?? null,
+          targetUnitId: targetUnit?.instanceId ?? null,
+          targetPosition: { row: gameRow, col: gameCol },
+        });
+        return;
       }
       return;
     }
@@ -767,6 +537,15 @@ export function useCellInteraction({
           respondInteractionOption(option.id);
           setAbilityMode(null);
         }
+      } else if (isValid) {
+        console.warn('[SummonerWars] 未处理的系统能力位置选择分支', {
+          abilityId: abilityMode.abilityId,
+          step: abilityMode.step,
+          context: abilityMode.context,
+          swInteractionType: swInteraction?.type ?? null,
+          targetPosition: { row: gameRow, col: gameCol },
+          route: getSystemAbilityUiRoute(abilityMode),
+        });
       }
       return;
     }
@@ -903,6 +682,18 @@ export function useCellInteraction({
     if (abilityMode && abilityMode.step === 'selectCards') {
       const card = myHand.find(c => c.id === cardId);
       if (!card) return;
+      const route = getSystemAbilityUiRoute(abilityMode);
+      if (route !== 'hand-card-select') {
+        console.warn('[SummonerWars] 未处理的系统能力选牌分支', {
+          abilityId: abilityMode.abilityId,
+          step: abilityMode.step,
+          context: abilityMode.context,
+          swInteractionType: swInteraction?.type ?? null,
+          cardId,
+          route,
+        });
+        return;
+      }
       const selected = abilityMode.selectedCardIds ?? [];
       const isSelected = selected.includes(cardId);
       if (
@@ -1098,85 +889,60 @@ export function useCellInteraction({
     const selected = (abilityMode.selectedCardIds ?? []).filter((cardId) =>
       selectableCardIds.size === 0 || selectableCardIds.has(cardId)
     );
+    const route = getSystemAbilityUiRoute(abilityMode);
+    const plan = resolveBeforeAttackCardConfirmation(swInteraction, abilityMode, selected);
 
-    if (swInteraction?.type === 'before_attack_holy_arrow') {
-      const optionIds = selected
-        .map((cardId) => swInteraction.options.find((opt) => {
-          const value = opt.value as { action?: string; cardId?: string } | undefined;
-          return value?.action === 'before_attack_holy_arrow' && value.cardId === cardId;
-        })?.id ?? null)
-        .filter((id): id is string => !!id);
+    if (plan?.command === 'respondMany' && swInteraction) {
       dispatch(INTERACTION_COMMANDS.RESPOND, {
         interactionId: swInteraction.id,
-        optionIds,
+        optionIds: plan.optionIds,
       });
       setAbilityMode(null);
       return;
     }
 
-    if (swInteraction?.type === 'before_attack_healing') {
-      const pickedCardId = selected[0];
-      if (!pickedCardId) {
-        const skipOption = swInteraction.options.find((opt) => {
-          const value = opt.value as { skip?: boolean } | undefined;
-          return opt.id === 'skip' || value?.skip === true;
-        });
-        if (skipOption) {
-          dispatch(INTERACTION_COMMANDS.RESPOND, {
-            interactionId: swInteraction.id,
-            optionId: skipOption.id,
-          });
-        }
-        setAbilityMode(null);
-        return;
-      }
-      const option = swInteraction.options.find((opt) => {
-        const value = opt.value as { action?: string; cardId?: string } | undefined;
-        return value?.action === 'before_attack_healing' && value.cardId === pickedCardId;
-      });
-      if (!option) return;
+    if (plan?.command === 'respond' && swInteraction) {
       dispatch(INTERACTION_COMMANDS.RESPOND, {
         interactionId: swInteraction.id,
-        optionId: option.id,
+        optionId: plan.optionId,
       });
       setAbilityMode(null);
       return;
     }
     
-    if (abilityMode.abilityId === 'holy_arrow' || abilityMode.abilityId === 'healing') {
+    if (route === 'hand-card-select' || abilityMode.context === 'beforeAttack') {
+      // 当前 selectCards 现役系统路由已由 useGameEvents.test.ts 门禁锁定；
+      // 落到这里说明系统交互类型和 abilityMode 已经失配，或新增了未接线的选牌确认分支。
       console.warn('[SummonerWars] 未处理的系统攻击前选牌确认分支', {
         abilityId: abilityMode.abilityId,
+        step: abilityMode.step,
+        context: abilityMode.context,
         swInteractionType: swInteraction?.type ?? null,
         selectedCardIds: selected,
+        route,
       });
       return;
     }
-    
-    setAbilityMode(null);
   };
 
   const handleCancelBeforeAttack = () => {
-    if (
-      swInteraction?.type === 'before_attack_life_drain'
-      || swInteraction?.type === 'before_attack_holy_arrow'
-      || swInteraction?.type === 'before_attack_healing'
-    ) {
-      const skipOption = swInteraction.options.find((opt) => {
-        const value = opt.value as { skip?: boolean } | undefined;
-        return opt.id === 'skip' || value?.skip === true;
+    const plan = resolveBeforeAttackCancellation(swInteraction);
+    if (plan?.command === 'respond' && swInteraction) {
+      dispatch(INTERACTION_COMMANDS.RESPOND, {
+        interactionId: swInteraction.id,
+        optionId: plan.optionId,
       });
-      if (skipOption) {
-        dispatch(INTERACTION_COMMANDS.RESPOND, {
-          interactionId: swInteraction.id,
-          optionId: skipOption.id,
-        });
-      } else {
-        dispatch(INTERACTION_COMMANDS.CANCEL, { interactionId: swInteraction.id });
-      }
+      setAbilityMode(null);
+      return;
+    }
+    if (plan?.command === 'cancel' && swInteraction) {
+      dispatch(INTERACTION_COMMANDS.CANCEL, { interactionId: swInteraction.id });
       setAbilityMode(null);
       return;
     }
     if (abilityMode) {
+      // 现役 beforeAttack 取消/跳过路由已由 useGameEvents.test.ts 门禁锁定；
+      // 落到这里说明出现了新的系统攻击前分支，但还没有接入取消或跳过语义。
       console.warn('[SummonerWars] 未处理的系统攻击前取消分支', {
         abilityId: abilityMode.abilityId,
         swInteractionType: swInteraction?.type ?? null,

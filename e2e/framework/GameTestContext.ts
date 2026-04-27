@@ -980,6 +980,28 @@ export class GameTestContext {
                         phase: cfg.phase,
                     };
 
+                    if (cfg.gameId === 'smashup') {
+                        patch.core = {
+                            ...patch.core,
+                            triggerQueue: undefined,
+                            beforeScoringTriggeredBases: undefined,
+                            whenScoringTriggeredBases: undefined,
+                            afterScoringTriggeredBases: undefined,
+                            pendingAfterScoringSpecials: undefined,
+                            activeDuel: undefined,
+                        };
+                        patch.sys = {
+                            ...patch.sys,
+                            flowHalted: false,
+                            scoredBaseIndices: undefined,
+                            smashupScoring: undefined,
+                            smashupReactionSession: undefined,
+                            smashupReactionStack: undefined,
+                            _waitForPostScoringReduce: undefined,
+                            _waitForStartTurnInteractionReduce: undefined,
+                        };
+                    }
+
                     // 从派系选择直接注入到其他阶段时，必须清理残留的交互/响应窗口。
                     // 否则 factionSelect 初始态留下的 system state 仍可能阻塞 ADVANCE_PHASE，
                     // 导致 UI 看起来在 playCards，但点击“结束回合”没有任何效果。

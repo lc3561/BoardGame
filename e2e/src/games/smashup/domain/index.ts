@@ -848,6 +848,17 @@ function findMinionOnBaseByUid(
     return undefined;
 }
 
+function keepSysUpdatesOnly(
+    baseState: MatchState<SmashUpCore>,
+    updatedState: MatchState<SmashUpCore>,
+): MatchState<SmashUpCore> {
+    if (updatedState.core === baseState.core) return updatedState;
+    return {
+        ...updatedState,
+        core: baseState.core,
+    };
+}
+
 function processImmediateStartTurnMinionTriggers(
     startTurnCore: SmashUpCore,
     events: SmashUpEvent[],
@@ -1145,7 +1156,7 @@ export const smashUpFlowHooks: FlowHooks<SmashUpCore> = {
                 return {
                     events,
                     halt: true,
-                    updatedState: currentMatchState,
+                    updatedState: keepSysUpdatesOnly(state, currentMatchState),
                 } as PhaseExitResult;
             }
 
@@ -1464,7 +1475,10 @@ export const smashUpFlowHooks: FlowHooks<SmashUpCore> = {
             }
 
             if (hasSysUpdate) {
-                return { events, updatedState: currentMatchState } as PhaseEnterResult;
+                return {
+                    events,
+                    updatedState: keepSysUpdatesOnly(state, currentMatchState),
+                } as PhaseEnterResult;
             }
             return events;
         }

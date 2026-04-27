@@ -2,6 +2,15 @@ import { mkdir } from 'fs/promises';
 import { join } from 'path';
 import type { Page, TestInfo } from '@playwright/test';
 import { test, expect } from '../framework';
+import {
+    applyCoreStateDirect,
+    closeDebugPanel,
+    readFullState,
+    setupSUOnlineMatch,
+    waitForHandArea,
+    makeMinion,
+    type SUMatchSetup,
+} from './smashup-debug-helpers';
 
 type __ThreeAxeGameMarker = {
   openTestGame: (gameId: string) => Promise<void>;
@@ -20,6 +29,610 @@ async function saveStableScreenshot(page: Page, testInfo: TestInfo, name: string
     await mkdir(dir, { recursive: true });
     await page.screenshot({ path: join(dir, `${name}.png`), fullPage: true });
 }
+
+type StateRecord = Record<string, unknown>;
+
+function asRecord(value: unknown): StateRecord | null {
+    return value && typeof value === 'object' ? value as StateRecord : null;
+}
+
+function getSysState(state: StateRecord | null): StateRecord | null {
+    return asRecord(state?.sys);
+}
+
+function getCurrentInteraction(state: StateRecord | null): StateRecord | null {
+    return asRecord(asRecord(getSysState(state)?.interaction)?.current);
+}
+
+function getInteractionData(state: StateRecord | null): StateRecord | null {
+    return asRecord(getCurrentInteraction(state)?.data);
+}
+
+function getInteractionOptions(state: StateRecord | null): StateRecord[] {
+    const options = getInteractionData(state)?.options;
+    return Array.isArray(options) ? options.map((entry) => asRecord(entry)).filter((entry): entry is StateRecord => Boolean(entry)) : [];
+}
+
+function getCurrentResponseWindow(state: StateRecord | null): StateRecord | null {
+    return asRecord(asRecord(getSysState(state)?.responseWindow)?.current);
+}
+
+async function readTestState(page: Page): Promise<Record<string, unknown> | null> {
+    const harnessState = await page.evaluate(() => {
+        const harness = (window as any).__BG_TEST_HARNESS__;
+        const snapshot = harness?.state?.get?.();
+        return snapshot && typeof snapshot === 'object' ? snapshot : null;
+    });
+    if (harnessState && typeof harnessState === 'object') {
+        return harnessState as Record<string, unknown>;
+    }
+    const fullState = await readFullState(page);
+    return fullState && typeof fullState === 'object' ? fullState as Record<string, unknown> : null;
+}
+
+async function readAuthoritativeState(page: Page): Promise<Record<string, unknown> | null> {
+    const fullState = await readFullState(page);
+    return fullState && typeof fullState === 'object' ? fullState as Record<string, unknown> : null;
+}
+
+function cloneJson<T>(value: T): T {
+    return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function escapeRegex(text: string): string {
+    return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function prepareInjectedOnlineState(
+    fullState: Record<string, any>,
+    mutator: (core: Record<string, any>, sys: Record<string, any>) => void,
+): Record<string, any> {
+    const injectedState = cloneJson(fullState);
+    const core = (injectedState.core ?? injectedState) as Record<string, any>;
+    const sys = (injectedState.sys ?? {}) as Record<string, any>;
+    const interaction = (sys.interaction ?? {}) as Record<string, any>;
+    const responseWindow = (sys.responseWindow ?? {}) as Record<string, any>;
+
+    Object.assign(core, cloneJson(cleanSmashUpTransientState.core));
+    Object.assign(sys, cloneJson(cleanSmashUpTransientState.sys));
+
+    core.triggerQueue = [];
+    core.beforeScoringTriggeredBases = [];
+    core.whenScoringTriggeredBases = [];
+    core.afterScoringTriggeredBases = [];
+    core.pendingAfterScoringSpecials = [];
+    core.activeDuel = null;
+    core.titans = [];
+    core.titanOngoingSuppressedUntilTurnEnd = [];
+    core.rainborocTriggeredTurnByTitan = {};
+    core.veryLargeBoulderTriggeredTurnByTitan = {};
+    core.moonZeroThreeTriggeredTurnByTitan = {};
+    core.titanMovedTurnByTitanUid = {};
+
+    sys.phase = 'playCards';
+    sys.flowHalted = false;
+    sys.interaction = {
+        ...interaction,
+        queue: [],
+        current: undefined,
+    };
+    sys.responseWindow = {
+        ...responseWindow,
+        current: undefined,
+    };
+    sys.scoredBaseIndices = undefined;
+    sys.smashupScoring = undefined;
+    sys.smashupReactionSession = undefined;
+    sys.smashupReactionStack = undefined;
+    sys._waitForPostScoringReduce = undefined;
+
+    mutator(core, sys);
+    return injectedState;
+}
+
+async function clickButtonByName(page: Page, name: RegExp, timeout = 10000): Promise<void> {
+    const button = page.getByRole('button', { name }).first();
+    await expect(button).toBeVisible({ timeout });
+    await button.click({ force: true });
+    await page.waitForTimeout(300);
+}
+
+async function clickMinionOnBoard(page: Page, minionUid: string, timeout = 10000): Promise<void> {
+    const minion = page.locator(`[data-minion-uid="${minionUid}"]`).first();
+    await expect(minion).toBeVisible({ timeout });
+    await minion.click({ force: true });
+    await page.waitForTimeout(300);
+}
+
+async function clickBaseOnBoard(page: Page, baseIndex: number, timeout = 10000): Promise<void> {
+    const base = page.getByTestId(`base-zone-${baseIndex}`).first();
+    await expect(base).toBeVisible({ timeout });
+    await base.click({ force: true });
+    await page.waitForTimeout(300);
+}
+
+async function clickHandCard(page: Page, cardUid: string, timeout = 10000): Promise<void> {
+    const card = page.locator(`[data-card-uid="${cardUid}"]`).first();
+    await expect(card).toBeVisible({ timeout });
+    await card.click({ force: true });
+    await page.waitForTimeout(300);
+}
+
+async function clickPromptButtonLabel(page: Page, label: string, timeout = 5000): Promise<boolean> {
+    const button = page.getByRole('button', { name: new RegExp(`^${escapeRegex(label)}$`, 'i') }).first();
+    if (!await button.isVisible().catch(() => false)) return false;
+    await button.click({ force: true, timeout });
+    await page.waitForTimeout(300);
+    return true;
+}
+
+async function clickPromptButtonByPatterns(page: Page, patterns: RegExp[], timeout = 5000): Promise<boolean> {
+    for (const pattern of patterns) {
+        const button = page.getByRole('button', { name: pattern }).first();
+        if (!await button.isVisible().catch(() => false)) continue;
+        await button.click({ force: true, timeout });
+        await page.waitForTimeout(300);
+        return true;
+    }
+    return false;
+}
+
+async function tryClickVisiblePassButton(page: Page, timeout = 1500): Promise<boolean> {
+    const candidates = [
+        page.getByTestId('me-first-pass-button'),
+        page.getByRole('button', { name: /跳过|Skip|Pass|让过/i }).first(),
+    ];
+    for (const candidate of candidates) {
+        if (await candidate.isVisible().catch(() => false)) {
+            await candidate.click({ force: true, timeout });
+            await page.waitForTimeout(300);
+            return true;
+        }
+    }
+    return false;
+}
+
+async function readTransientUiState(page: Page): Promise<{
+    phase: string | null;
+    sourceId: string | null;
+    windowType: string | null;
+}> {
+    return await page.evaluate(() => {
+        const harness = (window as any).__BG_TEST_HARNESS__;
+        const state = harness?.state?.get?.();
+        return {
+            phase: state?.sys?.phase ?? null,
+            sourceId: state?.sys?.interaction?.current?.data?.sourceId ?? null,
+            windowType: state?.sys?.responseWindow?.current?.windowType ?? null,
+        };
+    });
+}
+
+async function dispatchHarnessCommand(
+    page: Page,
+    playerId: '0' | '1',
+    type: string,
+    payload: Record<string, unknown>,
+): Promise<void> {
+    await page.evaluate(async ({ commandType, commandPayload, commandPlayerId }) => {
+        const harness = (window as any).__BG_TEST_HARNESS__;
+        await harness.command.dispatch({
+            type: commandType,
+            playerId: commandPlayerId,
+            payload: commandPayload,
+        });
+    }, {
+        commandType: type,
+        commandPayload: payload,
+        commandPlayerId: playerId,
+    });
+    await page.waitForTimeout(300);
+}
+
+async function activateReactionTrigger(
+    page: Page,
+    reactionPlayerId: '0' | '1',
+    matcher: {
+        triggerSourceDefId?: string;
+        optionLabelIncludes?: string;
+        optionIdIncludes?: string;
+    },
+    finalInteractionSourceId: string,
+    timeout = 12000,
+    otherPage?: Page,
+): Promise<void> {
+    const deadline = Date.now() + timeout;
+    let lastSnapshot: {
+        phase: string | null;
+        windowType: string | null;
+        interactionSourceId: string | null;
+        options: Array<{ id: string; label: string | null; triggerSourceDefId: string | null }>;
+    } | null = null;
+
+    while (Date.now() < deadline) {
+        if (otherPage) {
+            const [hostState, guestState] = await Promise.all([
+                readAuthoritativeState(page),
+                readAuthoritativeState(otherPage),
+            ]);
+            const currentHost = getCurrentInteraction(hostState as StateRecord | null);
+            const currentGuest = getCurrentInteraction(guestState as StateRecord | null);
+            const activeState = currentHost
+                ? hostState as StateRecord | null
+                : currentGuest
+                    ? guestState as StateRecord | null
+                    : hostState as StateRecord | null;
+            const activeCurrent = currentHost ?? currentGuest;
+            const triggerQueue = new Map(
+                ((((activeState as Record<string, any> | null)?.core ?? {}) as Record<string, any>).triggerQueue ?? [])
+                    .map((trigger: any) => [trigger.id, trigger]),
+            );
+            lastSnapshot = {
+                phase: typeof getSysState(activeState)?.phase === 'string' ? getSysState(activeState)?.phase as string : null,
+                windowType:
+                    typeof getCurrentResponseWindow(hostState as StateRecord | null)?.windowType === 'string'
+                        ? getCurrentResponseWindow(hostState as StateRecord | null)?.windowType as string
+                        : typeof getCurrentResponseWindow(guestState as StateRecord | null)?.windowType === 'string'
+                            ? getCurrentResponseWindow(guestState as StateRecord | null)?.windowType as string
+                            : null,
+                interactionSourceId: typeof getInteractionData(activeState)?.sourceId === 'string'
+                    ? getInteractionData(activeState)?.sourceId as string
+                    : null,
+                options: getInteractionOptions(activeState).map((option) => ({
+                    id: String(option.id ?? ''),
+                    label: typeof option.label === 'string' ? option.label : null,
+                    triggerSourceDefId: option.value?.triggerId
+                        ? (triggerQueue.get(option.value.triggerId)?.sourceDefId ?? null)
+                        : null,
+                })),
+            };
+
+            if (lastSnapshot.interactionSourceId === finalInteractionSourceId) {
+                return;
+            }
+
+            if (lastSnapshot.interactionSourceId === 'smashup_reaction_choose') {
+                const triggerOption = lastSnapshot.options.find((option) => {
+                    if (matcher.triggerSourceDefId && option.triggerSourceDefId === matcher.triggerSourceDefId) {
+                        return true;
+                    }
+                    if (matcher.optionLabelIncludes && option.label?.includes(matcher.optionLabelIncludes)) {
+                        return true;
+                    }
+                    if (matcher.optionIdIncludes && option.id.includes(matcher.optionIdIncludes)) {
+                        return true;
+                    }
+                    return false;
+                });
+                if (triggerOption) {
+                    const actorPlayerId = activeCurrent?.playerId === '1' ? '1' : reactionPlayerId;
+                    const actorPage = actorPlayerId === '1' ? otherPage : page;
+                    if (triggerOption.label && await clickPromptButtonLabel(actorPage, triggerOption.label, 5000)) {
+                        continue;
+                    }
+                    if (matcher.optionLabelIncludes && await clickPromptButtonByPatterns(
+                        actorPage,
+                        [new RegExp(escapeRegex(matcher.optionLabelIncludes), 'i')],
+                        5000,
+                    )) {
+                        continue;
+                    }
+                    if (matcher.optionLabelIncludes && await clickPromptButtonByPatterns(
+                        actorPage === page ? otherPage : page,
+                        [new RegExp(escapeRegex(matcher.optionLabelIncludes), 'i')],
+                        5000,
+                    )) {
+                        continue;
+                    }
+                }
+            }
+
+            if (lastSnapshot.windowType && lastSnapshot.interactionSourceId !== 'smashup_reaction_choose') {
+                const [hostUi, guestUi] = await Promise.all([getVisibleUiState(page), getVisibleUiState(otherPage)]);
+                const currentResponder = hostUi.responseWindow?.currentResponder ?? guestUi.responseWindow?.currentResponder ?? null;
+                if (currentResponder === '1') {
+                    if (await tryClickVisiblePassButton(otherPage)) continue;
+                    if (await tryClickVisiblePassButton(page)) continue;
+                }
+                if (currentResponder === '0') {
+                    if (await tryClickVisiblePassButton(page)) continue;
+                    if (await tryClickVisiblePassButton(otherPage)) continue;
+                }
+            }
+        } else {
+            lastSnapshot = await page.evaluate(() => {
+                const harness = (window as any).__BG_TEST_HARNESS__;
+                const state = harness?.state?.get?.();
+                const current = state?.sys?.interaction?.current;
+                const triggerQueue = new Map(
+                    (state?.core?.triggerQueue ?? []).map((trigger: any) => [trigger.id, trigger]),
+                );
+                return {
+                    phase: state?.sys?.phase ?? null,
+                    windowType: state?.sys?.responseWindow?.current?.windowType ?? null,
+                    interactionSourceId: current?.data?.sourceId ?? null,
+                    options: (current?.data?.options ?? []).map((option: any) => ({
+                        id: option.id,
+                        label: option.label ?? null,
+                        triggerSourceDefId: option.value?.triggerId
+                            ? (triggerQueue.get(option.value.triggerId)?.sourceDefId ?? null)
+                            : null,
+                    })),
+                };
+            });
+
+            if (lastSnapshot.interactionSourceId === finalInteractionSourceId) {
+                return;
+            }
+
+            if (lastSnapshot.interactionSourceId === 'smashup_reaction_choose') {
+                const triggerOption = lastSnapshot.options.find((option) => {
+                    if (matcher.triggerSourceDefId && option.triggerSourceDefId === matcher.triggerSourceDefId) {
+                        return true;
+                    }
+                    if (matcher.optionLabelIncludes && option.label?.includes(matcher.optionLabelIncludes)) {
+                        return true;
+                    }
+                    if (matcher.optionIdIncludes && option.id.includes(matcher.optionIdIncludes)) {
+                        return true;
+                    }
+                    return false;
+                });
+                if (triggerOption?.id) {
+                    await dispatchHarnessCommand(page, reactionPlayerId, 'SYS_INTERACTION_RESPOND', { optionId: triggerOption.id });
+                    continue;
+                }
+            }
+
+            if (lastSnapshot.windowType && lastSnapshot.interactionSourceId !== 'smashup_reaction_choose') {
+                await dispatchHarnessCommand(page, reactionPlayerId, 'RESPONSE_PASS', {});
+                continue;
+            }
+        }
+
+        await page.waitForTimeout(250);
+    }
+
+    throw new Error(
+        `未能进入 ${finalInteractionSourceId}。最后快照：${JSON.stringify(lastSnapshot)}`,
+    );
+}
+
+async function waitForHarnessPhase(page: Page, phase: string, timeout = 10000): Promise<void> {
+    await page.waitForFunction(
+        (expectedPhase) => (window as any).__BG_TEST_HARNESS__?.state?.get?.()?.sys?.phase === expectedPhase,
+        phase,
+        { timeout },
+    );
+}
+
+async function waitForScoreBasesOrReactionEntry(page: Page, timeout = 12000): Promise<{
+    phase: string | null;
+    sourceId: string | null;
+    windowType: string | null;
+}> {
+    const deadline = Date.now() + timeout;
+    let lastSnapshot: {
+        phase: string | null;
+        sourceId: string | null;
+        windowType: string | null;
+    } | null = null;
+
+    while (Date.now() < deadline) {
+        const state = await readAuthoritativeState(page);
+        const sys = getSysState(state);
+        const interactionData = getInteractionData(state);
+        const responseWindow = getCurrentResponseWindow(state);
+        lastSnapshot = {
+            phase: typeof sys?.phase === 'string' ? sys.phase : null,
+            sourceId: typeof interactionData?.sourceId === 'string' ? interactionData.sourceId : null,
+            windowType: typeof responseWindow?.windowType === 'string' ? responseWindow.windowType : null,
+        };
+
+        if (
+            lastSnapshot.phase === 'scoreBases'
+            || lastSnapshot.sourceId === 'smashup_reaction_choose'
+            || lastSnapshot.sourceId === 'world_champs_sheriff_before_scoring'
+            || lastSnapshot.sourceId === 'world_champs_mummy_after_scoring'
+            || lastSnapshot.windowType
+        ) {
+            return lastSnapshot;
+        }
+
+        await page.waitForTimeout(200);
+    }
+
+    throw new Error(`结束回合后未进入计分/反应链路。最后快照：${JSON.stringify(lastSnapshot)}`);
+}
+
+async function waitForInteractionSource(page: Page, sourceId: string, timeout = 10000): Promise<void> {
+    const deadline = Date.now() + timeout;
+    while (Date.now() < deadline) {
+        const state = await readAuthoritativeState(page);
+        const currentSourceId = getInteractionData(state)?.sourceId ?? null;
+        if (currentSourceId === sourceId) return;
+        await page.waitForTimeout(200);
+    }
+    throw new Error(`未等到交互 ${sourceId}`);
+}
+
+async function waitForNoInteraction(page: Page, timeout = 10000): Promise<void> {
+    const deadline = Date.now() + timeout;
+    while (Date.now() < deadline) {
+        const state = await readAuthoritativeState(page);
+        const interactionCurrent = getCurrentInteraction(state);
+        if (!interactionCurrent) return;
+        await page.waitForTimeout(200);
+    }
+    throw new Error('交互未在限定时间内清空');
+}
+
+async function selectCurrentInteractionOptionBy(
+    page: Page,
+    playerId: '0' | '1',
+    matcher: { minionUid?: string; baseIndex?: number },
+    errorLabel: string,
+): Promise<void> {
+    const state = await readAuthoritativeState(page);
+    const options = getInteractionOptions(state);
+    const optionId = options.find((entry) => {
+        const value = asRecord(entry.value) ?? {};
+        if (matcher.minionUid) {
+            return value.minionUid === matcher.minionUid;
+        }
+        if (typeof matcher.baseIndex === 'number') {
+            return value.baseIndex === matcher.baseIndex;
+        }
+        return false;
+    })?.id as string | undefined;
+
+    if (!optionId) {
+        throw new Error(`${errorLabel}：未找到匹配选项`);
+    }
+
+    await dispatchHarnessCommand(page, playerId, 'SYS_INTERACTION_RESPOND', { optionId });
+}
+
+async function skipCurrentInteraction(page: Page, _playerId: '0' | '1'): Promise<boolean> {
+    const state = await readAuthoritativeState(page);
+    const options = getInteractionOptions(state);
+    const optionId = options.find((entry) => {
+        const value = asRecord(entry.value) ?? {};
+        return (
+            entry.id === 'pass'
+            || entry.id === 'skip'
+            || value.kind === 'pass'
+            || value.skip === true
+        );
+    })?.id as string | undefined;
+    if (!optionId) {
+        return tryClickVisiblePassButton(page);
+    }
+    return tryClickVisiblePassButton(page);
+}
+
+async function getVisibleUiState(page: Page): Promise<{
+    sourceId: string | null;
+    responseWindow: null | { currentResponder: '0' | '1' | null };
+}> {
+    const state = await readAuthoritativeState(page);
+    const responseWindow = getCurrentResponseWindow(state);
+    const responderQueue = Array.isArray(responseWindow?.responderQueue) ? responseWindow.responderQueue : [];
+    const responderIndex = typeof responseWindow?.currentResponderIndex === 'number'
+        ? responseWindow.currentResponderIndex
+        : -1;
+    const currentResponder = responderIndex >= 0 ? (responderQueue[responderIndex] ?? null) as '0' | '1' | null : null;
+    return {
+        sourceId: typeof getInteractionData(state)?.sourceId === 'string' ? getInteractionData(state)?.sourceId as string : null,
+        responseWindow: responseWindow
+            ? { currentResponder }
+            : null,
+    };
+}
+
+async function drainSheriffDuelFlow(hostPage: Page, guestPage: Page, timeout = 15000): Promise<{
+    finalCore: Record<string, any> | null;
+}> {
+    const deadline = Date.now() + timeout;
+    while (Date.now() < deadline) {
+        const [hostState, guestState] = await Promise.all([
+            readFullState(hostPage),
+            readFullState(guestPage),
+        ]);
+        const publicCore = ((hostState as Record<string, any> | null)?.core ?? hostState) as Record<string, any> | null;
+        const currentHost = getCurrentInteraction(hostState as StateRecord | null);
+        const currentGuest = getCurrentInteraction(guestState as StateRecord | null);
+        const currentState = currentHost
+            ? hostState as StateRecord | null
+            : currentGuest
+                ? guestState as StateRecord | null
+                : hostState as StateRecord | null;
+        const current = currentHost ?? currentGuest;
+        const sourceId = getInteractionData(currentState)?.sourceId ?? null;
+        const playerId = current?.playerId === '1' ? '1' : '0';
+        const actorPage = playerId === '0' ? hostPage : guestPage;
+        const options = getInteractionOptions(currentState);
+
+        if (sourceId === 'smashup_duel_pinkerton') {
+            const zeroOption = options.find((entry) => asRecord(entry.value)?.amount === 0);
+            const zeroLabel = typeof zeroOption?.label === 'string' ? zeroOption.label : '0';
+            if (await clickPromptButtonLabel(actorPage, zeroLabel, 5000)) continue;
+        }
+
+        if (sourceId === 'smashup_duel_card' || sourceId === 'smashup_duel_deputy_card') {
+            const skipOption = options.find((entry) => {
+                const value = asRecord(entry.value);
+                return value?.skip === true || entry.id === 'skip' || entry.id === 'pass';
+            });
+            const skipLabel = typeof skipOption?.label === 'string' ? skipOption.label : null;
+            if (skipLabel && await clickPromptButtonLabel(actorPage, skipLabel, 5000)) continue;
+            const handOption = options.find((entry) => {
+                const value = asRecord(entry.value);
+                return typeof value?.cardUid === 'string';
+            });
+            if (handOption) {
+                await clickHandCard(actorPage, String(asRecord(handOption.value)?.cardUid), 10000);
+                continue;
+            }
+            if (await clickPromptButtonByPatterns(actorPage, [/跳过.*决斗牌/i, /不出决斗牌/i, /不放决斗牌/i, /skip.*duel/i], 5000)) continue;
+            if (skipLabel && await clickPromptButtonLabel(actorPage, skipLabel, 5000)) continue;
+        }
+
+        if (sourceId === 'smashup_duel_action_target_base') {
+            const baseOption = options.find((entry) => typeof asRecord(entry.value)?.baseIndex === 'number');
+            if (baseOption) {
+                await clickBaseOnBoard(actorPage, Number(asRecord(baseOption.value)?.baseIndex), 10000);
+                continue;
+            }
+        }
+
+        if (sourceId === 'smashup_duel_action_target_minion' || sourceId === 'smashup_duel_deputy_target') {
+            const minionOption = options.find((entry) => typeof asRecord(entry.value)?.minionUid === 'string');
+            if (minionOption) {
+                await clickMinionOnBoard(actorPage, String(asRecord(minionOption.value)?.minionUid), 10000);
+                continue;
+            }
+        }
+
+        const [hostUi, guestUi] = await Promise.all([getVisibleUiState(hostPage), getVisibleUiState(guestPage)]);
+        const responder = hostUi.responseWindow?.currentResponder ?? guestUi.responseWindow?.currentResponder ?? null;
+        if (!sourceId && responder === '0' && await tryClickVisiblePassButton(hostPage)) continue;
+        if (!sourceId && responder === '1' && await tryClickVisiblePassButton(guestPage)) continue;
+
+        if (
+            !sourceId
+            && !currentHost
+            && !currentGuest
+            && !hostUi.responseWindow
+            && !guestUi.responseWindow
+            && (publicCore?.activeDuel ?? null) == null
+        ) {
+            return { finalCore: publicCore };
+        }
+        await hostPage.waitForTimeout(200);
+    }
+
+    throw new Error('警长决斗链路未在限定时间内收口');
+}
+
+const cleanSmashUpTransientState = {
+    core: {
+        triggerQueue: undefined,
+        beforeScoringTriggeredBases: undefined,
+        whenScoringTriggeredBases: undefined,
+        afterScoringTriggeredBases: undefined,
+        pendingAfterScoringSpecials: undefined,
+        activeDuel: undefined,
+    },
+    sys: {
+        flowHalted: false,
+        scoredBaseIndices: undefined,
+        smashupScoring: undefined,
+        smashupReactionSession: undefined,
+        smashupReactionStack: undefined,
+        _waitForPostScoringReduce: undefined,
+    },
+};
 
 test.describe('Smash Up 牌库检索交互', () => {
     test('悬浮机器人应显示可选卡牌并允许打出', async ({ page, game }, testInfo) => {
@@ -163,6 +776,82 @@ test.describe('Smash Up 牌库检索交互', () => {
         expect(finalState.core.players['0'].deck.map((card: any) => card.defId)).not.toContain('vikings_pillage');
 
         await game.screenshot('stoneford-selected-action-added-to-hand', testInfo);
+    });
+
+    test('金币猫打出后应可选择这里的其他随从并放置 +1 指示物', async ({ page, game }, testInfo) => {
+        test.setTimeout(60000);
+
+        await page.goto('/play/smashup');
+        await page.waitForFunction(
+            () => (window as any).__BG_TEST_HARNESS__?.state?.isRegistered?.() === true,
+            { timeout: 15000 },
+        );
+
+        await game.setupScene({
+            gameId: 'smashup',
+            player0: {
+                hand: ['world_champs_calicoin'],
+                deck: [],
+                factions: ['world_champs', 'robots'],
+            },
+            player1: {
+                hand: [],
+                deck: [],
+                factions: ['pirates', 'dinosaurs'],
+            },
+            currentPlayer: '0',
+            phase: 'playCards',
+            bases: [{
+                defId: 'base_1',
+                minions: [
+                    { uid: 'ally-target', defId: 'robot_microbot_alpha', owner: '0', controller: '0', powerCounters: 0 },
+                    { uid: 'enemy-target', defId: 'robot_microbot_beta', owner: '1', controller: '1', powerCounters: 0 },
+                ],
+                ongoingActions: [],
+            }],
+        });
+
+        await game.playCard('world_champs_calicoin', { targetBaseIndex: 0 });
+        await game.waitForInteraction('world_champs_calicoin');
+
+        const promptMeta = await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const current = harness?.state?.get?.()?.sys?.interaction?.current;
+            return {
+                sourceId: current?.data?.sourceId,
+                options: (current?.data?.options ?? []).map((option: any) => ({
+                    id: option.id,
+                    minionUid: option.value?.minionUid ?? null,
+                    defId: option.value?.defId ?? null,
+                    controller: option.value?.controller ?? null,
+                })),
+            };
+        });
+
+        expect(promptMeta.sourceId).toBe('world_champs_calicoin');
+        expect(promptMeta.options.map((option: any) => option.minionUid)).toEqual(
+            expect.arrayContaining(['ally-target', 'enemy-target']),
+        );
+
+        await game.screenshot('calicoin-prompt-visible', testInfo);
+
+        await game.selectInteractionOptionBy(
+            (option: any) => option.value?.minionUid === 'enemy-target',
+            '金币猫选择敌方其他随从',
+        );
+        await game.waitForNoInteraction();
+
+        const finalState = await game.getState();
+        const baseMinions = finalState.core.bases[0].minions;
+        const calicoin = baseMinions.find((minion: any) => minion.defId === 'world_champs_calicoin');
+        const allyTarget = baseMinions.find((minion: any) => minion.uid === 'ally-target');
+        const enemyTarget = baseMinions.find((minion: any) => minion.uid === 'enemy-target');
+
+        expect(calicoin).toBeTruthy();
+        expect(allyTarget?.powerCounters ?? 0).toBe(0);
+        expect(enemyTarget?.powerCounters ?? 0).toBe(1);
+
+        await game.screenshot('calicoin-resolved-enemy-countered', testInfo);
     });
 
     test('海龟阿凯打出后应先选玩家再交牌并抽两张', async ({ page, game }, testInfo) => {
@@ -748,6 +1437,561 @@ test.describe('Smash Up 牌库检索交互', () => {
         expect(robot?.tempPowerModifier ?? 0).toBe(0);
 
         await game.screenshot('mouse-bird-sausage-resolved', testInfo);
+    });
+
+    test('鲨鱼纹身打出后应附着到己方随从并在下个自己回合开始时再放一个 +1 指示物', async ({ page, game }, testInfo) => {
+        test.setTimeout(60000);
+
+        await page.goto('/play/smashup');
+        await page.waitForFunction(
+            () => (window as any).__BG_TEST_HARNESS__?.state?.isRegistered?.() === true,
+            { timeout: 15000 },
+        );
+
+        await game.setupScene({
+            gameId: 'smashup',
+            player0: {
+                hand: ['world_champs_shark_tattoo'],
+                deck: [],
+                factions: ['world_champs', 'robots'],
+            },
+            player1: {
+                hand: [],
+                deck: [],
+                factions: ['pirates', 'dinosaurs'],
+            },
+            currentPlayer: '0',
+            phase: 'playCards',
+            bases: [{
+                defId: 'base_1',
+                minions: [
+                    { uid: 'ally-host', defId: 'robot_microbot_alpha', owner: '0', controller: '0', powerCounters: 0 },
+                ],
+                ongoingActions: [],
+            }],
+        });
+
+        await game.playCard('world_champs_shark_tattoo', { targetBaseIndex: 0, targetMinionUid: 'ally-host' });
+        await game.waitForNoInteraction();
+
+        const afterPlay = await game.getState();
+        const hostAfterPlay = afterPlay.core.bases[0].minions.find((minion: any) => minion.uid === 'ally-host');
+        const attachedActionUid = hostAfterPlay?.attachedActions?.find(
+            (action: any) => action.defId === 'world_champs_shark_tattoo',
+        )?.uid;
+        expect(attachedActionUid).toBeTruthy();
+        expect(hostAfterPlay?.powerCounters ?? 0).toBe(1);
+
+        await page.locator('[data-minion-uid="ally-host"]').click({ force: true });
+        await expect(page.locator(`[data-attached-action-uid="${attachedActionUid}"]`)).toBeVisible({ timeout: 5000 });
+        await game.screenshot('shark-tattoo-attached-initial', testInfo);
+
+        await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            harness?.command?.dispatch?.({ type: 'ADVANCE_PHASE', playerId: '0', payload: undefined });
+        });
+        await page.waitForFunction(() => {
+            const state = (window as any).__BG_TEST_HARNESS__?.state?.get?.();
+            return state?.core?.currentPlayerIndex === 1 && state?.sys?.phase === 'playCards';
+        }, { timeout: 10000 });
+
+        await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            harness?.command?.dispatch?.({ type: 'ADVANCE_PHASE', playerId: '1', payload: undefined });
+        });
+        await page.waitForFunction(() => {
+            const state = (window as any).__BG_TEST_HARNESS__?.state?.get?.();
+            return state?.core?.currentPlayerIndex === 0 && state?.sys?.phase === 'playCards';
+        }, { timeout: 10000 });
+
+        const nextTurnState = await game.getState();
+        const hostNextTurn = nextTurnState.core.bases[0].minions.find((minion: any) => minion.uid === 'ally-host');
+        expect(hostNextTurn?.powerCounters ?? 0).toBe(2);
+
+        await page.locator('[data-minion-uid="ally-host"]').click({ force: true });
+        await expect(page.locator(`[data-attached-action-uid="${attachedActionUid}"]`)).toBeVisible({ timeout: 5000 });
+        await game.screenshot('shark-tattoo-next-turn-counter-added', testInfo);
+    });
+
+    test('高速追逐应转移行动到另一基地并移动己方随从且给予 +3 力量', async ({ page, game }, testInfo) => {
+        test.setTimeout(60000);
+
+        await page.goto('/play/smashup');
+        await page.waitForFunction(
+            () => (window as any).__BG_TEST_HARNESS__?.state?.isRegistered?.() === true,
+            { timeout: 15000 },
+        );
+
+        await game.setupScene({
+            gameId: 'smashup',
+            player0: {
+                hand: ['world_champs_high_speed_chase'],
+                deck: [],
+                factions: ['world_champs', 'robots'],
+            },
+            player1: {
+                hand: [],
+                deck: [],
+                factions: ['pirates', 'dinosaurs'],
+            },
+            currentPlayer: '0',
+            phase: 'playCards',
+            bases: [
+                {
+                    defId: 'base_1',
+                    minions: [
+                        { uid: 'runner-1', defId: 'robot_microbot_alpha', ownerId: '0', controllerId: '0', tempPowerModifier: 0 },
+                        { uid: 'spectator-1', defId: 'robot_microbot_beta', ownerId: '1', controllerId: '1', tempPowerModifier: 0 },
+                    ],
+                    ongoingActions: [],
+                },
+                {
+                    defId: 'base_2',
+                    minions: [],
+                    ongoingActions: [],
+                },
+            ],
+        });
+
+        await game.playCard('world_champs_high_speed_chase', { targetBaseIndex: 0 });
+        await game.waitForNoInteraction();
+
+        const afterPlay = await game.getState();
+        const highSpeedChaseUid = afterPlay.core.bases[0].ongoingActions.find(
+            (action: any) => action.defId === 'world_champs_high_speed_chase',
+        )?.uid;
+        expect(highSpeedChaseUid).toBeTruthy();
+
+        await expect(page.locator(`[data-ongoing-uid="${highSpeedChaseUid}"]`)).toBeVisible({ timeout: 5000 });
+        await game.screenshot('high-speed-chase-ongoing-on-source-base', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-world-champs-high-speed-chase-ongoing-2026-04-27');
+
+        await page.locator(`[data-ongoing-uid="${highSpeedChaseUid}"]`).click({ force: true });
+        await page.waitForTimeout(200);
+        await page.locator(`[data-ongoing-uid="${highSpeedChaseUid}"]`).click({ force: true });
+        await game.waitForInteraction('world_champs_high_speed_chase_minion');
+
+        const minionPromptMeta = await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const current = harness?.state?.get?.()?.sys?.interaction?.current;
+            return {
+                sourceId: current?.data?.sourceId,
+                options: (current?.data?.options ?? []).map((option: any) => ({
+                    id: option.id,
+                    minionUid: option.value?.minionUid ?? null,
+                    baseIndex: option.value?.baseIndex ?? null,
+                })),
+            };
+        });
+
+        expect(minionPromptMeta.sourceId).toBe('world_champs_high_speed_chase_minion');
+        expect(minionPromptMeta.options.map((option: any) => option.minionUid)).toContain('runner-1');
+
+        await game.screenshot('high-speed-chase-minion-prompt', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-world-champs-high-speed-chase-minion-prompt-2026-04-27');
+
+        await game.selectInteractionOptionBy(
+            (option: any) => option.value?.minionUid === 'runner-1',
+            '高速追逐选择己方移动随从',
+        );
+        await game.waitForInteraction('world_champs_high_speed_chase_base');
+
+        const basePromptMeta = await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const current = harness?.state?.get?.()?.sys?.interaction?.current;
+            return {
+                sourceId: current?.data?.sourceId,
+                options: (current?.data?.options ?? []).map((option: any) => ({
+                    id: option.id,
+                    baseIndex: option.value?.baseIndex ?? null,
+                })),
+            };
+        });
+
+        expect(basePromptMeta.sourceId).toBe('world_champs_high_speed_chase_base');
+        expect(basePromptMeta.options.some((option: any) => option.baseIndex === 1)).toBe(true);
+
+        await game.screenshot('high-speed-chase-base-prompt', testInfo);
+        await page.getByTestId('base-zone-1').click({ force: true });
+        await game.waitForNoInteraction();
+
+        const finalState = await game.getState();
+        const sourceBase = finalState.core.bases[0];
+        const targetBase = finalState.core.bases[1];
+        const movedMinion = targetBase.minions.find((minion: any) => minion.uid === 'runner-1');
+        const movedAction = targetBase.ongoingActions.find((action: any) => action.uid === highSpeedChaseUid);
+
+        expect(sourceBase.minions.some((minion: any) => minion.uid === 'runner-1')).toBe(false);
+        expect(sourceBase.ongoingActions.some((action: any) => action.uid === highSpeedChaseUid)).toBe(false);
+        expect(movedMinion?.tempPowerModifier ?? 0).toBe(3);
+        expect(movedAction?.defId).toBe('world_champs_high_speed_chase');
+
+        await game.screenshot('high-speed-chase-resolved-on-target-base', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-world-champs-high-speed-chase-resolved-2026-04-27');
+    });
+
+    test('现在是闪电时间！应选择己方随从并在本回合给予 +3 力量', async ({ page, game }, testInfo) => {
+        test.setTimeout(60000);
+
+        await page.goto('/play/smashup');
+        await page.waitForFunction(
+            () => (window as any).__BG_TEST_HARNESS__?.state?.isRegistered?.() === true,
+            { timeout: 15000 },
+        );
+
+        await game.setupScene({
+            gameId: 'smashup',
+            player0: {
+                hand: ['world_champs_its_blitzin_time'],
+                deck: [],
+                factions: ['world_champs', 'robots'],
+            },
+            player1: {
+                hand: [],
+                deck: [],
+                factions: ['pirates', 'dinosaurs'],
+            },
+            currentPlayer: '0',
+            phase: 'playCards',
+            bases: [
+                {
+                    defId: 'base_1',
+                    minions: [{ uid: 'blitz-ally-1', defId: 'robot_microbot_alpha', ownerId: '0', controllerId: '0', tempPowerModifier: 0 }],
+                    ongoingActions: [],
+                },
+                {
+                    defId: 'base_2',
+                    minions: [{ uid: 'blitz-ally-2', defId: 'robot_microbot_beta', ownerId: '0', controllerId: '0', tempPowerModifier: 0 }],
+                    ongoingActions: [],
+                },
+            ],
+        });
+
+        await game.playCard('world_champs_its_blitzin_time');
+        await game.waitForInteraction('world_champs_its_blitzin_time');
+
+        const promptMeta = await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const current = harness?.state?.get?.()?.sys?.interaction?.current;
+            return {
+                sourceId: current?.data?.sourceId,
+                options: (current?.data?.options ?? []).map((option: any) => ({
+                    id: option.id,
+                    minionUid: option.value?.minionUid ?? null,
+                    baseIndex: option.value?.baseIndex ?? null,
+                })),
+            };
+        });
+
+        expect(promptMeta.sourceId).toBe('world_champs_its_blitzin_time');
+        expect(promptMeta.options.map((option: any) => option.minionUid)).toEqual(
+            expect.arrayContaining(['blitz-ally-1', 'blitz-ally-2']),
+        );
+
+        await game.screenshot('its-blitzin-time-prompt-visible', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-world-champs-its-blitzin-time-prompt-2026-04-27');
+
+        await game.selectInteractionOptionBy(
+            (option: any) => option.value?.minionUid === 'blitz-ally-2',
+            '现在是闪电时间！选择第二个己方随从',
+        );
+        await game.waitForNoInteraction();
+
+        const finalState = await game.getState();
+        const baseOneMinion = finalState.core.bases[0].minions.find((minion: any) => minion.uid === 'blitz-ally-1');
+        const baseTwoMinion = finalState.core.bases[1].minions.find((minion: any) => minion.uid === 'blitz-ally-2');
+
+        expect(baseOneMinion?.tempPowerModifier ?? 0).toBe(0);
+        expect(baseTwoMinion?.tempPowerModifier ?? 0).toBe(3);
+
+        await game.screenshot('its-blitzin-time-resolved', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-world-champs-its-blitzin-time-resolved-2026-04-27');
+    });
+
+    test('聪明Set-Up附着后应在该基地本回合首次打出随从时让你抽一张牌', async ({ page, game }, testInfo) => {
+        test.setTimeout(60000);
+
+        await page.goto('/play/smashup');
+        await page.waitForFunction(
+            () => (window as any).__BG_TEST_HARNESS__?.state?.isRegistered?.() === true,
+            { timeout: 15000 },
+        );
+
+        await game.setupScene({
+            gameId: 'smashup',
+            player0: {
+                hand: ['world_champs_smart_set_up'],
+                deck: ['robot_microbot_alpha'],
+                factions: ['world_champs', 'robots'],
+            },
+            player1: {
+                hand: ['pirate_first_mate'],
+                deck: [],
+                factions: ['pirates', 'dinosaurs'],
+            },
+            currentPlayer: '0',
+            phase: 'playCards',
+            bases: [{
+                defId: 'base_1',
+                minions: [
+                    { uid: 'enemy-host', defId: 'robot_microbot_gamma', ownerId: '1', controllerId: '1', powerCounters: 0 },
+                ],
+                ongoingActions: [],
+            }],
+        });
+
+        await game.playCard('world_champs_smart_set_up', { targetBaseIndex: 0, targetMinionUid: 'enemy-host' });
+        await game.waitForNoInteraction();
+
+        const afterAttach = await game.getState();
+        const enemyHost = afterAttach.core.bases[0].minions.find((minion: any) => minion.uid === 'enemy-host');
+        const smartSetUpUid = enemyHost?.attachedActions?.find(
+            (action: any) => action.defId === 'world_champs_smart_set_up',
+        )?.uid;
+        expect(smartSetUpUid).toBeTruthy();
+
+        await page.waitForTimeout(1800);
+        await page.locator('[data-minion-uid="enemy-host"]').click({ force: true });
+        await expect(page.locator(`[data-attached-action-uid="${smartSetUpUid}"]`)).toBeVisible({ timeout: 5000 });
+        await game.screenshot('smart-set-up-attached-to-enemy-minion', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-world-champs-smart-set-up-attached-2026-04-27');
+
+        await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            harness?.command?.dispatch?.({ type: 'ADVANCE_PHASE', playerId: '0', payload: undefined });
+        });
+        await page.waitForFunction(() => {
+            const state = (window as any).__BG_TEST_HARNESS__?.state?.get?.();
+            return state?.core?.currentPlayerIndex === 1 && state?.sys?.phase === 'playCards';
+        }, { timeout: 10000 });
+
+        await game.playCard('pirate_first_mate', { targetBaseIndex: 0 });
+        await game.waitForNoInteraction();
+
+        const finalState = await game.getState();
+        const playerZeroHandDefs = finalState.core.players['0'].hand.map((card: any) => card.defId);
+        const baseMinions = finalState.core.bases[0].minions;
+
+        expect(playerZeroHandDefs).toContain('robot_microbot_alpha');
+        expect(baseMinions.some((minion: any) => minion.defId === 'pirate_first_mate')).toBe(true);
+
+        await game.screenshot('smart-set-up-triggered-by-first-minion-play', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-world-champs-smart-set-up-triggered-2026-04-27');
+    });
+
+    test('警长应在基地计分前发起决斗并摧毁落败随从', async ({ browser, baseURL }, testInfo) => {
+        test.setTimeout(90000);
+
+        const setup = await setupSUOnlineMatch(browser, baseURL, ['world_champs', 'robots', 'pirates', 'dinosaurs']);
+        if (!setup) {
+            test.skip(true, '游戏服务器不可用');
+            return;
+        }
+
+        const { hostPage, guestPage, hostContext, guestContext } = setup;
+        try {
+            await waitForHandArea(hostPage);
+            await waitForHandArea(guestPage);
+
+            const fullState = await readFullState(hostPage);
+            const injectedState = prepareInjectedOnlineState(fullState as Record<string, any>, (core) => {
+            const turnOrder = core.turnOrder as string[];
+            const hostPid = turnOrder[0];
+            const guestPid = turnOrder[1];
+
+                core.currentPlayerIndex = 0;
+                core.currentPlayer = hostPid;
+                core.players[hostPid].hand = [];
+                core.players[guestPid].hand = [];
+                core.players[hostPid].deck = [];
+                core.players[guestPid].deck = [];
+                core.players[hostPid].minionsPlayed = 0;
+                core.players[guestPid].minionsPlayed = 0;
+                core.players[hostPid].actionsPlayed = 0;
+                core.players[guestPid].actionsPlayed = 0;
+                core.bases[0].defId = 'base_the_jungle';
+                core.bases[0].minions = [
+                    makeMinion('sheriff-live', 'world_champs_sheriff', hostPid, hostPid, 5),
+                    makeMinion('ally-rex', 'dino_king_rex', hostPid, hostPid, 6),
+                    makeMinion('enemy-target', 'robot_microbot_alpha', guestPid, guestPid, 1),
+                ];
+                core.bases[0].ongoingActions = [];
+                for (let index = 1; index < core.bases.length; index += 1) {
+                    core.bases[index].minions = [];
+                    core.bases[index].ongoingActions = [];
+                }
+            });
+
+            await applyCoreStateDirect(hostPage, injectedState);
+            await closeDebugPanel(hostPage);
+            await closeDebugPanel(guestPage);
+            await hostPage.waitForTimeout(2000);
+
+            await hostPage.getByRole('button', { name: /^(结束回合|Finish Turn|End)$/i }).click({ force: true });
+            await waitForScoreBasesOrReactionEntry(hostPage, 12000);
+            await hostPage.screenshot({ path: testInfo.outputPath('sheriff-reaction-choose-entry.png'), fullPage: true });
+            await activateReactionTrigger(
+                hostPage,
+                '0',
+                {
+                    triggerSourceDefId: 'world_champs_sheriff',
+                    optionLabelIncludes: '警长',
+                    optionIdIncludes: 'world_champs_sheriff',
+                },
+                'world_champs_sheriff_before_scoring',
+                12000,
+                guestPage,
+            );
+
+            const sheriffState = await readAuthoritativeState(hostPage);
+            const sheriffPrompt = (() => {
+                const current = getCurrentInteraction(sheriffState);
+                const data = asRecord(current?.data);
+                return {
+                    sourceId: data?.sourceId ?? null,
+                    options: (Array.isArray(data?.options) ? data.options : []).map((option: any) => ({
+                        id: option.id,
+                        minionUid: option.value?.minionUid ?? null,
+                        defId: option.value?.defId ?? null,
+                    })),
+                };
+            })();
+
+            expect(sheriffPrompt.sourceId).toBe('world_champs_sheriff_before_scoring');
+            expect(sheriffPrompt.options.map((option: any) => option.minionUid)).toContain('enemy-target');
+
+            await hostPage.screenshot({ path: testInfo.outputPath('sheriff-before-scoring-target-select.png'), fullPage: true });
+            await clickMinionOnBoard(hostPage, 'enemy-target', 10000);
+
+            await waitForInteractionSource(hostPage, 'smashup_duel_card', 10000);
+            await expect(hostPage.getByText(/决斗进行中|Duel in progress/i)).toBeVisible({ timeout: 5000 });
+            await hostPage.screenshot({ path: testInfo.outputPath('sheriff-duel-card-prompt.png'), fullPage: true });
+            await saveStableScreenshot(hostPage, testInfo, 'smashup-world-champs-sheriff-duel-card-prompt-2026-04-26');
+
+            const duelResult = await drainSheriffDuelFlow(hostPage, guestPage, 15000);
+            const resolvedCore = duelResult.finalCore ?? {};
+            const enemyStillOnAnyBase = Array.isArray(resolvedCore.bases)
+                && resolvedCore.bases.some((base: any) => (base?.minions ?? []).some((minion: any) => minion.uid === 'enemy-target'));
+
+            expect(enemyStillOnAnyBase).toBe(false);
+            expect(resolvedCore.activeDuel ?? null).toBeNull();
+
+            await hostPage.screenshot({ path: testInfo.outputPath('sheriff-duel-resolved.png'), fullPage: true });
+            await saveStableScreenshot(hostPage, testInfo, 'smashup-world-champs-sheriff-duel-resolved-2026-04-26');
+        } finally {
+            await hostContext.close().catch(() => {});
+            await guestContext.close().catch(() => {});
+        }
+    });
+
+    test('木乃伊应在基地计分后埋葬到另一个基地', async ({ browser, baseURL }, testInfo) => {
+        test.setTimeout(90000);
+
+        const setup = await setupSUOnlineMatch(browser, baseURL, ['world_champs', 'robots', 'pirates', 'dinosaurs']);
+        if (!setup) {
+            test.skip(true, '游戏服务器不可用');
+            return;
+        }
+
+        const { hostPage, guestPage, hostContext, guestContext } = setup;
+        try {
+            await waitForHandArea(hostPage);
+            await waitForHandArea(guestPage);
+
+            const fullState = await readFullState(hostPage);
+            const injectedState = prepareInjectedOnlineState(fullState as Record<string, any>, (core) => {
+            const turnOrder = core.turnOrder as string[];
+            const hostPid = turnOrder[0];
+            const guestPid = turnOrder[1];
+
+                core.currentPlayerIndex = 0;
+                core.currentPlayer = hostPid;
+                core.players[hostPid].hand = [];
+                core.players[guestPid].hand = [];
+                core.players[hostPid].deck = [];
+                core.players[guestPid].deck = [];
+                core.players[hostPid].minionsPlayed = 0;
+                core.players[hostPid].actionsPlayed = 0;
+                core.players[guestPid].actionsPlayed = 0;
+                core.bases[0].defId = 'base_the_jungle';
+                core.bases[0].minions = [
+                    makeMinion('mummy-live', 'world_champs_mummy', hostPid, hostPid, 2),
+                    makeMinion('ally-rex-2', 'dino_king_rex', hostPid, hostPid, 10),
+                ];
+                core.bases[0].ongoingActions = [];
+                core.bases[1].defId = 'base_tar_pits';
+                core.bases[1].minions = [];
+                core.bases[1].ongoingActions = [];
+                for (let index = 2; index < core.bases.length; index += 1) {
+                    core.bases[index].minions = [];
+                    core.bases[index].ongoingActions = [];
+                }
+            });
+
+            await applyCoreStateDirect(hostPage, injectedState);
+            await closeDebugPanel(hostPage);
+            await closeDebugPanel(guestPage);
+            await hostPage.waitForTimeout(2000);
+
+            await hostPage.getByRole('button', { name: /^(结束回合|Finish Turn|End)$/i }).click({ force: true });
+            await waitForScoreBasesOrReactionEntry(hostPage, 12000);
+            await hostPage.screenshot({ path: testInfo.outputPath('mummy-reaction-choose-entry.png'), fullPage: true });
+            await activateReactionTrigger(
+                hostPage,
+                '0',
+                {
+                    triggerSourceDefId: 'world_champs_mummy',
+                    optionLabelIncludes: '木乃伊',
+                    optionIdIncludes: 'world_champs_mummy',
+                },
+                'world_champs_mummy_after_scoring',
+                12000,
+                guestPage,
+            );
+
+            const mummyState = await readAuthoritativeState(hostPage);
+            const mummyPrompt = (() => {
+                const current = getCurrentInteraction(mummyState);
+                const data = asRecord(current?.data);
+                return {
+                    sourceId: data?.sourceId ?? null,
+                    options: (Array.isArray(data?.options) ? data.options : []).map((option: any) => ({
+                        id: option.id,
+                        baseIndex: option.value?.baseIndex ?? null,
+                        baseDefId: option.value?.baseDefId ?? null,
+                    })),
+                };
+            })();
+
+            expect(mummyPrompt.sourceId).toBe('world_champs_mummy_after_scoring');
+            expect(mummyPrompt.options.some((option: any) => option.baseIndex === 1)).toBe(true);
+
+            await hostPage.screenshot({ path: testInfo.outputPath('mummy-after-scoring-prompt.png'), fullPage: true });
+            await saveStableScreenshot(hostPage, testInfo, 'smashup-world-champs-mummy-after-scoring-prompt-2026-04-26');
+            await clickBaseOnBoard(hostPage, 1, 10000);
+            await waitForNoInteraction(hostPage, 10000);
+
+            await hostPage.waitForFunction(() => {
+                const stateText = document.querySelector('[data-testid="debug-state-json"]')?.textContent;
+                if (!stateText) return false;
+                const state = JSON.parse(stateText);
+                return state?.sys?.interaction?.current === undefined;
+            }, { timeout: 10000 }).catch(() => {});
+
+            const finalState = await readFullState(hostPage);
+            const resolvedCore = (finalState.core ?? finalState) as Record<string, any>;
+            const buriedOnTargetBase = (resolvedCore.bases[1].buriedCards ?? []).some((card: any) => card.uid === 'mummy-live');
+            const mummyStillOnScoringBase = resolvedCore.bases[0].minions.some((minion: any) => minion.uid === 'mummy-live');
+
+            expect(buriedOnTargetBase).toBe(true);
+            expect(mummyStillOnScoringBase).toBe(false);
+
+            await hostPage.screenshot({ path: testInfo.outputPath('mummy-buried-on-other-base.png'), fullPage: true });
+            await saveStableScreenshot(hostPage, testInfo, 'smashup-world-champs-mummy-buried-on-other-base-2026-04-26');
+        } finally {
+            await hostContext.close().catch(() => {});
+            await guestContext.close().catch(() => {});
+        }
     });
 
     test('复仇者应可在回合中触发埋葬且同回合不重复触发', async ({ page, game }, testInfo) => {

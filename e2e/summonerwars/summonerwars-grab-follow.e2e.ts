@@ -541,9 +541,7 @@ test.describe('召唤师战争 - 友方移动后选择跟随位置', () => {
     await waitForPhase(hostPage, 'move');
 
     // 查找友方士兵
-    const allySoldier = hostPage.locator('[data-testid^="sw-unit-"][data-owner="0"]').filter({
-      has: hostPage.locator('[data-unit-name*="士兵"]')
-    }).first();
+    const allySoldier = hostPage.locator('[data-testid^="sw-unit-"][data-owner="0"][data-unit-name*="士兵"]').first();
     await expect(allySoldier).toBeVisible({ timeout: 5000 });
 
     // 点击友方士兵
@@ -551,9 +549,7 @@ test.describe('召唤师战争 - 友方移动后选择跟随位置', () => {
 
     // 点击相邻空位（移动友方士兵）
     // 需要找到一个空位，且不是抓附手的位置
-    const emptyCell = hostPage.locator('[data-testid^="sw-cell-"]').filter({
-      has: hostPage.locator('[data-cell-empty="true"]')
-    }).first();
+    const emptyCell = hostPage.locator('[data-testid^="sw-cell-"][data-valid-move="true"]').first();
     await expect(emptyCell).toBeVisible({ timeout: 5000 });
     await emptyCell.click();
 
@@ -564,24 +560,21 @@ test.describe('召唤师战争 - 友方移动后选择跟随位置', () => {
     await expect(grabFollowPrompt).toBeVisible({ timeout: 8000 });
 
     // 点击抓附手相邻的空位
-    const followPosition = hostPage.locator('[data-testid^="sw-cell-"]').filter({
-      has: hostPage.locator('[data-cell-empty="true"]')
-    }).nth(1);
+    const followPosition = hostPage.locator('[data-testid^="sw-cell-"][data-valid-ability-pos="true"]').first();
     await expect(followPosition).toBeVisible({ timeout: 5000 });
+    const followCoord = await followPosition.getAttribute('data-cell-coord');
+    expect(followCoord).toBeTruthy();
     await followPosition.click();
 
     // 验证选择提示关闭
     await expect(grabFollowPrompt).toBeHidden({ timeout: 5000 });
 
-    // 验证抓附手移动到新位置
-    // 通过检查抓附手的位置是否改变
-    await expect.poll(async () => {
-      const grabberPosition = await hostPage.evaluate(() => {
-        const grabber = document.querySelector('[data-testid^="sw-unit-"][data-owner="0"][data-unit-name*="抓附手"]');
-        return grabber?.getAttribute('data-position');
-      });
-      return grabberPosition !== null;
-    }, { timeout: 5000 }).toBe(true);
+    // 验证抓附手移动到刚才选择的位置
+    await expect(
+      hostPage.locator(
+        `[data-testid^="sw-unit-"][data-owner="0"][data-unit-name*="抓附手"][data-cell-coord="${followCoord}"]`,
+      ),
+    ).toBeVisible({ timeout: 5000 });
 
     await hostContext.close();
     await guestContext.close();
