@@ -1779,6 +1779,207 @@ test.describe('Smash Up 牌库检索交互', () => {
         await saveStableScreenshot(page, testInfo, 'smashup-world-champs-smart-set-up-triggered-2026-04-27');
     });
 
+    test('着魔附着的宿主离场后应把持续行动转移到另一个随从', async ({ page, game }, testInfo) => {
+        test.setTimeout(60000);
+
+        await page.goto('/play/smashup');
+        await page.waitForFunction(
+            () => (window as any).__BG_TEST_HARNESS__?.state?.isRegistered?.() === true,
+            { timeout: 15000 },
+        );
+
+        await game.setupScene({
+            gameId: 'smashup',
+            player0: {
+                hand: ['world_champs_bewitched', 'ninja_assassination'],
+                deck: [],
+                factions: ['world_champs', 'ninjas'],
+                actionLimit: 2,
+            },
+            player1: {
+                hand: [],
+                deck: [],
+                factions: ['pirates', 'dinosaurs'],
+            },
+            currentPlayer: '0',
+            phase: 'playCards',
+            bases: [
+                {
+                    defId: 'base_1',
+                    minions: [
+                        { uid: 'bewitched-host', defId: 'robot_microbot_alpha', ownerId: '1', controllerId: '1', powerCounters: 0 },
+                    ],
+                    ongoingActions: [],
+                },
+                {
+                    defId: 'base_2',
+                    minions: [
+                        { uid: 'bewitched-target', defId: 'robot_microbot_beta', ownerId: '0', controllerId: '0', powerCounters: 0 },
+                    ],
+                    ongoingActions: [],
+                },
+            ],
+        });
+
+        await game.playCard('world_champs_bewitched', { targetBaseIndex: 0, targetMinionUid: 'bewitched-host' });
+        await game.waitForNoInteraction();
+
+        const afterBewitched = await game.getState();
+        const attachedBewitchedUid = afterBewitched.core.bases[0].minions
+            .find((minion: any) => minion.uid === 'bewitched-host')
+            ?.attachedActions?.find((action: any) => action.defId === 'world_champs_bewitched')
+            ?.uid;
+        expect(attachedBewitchedUid).toBeTruthy();
+
+        await page.locator('[data-minion-uid="bewitched-host"]').click({ force: true });
+        await expect(page.locator(`[data-attached-action-uid="${attachedBewitchedUid}"]`)).toBeVisible({ timeout: 5000 });
+        await game.screenshot('bewitched-attached-on-host', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-world-champs-bewitched-attached-2026-04-28');
+
+        await game.playCard('ninja_assassination', { targetBaseIndex: 0, targetMinionUid: 'bewitched-host' });
+        await game.waitForNoInteraction();
+
+        await page.getByRole('button', { name: /^(结束回合|Finish Turn|End)$/i }).click({ force: true });
+        await game.waitForInteraction('world_champs_bewitched_transfer', 10000);
+
+        const promptMeta = await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const current = harness?.state?.get?.()?.sys?.interaction?.current;
+            return {
+                sourceId: current?.data?.sourceId,
+                options: (current?.data?.options ?? []).map((option: any) => ({
+                    id: option.id,
+                    minionUid: option.value?.minionUid ?? null,
+                    baseIndex: option.value?.baseIndex ?? null,
+                })),
+            };
+        });
+
+        expect(promptMeta.sourceId).toBe('world_champs_bewitched_transfer');
+        expect(promptMeta.options.some((option: any) => option.minionUid === 'bewitched-target' && option.baseIndex === 1)).toBe(true);
+
+        await game.screenshot('bewitched-transfer-prompt', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-world-champs-bewitched-transfer-prompt-2026-04-28');
+
+        await game.selectInteractionOptionBy(
+            (option: any) => option.value?.minionUid === 'bewitched-target',
+            '着魔转移到第二个基地的己方随从',
+        );
+        await game.waitForNoInteraction();
+
+        const finalState = await game.getState();
+        const hostStillExists = finalState.core.bases[0].minions.some((minion: any) => minion.uid === 'bewitched-host');
+        const transferredTarget = finalState.core.bases[1].minions.find((minion: any) => minion.uid === 'bewitched-target');
+
+        expect(hostStillExists).toBe(false);
+        expect(transferredTarget?.attachedActions?.some((action: any) => action.defId === 'world_champs_bewitched')).toBe(true);
+        expect(finalState.core.players['0'].discard.some((card: any) => card.defId === 'world_champs_bewitched')).toBe(false);
+
+        await page.locator('[data-minion-uid="bewitched-target"]').click({ force: true });
+        await expect(page.locator('[data-attached-action-def-id="world_champs_bewitched"]').first()).toBeVisible({ timeout: 5000 });
+        await game.screenshot('bewitched-transferred-to-new-host', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-world-champs-bewitched-transferred-2026-04-28');
+    });
+
+    test('嗯？应在打出第一个行动后从弃牌堆作为额外行动发动并回到手牌', async ({ page, game }, testInfo) => {
+        test.setTimeout(60000);
+
+        await page.goto('/play/smashup');
+        await page.waitForFunction(
+            () => (window as any).__BG_TEST_HARNESS__?.state?.isRegistered?.() === true,
+            { timeout: 15000 },
+        );
+
+        await game.setupScene({
+            gameId: 'smashup',
+            player0: {
+                hand: ['ninja_assassination'],
+                deck: [],
+                discard: ['world_champs_eh'],
+                factions: ['world_champs', 'ninjas'],
+            },
+            player1: {
+                hand: [],
+                deck: [],
+                discard: [],
+                factions: ['pirates', 'dinosaurs'],
+            },
+            currentPlayer: '0',
+            phase: 'playCards',
+            bases: [
+                {
+                    defId: 'base_1',
+                    minions: [
+                        { uid: 'eh-ally-1', defId: 'robot_microbot_alpha', ownerId: '0', controllerId: '0', tempPowerModifier: 0 },
+                    ],
+                    ongoingActions: [],
+                },
+                {
+                    defId: 'base_2',
+                    minions: [
+                        { uid: 'eh-ally-2', defId: 'robot_microbot_beta', ownerId: '0', controllerId: '0', tempPowerModifier: 0 },
+                    ],
+                    ongoingActions: [],
+                },
+            ],
+        });
+
+        await game.playCard('ninja_assassination', { targetBaseIndex: 0, targetMinionUid: 'eh-ally-1' });
+        await game.waitForNoInteraction();
+
+        await expect(page.locator('[data-testid="su-discard-toggle"]')).toBeVisible();
+        await page.locator('[data-testid="su-discard-toggle"]').click();
+        await expect(page.locator('[data-discard-view-panel]')).toBeVisible();
+        await expect(page.locator('[data-card-def-id="world_champs_eh"]')).toBeVisible();
+
+        await game.screenshot('eh-discard-panel-available', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-world-champs-eh-discard-available-2026-04-28');
+
+        await page.locator('[data-card-def-id="world_champs_eh"]').click();
+        await page.getByTestId('base-zone-0').click({ force: true });
+        await game.waitForInteraction('world_champs_eh');
+
+        const promptMeta = await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const current = harness?.state?.get?.()?.sys?.interaction?.current;
+            return {
+                sourceId: current?.data?.sourceId,
+                options: (current?.data?.options ?? []).map((option: any) => ({
+                    id: option.id,
+                    minionUid: option.value?.minionUid ?? null,
+                    baseIndex: option.value?.baseIndex ?? null,
+                })),
+            };
+        });
+
+        expect(promptMeta.sourceId).toBe('world_champs_eh');
+        expect(promptMeta.options.map((option: any) => option.minionUid)).toEqual(
+            expect.arrayContaining(['eh-ally-1', 'eh-ally-2']),
+        );
+
+        await game.screenshot('eh-minion-prompt-visible', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-world-champs-eh-prompt-2026-04-28');
+
+        await game.selectInteractionOptionBy(
+            (option: any) => option.value?.minionUid === 'eh-ally-2',
+            '嗯？选择第二个己方随从',
+        );
+        await game.waitForNoInteraction();
+
+        const finalState = await game.getState();
+        const allyOne = finalState.core.bases[0].minions.find((minion: any) => minion.uid === 'eh-ally-1');
+        const allyTwo = finalState.core.bases[1].minions.find((minion: any) => minion.uid === 'eh-ally-2');
+
+        expect(allyOne?.tempPowerModifier ?? 0).toBe(0);
+        expect(allyTwo?.tempPowerModifier ?? 0).toBe(1);
+        expect(finalState.core.players['0'].hand.some((card: any) => card.defId === 'world_champs_eh')).toBe(true);
+        expect(finalState.core.players['0'].discard.some((card: any) => card.defId === 'world_champs_eh')).toBe(false);
+        expect(finalState.core.players['0'].usedDiscardPlayAbilities ?? []).toContain('world_champs_eh');
+
+        await game.screenshot('eh-resolved-returned-to-hand', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-world-champs-eh-resolved-2026-04-28');
+    });
+
     test('警长应在基地计分前发起决斗并摧毁落败随从', async ({ browser, baseURL }, testInfo) => {
         test.setTimeout(90000);
 

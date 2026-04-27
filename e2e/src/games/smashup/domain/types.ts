@@ -1518,6 +1518,8 @@ export interface OngoingAttachedEvent extends GameEvent<typeof SU_EVENTS.ONGOING
         removeFromDiscard?: boolean;
         /** 额外元数据（如 block_the_path 存储被限制的派系） */
         metadata?: Record<string, unknown>;
+        /** 某些“发动天赋后立即转移自身”的持续行动需要保留本回合已用状态 */
+        talentUsed?: boolean;
     };
 }
 

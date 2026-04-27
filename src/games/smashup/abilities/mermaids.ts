@@ -85,6 +85,11 @@ type OngoingMoveContinuation = {
     reason: string;
 };
 
+type OngoingMoveSnapshot = {
+    metadata?: Record<string, unknown>;
+    talentUsed?: boolean;
+};
+
 type CharmedContinuation = {
     minionUid: string;
     minionDefId: string;
@@ -211,6 +216,7 @@ function buildMoveOngoingEvents(
     targetBaseIndex: number,
     reason: string,
     timestamp: number,
+    snapshot?: OngoingMoveSnapshot,
 ): SmashUpEvent[] {
     return [
         {
@@ -231,6 +237,8 @@ function buildMoveOngoingEvents(
                 ownerId,
                 targetType: 'base',
                 targetBaseIndex,
+                ...(snapshot?.metadata ? { metadata: snapshot.metadata } : {}),
+                ...(snapshot?.talentUsed !== undefined ? { talentUsed: snapshot.talentUsed } : {}),
             },
             timestamp,
         } as OngoingAttachedEvent,
@@ -853,6 +861,8 @@ const handleMermaidsOngoingMove: InteractionHandler = (state, _playerId, value, 
     if (!continuation || selected.skip || selected.baseIndex === undefined || selected.baseIndex === continuation.fromBaseIndex) {
         return { state, events: [] };
     }
+    const currentOngoing = state.core.bases[continuation.fromBaseIndex]?.ongoingActions
+        .find(action => action.uid === continuation.cardUid);
     return {
         state,
         events: buildMoveOngoingEvents(
@@ -862,6 +872,10 @@ const handleMermaidsOngoingMove: InteractionHandler = (state, _playerId, value, 
             selected.baseIndex,
             continuation.reason,
             timestamp,
+            currentOngoing ? {
+                metadata: currentOngoing.metadata,
+                talentUsed: currentOngoing.talentUsed,
+            } : undefined,
         ),
     };
 };

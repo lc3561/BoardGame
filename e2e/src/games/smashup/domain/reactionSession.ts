@@ -183,6 +183,79 @@ function buildTriggerLabel(trigger: TriggerInstance): string {
     return source ? buildReactionSourceNameLabel(trigger.sourceDefId) : trigger.sourceDefId;
 }
 
+function isTriggerSourceStillPresentDuringScoring(
+    state: MatchState<SmashUpCore>,
+    trigger: TriggerInstance,
+): boolean {
+    if (trigger.timing !== 'beforeScoring' && trigger.timing !== 'whenScoring' && trigger.timing !== 'afterScoring') {
+        return true;
+    }
+    if (!trigger.sourceCardUid) {
+        return true;
+    }
+
+    for (const special of state.core.pendingAfterScoringSpecials ?? []) {
+        if (
+            special.cardUid === trigger.sourceCardUid
+            && (trigger.sourceBaseIndex === undefined || special.baseIndex === trigger.sourceBaseIndex)
+        ) {
+            return true;
+        }
+    }
+
+    const base = trigger.sourceBaseIndex === undefined ? undefined : state.core.bases[trigger.sourceBaseIndex];
+    if (base) {
+        if (base.ongoingActions.some(action => action.uid === trigger.sourceCardUid)) {
+            return true;
+        }
+        if (base.minions.some(minion => minion.uid === trigger.sourceCardUid)) {
+            return true;
+        }
+        if (base.minions.some(minion => minion.attachedActions?.some(action => action.uid === trigger.sourceCardUid))) {
+            return true;
+        }
+    }
+
+    return (state.core.titans ?? []).some(titan => (
+        titan.uid === trigger.sourceCardUid
+        && titan.location.zone === 'base'
+        && (trigger.sourceBaseIndex === undefined || titan.location.baseIndex === trigger.sourceBaseIndex)
+    ));
+}
+
+function pruneUnavailableScoringFrameTriggers(
+    state: MatchState<SmashUpCore>,
+    session: SmashUpReactionSession,
+    now: number,
+): { state: MatchState<SmashUpCore>; events: SmashUpEvent[] } {
+    const staleTriggers = getSessionFrameTriggers(state, session.frameId).filter(
+        trigger => !isTriggerSourceStillPresentDuringScoring(state, trigger),
+    );
+    if (staleTriggers.length === 0) {
+        return { state, events: [] };
+    }
+
+    let nextCore = state.core;
+    const events: SmashUpEvent[] = [];
+    for (const trigger of staleTriggers) {
+        const consumed: TriggerConsumedEvent = {
+            type: SU_EVENTS.TRIGGER_CONSUMED,
+            payload: { triggerId: trigger.id },
+            timestamp: now,
+        };
+        events.push(consumed);
+        nextCore = reduce(nextCore, consumed as unknown as SmashUpEvent);
+    }
+
+    return {
+        state: {
+            ...state,
+            core: nextCore,
+        },
+        events,
+    };
+}
+
 function getSessionFrameTriggers(state: MatchState<SmashUpCore>, frameId: string): TriggerInstance[] {
     return (state.core.triggerQueue ?? []).filter(trigger => (trigger.frameId ?? trigger.id) === frameId);
 }
@@ -749,6 +822,7 @@ export function advanceSmashUpReactionSession(
     if (state.sys.interaction?.current) return undefined;
 
     let currentState = state;
+    const emittedEvents: SmashUpEvent[] = [];
     let session = getSmashUpReactionSession(currentState);
 
     if (!session) {
@@ -758,6 +832,13 @@ export function advanceSmashUpReactionSession(
         currentState = createSessionFromPendingFrame(currentState);
         session = getSmashUpReactionSession(currentState);
         if (!session) return undefined;
+    }
+
+    const pruned = pruneUnavailableScoringFrameTriggers(currentState, session, now);
+    if (pruned.events.length > 0) {
+        currentState = pruned.state;
+        emittedEvents.push(...pruned.events);
+        session = getSmashUpReactionSession(currentState) ?? session;
     }
 
     if (session.phase === 'mandatory') {
@@ -785,7 +866,7 @@ export function advanceSmashUpReactionSession(
             const restarted = createSessionFromPendingFrame(currentState);
             const restartedSession = getSmashUpReactionSession(restarted);
             if (!restartedSession) {
-                return { state: currentState, events: [] };
+                return { state: currentState, events: emittedEvents };
             }
             currentState = restarted;
             session = restartedSession;
@@ -798,13 +879,17 @@ export function advanceSmashUpReactionSession(
     const options = buildReactionOptions(currentState, session, now);
     const nonPassOptions = options.filter(option => option.id !== 'pass');
     if (session.phase === 'mandatory' && nonPassOptions.length === 1) {
-        return resolveSmashUpReactionChoice(currentState, random, now, nonPassOptions[0].value);
+        const resolved = resolveSmashUpReactionChoice(currentState, random, now, nonPassOptions[0].value);
+        return {
+            state: resolved.state,
+            events: [...emittedEvents, ...resolved.events],
+        };
     }
 
     const interaction = buildReactionInteraction(currentState, session, now);
     return {
         state: queueInteraction(currentState, interaction),
-        events: [],
+        events: emittedEvents,
     };
 }
 

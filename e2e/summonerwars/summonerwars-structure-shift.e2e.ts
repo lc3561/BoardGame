@@ -19,6 +19,7 @@ import {
   setupSWOnlineMatch,
   waitForPhase,
 } from '../helpers/summonerwars';
+import { SUMMONER_FROST, STRUCTURE_CARDS_FROST } from '../../src/games/summonerwars/config/factions/frost';
 
 type ThreeAxeGame = {
   openTestGame: (gameId: string) => Promise<void>;
@@ -36,6 +37,9 @@ const clearBoardCell = (board: any[][], row: number, col: number) => {
   board[row][col].unit = null;
   board[row][col].structure = null;
 };
+
+const STRUCTURE_SHIFT_SUMMONER_CARD = { ...SUMMONER_FROST };
+const STRUCTURE_SHIFT_STRUCTURE_CARD = { ...STRUCTURE_CARDS_FROST[1] };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- E2E 测试中 coreState 为动态 JSON 结构
 const prepareStructureShiftState = (coreState: any) => {
@@ -57,21 +61,8 @@ const prepareStructureShiftState = (coreState: any) => {
 
   board[6][2].unit = {
     instanceId: 'structure-summoner',
-    cardId: 'test-structure-summoner',
-    card: {
-      id: 'test-structure-summoner',
-      name: 'Structure Summoner',
-      cardType: 'unit',
-      faction: 'frost',
-      cost: 0,
-      life: 12,
-      strength: 3,
-      attackType: 'ranged',
-      attackRange: 3,
-      unitClass: 'summoner',
-      abilities: ['structure_shift'],
-      deckSymbols: [],
-    },
+    cardId: STRUCTURE_SHIFT_SUMMONER_CARD.id,
+    card: STRUCTURE_SHIFT_SUMMONER_CARD,
     owner: '0',
     position: { row: 6, col: 2 },
     damage: 0,
@@ -81,18 +72,8 @@ const prepareStructureShiftState = (coreState: any) => {
   };
 
   board[6][4].structure = {
-    cardId: 'shift-structure-gate',
-    card: {
-      id: 'shift-structure-gate',
-      cardType: 'structure',
-      name: '测试城门',
-      faction: 'frost',
-      cost: 0,
-      life: 5,
-      deckSymbols: [],
-      spriteAtlas: 'portal',
-      spriteIndex: 0,
-    },
+    cardId: STRUCTURE_SHIFT_STRUCTURE_CARD.id,
+    card: STRUCTURE_SHIFT_STRUCTURE_CARD,
     owner: '0',
     position: { row: 6, col: 4 },
     damage: 0,
@@ -123,7 +104,7 @@ test.describe('召唤师战争 - 结构变换', () => {
 
       await waitForPhase(hostPage, 'move');
 
-      const summoner = hostPage.locator('[data-testid^="sw-unit-"][data-owner="0"][data-unit-name="Structure Summoner"]').first();
+      const summoner = hostPage.locator(`[data-testid^="sw-unit-"][data-owner="0"][data-unit-name="${SUMMONER_FROST.name}"]`).first();
       await expect(summoner).toHaveCount(1);
 
       const structure = hostPage.locator('[data-testid^="sw-structure-"][data-owner="0"]').first();
@@ -133,7 +114,7 @@ test.describe('召唤师战争 - 结构变换', () => {
         throw new Error('无法读取建筑初始位置');
       }
 
-      await clickBoardElement(hostPage, '[data-testid^="sw-unit-"][data-owner="0"][data-unit-name="Structure Summoner"]');
+      await clickBoardElement(hostPage, `[data-testid^="sw-unit-"][data-owner="0"][data-unit-name="${SUMMONER_FROST.name}"]`);
       await clickBoardElement(hostPage, '[data-testid="sw-cell-5-2"]');
       await hostPage.waitForTimeout(800);
 

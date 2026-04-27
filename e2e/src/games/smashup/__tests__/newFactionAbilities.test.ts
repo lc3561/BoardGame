@@ -6131,8 +6131,17 @@ describe('World Champs abilities', () => {
         expect(resolved.finalState.core.bases[1].minions.some(minion => minion.uid === 'runner-1')).toBe(true);
         expect(resolved.finalState.core.bases[0].ongoingActions.some(action => action.uid === 'hsc-1')).toBe(false);
         expect(resolved.finalState.core.bases[1].ongoingActions.some(action => action.uid === 'hsc-1')).toBe(true);
+        expect(resolved.finalState.core.bases[1].ongoingActions.find(action => action.uid === 'hsc-1')?.talentUsed).toBe(true);
         const movedMinion = resolved.finalState.core.bases[1].minions.find(minion => minion.uid === 'runner-1');
         expect(movedMinion?.tempPowerModifier).toBe(3);
+
+        const reused = validate(resolved.finalState, {
+            type: SU_COMMANDS.USE_TALENT,
+            playerId: '0',
+            payload: { ongoingCardUid: 'hsc-1', baseIndex: 1 },
+        });
+        expect(reused.valid).toBe(false);
+        expect(reused.error).toBe('本回合天赋已使用');
     });
 
     it('world_champs_aramis 每回合一次在自己回合被行动直接影响后获得额外行动', () => {
@@ -6649,6 +6658,70 @@ describe('World Champs abilities', () => {
         expect(resolved.finalState.core.players['0'].hand.some(card => card.uid === 'eh-1')).toBe(true);
         expect(resolved.finalState.core.players['0'].discard.some(card => card.uid === 'eh-1')).toBe(false);
     });
+
+    it('world_champs_eh 在你的回合打出第一个行动后可从弃牌堆发动，且本回合不会重复出现', () => {
+        const core = makeState({
+            turnOrder: ['0', '1'],
+            currentPlayerIndex: 0,
+            players: {
+                '0': makePlayer('0', {
+                    discard: [makeCard('eh-1', 'world_champs_eh', 'action', '0')],
+                    actionsPlayed: 1,
+                }),
+                '1': makePlayer('1'),
+            },
+            bases: [
+                {
+                    defId: 'base_a',
+                    minions: [makeMinion('ally-1', 'robot_microbot_alpha', '0', 1, { powerModifier: 0 })],
+                    ongoingActions: [],
+                },
+                {
+                    defId: 'base_b',
+                    minions: [],
+                    ongoingActions: [],
+                },
+            ],
+        });
+
+        const options = getDiscardSpecialOptions(core, '0');
+        expect(options).toHaveLength(1);
+        expect(options[0]?.card.uid).toBe('eh-1');
+        expect(options[0]?.sourceId).toBe('world_champs_eh');
+
+        const activated = runCommand(
+            makeMatchState(core),
+            { type: SU_COMMANDS.ACTIVATE_SPECIAL, playerId: '0', payload: { discardCardUid: 'eh-1', baseIndex: 0 } } as any,
+            defaultTestRandom,
+        );
+        const prompt = getInteractionsFromMS(activated.finalState)[0] as any;
+        expect(prompt?.data?.sourceId).toBe('world_champs_eh');
+        const option = prompt.data.options.find((entry: any) => entry.value?.minionUid === 'ally-1');
+        expect(option).toBeDefined();
+
+        const resolved = runCommand(
+            activated.finalState,
+            { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: option.id } } as any,
+            defaultTestRandom,
+        );
+        const ally = resolved.finalState.core.bases[0].minions.find(minion => minion.uid === 'ally-1');
+        expect(ally?.tempPowerModifier).toBe(1);
+        expect(resolved.finalState.core.players['0'].hand.some(card => card.uid === 'eh-1')).toBe(true);
+        expect(resolved.finalState.core.players['0'].usedDiscardPlayAbilities).toContain('world_champs_eh');
+        expect(getDiscardSpecialOptions(resolved.finalState.core, '0')).toHaveLength(0);
+
+        const beforeFirstAction = {
+            ...core,
+            players: {
+                ...core.players,
+                '0': {
+                    ...core.players['0'],
+                    actionsPlayed: 0,
+                },
+            },
+        };
+        expect(getDiscardSpecialOptions(beforeFirstAction, '0')).toHaveLength(0);
+    });
 });
 
 describe('Mermaids abilities', () => {
@@ -6943,6 +7016,15 @@ describe('Mermaids abilities', () => {
         );
         expect(resolved.finalState.core.bases[0].ongoingActions.some(action => action.uid === 'becalm-1')).toBe(false);
         expect(resolved.finalState.core.bases[1].ongoingActions.some(action => action.uid === 'becalm-1')).toBe(true);
+        expect(resolved.finalState.core.bases[1].ongoingActions.find(action => action.uid === 'becalm-1')?.talentUsed).toBe(true);
+
+        const reused = validate(resolved.finalState, {
+            type: SU_COMMANDS.USE_TALENT,
+            playerId: '0',
+            payload: { ongoingCardUid: 'becalm-1', baseIndex: 1 },
+        });
+        expect(reused.valid).toBe(false);
+        expect(reused.error).toBe('本回合天赋已使用');
     });
 
     it('mermaids_siren_song 会把每位其他玩家各一个随从移动到同一个你有随从的基地', () => {

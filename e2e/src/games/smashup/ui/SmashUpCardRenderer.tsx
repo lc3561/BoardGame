@@ -47,6 +47,7 @@ export const SmashUpCardRenderer: React.FC<SmashUpRendererArgs> = ({
     const defId = previewRef.type === 'renderer' ? (previewRef.payload?.defId as string | undefined) : undefined;
     const cardUid = previewRef.type === 'renderer' ? (previewRef.payload?.cardUid as string | undefined) : undefined;
     const disableHoverOverlay = previewRef.type === 'renderer' ? (previewRef.payload?.disableHoverOverlay as boolean | undefined) ?? false : false;
+    const forceShowOverlay = previewRef.type === 'renderer' ? (previewRef.payload?.forceShowOverlay as boolean | undefined) ?? false : false;
     const [, forceAtlasRefresh] = useReducer((n: number) => n + 1, 0);
 
     // 默认回退为原始数据的图集坐标，如果没有配置过的话
@@ -177,6 +178,11 @@ export const SmashUpCardRenderer: React.FC<SmashUpRendererArgs> = ({
     const needsOverlay = (isPodVersion || shouldUseEnglishAtlas || usesTtsAtlas) && !isEnglishVariant;
     // 用户在英文环境下可以关闭覆盖层
     const shouldShowOverlay = needsOverlay && overlayEnabled;
+    const overlayVisibilityClass = forceShowOverlay
+        ? 'opacity-100'
+        : disableHoverOverlay
+            ? 'opacity-0'
+            : 'opacity-0 group-hover:opacity-100';
     
     // 图片语言选择：
     // 1. POD 派系卡牌 → 使用英文 locale（图片在 en/smashup/pod-assets/）
@@ -210,8 +216,11 @@ export const SmashUpCardRenderer: React.FC<SmashUpRendererArgs> = ({
             />
             {/* 覆盖层：仅在需要时显示，且未禁用 hover 时才响应 hover */}
             {shouldShowOverlay && (
-                <div className={`absolute inset-0 z-10 pointer-events-none flex flex-col justify-between p-[4%] transition-opacity duration-200 bg-black/20
-                    ${disableHoverOverlay ? 'opacity-0' : 'opacity-0 group-hover:opacity-100'}`}
+                <div
+                    data-testid="su-card-text-overlay"
+                    data-overlay-visibility={forceShowOverlay ? 'always' : (disableHoverOverlay ? 'disabled' : 'hover')}
+                    className={`absolute inset-0 z-10 pointer-events-none flex flex-col justify-between p-[4%] transition-opacity duration-200 bg-black/20
+                    ${overlayVisibilityClass}`}
                 >
                     {/* 标题 */}
                     <div className={`w-fit max-w-full bg-black/80 backdrop-blur-sm text-white font-bold rounded px-2 shadow 

@@ -15,6 +15,7 @@ import type {
 } from '../../engine/types';
 import { FLOW_COMMANDS } from '../../engine';
 import { FLOW_EVENTS } from '../../engine/systems/FlowSystem';
+import { INTERACTION_COMMANDS } from '../../engine/systems/InteractionSystem';
 import { buildDamageSourceAnnotation, buildDamageBreakdownSegment, type DamageSourceResolver } from '../../engine/primitives/actionLogHelpers';
 import { SW_COMMANDS, SW_EVENTS } from './domain';
 import type { SummonerWarsCore } from './domain/types';
@@ -45,6 +46,7 @@ export const ACTION_ALLOWLIST = [
     SW_COMMANDS.ACTIVATE_ABILITY,
     SW_COMMANDS.FUNERAL_PYRE_HEAL,
     FLOW_COMMANDS.ADVANCE_PHASE,
+    INTERACTION_COMMANDS.RESPOND,
 ] as const;
 
 /**
@@ -706,6 +708,22 @@ export function formatSummonerWarsActionEntry({
                     const cardSegment = buildCardSegment(payload.cardId);
                     if (cardSegment) segments.push(cardSegment);
                     pushEntry(event.type, segments, payload.playerId, entryTimestamp, index);
+                }
+                break;
+            }
+            case SW_EVENTS.EVENT_PLAYED: {
+                if (command.type === SW_COMMANDS.PLAY_EVENT) {
+                    break;
+                }
+                const payload = event.payload as { playerId?: PlayerId; cardId?: string };
+                if (payload.playerId) {
+                    pushEntry(
+                        event.type,
+                        withCardSegments('actionLog.playEvent', payload.cardId),
+                        payload.playerId,
+                        entryTimestamp,
+                        index,
+                    );
                 }
                 break;
             }

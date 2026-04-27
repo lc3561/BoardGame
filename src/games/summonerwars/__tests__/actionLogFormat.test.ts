@@ -6,6 +6,7 @@
 
 import { describe, expect, it } from 'vitest';
 import type { ActionLogEntry, ActionLogSegment, Command, GameEvent, MatchState } from '../../../engine/types';
+import { INTERACTION_COMMANDS } from '../../../engine/systems/InteractionSystem';
 import { SW_COMMANDS, SW_EVENTS } from '../domain/types';
 import type { SummonerWarsCore } from '../domain/types';
 import { formatSummonerWarsActionEntry } from '../actionLog';
@@ -223,6 +224,61 @@ describe('formatSummonerWarsActionEntry — i18n segments', () => {
 
         const cardSegment = entry[0].segments.find((s) => s.type === 'card');
         expect(cardSegment?.type === 'card' && cardSegment.cardId).toBe('necro-funeral-pyre-0-1');
+    });
+
+    it('交互响应里系统补执行的 EVENT_PLAYED 也会生成打出事件日志', () => {
+        const command: Command = {
+            type: INTERACTION_COMMANDS.RESPOND,
+            playerId: '0',
+            payload: { optionId: 'play' },
+        };
+
+        const entry = normalizeEntries(formatSummonerWarsActionEntry({
+            command,
+            state: { core: createCore() } as MatchState<SummonerWarsCore>,
+            events: [{
+                type: SW_EVENTS.EVENT_PLAYED,
+                payload: {
+                    playerId: '0',
+                    cardId: 'necro-annihilate-1-1-24',
+                },
+                timestamp: 1,
+            } as GameEvent],
+        }));
+
+        expect(entry).toHaveLength(1);
+        expect(entry[0]?.kind).toBe(SW_EVENTS.EVENT_PLAYED);
+        const playSeg = findI18nSegment(entry[0]!.segments, 'actionLog.playEvent');
+        expect(playSeg).toBeTruthy();
+
+        const cardSegment = entry[0]!.segments.find((s) => s.type === 'card');
+        expect(cardSegment?.type === 'card' && cardSegment.cardId).toBe('necro-annihilate-1-1-24');
+    });
+
+    it('直发 PLAY_EVENT 时不重复追加 EVENT_PLAYED 日志', () => {
+        const command: Command = {
+            type: SW_COMMANDS.PLAY_EVENT,
+            playerId: '0',
+            payload: { cardId: 'necro-funeral-pyre-0-1' },
+        };
+
+        const entry = normalizeEntries(formatSummonerWarsActionEntry({
+            command,
+            state: { core: createCore() } as MatchState<SummonerWarsCore>,
+            events: [{
+                type: SW_EVENTS.EVENT_PLAYED,
+                payload: {
+                    playerId: '0',
+                    cardId: 'necro-funeral-pyre-0-1',
+                },
+                timestamp: 1,
+            } as GameEvent],
+        }));
+
+        expect(entry).toHaveLength(1);
+        expect(entry[0]?.kind).toBe(SW_COMMANDS.PLAY_EVENT);
+        const playSegs = entry[0]!.segments.filter((segment) => segment.type === 'i18n' && segment.key === 'actionLog.playEvent');
+        expect(playSegs).toHaveLength(1);
     });
 
     it('DECLARE_ATTACK 治疗模式显示治疗量', () => {

@@ -611,3 +611,17 @@
     - 稳定截图实际落点为 `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-world-champs-*.png`
     - 已回写三份总文档：`smashup-10th-anniversary-factions-audit-20260419.md`、`smashup-10th-anniversary-final-closeout-20260419.md`、`smashup-10th-anniversary-reintake-2026-04-25.md`
   - Next: 继续推进三新派系整包重审；当前仍不能把 World Champs 单派系补证写成三派系最终收口。
+
+- **[2026-04-27 08:40:00] Action**: World Champs《高速追逐 / 现在是闪电时间！ / 聪明Set-Up》真实入口 E2E 补证
+  - Result:
+    - 更新 `e2e/smashup/smashup-robot-hoverbot-new.e2e.ts`：
+      - 新增 `高速追逐应转移行动到另一基地并移动己方随从且给予 +3 力量`
+      - 新增 `现在是闪电时间！应选择己方随从并在本回合给予 +3 力量`
+      - 新增 `聪明Set-Up附着后应在该基地本回合首次打出随从时让你抽一张牌`
+    - `npx eslint e2e/smashup/smashup-robot-hoverbot-new.e2e.ts`：0 errors（warnings 为文件既有存量）
+    - `$env:BG_BYPASS_GLOBAL_HEAVY_BUDGET='1'; npm run test:e2e:ci:file -- e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "高速追逐"`：`1 passed`
+    - `$env:BG_BYPASS_GLOBAL_HEAVY_BUDGET='1'; npm run test:e2e:ci:file -- e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "现在是闪电时间"`：`1 passed`
+    - `$env:BG_BYPASS_GLOBAL_HEAVY_BUDGET='1'; npm run test:e2e:ci:file -- e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "聪明Set-Up"`：`1 passed`
+    - 新增证据文档：`evidence/smashup/smashup-world-champs-high-speed-smart-blitz-e2e-2026-04-27.md`
+    - 已回写三份总文档：`smashup-10th-anniversary-factions-audit-20260419.md`、`smashup-10th-anniversary-final-closeout-20260419.md`、`smashup-10th-anniversary-reintake-2026-04-25.md`
+  - Next: 继续按“卡图优先 + 对象级真证据”补三新派系剩余残余范围；当前仍不能把 World Champs 对象级补证写成整派系或三派系最终收口。

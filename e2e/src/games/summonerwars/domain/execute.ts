@@ -695,28 +695,10 @@ export function executeCommand(
           diceResults,
           timestamp,
         };
+        // triggerAbilities 已为 afterAttack 技能统一发射 ABILITY_TRIGGERED 通知；
+        // 这里不能再手动补发 telekinesis / mind_transmission，否则会生成重复交互。
         const afterAttackEvents = triggerAbilities('afterAttack', afterAttackCtx);
-        // afterAttack 技能需要玩家选择目标（推拉方向、额外攻击目标等）
-        // 生成请求事件，由 UI 处理
         events.push(...afterAttackEvents);
-        const afterAttackChoiceAbilities = ['telekinesis', 'high_telekinesis', 'mind_transmission'];
-        for (const abilityId of afterAttackChoiceAbilities) {
-          if (!attackerAbilities.includes(abilityId)) continue;
-          const def = abilityRegistry.get(abilityId);
-          if (!def) continue;
-          // afterAttack 技能触发发生在 attack 阶段；如果 def 显式要求其它阶段，则跳过。
-          if (def.trigger !== 'onPhaseEnd' && def.validation?.requiredPhase && def.validation.requiredPhase !== core.phase) {
-            continue;
-          }
-          if (def.usesPerTurn !== undefined) {
-            const usageKey = buildUsageKey(attackerUnit.instanceId, abilityId);
-            const usageCount = (core.abilityUsageCount ?? {})[usageKey] ?? 0;
-            if (usageCount >= def.usesPerTurn) continue;
-          }
-          events.push(createAbilityTriggeredEvent(abilityId, attackerUnit.instanceId, attacker, timestamp, {
-            skipUsageCount: true,
-          }));
-        }
         // 连续射击（rapid_fire）：ABILITY_TRIGGERED 事件由 UI 检测，
         // 玩家确认后通过 ACTIVATE_ABILITY 命令执行消耗充能+授予额外攻击
       }

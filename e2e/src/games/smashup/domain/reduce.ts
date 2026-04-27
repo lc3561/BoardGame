@@ -948,7 +948,14 @@ export function reduce(state: SmashUpCore, event: SmashUpEvent): SmashUpCore {
                 targetBaseIndex,
                 targetMinionUid,
                 metadata,
+                talentUsed,
             } = event.payload;
+            const existingOngoing = state.bases.flatMap(base => [
+                ...base.ongoingActions,
+                ...base.minions.flatMap(minion => minion.attachedActions),
+            ]).find(ongoing => ongoing.uid === cardUid);
+            const preservedMetadata = metadata ?? existingOngoing?.metadata;
+            const preservedTalentUsed = talentUsed ?? existingOngoing?.talentUsed ?? false;
             const nextPlayers = removeCardUidFromOwnerZones(state.players, ownerId, cardUid);
             const dedupedBases = state.bases.map((base) => ({
                 ...base,
@@ -963,7 +970,10 @@ export function reduce(state: SmashUpCore, event: SmashUpEvent): SmashUpCore {
                     if (i !== targetBaseIndex) return base;
                     return {
                         ...base,
-                        ongoingActions: [...base.ongoingActions, { uid: cardUid, defId, ownerId, talentUsed: false, ...(metadata ? { metadata } : {}) }],
+                        ongoingActions: [
+                            ...base.ongoingActions,
+                            { uid: cardUid, defId, ownerId, talentUsed: preservedTalentUsed, ...(preservedMetadata ? { metadata: preservedMetadata } : {}) },
+                        ],
                     };
                 });
                 return { ...state, bases: newBases, players: nextPlayers };
@@ -977,7 +987,13 @@ export function reduce(state: SmashUpCore, event: SmashUpEvent): SmashUpCore {
                         minions: base.minions.map(m => (
                             m.uid !== targetMinionUid
                                 ? m
-                                : { ...m, attachedActions: [...m.attachedActions, { uid: cardUid, defId, ownerId }] }
+                                : {
+                                    ...m,
+                                    attachedActions: [
+                                        ...m.attachedActions,
+                                        { uid: cardUid, defId, ownerId, talentUsed: preservedTalentUsed, ...(preservedMetadata ? { metadata: preservedMetadata } : {}) },
+                                    ],
+                                }
                         )),
                     };
                 });

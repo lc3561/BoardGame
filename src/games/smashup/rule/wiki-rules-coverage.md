@@ -211,19 +211,42 @@
 
 ## 7. Resolution Order / Reactions（结算顺序与反应）
 
-### 7.1 “先完成所打出的牌的结算，再处理反应”
-- **实现入口**：`engine/pipeline.ts`
-- **事件链**：
-  - execute → reduce（写入 core）→ `domain.postProcessSystemEvents`（onPlay/触发链）→ systems.afterEvents（窗口/交互/流程）
-- **结论**：🟡 **部分实现**（有固定触发链，但缺少“通用 reaction window”建模；主要在计分断点开窗口）
+### 7.1 第 1 步 / 第 2 步：先收口当前本体，再收口被它打断的嵌套本体
+- **实现入口**：
+  - `commands.ts` / `execute.ts` / `reduce.ts`
+  - `domain/index.ts postProcessSystemEvents`
+  - `systems.ts` 中的交互处理链
+- **结论**：🟡 **部分实现**
+  - 普通“打牌 → 交互 → 继续原本体”链路大多可跑通；
+  - 但复杂插队主要靠交互挂起恢复，不是独立的通用 resolution stack。
 
-### 7.2 mandatory vs optional 的排序（当前玩家决定强制顺序；可选顺时针）
-- **实现现状**：`fireTriggers`/`triggerAllBaseAbilities` 多为固定遍历顺序；“顺时针/当前玩家选择”主要出现在 ResponseWindow（Me First/AfterScoring）与少量交互中。
-- **结论**：⚠️ **缺失/未统一建模**（可能导致与 Wiki 的“同时触发排序”不一致）
+### 7.2 第 3 步：场上强制反应（当前玩家决定顺序）
+- **实现入口**：
+  - `collectTriggers(...)`
+  - `TriggerInstance.resolutionClass = 'mandatory'`
+  - `SmashUpReactionSession.phase = 'mandatory'`
+  - `smashup_reaction_choose`
+- **结论**：✅ **核心机制已实现**
+  - 当前重点风险不是“有没有排序”，而是 **stale trigger 是否还会继续出现在候选里**；
+  - 计分相关时机已额外补了 stale trigger 预裁剪。
 
-### 7.3 witness 规则（After X 的卡必须“看见”X）
-- **实现现状**：触发系统一般以“触发时仍在场”为条件，缺少 LKI/见证快照的统一模型。
-- **结论**：⚠️ **存疑/需要按能力逐类核对**（本表标记为系统性风险项）
+### 7.3 第 4 步：可选反应 / 手牌 special 顺时针轮询
+- **实现入口**：
+  - `responseWindowType = 'meFirst' | 'afterScoring'`
+  - `reactionSession.ts buildPlayableCardOptions()`
+  - `resolveSmashUpReactionChoice()` 的 pass / 顺时针推进逻辑
+- **结论**：⚠️ **只对计分相关场景部分实现**
+  - `meFirst` / `afterScoring` 两类窗口有专门实现；
+  - **缺少覆盖任意事件的通用第 4 步响应窗口**，这与规则书“不是只在计分时才有可选响应轮询”不一致。
+
+### 7.4 witness / LKI（After X 的卡必须真正“看见”X）
+- **实现入口**：
+  - `TriggerInstance.lkiMinion`
+  - `reaction queue` 执行时重建只读快照
+  - `collectTriggers` 的 source active / base witness 校验
+- **结论**：🟡 **已有统一模型，但仍需逐类补洞**
+  - move / affect / destroy 的基础 witness 已经建模；
+  - 旧问题主要出在“来源后来离场/移位后，旧候选没有及时失效”。
 
 ## 8. 信息可见性（Hand/Deck/Discard 的隐藏与 reveal）
 
@@ -237,7 +260,8 @@
 2) **base discard pile + baseDeck 见底重洗缺失**（3.8/3.9）——会影响长局或换基地很多的局面。  
 3) **`CARDS_DISCARDED` 同时从 deck 丢牌**（5.2）——事件语义与规则可能不一致，容易造成未来扩展卡误用。  
 4) **信息可见性（playerView 不隐藏）**（8.1）——若目标是线上对战，这是硬性缺口。  
-5) **反应排序 / witness 规则未统一建模**（7.2/7.3）——属于“规则精度”层面的系统工程。
+5) **第 4 步的通用可选响应轮询未泛化**（7.3）——当前主要只覆盖 score 相关窗口。  
+6) **reaction queue / witness 仍有 stale 选项补洞需求**（7.2/7.4）——属于“规则精度”层面的系统工程。
 
 ---
 

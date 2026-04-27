@@ -1710,6 +1710,7 @@ describe('诡术师 ongoing 能力', () => {
             expect(events[0].type).toBe(SU_EVENTS.LIMIT_MODIFIED);
             expect((events[0] as any).payload.limitType).toBe('minion');
             expect((events[0] as any).payload.playTiming).toBe('immediate');
+            expect((events[0] as any).payload.restrictToBase).toBe(0);
         });
 
         test('非拥有者回合不触发', () => {

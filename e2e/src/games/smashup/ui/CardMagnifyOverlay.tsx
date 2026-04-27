@@ -55,7 +55,7 @@ export const CardMagnifyOverlay: React.FC<Props> = ({ target, onClose }) => {
                 </button>
                 <CardPreview
                     previewRef={def.previewRef
-                        ? { type: 'renderer', rendererId: 'smashup-card-renderer', payload: { defId: previewDefId } }
+                        ? { type: 'renderer', rendererId: 'smashup-card-renderer', payload: { defId: previewDefId, forceShowOverlay: true } }
                         : undefined}
                     className="w-full h-full rounded-xl shadow-2xl"
                     title={resolvedName}

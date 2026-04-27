@@ -14,14 +14,19 @@
   - `斯坦福` 的浏览器级真实打出链路已于 2026-04-26 补齐，见 `evidence/smashup/smashup-world-champs-stoneford-e2e-2026-04-26.md`。
   - `海龟阿凯` 的浏览器级真实打出链路也已于 2026-04-26 补齐，见 `evidence/smashup/smashup-world-champs-akye-the-turtle-e2e-2026-04-26.md`。
   - `盾牌少女` 的浏览器级真实打出链路也已于 2026-04-26 补齐，见 `evidence/smashup/smashup-world-champs-shield-maiden-e2e-2026-04-26.md`。
-  - 用户早先“打出《武士 陈》却触发《海龟阿凯》效果”的负路径也已于 2026-04-26 补齐浏览器级证据，见 `evidence/smashup/smashup-world-champs-samurai-chan-no-akye-e2e-2026-04-26.md`。
-  - 《警长》《木乃伊》也已于 2026-04-26 补齐浏览器级真实入口证据，见 `evidence/smashup/smashup-world-champs-sheriff-mummy-e2e-2026-04-26.md`；且本轮确认它们此前更像是 E2E 场景/观察面错误，不是卡图录错。
+- 用户早先“打出《武士 陈》却触发《海龟阿凯》效果”的负路径也已于 2026-04-26 补齐浏览器级证据，见 `evidence/smashup/smashup-world-champs-samurai-chan-no-akye-e2e-2026-04-26.md`。
+- 《警长》《木乃伊》也已于 2026-04-26 补齐浏览器级真实入口证据，见 `evidence/smashup/smashup-world-champs-sheriff-mummy-e2e-2026-04-26.md`；且本轮确认它们此前更像是 E2E 场景/观察面错误，不是卡图录错。
+- 《高速追逐》《现在是闪电时间！》《聪明Set-Up》也已于 2026-04-27 补齐浏览器级真实入口证据，见 `evidence/smashup/smashup-world-champs-high-speed-smart-blitz-e2e-2026-04-27.md`。
 - 但 `World Champs` 仍缺整派系级真实入口玩法覆盖，不能把 `斯坦福` 单卡证据外推成三派系最终收口。
 - 2026-04-26 22:31 再次补记：
   - `World Champs` 新增《金币猫》《鲨鱼纹身》对象级 L3 证据；
   - 其中《鲨鱼纹身》还暴露并修复了一条真实运行时 bug：`startTurn` 流程把同一 `POWER_COUNTER_ADDED` 事件重复 reduce 到 core。
   - 因而本批次的主要风险已不只是“有没有卡图对照”，还包括“flow hook / updatedState / core reduce 边界是否重复结算”；最终 closeout 口径仍不能提前升级。
-  - 在补齐真实入口玩法证据前，本文档不得再被引用为“三派系玩法已完成最终收口”的证明材料。
+  - 2026-04-27 再次补记：
+    - `World Champs` 当前至少已有 `12` 条正路径对象级 L3 证据（`斯坦福 / 海龟阿凯 / 盾牌少女 / 战斗精神奖 / 老鼠、鸟和香肠 / 金币猫 / 鲨鱼纹身 / 警长 / 木乃伊 / 高速追逐 / 现在是闪电时间！ / 聪明Set-Up`）；
+    - 另有《武士 陈》1 条关键负路径证据；
+    - 但这仍只是“对象级补证继续扩展”，不是三新派系整包最终收口。
+- 在补齐真实入口玩法证据前，本文档不得再被引用为“三派系玩法已完成最终收口”的证明材料。
 
 ## 范围
 - 派系：`Mermaids`、`Skeletons`、`World Champs`

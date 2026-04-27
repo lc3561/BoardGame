@@ -6,6 +6,7 @@ import { registerInteractionHandler, type InteractionHandler } from '../domain/a
 import { registerInterceptor, registerTrigger } from '../domain/ongoingEffects';
 import type { TriggerContext } from '../domain/ongoingEffects';
 import { canStartDuel, startDuel } from '../domain/duel';
+import { registerDiscardSpecialProvider } from '../domain/discardSpecialAbilities';
 import { buildBuryCardEvents } from '../domain/bury';
 import {
     addPowerCounter,
@@ -901,6 +902,27 @@ export function registerWorldChampsAbilities(): void {
     registerAbility('world_champs_shark_tattoo', 'onPlay', worldChampsSharkTattooOnPlay);
     registerAbility('world_champs_smart_set_up', 'onPlay', worldChampsSmartSetUpOnPlay);
     registerAbility('world_champs_eh', 'special', worldChampsEhSpecial);
+    registerDiscardSpecialProvider({
+        id: 'world_champs_eh',
+        getActivatableCards(core, playerId) {
+            const currentTurnPlayerId = core.turnOrder[core.currentPlayerIndex];
+            if (!currentTurnPlayerId || currentTurnPlayerId !== playerId) return [];
+            const player = core.players[playerId];
+            if (!player) return [];
+            if (player.actionsPlayed < 1) return [];
+            if (player.usedDiscardPlayAbilities?.includes('world_champs_eh')) return [];
+            if (collectOwnMinions(core, playerId).length === 0) return [];
+            return player.discard
+                .filter(card => card.defId === 'world_champs_eh')
+                .map(card => ({
+                    card,
+                    allowedBaseIndices: 'all' as const,
+                    sourceId: 'world_champs_eh',
+                    defId: card.defId,
+                    name: getCardDef(card.defId)?.name ?? card.defId,
+                }));
+        },
+    });
     registerTrigger('world_champs_aramis', 'onMinionAffected', worldChampsAramisOnMinionAffected, {
         optional: true,
         perInstance: true,
@@ -1203,6 +1225,7 @@ const handleWorldChampsHighSpeedChaseBase: InteractionHandler = (state, playerId
                     ownerId: ongoing.ownerId,
                     targetType: 'base',
                     targetBaseIndex: selected.baseIndex,
+                    talentUsed: true,
                 },
                 timestamp,
             } as SmashUpEvent,
@@ -1311,6 +1334,14 @@ const handleWorldChampsEh: InteractionHandler = (state, playerId, value, data, _
     if (selected.skip || !selected.minionUid || selected.baseIndex === undefined) return { state, events: [] };
     const continuation = data?.continuationContext as EhContinuation | undefined;
     const events: SmashUpEvent[] = [
+        {
+            type: SU_EVENTS.DISCARD_ABILITY_USED,
+            payload: {
+                playerId,
+                sourceId: 'world_champs_eh',
+            },
+            timestamp,
+        },
         addTempPower(selected.minionUid, selected.baseIndex, 1, 'world_champs_eh', timestamp),
     ];
     if (continuation?.sourceCardUid) {

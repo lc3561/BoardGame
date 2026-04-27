@@ -36,15 +36,12 @@ describe('MobileTextEntryProxyLayer', () => {
         document.documentElement.style.removeProperty('--keyboard-inset-height');
     });
 
-    it('在键盘弹起时为 modal-root 内输入框创建代理输入', async () => {
-        const modalRoot = document.getElementById('modal-root');
-        if (!modalRoot) throw new Error('missing modal root');
-
+    it('在键盘弹起时为移动端输入框创建代理输入，不限 modal 作用域', async () => {
         const sourceInput = document.createElement('input');
         sourceInput.type = 'text';
         sourceInput.placeholder = 'feedback';
         sourceInput.value = 'hello';
-        modalRoot.appendChild(sourceInput);
+        document.body.appendChild(sourceInput);
 
         render(<MobileTextEntryProxyLayer />);
 

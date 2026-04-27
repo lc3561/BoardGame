@@ -19,6 +19,7 @@ import { getEffectivePower } from './ongoingModifiers';
 import {
     grantContextualExtraAction,
     grantContextualExtraMinion,
+    grantExtraMinion,
     grantExtraAction,
     addTempPower,
     returnMadnessCard,
@@ -377,10 +378,12 @@ export function registerExpansionBaseAbilities(): void {
 
     // ── 神秘花园（Secret Garden）──────────────────────────────
     // "在你的回合，你可以额外打出一个力量为2或以下的随从到这里）?
-    // 力量的 限制通过 BaseCardDef.restrictions ?extraPlayMinionPowerMax 数据驱动实现（同母星模式）
+    // 这是整回合持续许可，不是回合开始立刻结算的一次性额外打出。
+    // 因此这里固定授予本回合可暂存的基地限定额度，避免被 startTurn 误判为 immediate prompt。
+    // 力量限制通过 BaseCardDef.restrictions.extraPlayMinionPowerMax 数据驱动实现。
     registerBaseAbility('base_secret_garden', 'onTurnStart', (ctx) => {
         return {
-            events: [grantContextualExtraMinion(ctx, '神秘花园：额外打出力量≤2的随从', ctx.baseIndex)],
+            events: [grantExtraMinion(ctx.playerId, '神秘花园：额外打出力量≤2的随从', ctx.now, ctx.baseIndex, { playTiming: 'banked' })],
         };
     });
 

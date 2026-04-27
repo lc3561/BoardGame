@@ -1751,6 +1751,7 @@ export function createSummonerWarsInteractionSystem(): EngineSystem<SummonerWars
               ...interactionData,
               sw: {
                 type: 'after_attack_mind_transmission',
+                abilityId: 'mind_transmission',
                 sourceUnitId,
                 sourcePosition,
               } satisfies SwInteractionMeta,

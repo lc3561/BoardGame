@@ -6,7 +6,7 @@ import { isTextEntryElement, isTextEntryProxyEligible, scrollTextEntryIntoView }
  *
  * 目标：
  * - 不做“整页上抬/位移”的强行布局改写（用户反感）
- * - 只在 mobile（coarse pointer）且输入位于 #modal-root 内时做最小滚动辅助
+ * - 只在移动端文本输入运行时做最小滚动辅助
  * - 不影响 PC（默认不启用）
  */
 export const TextEntryAutoScrollAgent = () => {

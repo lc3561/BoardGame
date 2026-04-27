@@ -1239,6 +1239,8 @@ describe('base_secret_garden: 神秘花园 - 回合开始额外随从', () => {
         const payload = (events[0] as any).payload;
         expect(payload.limitType).toBe('minion');
         expect(payload.delta).toBe(1);
+        expect(payload.playTiming).toBe('banked');
+        expect(payload.restrictToBase).toBe(0);
     });
 });
 

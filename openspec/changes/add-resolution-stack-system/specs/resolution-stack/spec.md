@@ -36,3 +36,20 @@
 - **WHEN** 系统确认该 frame 已完成所有交互、响应窗口和 reduce 后步骤
 - **THEN** 系统 MUST 只补发一次这些 follow-up
 - **AND** 补发后 MUST 清空该 frame 上的 deferred follow-up
+
+### Requirement: resolution frame SHALL 支持父子嵌套结算恢复
+系统 SHALL 支持一个正在执行的 resolution frame 被新的子 frame 打断，并在子 frame 完成后恢复到原父 frame，而不是要求游戏层额外维护第二套主结算栈。
+
+#### Scenario: 子 frame 打断父 frame 后优先完成
+- **GIVEN** 一个父 resolution frame 正在推进当前步骤
+- **AND** 该步骤触发了必须立即完整结算的内层牌或能力
+- **WHEN** 系统为该内层结算创建子 frame
+- **THEN** 子 frame MUST 成为新的 active frame
+- **AND** 父 frame MUST 以 suspended 或等价可恢复状态保留在同一通用 frame 栈中
+
+#### Scenario: 子 frame 完成后恢复父 frame
+- **GIVEN** 一个父 resolution frame 因子 frame 打断而暂停
+- **AND** 该子 frame 已完成并清空自己的 deferred follow-up
+- **WHEN** 系统选择下一个待推进的 frame
+- **THEN** 系统 MUST 恢复该父 frame
+- **AND** 父 frame MUST 从被打断的恢复位点继续，而不是依赖游戏私有 session 栈重新拼接主链

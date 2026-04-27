@@ -24,6 +24,30 @@
      - 《木乃伊》旧误判主因是场景里混入《警长》beforeScoring 反应，污染了 afterScoring 入口。
   4. 因而这轮回写后，`World Champs` 当前至少已有 `斯坦福 / 海龟阿凯 / 盾牌少女 / 战斗精神奖 / 老鼠、鸟和香肠 / 金币猫 / 鲨鱼纹身 / 警长 / 木乃伊` 多条对象级 L3 证据，但三派系整包仍维持 **仍有残余范围**。
 
+## 2026-04-27 继续重审记录：World Champs《高速追逐 / 现在是闪电时间！ / 聪明Set-Up》真实入口补证
+
+- 触发原因：
+  - 继续收敛 `World Champs` 残余对象级 L3 缺口，优先补 3 张仍缺浏览器级真实入口证据的行动牌：
+    - 《高速追逐》
+    - 《现在是闪电时间！》
+    - 《聪明Set-Up》
+- 本轮实现：
+  - `e2e/smashup/smashup-robot-hoverbot-new.e2e.ts`
+    - 新增：`高速追逐应转移行动到另一基地并移动己方随从且给予 +3 力量`
+    - 新增：`现在是闪电时间！应选择己方随从并在本回合给予 +3 力量`
+    - 新增：`聪明Set-Up附着后应在该基地本回合首次打出随从时让你抽一张牌`
+  - 新增证据文档：
+    - `evidence/smashup/smashup-world-champs-high-speed-smart-blitz-e2e-2026-04-27.md`
+- 本轮验证：
+  1. `$env:BG_BYPASS_GLOBAL_HEAVY_BUDGET='1'; npm run test:e2e:ci:file -- e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "高速追逐"` → `1 passed`
+  2. `$env:BG_BYPASS_GLOBAL_HEAVY_BUDGET='1'; npm run test:e2e:ci:file -- e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "现在是闪电时间"` → `1 passed`
+  3. `$env:BG_BYPASS_GLOBAL_HEAVY_BUDGET='1'; npm run test:e2e:ci:file -- e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "聪明Set-Up"` → `1 passed`
+- 结论：
+  1. 《高速追逐》当前已补齐“打到基地 -> 发动天赋 -> 转移行动 -> 移动己方随从 -> 本回合 +3”的 L3 证据。
+  2. 《现在是闪电时间！》当前已补齐“打出 -> 选择己方随从 -> 本回合 +3”的 L3 证据。
+  3. 《聪明Set-Up》当前已补齐“附着到其他玩家随从 -> 该基地首次打出随从 -> 你抽 1 张牌”的 L3 证据。
+  4. `World Champs` 当前至少已有 `斯坦福 / 海龟阿凯 / 盾牌少女 / 战斗精神奖 / 老鼠、鸟和香肠 / 金币猫 / 鲨鱼纹身 / 警长 / 木乃伊 / 高速追逐 / 现在是闪电时间！ / 聪明Set-Up` 共 `12` 条正路径对象级 L3 证据，外加《武士 陈》1 条负路径证据；但三派系整包仍维持 **仍有残余范围**。
+
 ## 2026-04-26 第七轮修订：Skeletons 审计口径再收紧
 
 - **失效回写 1**：本文此前引用 `smashup-skeletons-wiki-semantic-audit-2026-04-25.md` 时，把 `Skeletons` 记成“**12/12 张牌语义错配**”。这条总括结论现在已经失效；后续卡图优先重录后，当前不再是整派系全错。

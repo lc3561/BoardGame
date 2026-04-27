@@ -6,6 +6,7 @@ import { test, expect } from '@playwright/test';
 
 const AUTH_DESKTOP_SCREENSHOT_PATH = 'test-results/evidence-screenshots/_shared/auth-modal-desktop-login-filled.png';
 const AUTH_MOBILE_SCREENSHOT_PATH = 'test-results/evidence-screenshots/_shared/auth-modal-mobile-register-filled.png';
+const AUTH_DESKTOP_CLEAR_SCREENSHOT_PATH = 'test-results/evidence-screenshots/_shared/auth-modal-desktop-cleared-account.png';
 
 async function applyKeyboardViewportSimulation(
     page: import('@playwright/test').Page,
@@ -245,6 +246,11 @@ test.describe('Auth (account login) E2E', () => {
         await expect(accountInput).toHaveValue('');
         await page.waitForTimeout(150);
         await expect(accountInput).toHaveValue('');
+
+        await page.screenshot({
+            path: AUTH_DESKTOP_CLEAR_SCREENSHOT_PATH,
+            fullPage: false,
+        });
     });
 
     test('Change password should POST /auth/change-password with currentPassword + newPassword', async ({ page }) => {

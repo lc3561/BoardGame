@@ -6,6 +6,7 @@ import { test, expect } from '@playwright/test';
 
 const AUTH_DESKTOP_SCREENSHOT_PATH = 'test-results/evidence-screenshots/auth-modal-desktop-login-filled.png';
 const AUTH_MOBILE_SCREENSHOT_PATH = 'test-results/evidence-screenshots/auth-modal-mobile-register-filled.png';
+const AUTH_DESKTOP_CLEAR_SCREENSHOT_PATH = 'test-results/evidence-screenshots/auth-modal-desktop-cleared-account.png';
 
 async function applyKeyboardViewportSimulation(
     page: import('@playwright/test').Page,
@@ -114,6 +115,7 @@ test.describe('Auth (account login) E2E', () => {
         const getAuthModal = () => page.getByTestId('auth-modal').last();
         const getEmailInput = () => page.getByTestId('auth-register-email-input').last();
         const getCodeInput = () => page.getByTestId('auth-register-code-input').last();
+        const getUsernameInput = () => page.getByTestId('auth-register-username-input').last();
 
         await expect(getAuthModal()).toBeVisible();
         await page.waitForTimeout(50);
@@ -126,19 +128,24 @@ test.describe('Auth (account login) E2E', () => {
         await expect(getAuthModal()).toBeVisible({ timeout: 10000 });
         await expect(getEmailInput()).toBeVisible();
         await expect(getCodeInput()).toBeVisible();
+        await expect(getUsernameInput()).toBeVisible();
 
-        await getEmailInput().click();
+        await getUsernameInput().click();
         const mobileProxy = page.getByTestId('mobile-text-entry-proxy').last();
         const mobileProxyInput = page.getByTestId('mobile-text-entry-proxy-input').last();
         await expect(mobileProxy).toBeVisible();
-        await mobileProxyInput.fill('remembered@example.com');
 
-        await getCodeInput().click();
-        await expect(mobileProxy).toBeVisible();
-        await mobileProxyInput.fill('123456');
+        const proxyBackgroundColor = await mobileProxyInput.evaluate((node) => {
+            return window.getComputedStyle(node).backgroundColor;
+        });
+        expect(proxyBackgroundColor).not.toBe('transparent');
+        expect(proxyBackgroundColor).not.toBe('rgba(0, 0, 0, 0)');
 
-        await expect(getEmailInput()).toHaveValue('remembered@example.com');
-        await expect(getCodeInput()).toHaveValue('123456');
+        await mobileProxyInput.pressSequentially('RememberMe');
+        await expect(mobileProxyInput).toBeFocused();
+        await expect(mobileProxyInput).toHaveValue('RememberMe');
+
+        await expect(getUsernameInput()).toHaveValue('RememberMe');
 
         const layoutMetrics = await getAuthModal().evaluate((element) => {
             const submitButton = element.querySelector('button[type="submit"]');
@@ -302,6 +309,11 @@ test.describe('Auth (account login) E2E', () => {
         await expect(accountInput).toHaveValue('');
         await page.waitForTimeout(150);
         await expect(accountInput).toHaveValue('');
+
+        await page.screenshot({
+            path: AUTH_DESKTOP_CLEAR_SCREENSHOT_PATH,
+            fullPage: false,
+        });
     });
 
     test('Change password should POST /auth/change-password with currentPassword + newPassword', async ({ page }) => {

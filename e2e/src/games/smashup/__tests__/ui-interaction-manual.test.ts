@@ -205,6 +205,39 @@ describe('SmashUp UI 交互验证', () => {
         });
     });
 
+    it('放大查看中的英文卡图应自动常显中文覆盖层', () => {
+        render(
+            React.createElement(SmashUpCardRenderer, {
+                previewRef: {
+                    type: 'renderer',
+                    rendererId: 'smashup-card-renderer',
+                    payload: { defId: 'zombie_lord_pod', forceShowOverlay: true },
+                },
+            }),
+        );
+
+        const overlay = screen.getByTestId('su-card-text-overlay');
+        expect(overlay.getAttribute('data-overlay-visibility')).toBe('always');
+        expect(overlay.className).toContain('opacity-100');
+        expect(overlay.className).not.toContain('group-hover:opacity-100');
+    });
+
+    it('普通卡面中的英文卡图仍保持 hover 才显示中文覆盖层', () => {
+        render(
+            React.createElement(SmashUpCardRenderer, {
+                previewRef: {
+                    type: 'renderer',
+                    rendererId: 'smashup-card-renderer',
+                    payload: { defId: 'zombie_lord_pod' },
+                },
+            }),
+        );
+
+        const overlay = screen.getByTestId('su-card-text-overlay');
+        expect(overlay.getAttribute('data-overlay-visibility')).toBe('hover');
+        expect(overlay.className).toContain('group-hover:opacity-100');
+    });
+
     it('PromptOverlay 的卡牌选择模式应始终走 smashup-card-renderer（POD 卡也一样）', () => {
         const interaction = createSimpleChoice(
             'pod-preview-check',

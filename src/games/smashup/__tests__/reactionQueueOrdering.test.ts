@@ -8,6 +8,7 @@ import { clearOngoingEffectRegistry, registerTrigger, collectTriggers } from '..
 import { maybeResolveReactionQueue } from '../domain/reactionQueue';
 import { getInteractionHandler, clearInteractionHandlers } from '../domain/abilityInteractionHandlers';
 import { registerReactionQueueInteractionHandlers } from '../domain/reactionQueueHandlers';
+import { resolveSmashUpReactionChoice } from '../domain/reactionSession';
 import { processAffectTriggers, processDeckInspectionTriggers, processMoveTriggers } from '../domain/reducer';
 import '../domain/index';
 
@@ -153,6 +154,80 @@ describe('Reaction queue ordering (Wiki-style)', () => {
     expect(rq).toBeDefined();
     expect(rq!.events.some(event => event.type === SU_EVENTS.REVEAL_HAND)).toBe(true);
     expect(rq!.events.some(event => event.type === SU_EVENTS.TRIGGER_QUEUED)).toBe(true);
+  });
+
+  it('afterScoring 排序时会自动清掉已离场来源的 stale trigger，不再继续展示按钮', () => {
+    registerTrigger('test_after_source_a', 'afterScoring', () => ([{
+      type: SU_EVENTS.MINION_MOVED,
+      payload: {
+        minionUid: 'b1',
+        minionDefId: 'test_after_source_b',
+        fromBaseIndex: 0,
+        toBaseIndex: 1,
+        reason: 'test_after_source_a',
+      },
+      timestamp: 2,
+    }] as any));
+    registerTrigger('test_after_source_b', 'afterScoring', (ctx: any) => {
+      const base = ctx.sourceBaseIndex === undefined ? undefined : ctx.state.bases[ctx.sourceBaseIndex];
+      const sourceStillHere = !!base?.minions.some((minion: any) => minion.uid === ctx.sourceCardUid);
+      return sourceStillHere
+        ? [{
+          type: SU_EVENTS.ABILITY_FEEDBACK,
+          payload: { playerId: '0', messageKey: 'after_b', tone: 'info' },
+          timestamp: 2,
+        } as any]
+        : [];
+    });
+
+    const core = baseCore({
+      bases: [
+        makeBase('test_base_1', [
+          makeMinion('a1', 'test_after_source_a', '0', 3),
+          makeMinion('b1', 'test_after_source_b', '0', 3),
+        ]),
+        makeBase('test_base_2'),
+      ],
+    });
+
+    const queued = collectTriggers(core, 'afterScoring', {
+      state: core,
+      matchState: makeMatchState(core),
+      playerId: '0',
+      baseIndex: 0,
+      rankings: [{ playerId: '0', power: 6, vp: 1 }],
+      random: { shuffle: (a: any[]) => a, random: () => 0.5, d: () => 1, range: (m: number) => m } as any,
+      now: 1,
+    });
+    expect(queued).toBeDefined();
+
+    const ms0 = makeMatchState({ ...core, triggerQueue: (queued as any).payload.triggers });
+    const rq = maybeResolveReactionQueue(ms0, { shuffle: (a: any[]) => a, random: () => 0.5, d: () => 1, range: (m: number) => m } as any, 1);
+    expect(rq).toBeDefined();
+
+    const current = rq!.state.sys.interaction.current as any;
+    const optA = current.data.options.find((o: any) => (o.label as string).includes('test_after_source_a'));
+    expect(optA).toBeDefined();
+
+    const stateAfterPromptResolved = {
+      ...rq!.state,
+      sys: {
+        ...rq!.state.sys,
+        interaction: {
+          ...rq!.state.sys.interaction,
+          current: undefined,
+        },
+      },
+    } as any;
+    const r2 = resolveSmashUpReactionChoice(
+      stateAfterPromptResolved,
+      { shuffle: (a: any[]) => a, random: () => 0.5, d: () => 1, range: (m: number) => m } as any,
+      2,
+      optA.value,
+    );
+    expect(r2.events.filter((event: any) => event.type === SU_EVENTS.TRIGGER_CONSUMED).length).toBeGreaterThanOrEqual(1);
+    expect(r2.state.core.triggerQueue ?? []).toHaveLength(0);
+    expect(r2.state.sys.interaction.current).toBeUndefined();
   });
 
   it('processMoveTriggers stamps queued onMinionMoved reactions with explicit frame ids', () => {
