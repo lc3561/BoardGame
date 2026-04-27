@@ -72,6 +72,16 @@ const prepareStructureShiftState = (coreState: any) => {
     owner: '0',
     life: 5,
     damage: 0,
+    card: {
+      id: 'frost-wall-test',
+      name: 'Shift Wall',
+      cardType: 'structure',
+      faction: 'frost',
+      cost: 0,
+      life: 5,
+      spriteAtlas: 'portal',
+      spriteIndex: 0,
+    },
   };
 
   return next;

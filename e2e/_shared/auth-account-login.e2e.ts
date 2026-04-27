@@ -228,6 +228,25 @@ test.describe('Auth (account login) E2E', () => {
         await expect(reopenedModal.getByTestId('auth-register-username-input')).toHaveValue('RememberMe');
     });
 
+    test('AuthModal login account should stay empty after user clears the remembered value on desktop', async ({ page }) => {
+        await clickHeaderRegisterEntry(page);
+
+        const registerModal = page.getByTestId('auth-modal');
+        await expect(registerModal).toBeVisible();
+        await registerModal.getByTestId('auth-register-email-input').fill('remembered@example.com');
+
+        await registerModal.getByTestId('auth-switch-login').click();
+
+        const loginModal = page.getByTestId('auth-modal');
+        const accountInput = loginModal.getByTestId('auth-login-account-input');
+        await expect(accountInput).toHaveValue('remembered@example.com');
+
+        await accountInput.clear();
+        await expect(accountInput).toHaveValue('');
+        await page.waitForTimeout(150);
+        await expect(accountInput).toHaveValue('');
+    });
+
     test('Change password should POST /auth/change-password with currentPassword + newPassword', async ({ page }) => {
         // 该仓库的 e2e 默认会起 Vite WebServer，但后端 /api/auth/* 未必启动。
         // 这里不走真实网络请求，仅验证：AuthContext 暴露了 changePassword()，并且它会命中正确的 endpoint。

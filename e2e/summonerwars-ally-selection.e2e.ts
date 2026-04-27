@@ -160,13 +160,18 @@ test.describe('召唤师战争 - 攻击后选择友方单位', () => {
       await clickBoardElement(hostPage, '[data-testid^="sw-unit-"][data-owner="0"][data-unit-name="Mind Soldier"]');
       await expect(allySelectionPrompt).toBeHidden({ timeout: 5000 });
 
-      await expect.poll(async () => {
-        const soldierState = await hostPage.evaluate(() => {
-          const soldier = document.querySelector('[data-testid^="sw-unit-"][data-owner="0"][data-unit-name="Mind Soldier"]');
-          return soldier?.getAttribute('data-extra-attacks') || soldier?.getAttribute('data-has-extra-attack');
-        });
-        return soldierState !== null && soldierState !== '0';
-      }, { timeout: 5000 }).toBe(true);
+      await expect.poll(async () => hostPage.evaluate(() => {
+        const harness = (window as any).__BG_TEST_HARNESS__;
+        const board = harness?.state.get().core.board ?? [];
+        for (const row of board) {
+          for (const cell of row ?? []) {
+            if (cell?.unit?.card?.name === 'Mind Soldier') {
+              return (cell.unit.extraAttacks ?? 0) > 0;
+            }
+          }
+        }
+        return false;
+      }), { timeout: 5000 }).toBe(true);
     } finally {
       await hostContext.close();
       await guestContext.close();

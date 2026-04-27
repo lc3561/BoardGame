@@ -18,7 +18,7 @@
 import type { BrowserContext, Page } from '@playwright/test';
 import { test, expect } from '../framework';
 import { cloneState } from '../helpers/summonerwars';
-import { setChineseLocale } from '../helpers/common';
+import { setChineseLocale, waitForTestHarness } from '../helpers/common';
 
 type __ThreeAxeGameMarker = {
   openTestGame: (gameId: string) => Promise<void>;
@@ -535,8 +535,21 @@ test.describe('召唤师战争 - 选择友方单位复制', () => {
     const illusionCore = prepareIllusionState(coreState);
     await applyCoreState(hostPage, illusionCore);
     await closeDebugPanelIfOpen(hostPage);
+    await waitForTestHarness(hostPage);
 
-    // 验证当前是移动阶段
+    for (let i = 0; i < 6; i++) {
+      await hostPage.evaluate(() => {
+        const harness = (window as any).__BG_TEST_HARNESS__;
+        if (!harness) return;
+        harness.command.dispatch({
+          type: 'sw:advance_phase',
+          payload: {},
+          playerId: harness.state.get().core.currentPlayer,
+        });
+      });
+      await hostPage.waitForTimeout(200);
+    }
+
     await waitForPhase(hostPage, 'move');
 
     // 验证友方士兵选择提示出现（幻象技能在移动阶段开始时自动触发）
@@ -546,9 +559,7 @@ test.describe('召唤师战争 - 选择友方单位复制', () => {
     await expect(illusionPrompt).toBeVisible({ timeout: 8000 });
 
     // 查找友方士兵（清风弓箭手）
-    const targetSoldier = hostPage.locator('[data-testid^="sw-unit-"][data-owner="0"]').filter({
-      has: hostPage.locator('[data-unit-name*="清风弓箭手"]')
-    }).first();
+    const targetSoldier = hostPage.locator('[data-testid^="sw-unit-"][data-owner="0"][data-unit-name*="清风弓箭手"]').first();
     await expect(targetSoldier).toBeVisible({ timeout: 5000 });
 
     // 点击友方士兵
@@ -559,13 +570,18 @@ test.describe('召唤师战争 - 选择友方单位复制', () => {
 
     // 验证心灵巫女获得复制的技能（tempAbilities）
     // 通过检查单位是否有临时技能标记
-    await expect.poll(async () => {
-      const illusionistState = await hostPage.evaluate(() => {
-        const illusionist = document.querySelector('[data-testid^="sw-unit-"][data-owner="0"][data-unit-name*="心灵巫女"]');
-        return illusionist?.getAttribute('data-temp-abilities') || illusionist?.getAttribute('data-has-temp-abilities');
-      });
-      return illusionistState !== null && illusionistState !== '0';
-    }, { timeout: 5000 }).toBe(true);
+    await expect.poll(async () => hostPage.evaluate(() => {
+      const harness = (window as any).__BG_TEST_HARNESS__;
+      const board = harness?.state.get().core.board ?? [];
+      for (const row of board) {
+        for (const cell of row ?? []) {
+          if (cell?.unit?.card?.name === '心灵巫女') {
+            return (cell.unit.tempAbilities ?? []).length > 0;
+          }
+        }
+      }
+      return false;
+    }), { timeout: 5000 }).toBe(true);
 
     await hostContext.close();
     await guestContext.close();

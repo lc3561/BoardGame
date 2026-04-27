@@ -29,16 +29,16 @@ function mergeRememberedFields(
     previous: AuthRememberedFields,
     incoming: Partial<AuthRememberedFields>
 ): AuthRememberedFields {
-    const nextAccount = typeof incoming.account === 'string' ? incoming.account.trim() : '';
-    const nextUsername = typeof incoming.username === 'string' ? incoming.username.trim() : '';
-    const nextEmail = typeof incoming.email === 'string' ? incoming.email.trim() : '';
-    const nextResetEmail = typeof incoming.resetEmail === 'string' ? incoming.resetEmail.trim() : '';
+    const nextAccount = typeof incoming.account === 'string' ? incoming.account.trim() : previous.account;
+    const nextUsername = typeof incoming.username === 'string' ? incoming.username.trim() : previous.username;
+    const nextEmail = typeof incoming.email === 'string' ? incoming.email.trim() : previous.email;
+    const nextResetEmail = typeof incoming.resetEmail === 'string' ? incoming.resetEmail.trim() : previous.resetEmail;
 
     return {
-        account: nextAccount || previous.account,
-        username: nextUsername || previous.username,
-        email: nextEmail || previous.email,
-        resetEmail: nextResetEmail || previous.resetEmail || nextEmail || nextAccount,
+        account: nextAccount,
+        username: nextUsername,
+        email: nextEmail,
+        resetEmail: nextResetEmail || nextEmail || nextAccount,
     };
 }
 
@@ -57,10 +57,10 @@ function readRememberedFields(): AuthRememberedFields {
         };
         const nextFields = {
             ...merged,
-            account: typeof parsed.account === 'string' && parsed.account.length > 0 ? parsed.account : merged.account,
-            username: typeof parsed.username === 'string' && parsed.username.length > 0 ? parsed.username : merged.username,
-            email: typeof parsed.email === 'string' && parsed.email.length > 0 ? parsed.email : merged.email,
-            resetEmail: typeof parsed.resetEmail === 'string' && parsed.resetEmail.length > 0 ? parsed.resetEmail : merged.resetEmail,
+            account: typeof parsed.account === 'string' ? parsed.account : merged.account,
+            username: typeof parsed.username === 'string' ? parsed.username : merged.username,
+            email: typeof parsed.email === 'string' ? parsed.email : merged.email,
+            resetEmail: typeof parsed.resetEmail === 'string' ? parsed.resetEmail : merged.resetEmail,
         };
         inMemoryRememberedFields = nextFields;
         return nextFields;
@@ -220,7 +220,7 @@ export const AuthModal = ({ isOpen, onClose, initialMode = 'login', closeOnBackd
         if (!resetEmail.trim() && preferredResetEmail) {
             setResetEmail(preferredResetEmail);
         }
-    }, [isOpen, mode, account, email, username, resetEmail]);
+    }, [isOpen, mode]);
 
     useEffect(() => {
         return () => {
