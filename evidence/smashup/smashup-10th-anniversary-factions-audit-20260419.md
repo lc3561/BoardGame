@@ -905,3 +905,68 @@
   - 《鲨鱼纹身》已补齐真实入口“附着 -> 当下 +1 -> 下个自己回合开始再 +1”的 L3 证据。
   - 《鲨鱼纹身》本轮确认是**真实实现 bug 已修复**，不是数据录入错字或卡图索引错位。
   - 但三派系整包仍保持“仍有残余范围”口径；当前是 `World Champs` 对象级补证继续扩展，不把这些样本直接上升成整包最终收口。
+
+### 复核记录（2026-04-28 00:05）：World Champs《着魔 / 嗯？》补证与《嗯？》入口缺口修复
+
+- 触发原因：
+  - 继续按“卡图优先 + 对象级真实入口”推进 `World Champs` 剩余残余项。
+  - 本轮在做《嗯？》时确认它此前不是数据录入错误，而是**discard special 真实入口没接上**。
+- 本轮实现：
+  1. `src/games/smashup/abilities/world_champs.ts`
+     - 为《嗯？》新增 `registerDiscardSpecialProvider(...)`；
+     - 在《嗯？》交互结算时新增 `SU_EVENTS.DISCARD_ABILITY_USED`，锁死“本回合一次”。
+  2. `src/games/smashup/__tests__/newFactionAbilities.test.ts`
+     - 新增《嗯？》弃牌区可见性 + 本回合锁定的聚焦回归。
+  3. `e2e/smashup/smashup-robot-hoverbot-new.e2e.ts`
+     - 新增《着魔》真实入口 E2E；
+     - 新增《嗯？》真实入口 E2E；
+     - 新增 `dismissSpotlightQueueIfPresent(...)`，对齐当前 card spotlight 遮罩，避免假失败。
+- 本轮验证：
+  1. `npx vitest run src/games/smashup/__tests__/newFactionAbilities.test.ts -t "world_champs_eh"`
+     - 结果：`2 passed`
+  2. `$env:BG_BYPASS_GLOBAL_HEAVY_BUDGET='1'; $env:BG_ALLOW_HEAVY_TASK_CONCURRENCY='1'; npm run test:e2e:ci:file -- e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "嗯？"`
+     - 结果：`1 passed`
+  3. `$env:BG_BYPASS_GLOBAL_HEAVY_BUDGET='1'; $env:BG_ALLOW_HEAVY_TASK_CONCURRENCY='1'; npm run test:e2e:ci:file -- e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "着魔"`
+     - 结果：`1 passed`
+- 新增证据文档：
+  - `evidence/smashup/smashup-world-champs-bewitched-eh-e2e-2026-04-28.md`
+- 稳定截图绝对路径：
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-world-champs-bewitched-attached-2026-04-28.png`
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-world-champs-bewitched-transfer-prompt-2026-04-28.png`
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-world-champs-bewitched-transferred-2026-04-28.png`
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-world-champs-eh-discard-available-2026-04-28.png`
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-world-champs-eh-prompt-2026-04-28.png`
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-world-champs-eh-resolved-2026-04-28.png`
+- 结论：
+  - 《着魔》已补齐“附着 -> 宿主离场 -> 转移附着”的 L3 真实入口证据。
+  - 《嗯？》已补齐“第一个行动后从弃牌堆发动 -> 选己方随从 +1 -> 回手”的 L3 真实入口证据。
+  - 《嗯？》本轮发现并修掉的是**入口实现缺口**，不是卡图录错、中文名录错或索引错位。
+  - `World Champs` 对象级 L3 继续扩展，但三新派系整包仍维持 **仍有残余范围**。
+
+### 复核记录（2026-04-28 00:40）：World Champs《彩虹女孩 / 怪兽冲击》补证
+
+- 触发原因：
+  - 继续按“卡图优先 + 对象级真实入口”推进 `World Champs` 剩余对象补证。
+  - 本轮优先补《彩虹女孩》与《怪兽冲击》，确认“同基地其他己方 +1”与“两个额外行动”都能从真实打牌入口走通。
+- 本轮实现：
+  1. `e2e/smashup/smashup-robot-hoverbot-new.e2e.ts`
+     - 新增《彩虹女孩》真实入口 E2E；
+     - 新增《怪兽冲击》真实入口 E2E；
+     - 修正《怪兽冲击》用例末尾断言，改为校验《暗杀》正确附着，而不是误判为“即时消灭”。
+- 本轮验证：
+  1. `npx playwright test e2e/smashup/smashup-robot-hoverbot-new.e2e.ts -g "彩虹女孩"`
+     - 结果：`1 passed`
+  2. `npx playwright test e2e/smashup/smashup-robot-hoverbot-new.e2e.ts -g "怪兽冲击"`
+     - 结果：`1 passed`
+- 新增证据文档：
+  - `evidence/smashup/smashup-world-champs-rainbow-kaiju-e2e-2026-04-28.md`
+- 稳定截图绝对路径：
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-world-champs-rainbow-girl-before-2026-04-28.png`
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-world-champs-rainbow-girl-resolved-2026-04-28.png`
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-world-champs-kaiju-conflict-after-first-action-2026-04-28.png`
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-world-champs-kaiju-conflict-third-action-resolved-2026-04-28.png`
+- 结论：
+  - 《彩虹女孩》当前已补齐“只给这里的其他己方随从 +1”浏览器级 L3 真实入口证据。
+  - 《怪兽冲击》当前已补齐“打出后真实获得两个额外行动，并被实际消耗为后续两张行动”的浏览器级 L3 真实入口证据。
+  - 《怪兽冲击》本轮没有暴露实现 bug；中途暴露的是**E2E 断言把《暗杀》误当成即时消灭**，不是数据录入问题。
+  - 截至本轮，`World Champs` 已累计补到 `16` 条正路径对象级 L3 证据；但三新派系整包仍维持 **仍有残余范围**。

@@ -4,7 +4,7 @@
  * 覆盖范围：
  * - 建筑转移（structure_shift）：移动后推拉友方建筑
  * - 建筑选择 UI
- * - 方向选择 UI
+ * - 目标落点选择 UI
  * - 建筑位置变化
  */
 
@@ -110,15 +110,16 @@ test.describe('召唤师战争 - 选择建筑 + 推拉方向', () => {
 
       await clickBoardElement(hostPage, '[data-testid^="sw-structure-"][data-owner="0"]');
 
-      const directionSelector = hostPage.locator('[data-testid="sw-direction-selector"]').or(
-        hostPage.locator('[class*="direction"]').filter({ hasText: /Choose direction/i }),
-      );
-      await expect(directionSelector).toBeVisible({ timeout: 8000 });
+      await clickBoardElement(hostPage, '[data-testid="sw-cell-5-4"]');
+      await expect(structureSelectionPrompt).toBeHidden({ timeout: 5000 });
 
-      const upButton = directionSelector.locator('button').filter({ hasText: /^Up$/i }).first();
-      await expect(upButton).toBeVisible({ timeout: 3000 });
-      await upButton.click();
-      await expect(directionSelector).toBeHidden({ timeout: 5000 });
+      await expect.poll(async () => {
+        const currentTestId = await hostPage
+          .locator('[data-testid^="sw-structure-"][data-owner="0"]')
+          .first()
+          .getAttribute('data-testid');
+        return currentTestId;
+      }, { timeout: 5000 }).toBe('sw-structure-5-4');
 
       await expect.poll(async () => {
         const currentTestId = await hostPage

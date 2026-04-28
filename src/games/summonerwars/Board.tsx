@@ -64,6 +64,8 @@ import { PathTrailEffect } from './ui/PathTrailEffect';
 import {
   deriveSystemAbilityMode,
   getSystemAbilityUiRoute,
+  getSystemCardSelectorAbilityId,
+  getSystemCardSelectorTitleKey,
   listActivatedAbilityTargetCardIds,
   findActivatedAbilityTargetOptionByCardId,
   type SwSimpleChoiceInteraction,
@@ -530,12 +532,10 @@ export const SummonerWarsBoard: React.FC<Props> = ({
     () => getSystemAbilityUiRoute(abilityMode),
     [abilityMode],
   );
-  const systemSelectableAbilityId = abilityMode?.abilityId === 'revive_undead' || abilityMode?.abilityId === 'fortress_power'
-    ? abilityMode.abilityId
-    : null;
-  const systemAbilitySelectableCardIds = systemSelectableAbilityId
+  const systemCardSelectorAbilityId = getSystemCardSelectorAbilityId(abilityMode);
+  const systemAbilitySelectableCardIds = systemCardSelectorAbilityId
     ? (() => {
-      const ids = listActivatedAbilityTargetCardIds(swInteraction, systemSelectableAbilityId, 'selectCard');
+      const ids = listActivatedAbilityTargetCardIds(swInteraction, systemCardSelectorAbilityId, 'selectCard');
       return ids.length > 0 ? new Set(ids) : null;
     })()
     : null;
@@ -1472,29 +1472,20 @@ export const SummonerWarsBoard: React.FC<Props> = ({
                 </div>
 
               {/* 技能卡牌选择器 */}
-              {abilityMode && abilityMode.step === 'selectCard' && abilityUiRoute === 'card-selector' && (
+              {systemCardSelectorAbilityId && abilityUiRoute === 'card-selector' && (
                 <CardSelectorOverlay
-                  title={
-                    abilityMode.abilityId === 'revive_undead' ? t('cardSelector.reviveUndead') :
-                        abilityMode.abilityId === 'fortress_power' ? t('cardSelector.fortressPower') : t('cardSelector.default')
-                  }
+                  title={t(getSystemCardSelectorTitleKey(systemCardSelectorAbilityId))}
                   cards={core.players[myPlayerId]?.discard.filter(c => {
-                    if (
-                      !systemAbilitySelectableCardIds
-                      || (abilityMode.abilityId !== 'revive_undead' && abilityMode.abilityId !== 'fortress_power')
-                    ) {
+                    if (!systemAbilitySelectableCardIds) {
                       return false;
                     }
                     return systemAbilitySelectableCardIds.has(c.id);
                   }) ?? []}
                   onSelect={(card) => {
                     if (swInteraction?.type !== 'activated_ability_target') return;
-                    if (abilityMode.abilityId !== 'revive_undead' && abilityMode.abilityId !== 'fortress_power') {
-                      return;
-                    }
                     const option = findActivatedAbilityTargetOptionByCardId(
                       swInteraction,
-                      abilityMode.abilityId,
+                      systemCardSelectorAbilityId,
                       card.id,
                       'selectCard',
                     );

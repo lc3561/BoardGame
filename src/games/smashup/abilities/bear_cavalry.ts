@@ -196,7 +196,7 @@ function bearHugProcessNext(
             `bear_cavalry_bear_hug_${opId}_${ctx.now}`, opId,
             '黑熊擒抱：选择要消灭的最弱随从',
             buildMinionTargetOptions(options, { state: ctx.state, sourcePlayerId: ctx.playerId }),
-            { sourceId: 'bear_cavalry_bear_hug', targetType: 'minion', autoCancelOption: true },
+            { sourceId: 'bear_cavalry_bear_hug', targetType: 'minion' },
         );
         (interaction.data as any).continuationContext = { opponents, opponentIdx: idx };
         return { events, matchState: queueInteraction(ctx.matchState, interaction) };
@@ -1087,7 +1087,7 @@ export function registerBearCavalryInteractionHandlers(): void {
                 `bear_cavalry_bear_hug_${opId}_${timestamp}`, opId,
                 '\u9ed1\u718a\u64d2\u62b1\uff1a\u9009\u62e9\u8981\u6d88\u706d\u7684\u6700\u5f31\u968f\u4ece',
                 buildMinionTargetOptions(options, { state: state.core, sourcePlayerId: opId }),
-                { sourceId: 'bear_cavalry_bear_hug', targetType: 'minion', autoCancelOption: true }
+                { sourceId: 'bear_cavalry_bear_hug', targetType: 'minion' }
             );
             (interaction.data as any).continuationContext = { opponents: ctx.opponents, opponentIdx: i };
             return { state: queueInteraction(state, interaction), events };

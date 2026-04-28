@@ -4,13 +4,24 @@ import { render, screen, cleanup, fireEvent, act } from '@testing-library/react'
 import { syncProxyValueToTextEntry } from '../../../lib/textEntry';
 import { MobileTextEntryProxyLayer } from '../MobileTextEntryProxyLayer';
 
+let visualViewportResizeHandler: ((event: Event) => void) | null = null;
+
 const ensureVisualViewportStub = () => {
     Object.defineProperty(window, 'visualViewport', {
         configurable: true,
         value: {
             height: 564,
-            addEventListener: vi.fn(),
-            removeEventListener: vi.fn(),
+            offsetTop: 0,
+            addEventListener: vi.fn((eventName: string, handler: (event: Event) => void) => {
+                if (eventName === 'resize') {
+                    visualViewportResizeHandler = handler;
+                }
+            }),
+            removeEventListener: vi.fn((eventName: string, handler: (event: Event) => void) => {
+                if (eventName === 'resize' && visualViewportResizeHandler === handler) {
+                    visualViewportResizeHandler = null;
+                }
+            }),
         },
     });
 };
@@ -21,10 +32,13 @@ describe('MobileTextEntryProxyLayer', () => {
         cleanup();
         document.body.innerHTML = '<div id="modal-root"></div>';
         document.documentElement.style.setProperty('--keyboard-inset-height', '280px');
+        Object.defineProperty(window, 'innerHeight', { configurable: true, value: 844 });
+        Object.defineProperty(document.documentElement, 'clientHeight', { configurable: true, value: 844 });
         Object.defineProperty(window, 'matchMedia', {
             configurable: true,
             value: vi.fn().mockReturnValue({ matches: true }),
         });
+        visualViewportResizeHandler = null;
         ensureVisualViewportStub();
     });
 
@@ -34,6 +48,7 @@ describe('MobileTextEntryProxyLayer', () => {
         cleanup();
         document.body.innerHTML = '';
         document.documentElement.style.removeProperty('--keyboard-inset-height');
+        visualViewportResizeHandler = null;
     });
 
     it('在键盘弹起时为移动端输入框创建代理输入，不限 modal 作用域', async () => {
@@ -155,6 +170,37 @@ describe('MobileTextEntryProxyLayer', () => {
         expect(proxyInput.style.backgroundColor).toBe('rgba(255, 248, 240, 0.98)');
     });
 
+    it('visualViewport resize 先于 CSS 变量更新时不应误判键盘关闭', async () => {
+        const modalRoot = document.getElementById('modal-root');
+        if (!modalRoot) throw new Error('missing modal root');
+
+        const sourceInput = document.createElement('input');
+        sourceInput.type = 'text';
+        sourceInput.value = 'keep-open';
+        modalRoot.appendChild(sourceInput);
+
+        render(<MobileTextEntryProxyLayer />);
+
+        await act(async () => {
+            sourceInput.focus();
+            fireEvent.focusIn(sourceInput);
+            await vi.advanceTimersByTimeAsync(60);
+        });
+
+        const proxyInput = screen.getByTestId('mobile-text-entry-proxy-input') as HTMLInputElement;
+        expect(document.activeElement).toBe(proxyInput);
+
+        document.documentElement.style.setProperty('--keyboard-inset-height', '0px');
+
+        await act(async () => {
+            visualViewportResizeHandler?.(new Event('resize'));
+            await vi.advanceTimersByTimeAsync(20);
+        });
+
+        expect(screen.getByTestId('mobile-text-entry-proxy-input')).toBe(proxyInput);
+        expect(document.activeElement).toBe(proxyInput);
+    });
+
     it('代理层卸载后会恢复原始 input 的可编辑状态', async () => {
         const modalRoot = document.getElementById('modal-root');
         if (!modalRoot) throw new Error('missing modal root');
@@ -246,6 +292,19 @@ describe('MobileTextEntryProxyLayer', () => {
         expect(input.readOnly).toBe(true);
     });
 
+    it('冻结源输入同步值时不应重新抢占焦点', () => {
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = '';
+        input.readOnly = true;
+        input.setAttribute('data-mobile-text-entry-proxy-source', 'true');
+        const focusSpy = vi.spyOn(input, 'focus');
+        document.body.appendChild(input);
+
+        expect(syncProxyValueToTextEntry(input, '保持代理焦点')).toBe(true);
+        expect(focusSpy).not.toHaveBeenCalled();
+    });
+
     it('会把代理输入同步回被代理层冻结为 contenteditable=false 的源节点', () => {
         const editable = document.createElement('div');
         editable.setAttribute('contenteditable', 'false');
@@ -291,5 +350,6 @@ describe('MobileTextEntryProxyLayer', () => {
         });
 
         expect(onSubmit).toHaveBeenCalledTimes(1);
+        expect(screen.queryByTestId('mobile-text-entry-proxy-input')).toBeNull();
     });
 });

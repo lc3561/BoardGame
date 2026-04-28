@@ -59,6 +59,7 @@ describe('bear cavalry interaction regressions', () => {
 
         const prompt = playResult.finalState.sys.interaction?.current as any;
         expect(prompt?.data?.sourceId).toBe('bear_cavalry_bear_hug');
+        expect(prompt?.data?.options?.some((option: any) => option?.id === '__cancel__')).toBe(false);
 
         const targetOption = prompt?.data?.options?.find((option: any) => option?.value?.minionUid === 'm1');
         expect(targetOption).toBeDefined();

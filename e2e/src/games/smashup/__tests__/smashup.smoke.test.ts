@@ -1067,6 +1067,83 @@ describe('smashup', () => {
         expect(finalCore.players['1'].discard.some(card => card.uid === 'buried-curse')).toBe(false);
     });
 
+    it('翻开埋葬的远古诅咒在存在多个合法目标时，选择目标后应继续进入确认交互', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0'),
+                '1': makePlayer('1', {
+                    hand: [],
+                    deck: [],
+                    discard: [],
+                    factions: [SMASHUP_FACTION_IDS.ANCIENT_EGYPTIANS, SMASHUP_FACTION_IDS.KILLER_PLANTS],
+                }),
+            },
+            bases: [
+                makeBase({
+                    defId: 'base_ninja_dojo',
+                    minions: [
+                        makeMinion('target-minion-a', 'killer_plant_water_lily_pod', '0', 3, { powerCounters: 1, tempPowerModifier: 0 }),
+                        makeMinion('target-minion-b', 'killer_plant_water_lily_pod', '0', 4, { powerCounters: 2, tempPowerModifier: 0 }),
+                    ],
+                }),
+                makeBase({
+                    defId: 'base_greenhouse',
+                    buriedCards: [{
+                        uid: 'buried-curse',
+                        defId: 'ancient_egyptians_ancient_curse_pod',
+                        trueOwnerId: '1',
+                        controllerId: '1',
+                        buriedFrom: 'play',
+                    }],
+                }),
+            ],
+        });
+
+        const uncovered = uncoverBuriedCard({
+            matchState: makeMatchState(core),
+            playerId: '1',
+            cardUid: 'buried-curse',
+            baseIndex: 1,
+            random: FIXED_RANDOM,
+            now: 201,
+            reason: 'test_uncover_multi_target',
+        });
+
+        const targetPrompt = (uncovered.state.sys.interaction?.current
+            ?? uncovered.state.sys.interaction?.queue?.[0]) as any;
+        expect(targetPrompt?.data?.sourceId).toBe('bury_uncover_ongoing_target');
+        const targetOption = targetPrompt?.data?.options?.find((entry: any) => entry.value?.minionUid === 'target-minion-b');
+        expect(targetOption).toBeDefined();
+
+        const resolved = runCommand(
+            uncovered.state,
+            { type: 'SYS_INTERACTION_RESPOND', playerId: '1', payload: { optionId: targetOption.id } } as any,
+            FIXED_RANDOM,
+        );
+
+        expect(resolved.events.map(event => event.type)).toContain(SU_EVENTS.ONGOING_ATTACHED);
+        expect(resolved.events).toContainEqual(expect.objectContaining({
+            type: SU_EVENTS.ONGOING_ATTACHED,
+            payload: expect.objectContaining({
+                cardUid: 'buried-curse',
+                defId: 'ancient_egyptians_ancient_curse_pod',
+                targetType: 'minion',
+                targetBaseIndex: 0,
+                targetMinionUid: 'target-minion-b',
+            }),
+        }));
+
+        const confirmPrompt = (resolved.finalState.sys.interaction?.current
+            ?? resolved.finalState.sys.interaction?.queue?.[0]) as any;
+        expect(confirmPrompt?.data?.sourceId).toBe('ancient_egyptians_ancient_curse_confirm');
+        const applyOption = confirmPrompt?.data?.options?.find((entry: any) => entry.id === 'apply');
+        expect(applyOption?.value).toMatchObject({
+            targetMinionUid: 'target-minion-b',
+            baseIndex: 0,
+            baseDefId: 'base_ninja_dojo',
+        });
+    });
+
     it('翻开埋葬的远古诅咒在没有合法随从目标时会弃置，不会从状态里消失', () => {
         const core = makeState({
             players: {

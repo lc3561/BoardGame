@@ -10,6 +10,10 @@ const isFrozenProxySource = (candidate: Element | null): candidate is HTMLElemen
         && candidate.getAttribute(MOBILE_TEXT_ENTRY_PROXY_SOURCE_ATTR) === 'true';
 };
 
+export const isTextEntrySessionElement = (candidate: Element | null): candidate is HTMLElement => {
+    return isTextEntryElement(candidate) || isFrozenProxySource(candidate);
+};
+
 const syncReactValueTracker = (candidate: HTMLInputElement | HTMLTextAreaElement, previousValue: string) => {
     const tracker = (candidate as HTMLInputElement & { _valueTracker?: { setValue: (value: string) => void } })._valueTracker;
     tracker?.setValue(previousValue);
@@ -174,14 +178,11 @@ export const syncProxyValueToTextEntry = (candidate: Element | null, value: stri
         const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
         const previousReadOnly = candidate.readOnly;
         const previousValue = candidate.value;
-        const previousActive = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         if (previousReadOnly) {
             candidate.readOnly = false;
         }
-        candidate.focus({ preventScroll: true });
         setter?.call(candidate, value);
         dispatchSyntheticTextInput(candidate, value, previousValue);
-        previousActive?.focus?.({ preventScroll: true });
         if (previousReadOnly) {
             candidate.readOnly = true;
         }
@@ -195,14 +196,11 @@ export const syncProxyValueToTextEntry = (candidate: Element | null, value: stri
         const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
         const previousReadOnly = candidate.readOnly;
         const previousValue = candidate.value;
-        const previousActive = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         if (previousReadOnly) {
             candidate.readOnly = false;
         }
-        candidate.focus({ preventScroll: true });
         setter?.call(candidate, value);
         dispatchSyntheticTextInput(candidate, value, previousValue);
-        previousActive?.focus?.({ preventScroll: true });
         if (previousReadOnly) {
             candidate.readOnly = true;
         }

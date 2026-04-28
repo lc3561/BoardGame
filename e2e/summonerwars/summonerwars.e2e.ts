@@ -3607,6 +3607,7 @@ test.describe('SummonerWars', () => {
 
   test('主动技能：复活死灵 UI 流程', async ({ browser }, testInfo) => {
     test.setTimeout(90000);
+    await clearEvidenceScreenshotsForTest(testInfo);
     const baseURL = testInfo.project.use.baseURL as string | undefined;
 
     const hostContext = await browser.newContext({ baseURL });
@@ -3670,6 +3671,12 @@ test.describe('SummonerWars', () => {
     // 检查卡牌选择器是否显示（复活死灵直接进入选卡模式，不经过按钮）
     const cardSelector = hostPage.locator('[data-testid="sw-card-selector-overlay"]');
     await expect(cardSelector).toBeVisible({ timeout: 8000 });
+    await hostPage.screenshot({
+      path: getEvidenceScreenshotPath(testInfo, 'revive-undead-card-selector-visible', {
+        subdir: 'summonerwars/summonerwars.e2e/主动技能：复活死灵 UI 流程',
+      }),
+      fullPage: true,
+    });
 
     // 选择弃牌堆中的亡灵单位
     const undeadCard = cardSelector.locator('[data-card-id="necro-undead-warrior-test"]').first();
@@ -3696,6 +3703,12 @@ test.describe('SummonerWars', () => {
     await expect(summonedUnit).toBeVisible({ timeout: 5000 });
     await expect.poll(async () => Number(await summoner.getAttribute('data-unit-damage') ?? '0'))
       .toBe(summonerDamageBefore + 2);
+    await hostPage.screenshot({
+      path: getEvidenceScreenshotPath(testInfo, 'revive-undead-summoned-unit-visible', {
+        subdir: 'summonerwars/summonerwars.e2e/主动技能：复活死灵 UI 流程',
+      }),
+      fullPage: true,
+    });
 
     await hostContext.close();
     await guestContext.close();

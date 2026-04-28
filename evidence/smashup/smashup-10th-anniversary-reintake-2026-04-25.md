@@ -132,6 +132,14 @@
 - 2026-04-27 再补记：
   - 《高速追逐》《现在是闪电时间！》《聪明Set-Up》已补浏览器级真实入口证据，见 `evidence/smashup/smashup-world-champs-high-speed-smart-blitz-e2e-2026-04-27.md`。
   - 截至本轮，`World Champs` 已累计补到 `12` 条正路径对象级 L3 证据；但三新派系整包仍不能据此直接改判为“已收口”。
+- 2026-04-28 再补记：
+  - 《着魔》《嗯？》已补浏览器级真实入口证据，见 `evidence/smashup/smashup-world-champs-bewitched-eh-e2e-2026-04-28.md`。
+  - 《嗯？》本轮顺带确认并修复 1 条实现缺口：此前只有 `special executor`，但没有注册到弃牌区 `discard special provider`，也没在结算时写入 `DISCARD_ABILITY_USED`。
+  - 截至本轮，`World Champs` 已累计补到 `14` 条正路径对象级 L3 证据；但三新派系整包仍不能据此直接改判为“已收口”。
+- 2026-04-28 再补记（二）：
+  - 《彩虹女孩》《怪兽冲击》已补浏览器级真实入口证据，见 `evidence/smashup/smashup-world-champs-rainbow-kaiju-e2e-2026-04-28.md`。
+  - 《怪兽冲击》本轮没有发现“少给两次额外行动额度”的实现问题；暴露的是 E2E 末尾断言误把《暗杀》当成立即消灭。
+  - 截至本轮，`World Champs` 已累计补到 `16` 条正路径对象级 L3 证据；但三新派系整包仍不能据此直接改判为“已收口”。
 - 6 个新基地再次对照 `temp/wangling-base-title-0.png` ~ `temp/wangling-base-title-5.png`：
   - `Mermaid Reef / 人鱼暗礁 / 17`
   - `Mermaid Pool / 人鱼水池 / 23`

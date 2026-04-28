@@ -424,6 +424,36 @@ describe('base_the_field_of_honor: 消灭者获1VP', () => {
         expect((events[0] as any).payload.playerId).toBe('0');
         expect((events[0] as any).payload.amount).toBe(1);
     });
+
+    it('base_the_field_of_honor: 同回合前一批已有人被消灭时，新的消灭批次仍应继续得分', () => {
+        const ctx: BaseAbilityContext = {
+            state: makeState({
+                turnDestroyedMinions: [{
+                    uid: 'victim-prior',
+                    defId: 'v0',
+                    baseIndex: 0,
+                    owner: '1',
+                }],
+                bases: [{
+                    defId: 'base_the_field_of_honor',
+                    minions: [],
+                    ongoingActions: [],
+                }],
+            }),
+            baseIndex: 0,
+            baseDefId: 'base_the_field_of_honor',
+            playerId: '1',
+            controllerId: '1',
+            destroyerId: '0',
+            now: 1001,
+        };
+
+        const { events } = triggerExtendedBaseAbility('base_the_field_of_honor', 'onMinionDestroyed', ctx);
+        expect(events).toHaveLength(1);
+        expect(events[0].type).toBe(SU_EVENTS.VP_AWARDED);
+        expect((events[0] as any).payload.playerId).toBe('0');
+        expect((events[0] as any).payload.amount).toBe(1);
+    });
 });
 
 describe('Oops Ancient Egyptians bases', () => {

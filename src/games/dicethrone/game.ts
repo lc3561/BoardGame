@@ -1031,23 +1031,45 @@ const systems = [
         // 保留旧的白名单配置作为补充（可选）
         // 如果某些命令需要特殊处理，可以在这里添加
         allowedCommands: [
-            // 所有命令都已通过分类系统管理，这里留空
-            // 如果需要添加特殊命令，可以在这里添加
+            // dt:card-interaction 的选目标确认仍走旧命令，不在分类表内。
+            'RESOLVE_INTERACTION',
         ],
         
         responderExemptCommands: ['USE_TOKEN', 'SKIP_TOKEN_RESPONSE', 'USE_PASSIVE_ABILITY'],
         allowNonResponderCommand: ({ state, command, currentWindow }) => {
-            if (command.type !== 'PLAY_CARD' || currentWindow.windowType !== 'afterRollConfirmed') {
+            if (currentWindow.windowType !== 'afterRollConfirmed') {
                 return false;
             }
 
             const matchState = state as MatchState<DiceThroneCore>;
-            const cardId = (command.payload as { cardId?: string } | undefined)?.cardId;
-            if (!cardId) {
+            if (!isDirectDiceInterferenceActor(matchState.core, currentWindow, command.playerId)) {
                 return false;
             }
 
-            if (!isDirectDiceInterferenceActor(matchState.core, currentWindow, command.playerId)) {
+            const currentInteraction = matchState.sys.interaction?.current as {
+                id?: unknown;
+                playerId?: unknown;
+                kind?: unknown;
+            } | undefined;
+            if (
+                currentInteraction?.playerId === command.playerId
+                && (
+                    currentInteraction?.kind === 'dt:card-interaction'
+                    || currentInteraction?.kind === 'multistep-choice'
+                )
+            ) {
+                // 队友在 afterRollConfirmed 提前打出改骰牌后，后续选目标/改骰命令
+                // 也必须继续放行。这里不能依赖 pendingInteractionId，
+                // 因为当前实现只会给“当前 responder”的交互写锁，队友直改骰交互不会写进去。
+                return true;
+            }
+
+            if (command.type !== 'PLAY_CARD') {
+                return false;
+            }
+
+            const cardId = (command.payload as { cardId?: string } | undefined)?.cardId;
+            if (!cardId) {
                 return false;
             }
 

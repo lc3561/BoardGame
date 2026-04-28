@@ -1141,6 +1141,124 @@ describe('王权骰铸流程测试', () => {
             expect((state.sys.interaction.current?.data as { type?: string; targetPlayerIds?: PlayerId[]; resolveCustomActionId?: string } | undefined)?.resolveCustomActionId).toBe('resolve-card-effects-on-selected-opponent');
         });
 
+        it('4 人模式下非当前 responder 队友打出 card-flick 后，应能继续完成选目标与改骰交互', () => {
+            const playerIds: PlayerId[] = ['0', '1', '2', '3'];
+            const pipelineConfig = {
+                domain: DiceThroneDomain,
+                systems: testSystems,
+            };
+            let state = createInitializedStateWithCharacters(playerIds, fixedRandom, {
+                '0': 'monk',
+                '1': 'barbarian',
+                '2': 'monk',
+                '3': 'samurai',
+            });
+
+            for (const pid of playerIds) {
+                state.core.players[pid].hand = [];
+                state.core.players[pid].deck = [];
+            }
+
+            state.core.players['1'].hand = [getCardById('card-flick')];
+            state.core.players['1'].resources[RESOURCE_IDS.CP] = 10;
+            state.core.players['3'].hand = [getCardById('card-flick')];
+            state.core.players['3'].resources[RESOURCE_IDS.CP] = 10;
+
+            for (const input of [
+                ...advanceTo('offensiveRoll', '0'),
+                cmd('ROLL_DICE', '0'),
+                cmd('CONFIRM_ROLL', '0'),
+            ]) {
+                const command = {
+                    type: input.type,
+                    playerId: input.playerId,
+                    payload: input.payload,
+                    timestamp: Date.now(),
+                } as DiceThroneCommand;
+                const result = executePipeline(pipelineConfig, state, command, fixedRandom, playerIds);
+                expect(result.success).toBe(true);
+                state = result.state as MatchState<DiceThroneCore>;
+            }
+
+            expect(state.sys.responseWindow?.current?.responderQueue).toEqual(['1', '3']);
+            expect(state.sys.responseWindow?.current?.currentResponderIndex).toBe(0);
+
+            const playCardResult = executePipeline(
+                pipelineConfig,
+                state,
+                {
+                    type: 'PLAY_CARD',
+                    playerId: '3',
+                    payload: { cardId: 'card-flick' },
+                    timestamp: Date.now(),
+                } as DiceThroneCommand,
+                fixedRandom,
+                playerIds,
+            );
+            expect(playCardResult.success).toBe(true);
+            state = playCardResult.state as MatchState<DiceThroneCore>;
+
+            expect(state.sys.interaction.current?.playerId).toBe('3');
+            expect(state.sys.interaction.current?.kind).toBe('dt:card-interaction');
+
+            const resolveTargetResult = executePipeline(
+                pipelineConfig,
+                state,
+                {
+                    type: 'RESOLVE_INTERACTION',
+                    playerId: '3',
+                    payload: { selectedPlayerIds: ['0'] },
+                    timestamp: Date.now(),
+                } as DiceThroneCommand,
+                fixedRandom,
+                playerIds,
+            );
+            expect(resolveTargetResult.success).toBe(true);
+            state = resolveTargetResult.state as MatchState<DiceThroneCore>;
+
+            expect(state.sys.interaction.current?.playerId).toBe('3');
+            expect(state.sys.interaction.current?.kind).toBe('multistep-choice');
+
+            const targetDie = state.core.dice[0];
+            expect(targetDie).toBeDefined();
+            const newValue = targetDie.value === 6 ? 5 : targetDie.value + 1;
+            const modifyDieResult = executePipeline(
+                pipelineConfig,
+                state,
+                {
+                    type: 'MODIFY_DIE',
+                    playerId: '3',
+                    payload: { dieId: targetDie.id, newValue },
+                    timestamp: Date.now(),
+                } as DiceThroneCommand,
+                fixedRandom,
+                playerIds,
+            );
+            expect(modifyDieResult.success).toBe(true);
+            state = modifyDieResult.state as MatchState<DiceThroneCore>;
+
+            const interactionId = state.sys.interaction.current?.id;
+            expect(typeof interactionId).toBe('string');
+            const confirmInteractionResult = executePipeline(
+                pipelineConfig,
+                state,
+                {
+                    type: 'SYS_INTERACTION_CONFIRM',
+                    playerId: '3',
+                    payload: { interactionId },
+                    timestamp: Date.now(),
+                } as DiceThroneCommand,
+                fixedRandom,
+                playerIds,
+            );
+            expect(confirmInteractionResult.success).toBe(true);
+            state = confirmInteractionResult.state as MatchState<DiceThroneCore>;
+
+            expect(state.sys.interaction.current).toBeUndefined();
+            expect(state.core.players['3'].hand.some((card) => card.id === 'card-flick')).toBe(false);
+            expect(state.core.players['3'].discard.some((card) => card.id === 'card-flick')).toBe(true);
+        });
+
         it('4 人模式在进攻阶段结算后会先进入 targetingRoll', () => {
             const playerIds: PlayerId[] = ['0', '1', '2', '3'];
             const pipelineConfig = {

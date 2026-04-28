@@ -5,7 +5,7 @@ import {
     resolveStableViewportSize,
     type RuntimeViewportSize,
 } from '../../games/mobileSupport';
-import { isTextEntryElement } from '../../lib/textEntry';
+import { isTextEntrySessionElement } from '../../lib/textEntry';
 
 export interface RuntimeSafeAreaInsets {
     top: number;
@@ -108,7 +108,7 @@ export const readRuntimeViewportMetrics = (
         visualViewportOffsetTop: visualViewport?.offsetTop,
         innerHeight: window.innerHeight,
         documentClientHeight: document.documentElement.clientHeight,
-        hasFocusedTextEntry: isTextEntryElement(document.activeElement),
+        hasFocusedTextEntry: isTextEntrySessionElement(document.activeElement),
     });
 
     return {
@@ -116,6 +116,20 @@ export const readRuntimeViewportMetrics = (
         safeArea: readRuntimeSafeAreaInsets(),
         keyboardInsetBottom,
     };
+};
+
+export const readLiveRuntimeKeyboardInsetBottom = (options: { hasFocusedTextEntry?: boolean } = {}): number => {
+    if (typeof window === 'undefined' || typeof document === 'undefined') {
+        return 0;
+    }
+
+    return resolveRuntimeKeyboardInsetBottom({
+        visualViewportHeight: window.visualViewport?.height,
+        visualViewportOffsetTop: window.visualViewport?.offsetTop,
+        innerHeight: window.innerHeight,
+        documentClientHeight: document.documentElement.clientHeight,
+        hasFocusedTextEntry: options.hasFocusedTextEntry ?? isTextEntrySessionElement(document.activeElement),
+    });
 };
 
 const setLayoutEngineDataset = (layoutMode: 'legacy' | 'modern', enabled: boolean) => {

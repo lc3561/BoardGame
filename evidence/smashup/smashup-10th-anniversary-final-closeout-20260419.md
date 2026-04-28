@@ -17,6 +17,8 @@
 - 用户早先“打出《武士 陈》却触发《海龟阿凯》效果”的负路径也已于 2026-04-26 补齐浏览器级证据，见 `evidence/smashup/smashup-world-champs-samurai-chan-no-akye-e2e-2026-04-26.md`。
 - 《警长》《木乃伊》也已于 2026-04-26 补齐浏览器级真实入口证据，见 `evidence/smashup/smashup-world-champs-sheriff-mummy-e2e-2026-04-26.md`；且本轮确认它们此前更像是 E2E 场景/观察面错误，不是卡图录错。
 - 《高速追逐》《现在是闪电时间！》《聪明Set-Up》也已于 2026-04-27 补齐浏览器级真实入口证据，见 `evidence/smashup/smashup-world-champs-high-speed-smart-blitz-e2e-2026-04-27.md`。
+- 《着魔》《嗯？》也已于 2026-04-28 补齐浏览器级真实入口证据，见 `evidence/smashup/smashup-world-champs-bewitched-eh-e2e-2026-04-28.md`。
+- 《彩虹女孩》《怪兽冲击》也已于 2026-04-28 补齐浏览器级真实入口证据，见 `evidence/smashup/smashup-world-champs-rainbow-kaiju-e2e-2026-04-28.md`。
 - 但 `World Champs` 仍缺整派系级真实入口玩法覆盖，不能把 `斯坦福` 单卡证据外推成三派系最终收口。
 - 2026-04-26 22:31 再次补记：
   - `World Champs` 新增《金币猫》《鲨鱼纹身》对象级 L3 证据；
@@ -26,6 +28,14 @@
     - `World Champs` 当前至少已有 `12` 条正路径对象级 L3 证据（`斯坦福 / 海龟阿凯 / 盾牌少女 / 战斗精神奖 / 老鼠、鸟和香肠 / 金币猫 / 鲨鱼纹身 / 警长 / 木乃伊 / 高速追逐 / 现在是闪电时间！ / 聪明Set-Up`）；
     - 另有《武士 陈》1 条关键负路径证据；
     - 但这仍只是“对象级补证继续扩展”，不是三新派系整包最终收口。
+  - 2026-04-28 再次补记：
+    - `World Champs` 当前至少已有 `14` 条正路径对象级 L3 证据，新增《着魔》《嗯？》；
+    - 其中《嗯？》同时暴露并修复了 1 条真实入口缺口：此前只有 `special executor`，没有把弃牌区 `discard special provider` 接到 UI，且未写入 `DISCARD_ABILITY_USED`；
+    - 这再次证明三新派系重审不能只盯“卡图/locale/previewRef”，还必须继续抽样 `discard special / startTurn / endTurn / afterScoring` 这些真实入口链路。
+  - 2026-04-28 再次补记（二）：
+    - `World Champs` 当前至少已有 `16` 条正路径对象级 L3 证据，新增《彩虹女孩》《怪兽冲击》；
+    - 《怪兽冲击》本轮没有暴露实现少给额度的问题，真实问题只是测试断言误把《暗杀》当成立即消灭；
+    - 因而当前总口径仍是“对象级补证继续扩展”，不是三新派系整包最终收口。
 - 在补齐真实入口玩法证据前，本文档不得再被引用为“三派系玩法已完成最终收口”的证明材料。
 
 ## 范围

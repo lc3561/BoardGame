@@ -401,7 +401,7 @@ const handleUncoverAtStartTurn: InteractionHandler = (state, playerId, value, _d
 const handleUncoverOngoingPickTargetMinion: InteractionHandler = (state, playerId, value, data, random, now) => {
     const ctx = data?.continuationContext as { cardUid: string; defId: string; baseIndex: number } | undefined;
     if (!ctx) return { state, events: [] };
-    const targetMinionUid = (value as any)?.targetMinionUid as string | undefined;
+    const targetMinionUid = ((value as any)?.targetMinionUid ?? (value as any)?.minionUid) as string | undefined;
     const targetBaseIndex = (value as any)?.baseIndex as number | undefined ?? ctx.baseIndex;
     if (!targetMinionUid || targetBaseIndex === undefined) return { state, events: [] };
 

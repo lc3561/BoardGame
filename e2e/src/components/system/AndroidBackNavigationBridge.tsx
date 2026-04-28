@@ -5,7 +5,7 @@ import { resolveAndroidBackNavigationAction } from '../../lib/mobile/androidBack
 import { resolveInAppUrlPath } from '../../lib/mobile/appUrlRouting';
 import { dispatchAppVisibilityChange } from '../../lib/mobile/appVisibility';
 import { isNativeAndroidRuntime } from '../../lib/mobile/androidRuntime';
-import { isTextEntryElement } from '../../lib/textEntry';
+import { isTextEntrySessionElement } from '../../lib/textEntry';
 
 type PluginListenerHandle = {
     remove(): Promise<void>;
@@ -86,7 +86,7 @@ export const AndroidBackNavigationBridge = () => {
             historyLength: window.history.length,
             modalStackDepth: stack.length,
             isTopModalClosable: topEntry?.closeOnEsc !== false,
-            hasFocusedTextEntry: isTextEntryElement(document.activeElement),
+            hasFocusedTextEntry: isTextEntrySessionElement(document.activeElement),
         });
 
         if (action.type === 'dismiss-text-entry') {

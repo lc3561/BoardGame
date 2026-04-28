@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, type FocusEvent, type FormEvent } from 'react';
 import { motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
@@ -24,6 +24,18 @@ const EMPTY_REMEMBERED_FIELDS: AuthRememberedFields = {
     resetEmail: '',
 };
 let inMemoryRememberedFields: AuthRememberedFields = { ...EMPTY_REMEMBERED_FIELDS };
+const AUTH_INPUT_DEBUG = true;
+
+function debugAuthInputEvent(phase: string, details: Record<string, unknown> = {}) {
+    if (!AUTH_INPUT_DEBUG || typeof console === 'undefined') {
+        return;
+    }
+    try {
+        console.warn('[auth-input-debug]', JSON.stringify({ phase, ...details }));
+    } catch {
+        console.warn('[auth-input-debug]', phase, details);
+    }
+}
 
 function mergeRememberedFields(
     previous: AuthRememberedFields,
@@ -89,14 +101,15 @@ interface AuthModalProps {
 }
 
 export const AuthModal = ({ isOpen, onClose, initialMode = 'login', closeOnBackdrop }: AuthModalProps) => {
+    const initialRememberedFields = useMemo(() => readRememberedFields(), []);
     const [mode, setMode] = useState<'login' | 'register' | 'reset'>(initialMode);
-    const [account, setAccount] = useState('');
-    const [username, setUsername] = useState('');
-    const [email, setEmail] = useState('');
+    const [account, setAccount] = useState(initialRememberedFields.account);
+    const [username, setUsername] = useState(initialRememberedFields.username);
+    const [email, setEmail] = useState(initialRememberedFields.email);
     const [code, setCode] = useState('');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
-    const [resetEmail, setResetEmail] = useState('');
+    const [resetEmail, setResetEmail] = useState(initialRememberedFields.resetEmail || initialRememberedFields.email || initialRememberedFields.account);
     const [resetCode, setResetCode] = useState('');
     const [resetNewPassword, setResetNewPassword] = useState('');
     const [resetConfirmPassword, setResetConfirmPassword] = useState('');
@@ -110,7 +123,7 @@ export const AuthModal = ({ isOpen, onClose, initialMode = 'login', closeOnBackd
     const [resetCountdown, setResetCountdown] = useState(0);
     const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const resetCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
-    const rememberedFieldsRef = useRef<AuthRememberedFields>(EMPTY_REMEMBERED_FIELDS);
+    const rememberedFieldsRef = useRef<AuthRememberedFields>(initialRememberedFields);
     const draftHydratedRef = useRef(false);
 
     const { t } = useTranslation('auth');
@@ -142,6 +155,39 @@ export const AuthModal = ({ isOpen, onClose, initialMode = 'login', closeOnBackd
         setResetEmail(value);
         persistRememberedField('resetEmail', value);
     };
+    const createInputDebugHandlers = (field: string) => ({
+        onFocus: (event: FocusEvent<HTMLInputElement>) => {
+            debugAuthInputEvent('focus', {
+                field,
+                testId: event.currentTarget.getAttribute('data-testid'),
+                type: event.currentTarget.type,
+                valueLength: event.currentTarget.value.length,
+                activeTag: document.activeElement instanceof HTMLElement ? document.activeElement.tagName : null,
+                activeTestId: document.activeElement instanceof HTMLElement ? document.activeElement.getAttribute('data-testid') : null,
+            });
+        },
+        onBlur: (event: FocusEvent<HTMLInputElement>) => {
+            debugAuthInputEvent('blur', {
+                field,
+                testId: event.currentTarget.getAttribute('data-testid'),
+                type: event.currentTarget.type,
+                valueLength: event.currentTarget.value.length,
+                activeTag: document.activeElement instanceof HTMLElement ? document.activeElement.tagName : null,
+                activeTestId: document.activeElement instanceof HTMLElement ? document.activeElement.getAttribute('data-testid') : null,
+            });
+        },
+        onInput: (event: FormEvent<HTMLInputElement>) => {
+            const target = event.currentTarget;
+            debugAuthInputEvent('input', {
+                field,
+                testId: target.getAttribute('data-testid'),
+                type: target.type,
+                valueLength: target.value.length,
+                activeTag: document.activeElement instanceof HTMLElement ? document.activeElement.tagName : null,
+                activeTestId: document.activeElement instanceof HTMLElement ? document.activeElement.getAttribute('data-testid') : null,
+            });
+        },
+    });
 
     const clearSensitiveFields = useCallback(() => {
         setError('');
@@ -465,6 +511,7 @@ export const AuthModal = ({ isOpen, onClose, initialMode = 'login', closeOnBackd
                                                     autoComplete="email"
                                                     autoFocus
                                                     data-testid="auth-register-email-input"
+                                                    {...createInputDebugHandlers('register-email')}
                                                 />
                                             </div>
                                             <button
@@ -500,6 +547,7 @@ export const AuthModal = ({ isOpen, onClose, initialMode = 'login', closeOnBackd
                                             inputMode="numeric"
                                             autoComplete="one-time-code"
                                             data-testid="auth-register-code-input"
+                                            {...createInputDebugHandlers('register-code')}
                                         />
                                     </div>
                                 </motion.div>
@@ -598,6 +646,7 @@ export const AuthModal = ({ isOpen, onClose, initialMode = 'login', closeOnBackd
                                         required
                                         autoComplete="nickname"
                                         data-testid="auth-register-username-input"
+                                        {...createInputDebugHandlers('register-username')}
                                     />
                                 </div>
                             ) : null}
@@ -636,6 +685,7 @@ export const AuthModal = ({ isOpen, onClose, initialMode = 'login', closeOnBackd
                                         autoComplete="new-password"
                                         data-testid="auth-register-password-input"
                                         toggleButtonTestId="auth-register-password-toggle"
+                                        {...createInputDebugHandlers('register-password')}
                                     />
                                 </div>
                             )}
@@ -677,6 +727,7 @@ export const AuthModal = ({ isOpen, onClose, initialMode = 'login', closeOnBackd
                                         autoComplete="new-password"
                                         data-testid="auth-register-confirm-password-input"
                                         toggleButtonTestId="auth-register-confirm-password-toggle"
+                                        {...createInputDebugHandlers('register-confirm-password')}
                                     />
                                 </motion.div>
                             )}

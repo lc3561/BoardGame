@@ -12,11 +12,14 @@ import {
   findActivatedAbilityDirectionOptionByPosition,
   findActivatedAbilityTargetOptionByCardId,
   findActivatedAbilityTargetOptionByPosition,
+  getSystemCardSelectorAbilityId,
+  getSystemCardSelectorTitleKey,
   getSystemAbilityUiRoute,
   findSystemAbilityUnitOptionByPosition,
   listActivatedAbilityTargetCardIds,
   resolveBeforeAttackCancellation,
   resolveBeforeAttackCardConfirmation,
+  SYSTEM_CARD_SELECTOR_ABILITY_IDS,
   type SwSimpleChoiceInteraction,
 } from '../ui/systemInteractionAdapter';
 import { getAbilityModeBannerFallbackText } from '../ui/StatusBanners';
@@ -1129,6 +1132,20 @@ describe('systemInteractionAdapter', () => {
       step: 'selectCard',
       sourceUnitId: 'future-1',
     })).toBeNull();
+
+    expect(getSystemCardSelectorAbilityId({
+      abilityId: 'revive_undead',
+      step: 'selectCard',
+      sourceUnitId: 'sneeks-1',
+    })).toBe('revive_undead');
+
+    expect(getSystemCardSelectorAbilityId({
+      abilityId: 'telekinesis_instead',
+      step: 'selectUnit',
+      sourceUnitId: 'sly-1',
+    })).toBeNull();
+
+    expect(getSystemCardSelectorTitleKey('fortress_power')).toBe('cardSelector.fortressPower');
   });
 
   it('现役 abilityMode 顶部横幅文案回退到已存在的文案源', () => {
@@ -1236,6 +1253,13 @@ describe('systemInteractionAdapter', () => {
     expect(getRouteLabels('status-banner-choice')).toEqual([
       'blood_rune/selectUnit',
     ]);
+  });
+
+  it('Board 卡牌选择器能力集合必须与路由矩阵保持一致', () => {
+    expect(SYSTEM_CARD_SELECTOR_ABILITY_IDS).toEqual(['revive_undead', 'fortress_power']);
+    expect(
+      getRouteLabels('card-selector').map((label) => label.split('/')[0]),
+    ).toEqual([...SYSTEM_CARD_SELECTOR_ABILITY_IDS]);
   });
 
   it('关键 UI 文案入口不再依赖 fallback/defaultValue 掩盖缺 key', () => {

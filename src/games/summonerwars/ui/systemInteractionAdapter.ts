@@ -35,6 +35,20 @@ export const ACTIVATED_ABILITY_IDS = [
 ] as const;
 
 type ActivatedAbilityId = typeof ACTIVATED_ABILITY_IDS[number];
+export const SYSTEM_CARD_SELECTOR_ABILITY_IDS = [
+  'revive_undead',
+  'fortress_power',
+] as const;
+
+type SystemCardSelectorAbilityId = typeof SYSTEM_CARD_SELECTOR_ABILITY_IDS[number];
+type SystemCardSelectorTitleKey =
+  | 'cardSelector.reviveUndead'
+  | 'cardSelector.fortressPower';
+
+const SYSTEM_CARD_SELECTOR_TITLE_KEYS: Record<SystemCardSelectorAbilityId, SystemCardSelectorTitleKey> = {
+  revive_undead: 'cardSelector.reviveUndead',
+  fortress_power: 'cardSelector.fortressPower',
+};
 
 const isCellCoord = (value: unknown): value is CellCoord => {
   if (!value || typeof value !== 'object') return false;
@@ -45,6 +59,23 @@ const isCellCoord = (value: unknown): value is CellCoord => {
 const isActivatedAbilityId = (value: unknown): value is ActivatedAbilityId => (
   typeof value === 'string' && ACTIVATED_ABILITY_IDS.includes(value as ActivatedAbilityId)
 );
+
+export const isSystemCardSelectorAbilityId = (value: unknown): value is SystemCardSelectorAbilityId => (
+  typeof value === 'string' && SYSTEM_CARD_SELECTOR_ABILITY_IDS.includes(value as SystemCardSelectorAbilityId)
+);
+
+export function getSystemCardSelectorAbilityId(
+  abilityMode: AbilityModeState | null | undefined,
+): SystemCardSelectorAbilityId | null {
+  if (!abilityMode || abilityMode.step !== 'selectCard') return null;
+  return isSystemCardSelectorAbilityId(abilityMode.abilityId) ? abilityMode.abilityId : null;
+}
+
+export function getSystemCardSelectorTitleKey(
+  abilityId: SystemCardSelectorAbilityId,
+): SystemCardSelectorTitleKey {
+  return SYSTEM_CARD_SELECTOR_TITLE_KEYS[abilityId];
+}
 
 export function isActivatedAbilityInteraction(
   swInteraction: SwSimpleChoiceInteraction | null | undefined,
@@ -337,7 +368,7 @@ export function getSystemAbilityUiRoute(
   }
 
   if (abilityMode.step === 'selectCard') {
-    if (abilityMode.abilityId === 'revive_undead' || abilityMode.abilityId === 'fortress_power') {
+    if (isSystemCardSelectorAbilityId(abilityMode.abilityId)) {
       return 'card-selector';
     }
     return null;

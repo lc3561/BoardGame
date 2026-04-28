@@ -809,15 +809,10 @@ export function registerBaseAbilities(): void {
     });
 
     // base_the_field_of_honor: 荣誉之地
-    // "每回合中，在你第一次消灭这里另一位玩家的随从后，获得 1 VP"
+    // "当一个或多个随从在这里被消灭，那个将它们消灭的玩家获得1VP"
     registerExtended('base_the_field_of_honor', 'onMinionDestroyed', (ctx) => {
         const destroyerId = ctx.destroyerId;
         if (!destroyerId) return { events: [] };
-        // 每回合本基地仅首次触发（避免重复加分）
-        const alreadyTriggeredThisTurn = (ctx.state.turnDestroyedMinions ?? []).some(record =>
-            record.baseIndex === ctx.baseIndex,
-        );
-        if (alreadyTriggeredThisTurn) return { events: [] };
         return {
             events: [{
                 type: SU_EVENTS.VP_AWARDED,

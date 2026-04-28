@@ -625,3 +625,35 @@
     - 新增证据文档：`evidence/smashup/smashup-world-champs-high-speed-smart-blitz-e2e-2026-04-27.md`
     - 已回写三份总文档：`smashup-10th-anniversary-factions-audit-20260419.md`、`smashup-10th-anniversary-final-closeout-20260419.md`、`smashup-10th-anniversary-reintake-2026-04-25.md`
   - Next: 继续按“卡图优先 + 对象级真证据”补三新派系剩余残余范围；当前仍不能把 World Champs 对象级补证写成整派系或三派系最终收口。
+
+- **[2026-04-28 00:05:00] Action**: World Champs《着魔 / 嗯？》真实入口 E2E 补证，并修复《嗯？》弃牌区入口缺口
+  - Result:
+    - 更新 `src/games/smashup/abilities/world_champs.ts`：
+      - 为《嗯？》新增 `registerDiscardSpecialProvider(...)`；
+      - 在《嗯？》交互结算时新增 `SU_EVENTS.DISCARD_ABILITY_USED`，锁住“本回合一次”。
+    - 更新 `src/games/smashup/__tests__/newFactionAbilities.test.ts`：
+      - 新增《嗯？》弃牌区可见性与使用后锁定回归；
+      - `npx vitest run src/games/smashup/__tests__/newFactionAbilities.test.ts -t "world_champs_eh"` → `2 passed`。
+    - 更新 `e2e/smashup/smashup-robot-hoverbot-new.e2e.ts`：
+      - 新增《着魔》真实入口 E2E；
+      - 新增《嗯？》真实入口 E2E；
+      - 新增 `dismissSpotlightQueueIfPresent(...)`，对齐当前 card spotlight 遮罩行为。
+    - 验证：
+      - `$env:BG_BYPASS_GLOBAL_HEAVY_BUDGET='1'; $env:BG_ALLOW_HEAVY_TASK_CONCURRENCY='1'; npm run test:e2e:ci:file -- e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "嗯？"` → `1 passed`
+      - `$env:BG_BYPASS_GLOBAL_HEAVY_BUDGET='1'; $env:BG_ALLOW_HEAVY_TASK_CONCURRENCY='1'; npm run test:e2e:ci:file -- e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "着魔"` → `1 passed`
+    - 新增证据文档：`evidence/smashup/smashup-world-champs-bewitched-eh-e2e-2026-04-28.md`
+    - 已回写：`evidence/smashup/smashup-10th-anniversary-factions-audit-20260419.md`、`evidence/smashup/smashup-10th-anniversary-final-closeout-20260419.md`、`evidence/smashup/smashup-10th-anniversary-reintake-2026-04-25.md`、`findings.md`
+  - Next: 继续按“卡图优先 + 对象级真证据 + 特殊入口抽样”推进三新派系剩余残余范围；当前仍不能把 World Champs 对象级补证写成整派系或三派系最终收口。
+
+- **[2026-04-28 00:40:00] Action**: World Champs《彩虹女孩 / 怪兽冲击》真实入口 E2E 补证
+  - Result:
+    - 更新 `e2e/smashup/smashup-robot-hoverbot-new.e2e.ts`：
+      - 新增《彩虹女孩》真实入口 E2E；
+      - 新增《怪兽冲击》真实入口 E2E；
+      - 修正《怪兽冲击》末尾断言，改为校验《暗杀》正确附着，而不是误判为“立即消灭目标”。
+    - 验证：
+      - `npx playwright test e2e/smashup/smashup-robot-hoverbot-new.e2e.ts -g "彩虹女孩"` → `1 passed`
+      - `npx playwright test e2e/smashup/smashup-robot-hoverbot-new.e2e.ts -g "怪兽冲击"` → `1 passed`
+    - 新增证据文档：`evidence/smashup/smashup-world-champs-rainbow-kaiju-e2e-2026-04-28.md`
+    - 已回写：`evidence/smashup/smashup-10th-anniversary-factions-audit-20260419.md`、`evidence/smashup/smashup-10th-anniversary-final-closeout-20260419.md`、`evidence/smashup/smashup-10th-anniversary-reintake-2026-04-25.md`、`findings.md`
+  - Next: 继续按“卡图优先 + 对象级真证据 + 特殊入口抽样”推进三新派系剩余残余范围；当前仍不能把 World Champs 对象级补证写成整派系或三派系最终收口。

@@ -2,10 +2,12 @@ import { useEffect, useRef, useState, type ChangeEvent, type HTMLAttributes, typ
 import { createPortal } from 'react-dom';
 import {
     isTextEntryElement,
+    isTextEntrySessionElement,
     isTextEntryProxyEligible,
     readTextEntryValue,
     syncProxyValueToTextEntry,
 } from '../../lib/textEntry';
+import { readLiveRuntimeKeyboardInsetBottom } from '../../hooks/ui/useRuntimeViewport';
 import { UI_Z_INDEX } from '../../core';
 
 interface ProxyState {
@@ -23,7 +25,6 @@ interface ProxyState {
 interface TargetProxySnapshot {
     readonly?: boolean;
     contentEditable?: string | null;
-    opacity?: string;
     caretColor?: string;
 }
 
@@ -31,8 +32,20 @@ const KEYBOARD_PROXY_MIN_INSET = 72;
 const TARGET_PROXY_ATTR = 'data-mobile-text-entry-proxy-source';
 const DEFAULT_PROXY_BACKGROUND = 'rgba(255, 248, 240, 0.98)';
 const DEFAULT_PROXY_BOX_SHADOW = '0 18px 40px rgba(15, 23, 42, 0.18)';
+const MOBILE_TEXT_ENTRY_DEBUG = true;
 
-const readKeyboardInset = () => {
+const debugProxyEvent = (phase: string, details: Record<string, unknown> = {}) => {
+    if (!MOBILE_TEXT_ENTRY_DEBUG || typeof console === 'undefined') {
+        return;
+    }
+    try {
+        console.warn('[mobile-text-proxy]', JSON.stringify({ phase, ...details }));
+    } catch {
+        console.warn('[mobile-text-proxy]', phase, details);
+    }
+};
+
+const readCssKeyboardInset = () => {
     if (typeof window === 'undefined' || typeof document === 'undefined') {
         return 0;
     }
@@ -103,7 +116,6 @@ const buildProxyState = (target: HTMLElement): ProxyState => {
 
 const freezeTargetForProxy = (target: HTMLElement): TargetProxySnapshot => {
     const snapshot: TargetProxySnapshot = {
-        opacity: target.style.opacity,
         caretColor: target.style.caretColor,
     };
 
@@ -115,17 +127,14 @@ const freezeTargetForProxy = (target: HTMLElement): TargetProxySnapshot => {
         target.setAttribute('contenteditable', 'false');
     }
 
-    target.style.opacity = '0';
     target.style.caretColor = 'transparent';
     target.setAttribute(TARGET_PROXY_ATTR, 'true');
-    target.blur();
 
     return snapshot;
 };
 
 const restoreTargetAfterProxy = (target: HTMLElement, snapshot: TargetProxySnapshot | null) => {
     target.removeAttribute(TARGET_PROXY_ATTR);
-    target.style.opacity = snapshot?.opacity ?? '';
     target.style.caretColor = snapshot?.caretColor ?? '';
 
     if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
@@ -148,7 +157,47 @@ export const MobileTextEntryProxyLayer = () => {
     const proxiedTargetRef = useRef<HTMLElement | null>(null);
     const proxiedSnapshotRef = useRef<TargetProxySnapshot | null>(null);
     const blurCleanupTimerRef = useRef<number | null>(null);
+    const lastKeyboardInsetRef = useRef<number>(0);
     const proxyTarget = proxyState?.target ?? null;
+
+    const dismissProxySession = () => {
+        const proxyInput = inputRef.current;
+        if (proxyInput && document.activeElement === proxyInput) {
+            proxyInput.blur();
+        }
+        if (proxyTarget && document.activeElement === proxyTarget) {
+            proxyTarget.blur();
+        }
+        debugProxyEvent('dismiss-session', {
+            activeTag: document.activeElement instanceof HTMLElement ? document.activeElement.tagName : null,
+            activeTestId: document.activeElement instanceof HTMLElement ? document.activeElement.getAttribute('data-testid') : null,
+        });
+        setProxyState(null);
+    };
+
+    const readKeyboardInset = () => {
+        const cssInset = readCssKeyboardInset();
+        const activeElement = typeof document === 'undefined' ? null : document.activeElement;
+        const activeProxySession = activeElement === inputRef.current
+            || isProxyUiElement(activeElement)
+            || isTextEntrySessionElement(activeElement);
+        const liveInset = readLiveRuntimeKeyboardInsetBottom({
+            hasFocusedTextEntry: activeProxySession,
+        });
+        const nextInset = Math.max(cssInset, liveInset);
+
+        if (nextInset >= KEYBOARD_PROXY_MIN_INSET) {
+            lastKeyboardInsetRef.current = nextInset;
+            return nextInset;
+        }
+
+        if (activeProxySession && lastKeyboardInsetRef.current >= KEYBOARD_PROXY_MIN_INSET) {
+            return lastKeyboardInsetRef.current;
+        }
+
+        lastKeyboardInsetRef.current = 0;
+        return 0;
+    };
 
     useEffect(() => {
         if (typeof window === 'undefined' || typeof document === 'undefined') {
@@ -168,9 +217,20 @@ export const MobileTextEntryProxyLayer = () => {
                 return;
             }
             if (!isTextEntryProxyEligible(target)) {
+                debugProxyEvent('activate-skip-ineligible', {
+                    tag: target.tagName,
+                    testId: target.getAttribute('data-testid'),
+                });
                 setProxyState(null);
                 return;
             }
+            debugProxyEvent('activate-proxy', {
+                tag: target.tagName,
+                testId: target.getAttribute('data-testid'),
+                placeholder: target.getAttribute('placeholder'),
+                cssInset: readCssKeyboardInset(),
+                keyboardInset: readKeyboardInset(),
+            });
             setProxyState(buildProxyState(target));
         };
 
@@ -187,15 +247,28 @@ export const MobileTextEntryProxyLayer = () => {
 
         const handleFocusIn = (event: FocusEvent) => {
             const target = event.target;
+            debugProxyEvent('focusin', {
+                eventTargetTag: target instanceof HTMLElement ? target.tagName : typeof target,
+                eventTargetTestId: target instanceof HTMLElement ? target.getAttribute('data-testid') : null,
+                activeTag: document.activeElement instanceof HTMLElement ? document.activeElement.tagName : null,
+                activeTestId: document.activeElement instanceof HTMLElement ? document.activeElement.getAttribute('data-testid') : null,
+                cssInset: readCssKeyboardInset(),
+                keyboardInset: readKeyboardInset(),
+            });
             if (isProxyUiElement(target) || target === inputRef.current) {
                 return;
             }
             if (!isTextEntryElement(target)) {
+                debugProxyEvent('focusin-clear-non-text-entry');
                 setProxyState(null);
                 return;
             }
 
             if (!isTextEntryProxyEligible(target)) {
+                debugProxyEvent('focusin-clear-ineligible', {
+                    tag: target.tagName,
+                    testId: target.getAttribute('data-testid'),
+                });
                 setProxyState(null);
                 return;
             }
@@ -208,6 +281,12 @@ export const MobileTextEntryProxyLayer = () => {
         };
 
         const handleFocusOut = () => {
+            debugProxyEvent('focusout', {
+                activeTag: document.activeElement instanceof HTMLElement ? document.activeElement.tagName : null,
+                activeTestId: document.activeElement instanceof HTMLElement ? document.activeElement.getAttribute('data-testid') : null,
+                cssInset: readCssKeyboardInset(),
+                keyboardInset: readKeyboardInset(),
+            });
             window.setTimeout(() => {
                 const active = document.activeElement;
                 if (active === inputRef.current || isProxyUiElement(active)) {
@@ -222,12 +301,26 @@ export const MobileTextEntryProxyLayer = () => {
                     setProxyState((current) => current ?? (proxiedTargetRef.current ? buildProxyState(proxiedTargetRef.current) : null));
                     return;
                 }
+                debugProxyEvent('focusout-clear-proxy', {
+                    activeTag: active instanceof HTMLElement ? active.tagName : null,
+                    activeTestId: active instanceof HTMLElement ? active.getAttribute('data-testid') : null,
+                    cssInset: readCssKeyboardInset(),
+                    keyboardInset: readKeyboardInset(),
+                });
                 setProxyState(null);
             }, 80);
         };
 
         const handleViewportResize = () => {
+            debugProxyEvent('viewport-resize', {
+                activeTag: document.activeElement instanceof HTMLElement ? document.activeElement.tagName : null,
+                activeTestId: document.activeElement instanceof HTMLElement ? document.activeElement.getAttribute('data-testid') : null,
+                cssInset: readCssKeyboardInset(),
+                keyboardInset: readKeyboardInset(),
+                visualViewportHeight: window.visualViewport?.height ?? null,
+            });
             if (readKeyboardInset() < KEYBOARD_PROXY_MIN_INSET) {
+                debugProxyEvent('viewport-resize-clear-proxy');
                 setProxyState(null);
                 return;
             }
@@ -287,6 +380,11 @@ export const MobileTextEntryProxyLayer = () => {
         if (proxiedTargetRef.current !== proxyTarget) {
             proxiedSnapshotRef.current = freezeTargetForProxy(proxyTarget);
             proxiedTargetRef.current = proxyTarget;
+            debugProxyEvent('freeze-target', {
+                tag: proxyTarget.tagName,
+                testId: proxyTarget.getAttribute('data-testid'),
+                placeholder: proxyTarget.getAttribute('placeholder'),
+            });
         }
 
         const next = inputRef.current;
@@ -330,6 +428,13 @@ export const MobileTextEntryProxyLayer = () => {
         },
         onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
             const nextValue = event.target.value;
+            debugProxyEvent('proxy-change', {
+                valueLength: nextValue.length,
+                cssInset: readCssKeyboardInset(),
+                keyboardInset: readKeyboardInset(),
+                activeTag: document.activeElement instanceof HTMLElement ? document.activeElement.tagName : null,
+                activeTestId: document.activeElement instanceof HTMLElement ? document.activeElement.getAttribute('data-testid') : null,
+            });
             setProxyState((current) => (current ? { ...current, value: nextValue } : current));
             syncProxyValueToTextEntry(proxyState.target, nextValue);
         },
@@ -346,15 +451,19 @@ export const MobileTextEntryProxyLayer = () => {
                     const submitter = form.querySelector('button[type="submit"]:not(:disabled), input[type="submit"]:not(:disabled)');
                     if (submitter instanceof HTMLButtonElement || submitter instanceof HTMLInputElement) {
                         submitter.click();
+                        dismissProxySession();
                         return;
                     }
                     if (typeof form.requestSubmit === 'function') {
                         form.requestSubmit();
+                        dismissProxySession();
                         return;
                     }
                     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+                    dismissProxySession();
                     return;
                 }
+                dismissProxySession();
             }
 
             const forwardedEvent = new KeyboardEvent('keydown', {
@@ -393,6 +502,12 @@ export const MobileTextEntryProxyLayer = () => {
             proxyState.target.dispatchEvent(forwardedEvent);
         },
         onBlur: () => {
+            debugProxyEvent('proxy-blur', {
+                activeTag: document.activeElement instanceof HTMLElement ? document.activeElement.tagName : null,
+                activeTestId: document.activeElement instanceof HTMLElement ? document.activeElement.getAttribute('data-testid') : null,
+                cssInset: readCssKeyboardInset(),
+                keyboardInset: readKeyboardInset(),
+            });
             if (blurCleanupTimerRef.current != null) {
                 window.clearTimeout(blurCleanupTimerRef.current);
             }
@@ -406,6 +521,12 @@ export const MobileTextEntryProxyLayer = () => {
                     setProxyState(buildProxyState(active));
                     return;
                 }
+                debugProxyEvent('proxy-blur-clear', {
+                    activeTag: active instanceof HTMLElement ? active.tagName : null,
+                    activeTestId: active instanceof HTMLElement ? active.getAttribute('data-testid') : null,
+                    cssInset: readCssKeyboardInset(),
+                    keyboardInset: readKeyboardInset(),
+                });
                 setProxyState(null);
             }, 100);
         },

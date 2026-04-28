@@ -192,6 +192,14 @@ async function tryClickVisiblePassButton(page: Page, timeout = 1500): Promise<bo
     return false;
 }
 
+async function dismissSpotlightQueueIfPresent(page: Page, timeout = 3000): Promise<void> {
+    const spotlight = page.getByTestId('card-spotlight-queue');
+    if (!await spotlight.isVisible().catch(() => false)) return;
+    await spotlight.click({ force: true });
+    await expect(spotlight).toBeHidden({ timeout }).catch(() => {});
+    await page.waitForTimeout(200);
+}
+
 async function readTransientUiState(page: Page): Promise<{
     phase: string | null;
     sourceId: string | null;
@@ -852,6 +860,72 @@ test.describe('Smash Up 牌库检索交互', () => {
         expect(enemyTarget?.powerCounters ?? 0).toBe(1);
 
         await game.screenshot('calicoin-resolved-enemy-countered', testInfo);
+    });
+
+    test('彩虹女孩打出后应只给这里的其他己方随从 +1 力量直到回合结束', async ({ page, game }, testInfo) => {
+        test.setTimeout(60000);
+
+        await page.goto('/play/smashup');
+        await page.waitForFunction(
+            () => (window as any).__BG_TEST_HARNESS__?.state?.isRegistered?.() === true,
+            { timeout: 15000 },
+        );
+
+        await game.setupScene({
+            gameId: 'smashup',
+            player0: {
+                hand: ['world_champs_rainbow_girl'],
+                deck: [],
+                factions: ['world_champs', 'robots'],
+            },
+            player1: {
+                hand: [],
+                deck: [],
+                factions: ['pirates', 'dinosaurs'],
+            },
+            currentPlayer: '0',
+            phase: 'playCards',
+            bases: [
+                {
+                    defId: 'base_1',
+                    minions: [
+                        { uid: 'rainbow-ally-same-base', defId: 'robot_microbot_alpha', owner: '0', controller: '0', tempPowerModifier: 0 },
+                        { uid: 'rainbow-enemy-same-base', defId: 'robot_microbot_beta', owner: '1', controller: '1', tempPowerModifier: 0 },
+                    ],
+                    ongoingActions: [],
+                },
+                {
+                    defId: 'base_2',
+                    minions: [
+                        { uid: 'rainbow-ally-other-base', defId: 'robot_microbot_gamma', owner: '0', controller: '0', tempPowerModifier: 0 },
+                    ],
+                    ongoingActions: [],
+                },
+            ],
+        });
+
+        await game.screenshot('rainbow-girl-before-play', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-world-champs-rainbow-girl-before-2026-04-28');
+
+        await game.playCard('world_champs_rainbow_girl', { targetBaseIndex: 0 });
+        await game.waitForNoInteraction();
+        await dismissSpotlightQueueIfPresent(page);
+
+        const finalState = await game.getState();
+        const baseOneMinions = finalState.core.bases[0].minions;
+        const baseTwoMinions = finalState.core.bases[1].minions;
+        const sameBaseAlly = baseOneMinions.find((minion: any) => minion.uid === 'rainbow-ally-same-base');
+        const sameBaseEnemy = baseOneMinions.find((minion: any) => minion.uid === 'rainbow-enemy-same-base');
+        const rainbowGirl = baseOneMinions.find((minion: any) => minion.defId === 'world_champs_rainbow_girl');
+        const otherBaseAlly = baseTwoMinions.find((minion: any) => minion.uid === 'rainbow-ally-other-base');
+
+        expect(sameBaseAlly?.tempPowerModifier ?? 0).toBe(1);
+        expect(sameBaseEnemy?.tempPowerModifier ?? 0).toBe(0);
+        expect(rainbowGirl?.tempPowerModifier ?? 0).toBe(0);
+        expect(otherBaseAlly?.tempPowerModifier ?? 0).toBe(0);
+
+        await game.screenshot('rainbow-girl-resolved', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-world-champs-rainbow-girl-resolved-2026-04-28');
     });
 
     test('海龟阿凯打出后应先选玩家再交牌并抽两张', async ({ page, game }, testInfo) => {
@@ -1708,6 +1782,87 @@ test.describe('Smash Up 牌库检索交互', () => {
         await saveStableScreenshot(page, testInfo, 'smashup-world-champs-its-blitzin-time-resolved-2026-04-27');
     });
 
+    test('怪兽冲击打出后应让你在本回合额外打出两个行动', async ({ page, game }, testInfo) => {
+        test.setTimeout(60000);
+
+        await page.goto('/play/smashup');
+        await page.waitForFunction(
+            () => (window as any).__BG_TEST_HARNESS__?.state?.isRegistered?.() === true,
+            { timeout: 15000 },
+        );
+
+        await game.setupScene({
+            gameId: 'smashup',
+            player0: {
+                hand: ['world_champs_kaiju_conflict', 'world_champs_its_blitzin_time', 'ninja_assassination'],
+                deck: [],
+                factions: ['world_champs', 'ninjas'],
+            },
+            player1: {
+                hand: [],
+                deck: [],
+                factions: ['pirates', 'dinosaurs'],
+            },
+            currentPlayer: '0',
+            phase: 'playCards',
+            bases: [
+                {
+                    defId: 'base_1',
+                    minions: [
+                        { uid: 'kaiju-ally-1', defId: 'robot_microbot_alpha', owner: '0', controller: '0', tempPowerModifier: 0 },
+                    ],
+                    ongoingActions: [],
+                },
+                {
+                    defId: 'base_2',
+                    minions: [
+                        { uid: 'kaiju-ally-2', defId: 'robot_microbot_beta', owner: '0', controller: '0', tempPowerModifier: 0 },
+                        { uid: 'kaiju-enemy-1', defId: 'pirate_first_mate', owner: '1', controller: '1', tempPowerModifier: 0 },
+                    ],
+                    ongoingActions: [],
+                },
+            ],
+        });
+
+        await game.playCard('world_champs_kaiju_conflict');
+        await game.waitForNoInteraction();
+        await dismissSpotlightQueueIfPresent(page);
+
+        const afterKaiju = await game.getState();
+        expect(afterKaiju.core.players['0'].actionsPlayed).toBe(1);
+        expect(afterKaiju.core.players['0'].actionLimit).toBeGreaterThanOrEqual(3);
+
+        await game.screenshot('kaiju-conflict-after-first-action', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-world-champs-kaiju-conflict-after-first-action-2026-04-28');
+
+        await game.playCard('world_champs_its_blitzin_time');
+        await game.waitForInteraction('world_champs_its_blitzin_time');
+        await game.selectInteractionOptionBy(
+            (option: any) => option.value?.minionUid === 'kaiju-ally-2',
+            '怪兽冲击后的第一张额外行动选择第二个己方随从',
+        );
+        await game.waitForNoInteraction();
+        await dismissSpotlightQueueIfPresent(page);
+
+        await game.playCard('ninja_assassination', { targetBaseIndex: 1, targetMinionUid: 'kaiju-enemy-1' });
+        await game.waitForNoInteraction();
+        await dismissSpotlightQueueIfPresent(page);
+
+        const finalState = await game.getState();
+        const baseTwoMinions = finalState.core.bases[1].minions;
+        const allyTwo = baseTwoMinions.find((minion: any) => minion.uid === 'kaiju-ally-2');
+        const enemyTarget = baseTwoMinions.find((minion: any) => minion.uid === 'kaiju-enemy-1');
+
+        expect(finalState.core.players['0'].actionsPlayed).toBe(3);
+        expect(finalState.core.players['0'].actionLimit).toBeGreaterThanOrEqual(3);
+        expect(finalState.core.players['0'].hand).toHaveLength(0);
+        expect(allyTwo?.tempPowerModifier ?? 0).toBe(3);
+        expect(enemyTarget?.attachedActions?.some((action: any) => action.defId === 'ninja_assassination')).toBe(true);
+
+        await game.screenshot('kaiju-conflict-third-action-resolved', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-world-champs-kaiju-conflict-third-action-resolved-2026-04-28');
+    });
+
     test('聪明Set-Up附着后应在该基地本回合首次打出随从时让你抽一张牌', async ({ page, game }, testInfo) => {
         test.setTimeout(60000);
 
@@ -1807,14 +1962,14 @@ test.describe('Smash Up 牌库检索交互', () => {
                 {
                     defId: 'base_1',
                     minions: [
-                        { uid: 'bewitched-host', defId: 'robot_microbot_alpha', ownerId: '1', controllerId: '1', powerCounters: 0 },
+                        { uid: 'bewitched-host', defId: 'robot_microbot_alpha', owner: '1', controller: '1', powerCounters: 0 },
                     ],
                     ongoingActions: [],
                 },
                 {
                     defId: 'base_2',
                     minions: [
-                        { uid: 'bewitched-target', defId: 'robot_microbot_beta', ownerId: '0', controllerId: '0', powerCounters: 0 },
+                        { uid: 'bewitched-target', defId: 'robot_microbot_beta', owner: '0', controller: '0', powerCounters: 0 },
                     ],
                     ongoingActions: [],
                 },
@@ -1823,6 +1978,7 @@ test.describe('Smash Up 牌库检索交互', () => {
 
         await game.playCard('world_champs_bewitched', { targetBaseIndex: 0, targetMinionUid: 'bewitched-host' });
         await game.waitForNoInteraction();
+        await dismissSpotlightQueueIfPresent(page);
 
         const afterBewitched = await game.getState();
         const attachedBewitchedUid = afterBewitched.core.bases[0].minions
@@ -1838,6 +1994,7 @@ test.describe('Smash Up 牌库检索交互', () => {
 
         await game.playCard('ninja_assassination', { targetBaseIndex: 0, targetMinionUid: 'bewitched-host' });
         await game.waitForNoInteraction();
+        await dismissSpotlightQueueIfPresent(page);
 
         await page.getByRole('button', { name: /^(结束回合|Finish Turn|End)$/i }).click({ force: true });
         await game.waitForInteraction('world_champs_bewitched_transfer', 10000);
@@ -1870,13 +2027,17 @@ test.describe('Smash Up 牌库检索交互', () => {
         const finalState = await game.getState();
         const hostStillExists = finalState.core.bases[0].minions.some((minion: any) => minion.uid === 'bewitched-host');
         const transferredTarget = finalState.core.bases[1].minions.find((minion: any) => minion.uid === 'bewitched-target');
+        const transferredBewitchedUid = transferredTarget?.attachedActions?.find(
+            (action: any) => action.defId === 'world_champs_bewitched',
+        )?.uid;
 
         expect(hostStillExists).toBe(false);
         expect(transferredTarget?.attachedActions?.some((action: any) => action.defId === 'world_champs_bewitched')).toBe(true);
         expect(finalState.core.players['0'].discard.some((card: any) => card.defId === 'world_champs_bewitched')).toBe(false);
+        expect(transferredBewitchedUid).toBeTruthy();
 
         await page.locator('[data-minion-uid="bewitched-target"]').click({ force: true });
-        await expect(page.locator('[data-attached-action-def-id="world_champs_bewitched"]').first()).toBeVisible({ timeout: 5000 });
+        await expect(page.locator(`[data-attached-action-uid="${transferredBewitchedUid}"]`)).toBeVisible({ timeout: 5000 });
         await game.screenshot('bewitched-transferred-to-new-host', testInfo);
         await saveStableScreenshot(page, testInfo, 'smashup-world-champs-bewitched-transferred-2026-04-28');
     });
@@ -1910,14 +2071,14 @@ test.describe('Smash Up 牌库检索交互', () => {
                 {
                     defId: 'base_1',
                     minions: [
-                        { uid: 'eh-ally-1', defId: 'robot_microbot_alpha', ownerId: '0', controllerId: '0', tempPowerModifier: 0 },
+                        { uid: 'eh-ally-1', defId: 'robot_microbot_alpha', owner: '0', controller: '0', tempPowerModifier: 0 },
                     ],
                     ongoingActions: [],
                 },
                 {
                     defId: 'base_2',
                     minions: [
-                        { uid: 'eh-ally-2', defId: 'robot_microbot_beta', ownerId: '0', controllerId: '0', tempPowerModifier: 0 },
+                        { uid: 'eh-ally-2', defId: 'robot_microbot_beta', owner: '0', controller: '0', tempPowerModifier: 0 },
                     ],
                     ongoingActions: [],
                 },
@@ -1926,6 +2087,7 @@ test.describe('Smash Up 牌库检索交互', () => {
 
         await game.playCard('ninja_assassination', { targetBaseIndex: 0, targetMinionUid: 'eh-ally-1' });
         await game.waitForNoInteraction();
+        await dismissSpotlightQueueIfPresent(page);
 
         await expect(page.locator('[data-testid="su-discard-toggle"]')).toBeVisible();
         await page.locator('[data-testid="su-discard-toggle"]').click();
