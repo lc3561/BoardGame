@@ -14,7 +14,6 @@ import type {
   CellCoord,
 } from './types';
 import { SW_COMMANDS, SW_EVENTS, SW_SELECTION_EVENTS } from './types';
-import { abilityRegistry } from './abilities';
 import {
   BOARD_ROWS,
   BOARD_COLS,
@@ -31,14 +30,12 @@ import {
   getEntangleUnits,
   getPlayerUnits,
   getUnitAbilities,
-  getAdjacentCells,
   getUnitMoveEnhancements,
   getPassedThroughUnitPositions,
   getMovePath,
   findUnitPositionByInstanceId,
   HAND_SIZE,
 } from './helpers';
-import { buildUsageKey } from './utils';
 import { rollDice, countHits } from '../config/dice';
 import { createDeckByFactionId } from '../config/factions';
 import { buildGameDeckFromCustom } from '../config/deckBuilder';
