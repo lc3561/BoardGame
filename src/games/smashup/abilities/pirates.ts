@@ -44,6 +44,7 @@ export function registerPirateAbilities(): void {
     registerTrigger('pirate_first_mate', 'afterScoring', pirateFirstMateAfterScoring, {
         perInstance: true,
         playerContext: 'sourceController',
+        sourceScope: 'triggerBase',
     });
     // 海盗（海盗）：被消灭时移动到其他基地而非进入弃牌堆
     registerTrigger('pirate_buccaneer', 'onMinionDestroyed', buccaneerOnDestroyed, { phase: 'replacement' });
