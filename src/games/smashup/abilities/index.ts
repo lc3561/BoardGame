@@ -37,6 +37,7 @@ import { registerFrankensteinAbilities, registerFrankensteinInteractionHandlers 
 import { registerWerewolfAbilities, registerWerewolfInteractionHandlers } from './werewolves';
 import { registerVampireAbilities, registerVampireInteractionHandlers } from './vampires';
 import { registerGiantAntAbilities, registerGiantAntInteractionHandlers } from './giant_ants';
+import { registerFairiesAbilities, registerFairiesInteractionHandlers } from './fairies';
 import { registerAncientEgyptiansAbilities, registerAncientEgyptiansInteractionHandlers } from './ancient_egyptians';
 import { registerCowboysAbilities, registerCowboysInteractionHandlers } from './cowboys';
 import { registerSamuraiAbilities, registerSamuraiInteractionHandlers } from './samurai';
@@ -144,6 +145,8 @@ export function initAllAbilities(): void {
     registerVampireInteractionHandlers();
     registerGiantAntAbilities();
     registerGiantAntInteractionHandlers();
+    registerFairiesAbilities();
+    registerFairiesInteractionHandlers();
     registerAncientEgyptiansAbilities();
     registerAncientEgyptiansInteractionHandlers();
     registerCowboysAbilities();

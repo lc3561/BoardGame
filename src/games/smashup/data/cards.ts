@@ -54,6 +54,7 @@ import { VIKINGS_POD_CARDS } from './factions/vikings_pod';
 import { MERMAIDS_CARDS } from './factions/mermaids';
 import { SKELETONS_CARDS } from './factions/skeletons';
 import { WORLD_CHAMPS_CARDS } from './factions/world_champs';
+import { FAIRIES_CARDS } from './factions/fairies';
 
 // ============================================================================
 // 注册表
@@ -178,6 +179,7 @@ registerCards(VIKINGS_POD_CARDS);
 registerCards(MERMAIDS_CARDS);
 registerCards(SKELETONS_CARDS);
 registerCards(WORLD_CHAMPS_CARDS);
+registerCards(FAIRIES_CARDS);
 // POD 版本阵营（最新英文 POD 版本）
 registerCards(NINJA_POD_CARDS);
 registerCards(TITAN_CARD_DEFS);
@@ -448,7 +450,7 @@ export const BASE_CARDS_PRETTY_PRETTY: BaseCardDef[] = [
     {
         id: 'base_enchanted_glade',
         name: '迷人峡谷',
-        nameEn: 'Enchanted Glade',
+        nameEn: 'Enchanted Glen',
         breakpoint: 20,
         vpAwards: [4, 2, 1],
         faction: 'fairies',
@@ -457,7 +459,7 @@ export const BASE_CARDS_PRETTY_PRETTY: BaseCardDef[] = [
     {
         id: 'base_fairy_ring',
         name: '仙灵圈',
-        nameEn: 'Fairy Ring',
+        nameEn: 'Fairy Circle',
         breakpoint: 26,
         vpAwards: [4, 3, 2],
         faction: 'fairies',
