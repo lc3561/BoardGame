@@ -14,6 +14,7 @@ describe('LayoutService', () => {
         }
         delete process.env.LAYOUT_DATA_DIR;
         delete process.env.DICETHRONE_ABILITY_LAYOUT_PATH;
+        delete process.env.UI_SCENE_ROOT_PATH;
     });
 
     it('应保存布局到指定目录', async () => {
@@ -93,5 +94,67 @@ describe('LayoutService', () => {
         expect(saved).toContain('playerBoardBaseHeightVw: 35');
         expect(saved).toContain('tipBoardHeightVw: 29.60');
         expect(saved).toContain("gunslinger: 'v2'");
+    });
+
+    it('应保存 Home V2 UI scene YAML 和编译产物', async () => {
+        process.env.UI_SCENE_ROOT_PATH = TEST_DIR;
+        const service = new LayoutService();
+
+        const result = await service.saveUiSceneAuthoring('home-v2', {
+            sceneId: 'home-v2',
+            assetRegistryYaml: 'assets: {}\n',
+            skinYaml: 'skins: {}\n',
+            sceneYaml: `scene:
+  id: home_v2_content
+  artboard:
+    width: 896
+    height: 720
+    zones:
+      left_page:
+        x: 94
+        y: 98
+        width: 280
+        height: 498
+      tab_lobby:
+        x: 806.4
+        y: 108
+        width: 53.76
+        height: 72
+  root:
+    id: root
+    type: stack
+    direction: absolute
+    children:
+      - id: overview_left_page
+        type: slot
+        zoneRef: left_page
+        slotId: overview_left_page
+      - id: tab_button_lobby
+        type: button
+        zoneRef: tab_lobby
+        actionId: openLobbyTab
+`,
+        });
+
+        const expectedScenePath = join(process.cwd(), TEST_DIR, 'home-v2', 'home-v2.ui.yaml');
+        const expectedCompiledPath = join(process.cwd(), TEST_DIR, 'home-v2', 'home-v2.compiled.json');
+
+        expect(result.filePath).toBe(expectedScenePath);
+        expect(result.compiledFilePath).toBe(expectedCompiledPath);
+        expect(existsSync(expectedScenePath)).toBe(true);
+        expect(existsSync(expectedCompiledPath)).toBe(true);
+
+        const savedSceneYaml = readFileSync(expectedScenePath, 'utf8');
+        const compiledJson = JSON.parse(readFileSync(expectedCompiledPath, 'utf8')) as {
+            id: string;
+            root: { children: Array<{ slotId?: string; actionId?: string; rect: { width: number } }> };
+        };
+
+        expect(savedSceneYaml).toContain('slotId: overview_left_page');
+        expect(savedSceneYaml).toContain('actionId: openLobbyTab');
+        expect(compiledJson.id).toBe('home_v2_content');
+        expect(compiledJson.root.children[0]?.slotId).toBe('overview_left_page');
+        expect(compiledJson.root.children[0]?.rect.width).toBe(280);
+        expect(compiledJson.root.children[1]?.actionId).toBe('openLobbyTab');
     });
 });

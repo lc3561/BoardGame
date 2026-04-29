@@ -21,7 +21,7 @@ description: "为本项目创建新游戏或先做新游戏资源/data intake。
 - 图片/音频资源接入：`docs/ai-rules/asset-pipeline.md`
 - 音频细则：`docs/audio/audio-usage.md`（新增音频资产流程：`docs/audio/add-audio.md`）
 - 工具脚本：`docs/tools.md`
-- 图片 intake 复刻案例：`docs/workflows/smashup-faction-intake.md`
+- 图片 intake 复刻案例：`docs/games/smashup/workflows/smashup-faction-intake.md`
 - 不确定该读哪份：`docs/ai-rules/doc-index.md`
 
 ## 前置 0：环境与来源确认（强制）
@@ -878,7 +878,7 @@ const commandTypes = [
 
 **强制先读（权威单一来源）**：
 - `docs/ai-rules/engine-systems.md`（ActionLogSystem 使用规范）
-- `evidence/action-log-card-preview.md`（卡牌预览注册表模式 + 数据流说明）
+- `evidence/dicethrone/action-log-card-preview.md`（卡牌预览注册表模式 + 数据流说明）
 
 **你在新游戏里只需要做这些（最小闭环）**：
 1. 在 `game.ts` 配置 `createActionLogSystem({ commandAllowlist, formatEntry })`，`formatEntry` 产出包含 `segments` 的 `ActionLogEntry`。

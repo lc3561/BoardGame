@@ -136,12 +136,13 @@ const captureLayoutMotionDuringMinionPlay = async (
         selector: string;
         cardUid: string;
         baseIndex: number;
+        playerId?: string;
         durationMs?: number;
         dispatchDelayMs?: number;
     },
 ) => {
     return await page.evaluate(
-        ({ selector, cardUid, baseIndex, durationMs, dispatchDelayMs }) =>
+        ({ selector, cardUid, baseIndex, playerId, durationMs, dispatchDelayMs }) =>
             new Promise<{
                 found: boolean;
                 dispatched: boolean;
@@ -182,11 +183,11 @@ const captureLayoutMotionDuringMinionPlay = async (
                         dispatched = true;
                         try {
                             const state = harness.state?.get?.();
-                            const playerId = state?.core?.turnOrder?.[state?.core?.currentPlayerIndex ?? 0] ?? '0';
+                            const resolvedPlayerId = playerId ?? state?.core?.turnOrder?.[state?.core?.currentPlayerIndex ?? 0] ?? '0';
                             harness.command?.dispatch?.({
                                 type: 'su:play_minion',
-                                playerId,
-                                payload: { cardUid, baseIndex },
+                                playerId: resolvedPlayerId,
+                                payload: { cardUid, baseIndex, __tutorialPlayerId: resolvedPlayerId },
                             });
                         } catch (error) {
                             dispatchError = error instanceof Error ? error.message : String(error);
@@ -212,10 +213,157 @@ const captureLayoutMotionDuringMinionPlay = async (
             selector: options.selector,
             cardUid: options.cardUid,
             baseIndex: options.baseIndex,
+            playerId: options.playerId,
             durationMs: options.durationMs ?? 700,
             dispatchDelayMs: options.dispatchDelayMs ?? 50,
         },
     );
+};
+
+const captureMinionEntryTimeline = async (
+    page: Page,
+    options: {
+        cardUid: string;
+        baseIndex: number;
+        playerId?: string;
+        durationMs?: number;
+        dispatchDelayMs?: number;
+    },
+) => {
+    return await page.evaluate(
+        ({ cardUid, baseIndex, playerId, durationMs, dispatchDelayMs }) =>
+            new Promise<{
+                dispatched: boolean;
+                dispatchError: string | null;
+                samples: Array<{
+                    t: number;
+                    exists: boolean;
+                    top: number | null;
+                    hasAtlasShimmer: boolean;
+                }>;
+            }>((resolve) => {
+                const harness = (window as Window & {
+                    __BG_TEST_HARNESS__?: {
+                        state?: { get?: () => unknown };
+                        command?: { dispatch?: (command: unknown) => void };
+                    };
+                }).__BG_TEST_HARNESS__;
+
+                if (!harness?.command?.dispatch) {
+                    resolve({
+                        dispatched: false,
+                        dispatchError: 'harness-command-unavailable',
+                        samples: [],
+                    });
+                    return;
+                }
+
+                const startedAt = performance.now();
+                const samples: Array<{
+                    t: number;
+                    exists: boolean;
+                    top: number | null;
+                    hasAtlasShimmer: boolean;
+                }> = [];
+                let dispatched = false;
+                let dispatchError: string | null = null;
+
+                const tick = () => {
+                    const now = performance.now();
+                    const minion = document.querySelector(`[data-minion-uid="${cardUid}"]`) as HTMLElement | null;
+                    samples.push({
+                        t: now - startedAt,
+                        exists: Boolean(minion),
+                        top: minion ? minion.getBoundingClientRect().top : null,
+                        hasAtlasShimmer: Boolean(minion?.querySelector('.atlas-shimmer')),
+                    });
+
+                    if (!dispatched && now - startedAt >= dispatchDelayMs) {
+                        dispatched = true;
+                        try {
+                            const state = harness.state?.get?.() as {
+                                core?: { currentPlayerIndex?: number; turnOrder?: string[] };
+                            } | undefined;
+                            const resolvedPlayerId = playerId ?? state?.core?.turnOrder?.[state?.core?.currentPlayerIndex ?? 0] ?? '0';
+                            harness.command?.dispatch?.({
+                                type: 'su:play_minion',
+                                playerId: resolvedPlayerId,
+                                payload: { cardUid, baseIndex, __tutorialPlayerId: resolvedPlayerId },
+                            });
+                        } catch (error) {
+                            dispatchError = error instanceof Error ? error.message : String(error);
+                        }
+                    }
+
+                    if (now - startedAt < durationMs) {
+                        requestAnimationFrame(tick);
+                        return;
+                    }
+
+                    resolve({
+                        dispatched,
+                        dispatchError,
+                        samples,
+                    });
+                };
+
+                requestAnimationFrame(tick);
+            }),
+        {
+            cardUid: options.cardUid,
+            baseIndex: options.baseIndex,
+            playerId: options.playerId,
+            durationMs: options.durationMs ?? 1200,
+            dispatchDelayMs: options.dispatchDelayMs ?? 50,
+        },
+    );
+};
+
+const compressTopSamples = (tops: number[], minDelta = 1.5) => {
+    const compressed: number[] = [];
+    for (const top of tops) {
+        if (compressed.length === 0 || Math.abs(top - compressed[compressed.length - 1]) >= minDelta) {
+            compressed.push(top);
+        }
+    }
+    return compressed;
+};
+
+const countDirectionChanges = (tops: number[], minDelta = 0.8) => {
+    let previousSign = 0;
+    let changes = 0;
+
+    for (let i = 1; i < tops.length; i += 1) {
+        const delta = tops[i] - tops[i - 1];
+        const sign = delta > minDelta ? 1 : delta < -minDelta ? -1 : 0;
+        if (sign === 0) continue;
+        if (previousSign !== 0 && sign !== previousSign) {
+            changes += 1;
+        }
+        previousSign = sign;
+    }
+
+    return changes;
+};
+
+const summarizeEntryTimeline = (
+    timeline: Awaited<ReturnType<typeof captureMinionEntryTimeline>>,
+) => {
+    const firstVisible = timeline.samples.find((sample) => sample.exists);
+    const lastShimmer = [...timeline.samples].reverse().find((sample) => sample.exists && sample.hasAtlasShimmer);
+    const visibleTops = timeline.samples
+        .map((sample) => sample.top)
+        .filter((top): top is number => typeof top === 'number');
+    const roundedTops = Array.from(new Set(visibleTops.map((top) => Math.round(top * 10) / 10)));
+    const compressedTops = compressTopSamples(roundedTops);
+
+    return {
+        firstVisibleAt: firstVisible?.t ?? null,
+        lastShimmerAt: lastShimmer?.t ?? null,
+        distinctTops: roundedTops,
+        compressedTops,
+        directionChanges: countDirectionChanges(compressedTops),
+    };
 };
 
 // ============================================================================
@@ -707,6 +855,96 @@ test.describe('SmashUp 本地模式 E2E', () => {
         await saveEvidenceLocatorScreenshot(playerColumn, 'smashup-first-minion-layout-after', testInfo);
     });
 
+    test('本地模式：自己与对手打出随从时都只应出现一次入场动画，不应像开头那样反复播放', async ({ page }, testInfo) => {
+        const game = new GameTestContext(page);
+
+        await gotoLocalSmashUp(page);
+        await completeFactionSelectionLocal(page);
+        await waitForHandArea(page);
+
+        const buildScene = async () => {
+            await game.setupScene({
+                gameId: 'smashup',
+                player0: {
+                    hand: [
+                        { uid: 'self-minion-entry-card', defId: 'pirate_first_mate', type: 'minion' },
+                    ],
+                    factions: ['pirates', 'aliens'],
+                    minionsPlayed: 0,
+                    minionLimit: 1,
+                    actionsPlayed: 0,
+                    actionLimit: 1,
+                },
+                player1: {
+                    hand: [
+                        { uid: 'opponent-minion-entry-card', defId: 'robot_microbot_alpha', type: 'minion' },
+                    ],
+                    factions: ['robots', 'zombies'],
+                    minionsPlayed: 0,
+                    minionLimit: 1,
+                    actionsPlayed: 0,
+                    actionLimit: 1,
+                },
+                bases: [
+                    { defId: 'base_the_homeworld' },
+                ],
+                currentPlayer: '0',
+                phase: 'playCards',
+            });
+            await expect(page.getByTestId('su-base-player-column-0-0')).toBeVisible({ timeout: 10000 });
+            await expect(page.getByTestId('su-base-player-column-0-1')).toBeVisible({ timeout: 10000 });
+        };
+
+        await buildScene();
+        const selfTimeline = await captureMinionEntryTimeline(page, {
+            cardUid: 'self-minion-entry-card',
+            baseIndex: 0,
+            playerId: '0',
+        });
+
+        expect(selfTimeline.dispatched, '自己打出随从的诊断命令未触发').toBe(true);
+        expect(selfTimeline.dispatchError, `自己打出随从失败: ${selfTimeline.dispatchError}`).toBeNull();
+        await expect(page.locator('[data-minion-uid="self-minion-entry-card"]')).toBeVisible({ timeout: 5000 });
+        await saveEvidenceLocatorScreenshot(
+            page.getByTestId('su-base-player-column-0-0'),
+            'smashup-self-minion-entry-stable',
+            testInfo,
+        );
+
+        await buildScene();
+        const opponentTimeline = await captureMinionEntryTimeline(page, {
+            cardUid: 'opponent-minion-entry-card',
+            baseIndex: 0,
+            playerId: '1',
+        });
+
+        expect(opponentTimeline.dispatched, '对手打出随从的诊断命令未触发').toBe(true);
+        expect(opponentTimeline.dispatchError, `对手打出随从失败: ${opponentTimeline.dispatchError}`).toBeNull();
+        await expect(page.locator('[data-minion-uid="opponent-minion-entry-card"]')).toBeVisible({ timeout: 5000 });
+        await saveEvidenceLocatorScreenshot(
+            page.getByTestId('su-base-player-column-0-1'),
+            'smashup-opponent-minion-entry-stable',
+            testInfo,
+        );
+
+        const selfSummary = summarizeEntryTimeline(selfTimeline);
+        const opponentSummary = summarizeEntryTimeline(opponentTimeline);
+
+        expect(selfSummary.firstVisibleAt, '自己打出的随从应快速进入可见态').not.toBeNull();
+        expect(opponentSummary.firstVisibleAt, '对手打出的随从也应快速进入可见态').not.toBeNull();
+        expect(selfSummary.lastShimmerAt, '自己打出的随从不应残留 atlas shimmer').toBeNull();
+        expect(opponentSummary.lastShimmerAt, '对手打出的随从不应残留 atlas shimmer').toBeNull();
+        expect(selfSummary.directionChanges, `自己打出的入场轨迹出现过多方向反转: ${selfSummary.compressedTops.join(', ')}`).toBeLessThanOrEqual(1);
+        expect(opponentSummary.directionChanges, `对手打出的入场轨迹出现过多方向反转: ${opponentSummary.compressedTops.join(', ')}`).toBeLessThanOrEqual(1);
+        expect(selfSummary.compressedTops.length, `自己打出的随从轨迹采样不足: ${selfSummary.distinctTops.join(', ')}`).toBeGreaterThanOrEqual(3);
+        expect(opponentSummary.compressedTops.length, `对手打出的随从轨迹采样不足: ${opponentSummary.distinctTops.join(', ')}`).toBeGreaterThanOrEqual(3);
+
+        console.log('[smashup-minion-entry-diagnostic]', JSON.stringify({
+            self: selfSummary,
+            opponent: opponentSummary,
+        }));
+    });
+
     test('本地模式：默认模式下点击随从会进入部署选择，点击基地后才真正打出', async ({ page }, testInfo) => {
         const game = new GameTestContext(page);
 
@@ -978,6 +1216,283 @@ test.describe('SmashUp 本地模式 E2E', () => {
         });
 
         await game.screenshot('smashup-drag-action-release-to-board', testInfo);
+    });
+
+    test('本地模式：手牌额外交互应保持点击选择，正常拖拽箭头曲线应可见且更平顺', async ({ page }, testInfo) => {
+        const game = new GameTestContext(page);
+
+        await page.addInitScript(() => {
+            localStorage.setItem('smashup_interaction_mode', 'drag');
+        });
+
+        await game.openTestGame('smashup', {
+            p0: 'aliens,zombies',
+            p1: 'ninjas,robots',
+            skipFactionSelect: true,
+            skipInitialization: false,
+            seed: 24680,
+        }, 45000);
+
+        await game.setupScene({
+            gameId: 'smashup',
+            player0: {
+                hand: [
+                    { uid: 'prompt-extra-minion-1', defId: 'alien_invader', type: 'minion' },
+                    { uid: 'prompt-extra-minion-2', defId: 'zombie_walker', type: 'minion' },
+                ],
+                factions: ['aliens', 'zombies'],
+                minionsPlayed: 0,
+                minionLimit: 1,
+                actionsPlayed: 0,
+                actionLimit: 1,
+            },
+            player1: {
+                hand: [],
+                factions: ['ninjas', 'robots'],
+                minionsPlayed: 0,
+                minionLimit: 1,
+                actionsPlayed: 0,
+                actionLimit: 1,
+            },
+            bases: [
+                { defId: 'base_the_homeworld' },
+                { defId: 'base_the_mothership' },
+            ],
+            currentPlayer: '0',
+            phase: 'playCards',
+        });
+
+        await game.waitForPhase('playCards');
+        await game.waitForCurrentPlayer('0');
+        await expect.poll(async () => {
+            return await page.evaluate(() => localStorage.getItem('smashup_interaction_mode'));
+        }).toBe('drag');
+
+        await page.evaluate(() => {
+            const harness = window.__BG_TEST_HARNESS__;
+            if (!harness?.state?.patch) {
+                throw new Error('TestHarness state.patch 不可用');
+            }
+            return harness.state.patch({
+                'sys.interaction.current': {
+                    id: 'e2e-extra-minion-choice',
+                    kind: 'simple-choice',
+                    playerId: '0',
+                    data: {
+                        title: '选择要额外打出的随从',
+                        sourceId: 'e2e_extra_minion_choice',
+                        targetType: 'hand',
+                        options: [
+                            { id: 'extra-minion-1', label: '外星侵略者', value: { cardUid: 'prompt-extra-minion-1' } },
+                            { id: 'extra-minion-2', label: '僵尸步兵', value: { cardUid: 'prompt-extra-minion-2' } },
+                            { id: 'skip-extra', label: '跳过', value: { skip: true }, displayMode: 'button' },
+                        ],
+                    },
+                },
+                'sys.interaction.queue': [],
+                'sys.interaction.isBlocked': false,
+            });
+        });
+
+        const promptCard = page.locator('[data-card-uid="prompt-extra-minion-1"]');
+        await expect(promptCard).toBeVisible({ timeout: 10000 });
+
+        const promptCursor = await promptCard.evaluate((node) => window.getComputedStyle(node as HTMLElement).cursor);
+        expect(promptCursor).not.toContain('grab');
+
+        const promptBox = await promptCard.boundingBox();
+        expect(promptBox).not.toBeNull();
+        if (!promptBox) {
+            throw new Error('无法获取额外随从交互卡牌坐标');
+        }
+
+        await page.mouse.move(promptBox.x + promptBox.width / 2, promptBox.y + promptBox.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(promptBox.x + promptBox.width / 2 + 100, promptBox.y + promptBox.height / 2 - 80, { steps: 12 });
+        await page.waitForTimeout(250);
+        await expect(page.getByTestId('su-drag-arrow')).toHaveCount(0);
+        await page.mouse.up();
+
+        await expect.poll(async () => {
+            return await page.evaluate(() => {
+                const state = window.__BG_TEST_HARNESS__!.state.get();
+                return {
+                    interactionId: state.sys.interaction?.current?.id ?? null,
+                    stillInHand: state.core.players['0'].hand.some((entry: { uid: string }) => entry.uid === 'prompt-extra-minion-1'),
+                    minionsPlayed: state.core.players['0'].minionsPlayed,
+                };
+            });
+        }).toEqual({
+            interactionId: 'e2e-extra-minion-choice',
+            stillInHand: true,
+            minionsPlayed: 0,
+        });
+
+        await game.screenshot('smashup-drag-prompt-click-mode', testInfo);
+
+        await page.evaluate(() => {
+            const harness = window.__BG_TEST_HARNESS__;
+            if (!harness?.state?.patch) {
+                throw new Error('TestHarness state.patch 不可用');
+            }
+            return harness.state.patch({
+                'sys.interaction.current': {
+                    id: 'e2e-base-choice',
+                    kind: 'simple-choice',
+                    playerId: '0',
+                    data: {
+                        title: '选择一个基地',
+                        sourceId: 'e2e_base_choice',
+                        targetType: 'base',
+                        options: [
+                            { id: 'base-0', label: '基地 0', value: { baseIndex: 0 } },
+                            { id: 'base-1', label: '基地 1', value: { baseIndex: 1 } },
+                            { id: 'skip-base', label: '跳过', value: { skip: true }, displayMode: 'button' },
+                        ],
+                    },
+                },
+            });
+        });
+
+        const boardPromptCard = page.locator('[data-card-uid="prompt-extra-minion-1"]');
+        const base = page.locator('[data-base-index="0"]');
+        await expect(boardPromptCard).toBeVisible({ timeout: 5000 });
+        await expect(base).toBeVisible({ timeout: 5000 });
+
+        const boardPromptCursor = await boardPromptCard.evaluate((node) => window.getComputedStyle(node as HTMLElement).cursor);
+        expect(boardPromptCursor).not.toContain('grab');
+
+        const cardBox = await boardPromptCard.boundingBox();
+        const baseBox = await base.boundingBox();
+        expect(cardBox).not.toBeNull();
+        expect(baseBox).not.toBeNull();
+        if (!cardBox || !baseBox) {
+            throw new Error('无法获取正常拖拽场景坐标');
+        }
+
+        await page.mouse.move(cardBox.x + cardBox.width / 2, cardBox.y + cardBox.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(baseBox.x + baseBox.width / 2, baseBox.y + baseBox.height / 2, { steps: 20 });
+        await page.waitForTimeout(250);
+        await expect(page.getByTestId('su-drag-arrow')).toHaveCount(0);
+        await page.mouse.up();
+
+        await expect.poll(async () => {
+            return await page.evaluate(() => {
+                const state = window.__BG_TEST_HARNESS__!.state.get();
+                return {
+                    interactionId: state.sys.interaction?.current?.id ?? null,
+                    stillInHand: state.core.players['0'].hand.some((entry: { uid: string }) => entry.uid === 'prompt-extra-minion-1'),
+                    baseMinionCount: state.core.bases[0].minions.length,
+                };
+            });
+        }).toEqual({
+            interactionId: 'e2e-base-choice',
+            stillInHand: true,
+            baseMinionCount: 0,
+        });
+
+        await game.screenshot('smashup-drag-board-prompt-lock-mode', testInfo);
+
+        await page.evaluate(() => {
+            const harness = window.__BG_TEST_HARNESS__;
+            if (!harness?.state?.patch) {
+                throw new Error('TestHarness state.patch 不可用');
+            }
+            return harness.state.patch({
+                'sys.interaction.current': null,
+            });
+        });
+
+        const normalDragCard = page.locator('[data-card-uid="prompt-extra-minion-1"]');
+        await expect(normalDragCard).toBeVisible({ timeout: 5000 });
+
+        const normalCardBox = await normalDragCard.boundingBox();
+        expect(normalCardBox).not.toBeNull();
+        if (!normalCardBox || !baseBox) {
+            throw new Error('无法获取正常拖拽场景坐标');
+        }
+
+        await page.mouse.move(normalCardBox.x + normalCardBox.width / 2, normalCardBox.y + normalCardBox.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(baseBox.x + baseBox.width / 2, baseBox.y + baseBox.height / 2, { steps: 20 });
+        const dragArrow = page.getByTestId('su-drag-arrow');
+        await expect(dragArrow).toBeVisible({ timeout: 5000 });
+
+        const dragCurveMetrics = await dragArrow.evaluate((node) => {
+            const line = node.querySelector('path');
+            const path = line?.getAttribute('d') ?? '';
+            const match = path.match(
+                /M\s*([0-9.+-]+)\s+([0-9.+-]+)\s+C\s*([0-9.+-]+)\s+([0-9.+-]+)\s+([0-9.+-]+)\s+([0-9.+-]+)\s+([0-9.+-]+)\s+([0-9.+-]+)/i,
+            );
+            if (!match) return null;
+
+            const values = match.slice(1).map((value) => Number.parseFloat(value));
+            const [startX, startY, control1X, control1Y, control2X, control2Y, endX, endY] = values;
+            const deltaX = endX - startX;
+            const deltaY = endY - startY;
+            const lineLength = Math.hypot(deltaX, deltaY) || 1;
+            const signedOffset = (pointX: number, pointY: number) => (
+                ((pointX - startX) * deltaY - (pointY - startY) * deltaX) / lineLength
+            );
+            const progress = (pointX: number, pointY: number) => (
+                ((pointX - startX) * deltaX + (pointY - startY) * deltaY) / (lineLength * lineLength)
+            );
+
+            return {
+                path,
+                control1Offset: signedOffset(control1X, control1Y),
+                control2Offset: signedOffset(control2X, control2Y),
+                control1Progress: progress(control1X, control1Y),
+                control2Progress: progress(control2X, control2Y),
+            };
+        });
+
+        expect(dragCurveMetrics, '拖拽箭头路径应保持三次贝塞尔曲线').not.toBeNull();
+        if (!dragCurveMetrics) {
+            throw new Error('无法解析拖拽箭头路径');
+        }
+
+        expect(
+            Math.abs(dragCurveMetrics.control1Offset),
+            `拖拽箭头第一控制点抬升过小，路径=${dragCurveMetrics.path}`,
+        ).toBeGreaterThan(16);
+        expect(
+            Math.abs(dragCurveMetrics.control2Offset),
+            `拖拽箭头第二控制点不应塌成近似直线，路径=${dragCurveMetrics.path}`,
+        ).toBeGreaterThan(8);
+        expect(
+            Math.sign(dragCurveMetrics.control1Offset),
+            `拖拽箭头两段控制点必须位于同一侧，避免再次出现折返感，路径=${dragCurveMetrics.path}`,
+        ).toBe(Math.sign(dragCurveMetrics.control2Offset));
+        expect(
+            Math.abs(dragCurveMetrics.control1Offset),
+            `拖拽箭头尾段弧度不应反超前段，避免再次出现“前鼓后折”，路径=${dragCurveMetrics.path}`,
+        ).toBeGreaterThanOrEqual(Math.abs(dragCurveMetrics.control2Offset));
+        expect(dragCurveMetrics.control1Progress).toBeGreaterThan(0.1);
+        expect(dragCurveMetrics.control1Progress).toBeLessThan(0.45);
+        expect(dragCurveMetrics.control2Progress).toBeGreaterThan(0.55);
+        expect(dragCurveMetrics.control2Progress).toBeLessThan(0.95);
+
+        await game.screenshot('smashup-drag-arrow-curve-optimized', testInfo);
+        await saveEvidenceLocatorScreenshot(dragArrow, 'smashup-drag-arrow-curve-optimized-arrow', testInfo);
+
+        await page.mouse.up();
+
+        await expect.poll(async () => {
+            return await page.evaluate(() => {
+                const state = window.__BG_TEST_HARNESS__!.state.get();
+                return {
+                    minionsPlayed: state.core.players['0'].minionsPlayed,
+                    stillInHand: state.core.players['0'].hand.some((entry: { uid: string }) => entry.uid === 'prompt-extra-minion-1'),
+                    baseMinionCount: state.core.bases[0].minions.length,
+                };
+            });
+        }).toEqual({
+            minionsPlayed: 1,
+            stillInHand: false,
+            baseMinionCount: 1,
+        });
     });
 
     test('本地模式：默认模式下无目标行动卡需要二次点击确认', async ({ page }, testInfo) => {

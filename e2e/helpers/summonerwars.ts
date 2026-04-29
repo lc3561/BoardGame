@@ -14,8 +14,17 @@ import {
   seedMatchCredentials,
   joinMatchViaAPI,
 } from './common';
+import { getMatchState, injectMatchState } from './state-injection';
 
 export const GAME_NAME = 'summonerwars';
+export const SUMMONERWARS_FACTION_INDEX: Record<string, number> = {
+  necromancer: 0,
+  trickster: 1,
+  paladin: 2,
+  goblin: 3,
+  frost: 4,
+  barbaric: 5,
+};
 
 // ============================================================================
 // SW 专用上下文初始化
@@ -39,7 +48,16 @@ export const initSWContext = async (context: BrowserContext, storageKey?: string
 // ============================================================================
 
 /** 通过 API 创建 SW 房间并注入凭据，返回 matchID */
-export const createSWRoomViaAPI = async (page: Page): Promise<string | null> => {
+export const createSWRoomViaAPI = async (
+  page: Page,
+  options: {
+    /**
+     * 透传到 setupData 的额外字段（会与默认 guestId/ownerKey/ownerType 合并）。
+     * 用于在线 AI 房间创建（seatControllers/enableAi 等）。
+     */
+    setupData?: Record<string, unknown>;
+  } = {},
+): Promise<string | null> => {
   try {
     const guestId = `sw_e2e_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
     // 注入 guestId 到 localStorage
@@ -54,7 +72,15 @@ export const createSWRoomViaAPI = async (page: Page): Promise<string | null> => 
 
     const base = getGameServerBaseURL();
     const res = await page.request.post(`${base}/games/${GAME_NAME}/create`, {
-      data: { numPlayers: 2, setupData: { guestId, ownerKey: `guest:${guestId}`, ownerType: 'guest' } },
+      data: {
+        numPlayers: 2,
+        setupData: {
+          guestId,
+          ownerKey: `guest:${guestId}`,
+          ownerType: 'guest',
+          ...(options.setupData ?? {}),
+        },
+      },
     });
     if (!res.ok()) return null;
     const resData = (await res.json().catch(() => null)) as { matchID?: string } | null;
@@ -120,9 +146,50 @@ export const ensurePlayerIdInUrl = async (page: Page, expectedPlayerId: string) 
 };
 
 /** 通过 UI 点击选择阵营（按索引） */
+export const getFactionSelectionRoot = (page: Page) => page.getByTestId('sw-faction-selection');
+export const getFactionCard = (page: Page, factionId: string) => page.getByTestId(`sw-faction-card-${factionId}`);
+export const getFactionReadyButton = (page: Page) => page.getByTestId('sw-faction-ready');
+export const getFactionUnreadyButton = (page: Page) => page.getByTestId('sw-faction-unready');
+export const getFactionStartButton = (page: Page) => page.getByTestId('sw-faction-start');
+export const getPlayerStatusCard = (page: Page, playerId: string) => page.getByTestId(`sw-player-status-${playerId}`);
+export const getBoardCell = (page: Page, row: number, col: number) => page.getByTestId(`sw-cell-${row}-${col}`);
+export const getBoardUnit = (page: Page, row: number, col: number) =>
+  page.locator(`[data-testid="sw-unit-${row}-${col}"]`).first();
+export const getBoardStructure = (page: Page, row: number, col: number) => page.getByTestId(`sw-structure-${row}-${col}`);
+export const getUnitByInstanceId = (page: Page, unitId: string) => page.locator(`[data-unit-id="${unitId}"]`);
+export const getCellByCoord = (page: Page, row: number, col: number) => page.locator(`[data-cell-coord="${row}-${col}"]`);
+
 export const selectFaction = async (page: Page, factionIndex: number) => {
-  const factionCards = page.locator('.grid > div');
-  await factionCards.nth(factionIndex).click();
+  const factionId = Object.entries(SUMMONERWARS_FACTION_INDEX).find(([, index]) => index === factionIndex)?.[0];
+  if (!factionId) {
+    throw new Error(`Unknown SummonerWars faction index: ${factionIndex}`);
+  }
+  await selectFactionById(page, factionId);
+};
+
+export const selectFactionById = async (page: Page, factionId: string) => {
+  const factionCard = getFactionCard(page, factionId);
+  await expect(factionCard).toBeVisible({ timeout: 10000 });
+  await factionCard.click();
+};
+
+export const clickFactionReady = async (page: Page) => {
+  const readyButton = getFactionReadyButton(page);
+  await expect(readyButton).toBeVisible({ timeout: 5000 });
+  await readyButton.click();
+};
+
+export const clickFactionUnready = async (page: Page) => {
+  const unreadyButton = getFactionUnreadyButton(page);
+  await expect(unreadyButton).toBeVisible({ timeout: 5000 });
+  await unreadyButton.click();
+};
+
+export const clickFactionStart = async (page: Page) => {
+  const startButton = getFactionStartButton(page);
+  await expect(startButton).toBeVisible({ timeout: 5000 });
+  await expect(startButton).toBeEnabled({ timeout: 5000 });
+  await startButton.click();
 };
 
 // ============================================================================
@@ -145,10 +212,27 @@ export const waitForSummonerWarsUI = async (page: Page, timeout = 30000) => {
   await disableFabMenu(page);
 };
 
-/** 等待阵营选择界面出现；开发态首屏资源装载较慢，窗口需覆盖完整客户端加载。 */
-export const waitForFactionSelection = async (page: Page, timeout = 60000) => {
+/** 等待阵营选择界面出现 */
+export const waitForFactionSelection = async (page: Page, timeout = 30000) => {
   await page.waitForFunction(
     () => {
+      const isVisible = (el: Element | null) => {
+        if (!el) return false;
+        if (!(el instanceof HTMLElement)) return false;
+        const style = window.getComputedStyle(el);
+        if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false;
+        const rect = el.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      };
+
+      const selectionRoot = document.querySelector('[data-testid="sw-faction-selection"]');
+      const selectionStage = document.querySelector('[data-testid="sw-faction-stage"]');
+      const selectionGrid = document.querySelector('[data-testid="sw-faction-grid"]');
+      if (isVisible(selectionRoot) || isVisible(selectionStage) || isVisible(selectionGrid)) return true;
+
+      const title = document.querySelector('[data-testid="sw-faction-title"]');
+      if (title && /选择你的阵营|Choose your faction/i.test(title.textContent ?? '')) return true;
+
       const h1 = document.querySelector('h1');
       if (h1 && /选择你的阵营|Choose your faction/i.test(h1.textContent ?? '')) return true;
       // 也检查是否已经进入游戏（跳过了选择）
@@ -159,27 +243,34 @@ export const waitForFactionSelection = async (page: Page, timeout = 60000) => {
   );
 };
 
-/** 等待 overlay 进入打开或关闭态，兼容页面上存在多个同 test id 的常驻实例。 */
-export const waitForOverlayState = async (
-  page: Page,
-  overlayTestId: string,
-  expected: 'open' | 'closed',
-  timeout = 5000,
-) => {
-  await expect.poll(
-    async () => page.evaluate(({ testId, target }) => {
-      const overlays = Array.from(document.querySelectorAll(`[data-testid="${testId}"]`)) as HTMLElement[];
-      const visibleCount = overlays.filter((overlay) => {
-        const styles = window.getComputedStyle(overlay);
-        return styles.display !== 'none'
-          && styles.visibility !== 'hidden'
-          && styles.pointerEvents !== 'none'
-          && styles.opacity !== '0';
-      }).length;
-      return target === 'open' ? visibleCount > 0 : visibleCount === 0;
-    }, { testId: overlayTestId, target: expected }),
-    { timeout },
-  ).toBe(true);
+export const waitForFactionSelectionReady = async (page: Page, timeout = 30000) => {
+  await waitForFactionSelection(page, timeout);
+  await expect(getFactionSelectionRoot(page)).toBeVisible({ timeout });
+};
+
+export const waitForOverlayState = async (page: Page, overlayTestId: string, expected: 'open' | 'closed') => {
+  await expect
+    .poll(
+      async () =>
+        page.evaluate(
+          ({ testId, target }) => {
+            const overlays = Array.from(document.querySelectorAll(`[data-testid="${testId}"]`)) as HTMLElement[];
+            const visibleCount = overlays.filter((overlay) => {
+              const styles = window.getComputedStyle(overlay);
+              return (
+                styles.display !== 'none' &&
+                styles.visibility !== 'hidden' &&
+                styles.pointerEvents !== 'none' &&
+                styles.opacity !== '0'
+              );
+            }).length;
+            return target === 'open' ? visibleCount > 0 : visibleCount === 0;
+          },
+          { testId: overlayTestId, target: expected },
+        ),
+      { timeout: 5000 },
+    )
+    .toBe(true);
 };
 
 // ============================================================================
@@ -249,15 +340,16 @@ export const selectFactionsViaUI = async (
   hostFactionIndex: number,
   guestFactionIndex: number,
 ) => {
+  await waitForFactionSelectionReady(hostPage, 20000);
+  await waitForFactionSelectionReady(guestPage, 20000);
   const selectionHeading = (page: Page) =>
     page.locator('h1').filter({ hasText: /选择你的阵营|Choose your faction/i });
   await expect(selectionHeading(hostPage)).toBeVisible({ timeout: 20000 });
   await expect(selectionHeading(guestPage)).toBeVisible({ timeout: 20000 });
 
-  const factionCards = (page: Page) => page.locator('.grid > div');
-  await factionCards(hostPage).nth(hostFactionIndex).click();
+  await selectFaction(hostPage, hostFactionIndex);
   await hostPage.waitForTimeout(500);
-  await factionCards(guestPage).nth(guestFactionIndex).click();
+  await selectFaction(guestPage, guestFactionIndex);
   await guestPage.waitForTimeout(500);
 
   const readyButton = guestPage.locator('button').filter({ hasText: /准备|Ready/i });
@@ -312,6 +404,47 @@ export const readCoreState = async (page: Page) => {
 
 /** 写入 core 状态（直接传入对象） */
 export const applyCoreState = async (page: Page, coreState: unknown) => {
+  const onlineMatchId = await page.evaluate(() => {
+    const match = window.location.pathname.match(/\/play\/[^/]+\/match\/([^/?#]+)/i);
+    return match?.[1] ?? null;
+  }).catch(() => null);
+
+  if (onlineMatchId) {
+    const liveState = await getMatchState(onlineMatchId, page);
+    const liveStateRecord = liveState as {
+      core?: { players?: Record<string, unknown>; currentPlayer?: unknown; phase?: unknown; turnOrder?: unknown };
+      sys?: { phase?: unknown; turnOrder?: unknown; currentPlayerIndex?: unknown };
+    };
+    const nextCoreRecord = coreState as {
+      players?: Record<string, unknown>;
+      currentPlayer?: unknown;
+      phase?: unknown;
+      turnOrder?: unknown;
+    };
+    const liveTurnOrder = Array.isArray(liveStateRecord.sys?.turnOrder)
+      ? (liveStateRecord.sys.turnOrder as unknown[]).filter((playerId): playerId is string => typeof playerId === 'string')
+      : Array.isArray(liveStateRecord.core?.turnOrder)
+        ? (liveStateRecord.core.turnOrder as unknown[]).filter((playerId): playerId is string => typeof playerId === 'string')
+        : Object.keys(nextCoreRecord?.players ?? liveStateRecord.core?.players ?? {});
+    const nextCurrentPlayer = typeof nextCoreRecord?.currentPlayer === 'string'
+      ? nextCoreRecord.currentPlayer
+      : typeof liveStateRecord.core?.currentPlayer === 'string'
+        ? liveStateRecord.core.currentPlayer
+        : liveTurnOrder[0] ?? '0';
+    const nextCurrentPlayerIndex = Math.max(0, liveTurnOrder.indexOf(nextCurrentPlayer));
+    await injectMatchState(onlineMatchId, {
+      ...liveState,
+      core: coreState,
+      sys: {
+        ...(liveStateRecord.sys ?? {}),
+        phase: nextCoreRecord?.phase ?? liveStateRecord.sys?.phase,
+        turnOrder: liveTurnOrder,
+        currentPlayerIndex: nextCurrentPlayerIndex,
+      },
+    }, page);
+    return;
+  }
+
   await ensureDebugStateTab(page);
   const toggleBtn = page.getByTestId('debug-state-toggle-input');
   await toggleBtn.click();
@@ -337,6 +470,7 @@ export const waitForPhase = async (page: Page, phase: string, timeout = 10000) =
 /**
  * 从当前阶段自然推进到目标阶段（通过多次点击"结束阶段"）。
  * 这样 sys.phase 和 core.phase 保持同步。
+ * 若结束阶段触发了仅带“取消”的可选交互（如 onPhaseStart 提示），自动取消后继续推进。
  */
 export const advanceToPhase = async (page: Page, targetPhase: string, maxSteps = 6) => {
   const endPhaseBtn = page.getByTestId('sw-end-phase');
@@ -370,6 +504,7 @@ export const advanceToPhase = async (page: Page, targetPhase: string, maxSteps =
     
     const confirmBtn = page.locator('button').filter({ hasText: /^Confirm$|^确认$/i }).first();
     const skipBtn = page.locator('button').filter({ hasText: /^Skip$|^跳过$/i }).first();
+    const cancelBtn = page.locator('button').filter({ hasText: /^Cancel$|^取消$/i }).first();
     
     const confirmVisible = await confirmBtn.isVisible().catch(() => false);
     const skipVisible = await skipBtn.isVisible().catch(() => false);
@@ -386,7 +521,13 @@ export const advanceToPhase = async (page: Page, targetPhase: string, maxSteps =
     console.log(`[advanceToPhase] After click, phase changed: ${currentPhase} -> ${newPhase}`);
     
     if (newPhase === currentPhase) {
-      console.log(`[advanceToPhase] WARNING: Phase did not advance after click!`);
+      const cancelVisible = await cancelBtn.isVisible().catch(() => false);
+      console.log(`[advanceToPhase] WARNING: Phase did not advance after click! Cancel visible: ${cancelVisible}`);
+      if (cancelVisible) {
+        await cancelBtn.click();
+        console.log('[advanceToPhase] Cancelled optional interaction and will continue advancing');
+        await page.waitForTimeout(500);
+      }
     }
     
     await page.waitForTimeout(300);
@@ -436,13 +577,29 @@ export const completeFactionSelection = async (hostPage: Page, guestPage: Page) 
  * 使用 dispatchEvent 直接触发点击事件
  */
 export const clickBoardElement = async (page: Page, selector: string) => {
-  const clicked = await page.evaluate((sel) => {
-    const el = document.querySelector(sel);
-    if (!el) return false;
-    el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-    return true;
-  }, selector);
-  if (!clicked) throw new Error(`无法点击元素: ${selector}`);
+  const locator = page.locator(selector).first();
+  try {
+    const clicked = await page.evaluate((sel) => {
+      const candidates = Array.from(document.querySelectorAll<HTMLElement>(sel));
+      const el = candidates.find((node) => {
+        const style = window.getComputedStyle(node);
+        const rect = node.getBoundingClientRect();
+        return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+      }) ?? candidates[0];
+      if (!el) return false;
+      el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+      el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+      el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+      return true;
+    }, selector);
+    if (!clicked) throw new Error(`无法点击元素: ${selector}`);
+    await locator.evaluate((el) => {
+      if (el instanceof HTMLElement) el.focus?.();
+    }).catch(() => {});
+    return;
+  } catch {
+    await locator.click({ force: true, timeout: 3000 });
+  }
 };
 
 // ============================================================================
@@ -535,9 +692,9 @@ export const setupSWOnlineMatch = async (
     await selectFactionsViaDispatch(hostPage, guestPage, hostFactionId, guestFactionId);
   } catch {
     // dispatch 失败时 fallback 到 UI 点击
-    // 阵营索引映射：necromancer=0, trickster=1, phoenix_elf=2, goblin=3, frost=4, barbaric=5
+    // 阵营索引映射：necromancer=0, trickster=1, paladin=2, goblin=3, frost=4, barbaric=5
     const factionIndexMap: Record<string, number> = {
-      necromancer: 0, trickster: 1, phoenix_elf: 2, goblin: 3, frost: 4, barbaric: 5,
+      necromancer: 0, trickster: 1, paladin: 2, goblin: 3, frost: 4, barbaric: 5,
     };
     const hostIdx = factionIndexMap[hostFactionId] ?? 0;
     const guestIdx = factionIndexMap[guestFactionId] ?? 0;
@@ -557,6 +714,6 @@ export const setupOnlineMatchViaUI = async (
 ): Promise<Omit<SWMatchSetup, 'matchId'> | null> => {
   const result = await setupSWOnlineMatch(browser, baseURL, 'necromancer', 'trickster');
   if (!result) return null;
-  const { matchId, ...rest } = result;
+  const { matchId: _matchId, ...rest } = result;
   return rest;
 };

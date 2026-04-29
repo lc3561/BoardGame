@@ -176,7 +176,6 @@ export function markSpiritOfTheForestOrUsed(
         timestamp: now,
     };
 }
-
 export function removeTitanFromPlay(
     titan: TitanState,
     reason: string,

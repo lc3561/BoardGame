@@ -1,11 +1,22 @@
 import { Injectable } from '@nestjs/common';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve, sep } from 'node:path';
+import { createAuthoringDocument } from '../../../../../src/ui-scene/compiler';
+import type { UISceneAuthoringSavePayload } from '../../../../../src/ui-scene/types';
 
 export type LayoutSaveResult = {
     filePath: string;
     relativePath: string;
     bytes: number;
+};
+
+export type UiSceneAuthoringSaveResult = {
+    filePath: string;
+    compiledFilePath: string;
+    relativePath: string;
+    compiledRelativePath: string;
+    bytes: number;
+    compiledBytes: number;
 };
 
 export type AbilitySlotLayoutItem = {
@@ -40,6 +51,7 @@ export class LayoutService {
     private readonly fileName = 'summonerwars.layout.json';
     private readonly repoRoot: string;
     private readonly abilityLayoutPath: string;
+    private readonly uiSceneRootPath: string;
 
     constructor() {
         const cwd = process.cwd();
@@ -56,6 +68,10 @@ export class LayoutService {
         this.abilityLayoutPath = envAbilityPath
             ? resolve(cwd, envAbilityPath)
             : resolve(this.repoRoot, 'src/games/dicethrone/ui/abilitySlotLayout.ts');
+        const envUiSceneRoot = process.env.UI_SCENE_ROOT_PATH?.trim();
+        this.uiSceneRootPath = envUiSceneRoot
+            ? resolve(cwd, envUiSceneRoot)
+            : resolve(this.repoRoot, 'src/ui-scenes');
     }
 
     async saveSummonerWarsLayout(config: Record<string, unknown>): Promise<LayoutSaveResult> {
@@ -84,6 +100,51 @@ export class LayoutService {
             filePath: this.abilityLayoutPath,
             relativePath: this.toRelativePath(this.abilityLayoutPath),
             bytes: Buffer.byteLength(content, 'utf8'),
+        };
+    }
+
+    async saveUiSceneAuthoring(sceneId: string, payload: UISceneAuthoringSavePayload): Promise<UiSceneAuthoringSaveResult> {
+        const normalizedSceneId = sceneId?.trim();
+        if (!normalizedSceneId || !payload || typeof payload !== 'object') {
+            throw new Error('layoutConfig.invalid');
+        }
+        if (payload.sceneId && payload.sceneId !== normalizedSceneId) {
+            throw new Error('layoutConfig.sceneIdMismatch');
+        }
+        if (![payload.assetRegistryYaml, payload.skinYaml, payload.sceneYaml].every((value) => typeof value === 'string')) {
+            throw new Error('layoutConfig.invalid');
+        }
+
+        const sceneDir = resolve(this.uiSceneRootPath, normalizedSceneId);
+        const assetRegistryPath = resolve(sceneDir, 'asset-registry.yaml');
+        const skinPath = resolve(sceneDir, `${normalizedSceneId}.skin.yaml`);
+        const scenePath = resolve(sceneDir, `${normalizedSceneId}.ui.yaml`);
+        const compiledPath = resolve(sceneDir, `${normalizedSceneId}.compiled.json`);
+
+        const authoring = createAuthoringDocument({
+            sceneId: normalizedSceneId,
+            assetRegistryFile: this.toRelativePath(assetRegistryPath),
+            assetRegistryYaml: payload.assetRegistryYaml,
+            skinFile: this.toRelativePath(skinPath),
+            skinYaml: payload.skinYaml,
+            sceneFile: this.toRelativePath(scenePath),
+            sceneYaml: payload.sceneYaml,
+        });
+        const compiledJson = JSON.stringify(authoring.compiled, null, 2);
+
+        await mkdir(sceneDir, { recursive: true });
+        await writeFile(assetRegistryPath, payload.assetRegistryYaml, 'utf8');
+        await writeFile(skinPath, payload.skinYaml, 'utf8');
+        await writeFile(scenePath, payload.sceneYaml, 'utf8');
+        await writeFile(compiledPath, compiledJson, 'utf8');
+
+        return {
+            filePath: scenePath,
+            compiledFilePath: compiledPath,
+            relativePath: this.toRelativePath(scenePath),
+            compiledRelativePath: this.toRelativePath(compiledPath),
+            bytes: Buffer.byteLength(payload.sceneYaml, 'utf8'),
+            compiledBytes: Buffer.byteLength(compiledJson, 'utf8'),
         };
     }
 

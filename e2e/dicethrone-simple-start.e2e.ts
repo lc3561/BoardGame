@@ -3,7 +3,7 @@
  * 目标：覆盖双人与四人房间的创建、占座、加入与开局主链路。
  */
 
-import { mkdir } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { Browser, BrowserContext, Page, TestInfo } from '@playwright/test';
 import { test, expect } from './framework';
@@ -125,9 +125,26 @@ async function waitForAiSeatCredential(
     }).not.toBeNull();
 }
 
+async function seedAiSeatCredentials(
+    page: Page,
+    matchId: string,
+    credentials: Record<string, string>,
+): Promise<void> {
+    await page.evaluate(({ targetMatchId, nextCredentials }) => {
+        localStorage.setItem(`match_ai_creds_${targetMatchId}`, JSON.stringify(nextCredentials));
+        window.dispatchEvent(new Event('match-credentials-changed'));
+    }, { targetMatchId: matchId, nextCredentials: credentials });
+    await page.waitForTimeout(300);
+}
+
 async function setupDTOnlineAiRoom(
     browser: Browser,
     baseURL: string | undefined,
+    options: {
+        minimumActionDelayMs?: number;
+        numPlayers?: number;
+        aiSeatIds?: string[];
+    } = {},
 ): Promise<{
     hostPage: Page;
     hostContext: BrowserContext;
@@ -149,6 +166,21 @@ async function setupDTOnlineAiRoom(
     }
 
     const guestId = `dt_ai_e2e_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+    const numPlayers = Math.max(2, options.numPlayers ?? 2);
+    const aiSeatIds = (options.aiSeatIds?.length
+        ? options.aiSeatIds
+        : Array.from({ length: numPlayers - 1 }, (_, index) => String(index + 1)))
+        .filter((seatId, index, array) => array.indexOf(seatId) === index)
+        .filter((seatId) => Number(seatId) >= 1 && Number(seatId) < numPlayers);
+    const seatControllers = Object.fromEntries(
+        aiSeatIds.map((seatId) => [
+            seatId,
+            {
+                type: 'local-ai',
+                minimumActionDelayMs: options.minimumActionDelayMs ?? 2000,
+            },
+        ]),
+    );
     await hostPage.addInitScript(
         (id) => {
             localStorage.setItem('guest_id', id);
@@ -160,15 +192,11 @@ async function setupDTOnlineAiRoom(
 
     const matchId = await createDTRoomViaAPI(hostPage, {
         guestId,
-        numPlayers: 2,
+        numPlayers,
         gameServerBaseURL: getGameServerBaseURL(),
         setupData: {
-            seatControllers: {
-                '1': {
-                    type: 'local-ai',
-                    minimumActionDelayMs: 2000,
-                },
-            },
+            enableAi: true,
+            seatControllers,
         },
     });
     if (!matchId) {
@@ -195,6 +223,16 @@ async function setupDTOnlineAiRoom(
         hostContext,
         matchId,
     };
+}
+
+async function waitForAiSeatCredentials(
+    page: Page,
+    matchId: string,
+    playerIds: readonly string[],
+): Promise<void> {
+    for (const playerId of playerIds) {
+        await waitForAiSeatCredential(page, matchId, playerId);
+    }
 }
 
 const readHarnessState = async <T = any>(page: Page): Promise<T> => page.evaluate(() => {
@@ -256,24 +294,81 @@ const dispatchHarnessCommand = async (
     });
 };
 
+const readHarnessTurnSnapshot = async (page: Page) => page.evaluate(() => {
+    const state = (window as any).__BG_TEST_HARNESS__?.state?.get?.();
+    return {
+        activePlayerId: state?.core?.activePlayerId ?? null,
+        phase: state?.sys?.phase ?? null,
+        rollCount: state?.core?.rollCount ?? null,
+    };
+});
+
+async function resolveOnlineAiRoomEntry(
+    page: Page,
+    timeout = 30000,
+): Promise<'board' | 'character-selection'> {
+    const entry = await expect.poll(async () => {
+        const state = await readHarnessState<any>(page).catch(() => null);
+        const advanceVisible = await page.locator('[data-tutorial-id="advance-phase-button"]')
+            .isVisible()
+            .catch(() => false);
+        const rollVisible = await page.locator('[data-tutorial-id="dice-roll-button"]')
+            .isVisible()
+            .catch(() => false);
+        const phase = typeof state?.sys?.phase === 'string'
+            ? state.sys.phase
+            : typeof state?.core?.phase === 'string'
+                ? state.core.phase
+                : null;
+
+        if (advanceVisible || rollVisible || phase) {
+            return 'board';
+        }
+
+        const characterSelectionVisible = await page.locator('[data-character-id]').first()
+            .isVisible()
+            .catch(() => false);
+        const hostSelectedCharacter = state?.core?.selectedCharacters?.['0'] ?? null;
+        if (
+            characterSelectionVisible
+            && (hostSelectedCharacter === null
+                || hostSelectedCharacter === undefined
+                || /^unselected$/i.test(String(hostSelectedCharacter)))
+        ) {
+            return 'character-selection';
+        }
+
+        return null;
+    }, {
+        timeout,
+        intervals: [250, 500, 800, 1000],
+        message: '等待在线真人+AI房间进入棋盘或角色选择入口',
+    }).not.toBeNull();
+
+    return entry as 'board' | 'character-selection';
+}
+
 async function installAiBatchRejectPatch(
     page: Page,
     options: {
         targetPlayerId?: string;
         rejectLimit?: number;
+        minCommandCount?: number;
     } = {},
 ) {
     const {
         targetPlayerId = '1',
         rejectLimit = 1,
+        minCommandCount = 2,
     } = options;
 
-    await page.evaluate(async ({ aiPlayerId, rejectCountLimit }) => {
+    await page.evaluate(async ({ aiPlayerId, rejectCountLimit, minimumCommandCount }) => {
         const globalWindow = window as Window & {
             __DT_AI_BATCH_RETRY_PATCH__?: {
                 installed: boolean;
                 aiPlayerId: string;
                 rejectLimit: number;
+                minCommandCount: number;
                 interceptedCount: number;
                 rejectedCount: number;
                 delegatedCount: number;
@@ -305,6 +400,7 @@ async function installAiBatchRejectPatch(
             installed: true,
             aiPlayerId,
             rejectLimit: rejectCountLimit,
+            minCommandCount: minimumCommandCount,
             interceptedCount: 0,
             rejectedCount: 0,
             delegatedCount: 0,
@@ -328,7 +424,7 @@ async function installAiBatchRejectPatch(
                 tracker
                 && config?.playerID === tracker.aiPlayerId
                 && tracker.rejectedCount < tracker.rejectLimit
-                && commandCount >= 2
+                && commandCount >= tracker.minCommandCount
             ) {
                 tracker.interceptedCount += 1;
                 tracker.rejectedCount += 1;
@@ -342,7 +438,7 @@ async function installAiBatchRejectPatch(
             if (
                 tracker
                 && config?.playerID === tracker.aiPlayerId
-                && commandCount >= 2
+                && commandCount >= tracker.minCommandCount
             ) {
                 tracker.interceptedCount += 1;
                 tracker.delegatedCount += 1;
@@ -355,6 +451,7 @@ async function installAiBatchRejectPatch(
     }, {
         aiPlayerId: targetPlayerId,
         rejectCountLimit: rejectLimit,
+        minimumCommandCount: minCommandCount,
     });
 }
 
@@ -362,6 +459,7 @@ async function readAiBatchRejectPatchStatus(page: Page): Promise<{
     installed: boolean;
     aiPlayerId: string;
     rejectLimit: number;
+    minCommandCount: number;
     interceptedCount: number;
     rejectedCount: number;
     delegatedCount: number;
@@ -375,6 +473,7 @@ async function readAiBatchRejectPatchStatus(page: Page): Promise<{
                 installed: boolean;
                 aiPlayerId: string;
                 rejectLimit: number;
+                minCommandCount: number;
                 interceptedCount: number;
                 rejectedCount: number;
                 delegatedCount: number;
@@ -528,6 +627,105 @@ const buildOnlineAiHiddenModifyDiceState = (state: any) => {
     };
 
     return normalizeInjectedMatchState(next.sys.matchId ?? 'online-ai-hidden-modify', next);
+};
+
+const buildOnlineAiStalledMain2State = (state: any) => {
+    const next = structuredClone(state);
+    const fallbackTurnOrder = Array.isArray(next.sys?.turnOrder)
+        ? [...next.sys.turnOrder]
+        : ['0', '1'];
+    const hostHp = Math.max(20, next.core?.players?.['0']?.resources?.[RESOURCE_IDS.HP] ?? 0);
+    const aiHp = Math.max(20, next.core?.players?.['1']?.resources?.[RESOURCE_IDS.HP] ?? 0);
+
+    next.core = {
+        ...next.core,
+        activePlayerId: '1',
+        currentPlayerIndex: 1,
+        turnOrder: fallbackTurnOrder,
+        turnNumber: 4,
+        phase: 'main2',
+        pendingAttack: null,
+        pendingDamage: null,
+        pendingBonusDiceSettlement: undefined,
+        activatingAbilityId: undefined,
+        selectedAbilityId: undefined,
+        rollConfirmed: true,
+        rollCount: 1,
+        rollLimit: 2,
+        players: {
+            ...next.core.players,
+            '0': {
+                ...next.core.players['0'],
+                resources: {
+                    ...next.core.players['0']?.resources,
+                    [RESOURCE_IDS.HP]: hostHp,
+                },
+            },
+            '1': {
+                ...next.core.players['1'],
+                hand: [],
+                resources: {
+                    ...next.core.players['1']?.resources,
+                    [RESOURCE_IDS.HP]: aiHp,
+                    [RESOURCE_IDS.CP]: next.core.players['1']?.resources?.[RESOURCE_IDS.CP] ?? 0,
+                },
+            },
+        },
+    };
+
+    next.sys = {
+        ...next.sys,
+        turnNumber: 4,
+        phase: 'main2',
+        turnOrder: fallbackTurnOrder,
+        currentPlayerIndex: 1,
+        interaction: {
+            current: undefined,
+            queue: [],
+            isBlocked: false,
+        },
+        responseWindow: {
+            ...next.sys?.responseWindow,
+            current: undefined,
+        },
+        gameover: undefined,
+        eventStream: {
+            ...(next.sys?.eventStream ?? {}),
+            entries: [],
+            nextId: 1,
+        },
+    };
+
+    return normalizeInjectedMatchState(next.sys.matchId ?? 'online-ai-main2-stall', next);
+};
+
+const advanceHostTurnToMain1 = async (
+    matchId: string,
+    page: Page,
+    expectedPlayerId = '0',
+) => {
+    for (let step = 0; step < 3; step += 1) {
+        const state = await getMatchState(matchId, page);
+        const phase = state.sys?.phase ?? null;
+        const activePlayerId = state.core?.activePlayerId ?? null;
+        if (activePlayerId !== expectedPlayerId) {
+            throw new Error(`期望已回到玩家 ${expectedPlayerId} 的回合，但当前为 ${String(activePlayerId)} / ${String(phase)}`);
+        }
+        if (phase === 'main1') {
+            return;
+        }
+        if (!['upkeep', 'income'].includes(phase ?? '')) {
+            throw new Error(`期望在人类回合的 upkeep/income/main1 之间推进，但当前 phase=${String(phase)}`);
+        }
+
+        const advanceButton = page.locator('[data-tutorial-id="advance-phase-button"]');
+        await expect(advanceButton).toBeVisible({ timeout: 10000 });
+        await expect(advanceButton).toBeEnabled({ timeout: 10000 });
+        await advanceButton.click();
+        await page.waitForTimeout(300);
+    }
+
+    throw new Error('已回到真人回合，但在 3 次内仍未能推进到 main1，说明链路仍可能卡住');
 };
 
 const buildTargetingRollState = (state: any, targetingValue: number) => {
@@ -1631,6 +1829,59 @@ test.describe('DiceThrone Simple Start', () => {
         }
     });
 
+    test('Online AI setup HUD seat swap: should render entry and swap with AI immediately', async ({ browser }, testInfo) => {
+        test.setTimeout(120000);
+        const baseURL = testInfo.project.use.baseURL as string | undefined;
+
+        const setup = await setupDTOnlineAiRoom(browser, baseURL);
+        if (!setup) {
+            test.skip(true, 'DiceThrone AI 联机房间创建失败');
+            return;
+        }
+
+        try {
+            const { hostPage, matchId } = setup;
+            await waitForCharacterSelection(hostPage, 20000);
+            await applyOnlineMatchState(matchId, hostPage, (state) => {
+                const next = structuredClone(state);
+                next.core = {
+                    ...next.core,
+                    hostStarted: false,
+                    phase: 'setup',
+                    seatingOrder: Array.isArray(next.core?.seatingOrder) && next.core.seatingOrder.length > 0
+                        ? next.core.seatingOrder
+                        : ['0', '1'],
+                };
+                next.sys = {
+                    ...next.sys,
+                    phase: 'setup',
+                };
+                return next;
+            });
+            await waitForPhase(hostPage, 'setup', 10000);
+
+            await expect(hostPage.locator('[data-fab-id="chat"]')).toBeVisible({ timeout: 10000 });
+            await hostPage.locator('[data-fab-id="chat"]').click();
+            await expect(hostPage.locator('[data-fab-id="seat-swap"]')).toBeVisible({ timeout: 10000 });
+
+            await clearEvidenceScreenshotsForTest(testInfo);
+            await saveEvidenceScreenshot(hostPage, testInfo, '30-online-ai-hud-seat-swap-entry');
+
+            await hostPage.locator('[data-fab-id="seat-swap"]').click();
+            await expect(hostPage.getByTestId('hud-seat-swap-seat-1')).toBeVisible({ timeout: 10000 });
+            await expect(hostPage.getByTestId('hud-seat-swap-seat-1').getByText(/^AI$/)).toBeVisible({ timeout: 5000 });
+
+            await saveEvidenceScreenshot(hostPage, testInfo, '31-online-ai-hud-seat-swap-before-click');
+
+            await hostPage.getByTestId('hud-seat-swap-seat-1').click();
+            await waitForSeatingOrder(matchId, hostPage, ['1', '0']);
+
+            await saveEvidenceScreenshot(hostPage, testInfo, '32-online-ai-hud-seat-swap-after-click');
+        } finally {
+            await setup.hostContext.close();
+        }
+    });
+
     test('Online AI 首轮 batch 被拒后应自动重试并完成隐藏 multistep-choice', async ({ browser }, testInfo) => {
         test.setTimeout(120000);
         const baseURL = testInfo.project.use.baseURL as string | undefined;
@@ -1884,6 +2135,451 @@ test.describe('DiceThrone Simple Start', () => {
             });
 
             await saveEvidenceScreenshot(hostPage, testInfo, '18-online-ai-hidden-multistep-after-third-attempt');
+        } finally {
+            await setup.hostContext.close();
+        }
+    });
+
+    test('Online AI 真人房间：主阶段到攻击链时间线应可区分动作延迟与传输重试', async ({ browser }, testInfo) => {
+        test.setTimeout(180000);
+        const baseURL = testInfo.project.use.baseURL as string | undefined;
+        const aiSeatIds = ['1', '2', '3'] as const;
+        const primaryAiSeatId = '1';
+        const setup = await setupDTOnlineAiRoom(browser, baseURL, {
+            minimumActionDelayMs: 1000,
+            numPlayers: 4,
+            aiSeatIds: [...aiSeatIds],
+        });
+        if (!setup) {
+            test.skip(true, 'DiceThrone AI 联机房间创建失败');
+            return;
+        }
+
+        const consoleTimeline: Array<{
+            atMs: number;
+            type: string;
+            text: string;
+        }> = [];
+        const testStartedAt = Date.now();
+        const consoleJsonPath = getEvidenceScreenshotPath(testInfo, 'online-ai-real-timeline-console', {
+            filename: 'online-ai-real-timeline-console.json',
+        });
+        const summaryJsonPath = getEvidenceScreenshotPath(testInfo, 'online-ai-real-timeline-summary', {
+            filename: 'online-ai-real-timeline-summary.json',
+        });
+
+        try {
+            const { hostPage, matchId } = setup;
+            hostPage.on('console', (message) => {
+                const text = message.text();
+                if (!/(ONLINE_AI_PERF|ONLINE_AI_TRANSPORT|AI_RUNTIME_TRUTH)/.test(text)) {
+                    return;
+                }
+                consoleTimeline.push({
+                    atMs: Date.now() - testStartedAt,
+                    type: message.type(),
+                    text,
+                });
+            });
+
+            const entry = await resolveOnlineAiRoomEntry(hostPage, 30000);
+
+            if (entry === 'character-selection') {
+                await waitForCharacterSelection(hostPage, 20000);
+                await waitForAiSeatCredentials(hostPage, matchId, aiSeatIds);
+                await selectCharacter(hostPage, 'monk');
+
+                await expect.poll(async () => {
+                    return hostPage.evaluate((seatIds) => {
+                        const state = (window as any).__BG_TEST_HARNESS__?.state?.get?.();
+                        const selectedCharacters = state?.core?.selectedCharacters ?? {};
+                        const readyPlayers = state?.core?.readyPlayers ?? {};
+                        const seatingOrder = Array.isArray(state?.core?.seatingOrder) ? state.core.seatingOrder : [];
+                        return {
+                            hostSelected: selectedCharacters['0'] ?? null,
+                            aiSelectedSeatIds: seatIds.filter((seatId) => {
+                                const selected = selectedCharacters[seatId];
+                                return selected && selected !== 'unselected';
+                            }),
+                            aiReadySeatIds: seatIds.filter((seatId) => readyPlayers[seatId] === true),
+                            seatingOrder,
+                        };
+                    }, [...aiSeatIds]);
+                }, {
+                    timeout: 30000,
+                    message: '等待 DiceThrone host/AI 一起完成在线真人房间前置条件',
+                }).toEqual({
+                    hostSelected: 'monk',
+                    aiSelectedSeatIds: [...aiSeatIds],
+                    aiReadySeatIds: [...aiSeatIds],
+                    seatingOrder: ['0', '1', '2', '3'],
+                });
+
+                const startButton = hostPage.locator('button').filter({ hasText: /开始游戏|Start Game|Press.*Start/i }).first();
+                await expect(startButton).toBeEnabled({ timeout: 10000 });
+                await startButton.click();
+                await waitForGameBoard(hostPage, 30000);
+            }
+
+            await waitForTestHarness(hostPage, 15000);
+            await expect.poll(async () => {
+                const snapshot = await readHarnessTurnSnapshot(hostPage);
+                const state = await getMatchState(matchId, hostPage);
+                return {
+                    ...snapshot,
+                    seatingOrder: state.core?.seatingOrder ?? null,
+                };
+            }, {
+                timeout: 30000,
+                intervals: [200, 300, 500, 800],
+                message: '等待在线真人房间进入可推进的 host 主阶段',
+            }).toMatchObject({
+                activePlayerId: '0',
+                phase: 'main1',
+                seatingOrder: ['0', '1', '2', '3'],
+            });
+
+            await expect(hostPage.locator('[data-testid^="dt-top-header-"]')).toHaveCount(3, { timeout: 10000 });
+
+            await saveEvidenceScreenshot(hostPage, testInfo, '40-online-ai-real-timeline-host-main1');
+
+            for (let step = 0; step < 8; step += 1) {
+                const snapshot = await readHarnessTurnSnapshot(hostPage);
+                if (snapshot.activePlayerId === '1') {
+                    break;
+                }
+                const responseSkipButton = hostPage.getByRole('button', { name: /略过|Skip/i }).last();
+                if (await responseSkipButton.isVisible().catch(() => false)) {
+                    await responseSkipButton.click();
+                    await hostPage.waitForTimeout(300);
+                    continue;
+                }
+                const advanceButton = hostPage.locator('[data-tutorial-id="advance-phase-button"]');
+                if (!(await advanceButton.isEnabled({ timeout: 1000 }).catch(() => false))) {
+                    break;
+                }
+                await advanceButton.click();
+                await hostPage.waitForTimeout(500);
+            }
+
+            await expect.poll(async () => {
+                return readHarnessTurnSnapshot(hostPage);
+            }, {
+                timeout: 30000,
+                intervals: [200, 300, 500, 800],
+                message: '等待真人回合结束并进入 AI 回合',
+            }).toMatchObject({
+                activePlayerId: '1',
+            });
+
+            await saveEvidenceScreenshot(hostPage, testInfo, '41-online-ai-real-timeline-ai-turn-start');
+
+            const dismissHostResponseWindowIfVisible = async () => {
+                const responseSkipButton = hostPage.getByRole('button', { name: /略过|Skip/i }).last();
+                if (await responseSkipButton.isVisible().catch(() => false)) {
+                    await responseSkipButton.click();
+                    await hostPage.waitForTimeout(300);
+                    return true;
+                }
+                return false;
+            };
+
+            const summarizeAiAttackChain = async () => {
+                const aiTurnStartAtMs = consoleTimeline.find((entry) => (
+                    entry.text.includes('[ONLINE_AI_TRANSPORT]')
+                    && entry.text.includes('"stage":"state-update"')
+                    && entry.text.includes('"phase":"main1"')
+                    && entry.text.includes(`"currentPlayerId":"${primaryAiSeatId}"`)
+                ))?.atMs ?? 0;
+                const hostDiscardAtMs = consoleTimeline.find((entry) => (
+                    entry.text.includes('[ONLINE_AI_TRANSPORT]')
+                    && entry.text.includes('"stage":"state-update"')
+                    && entry.text.includes('"phase":"discard"')
+                    && entry.text.includes('"currentPlayerId":"0"')
+                ))?.atMs ?? null;
+                const visibleSubmittedActions = consoleTimeline.filter((entry) => (
+                    entry.atMs >= aiTurnStartAtMs
+                    && entry.text.includes('[ONLINE_AI_PERF]')
+                    && entry.text.includes('"stage":"submitted"')
+                    && entry.text.includes('"actionVisibility":"visible"')
+                ));
+                const submittedRolls = visibleSubmittedActions.filter((entry) => (
+                    entry.text.includes('[ONLINE_AI_PERF]')
+                    && entry.text.includes('"actionKind":"roll-dice"')
+                ));
+                const submittedAbilitySelections = visibleSubmittedActions.filter((entry) => (
+                    entry.text.includes('"actionKind":"select-ability"')
+                ));
+                const submittedVisibleActions = visibleSubmittedActions.map((entry) => {
+                    const actionKindMatch = entry.text.match(/"actionKind":"([^"]+)"/);
+                    return {
+                        atMs: entry.atMs,
+                        actionKind: actionKindMatch?.[1] ?? 'unknown',
+                        text: entry.text,
+                    };
+                });
+                const transportWarnings = consoleTimeline.filter((entry) => (
+                    entry.text.includes('[ONLINE_AI_TRANSPORT]')
+                    && /resync-requested|transport-error/.test(entry.text)
+                ));
+                const patchApplyFailedEvents = consoleTimeline.filter((entry) => (
+                    entry.text.includes('[ONLINE_AI_TRANSPORT]')
+                    && entry.text.includes('"stage":"patch-apply-failed"')
+                    && entry.text.includes(`"playerId":"${primaryAiSeatId}"`)
+                ));
+                const secondaryPatchApplyFailedEvents = consoleTimeline.filter((entry) => (
+                    entry.text.includes('[ONLINE_AI_TRANSPORT]')
+                    && entry.text.includes('"stage":"patch-apply-failed"')
+                    && !entry.text.includes(`"playerId":"${primaryAiSeatId}"`)
+                ));
+                const phaseSnapshot = await readHarnessTurnSnapshot(hostPage);
+                const attackChainReachedDefensiveRoll = phaseSnapshot.activePlayerId === '0'
+                    && phaseSnapshot.phase === 'defensiveRoll';
+                return {
+                    aiTurnStartAtMs,
+                    hostDiscardAtMs,
+                    handoffGapMs: hostDiscardAtMs === null ? null : aiTurnStartAtMs - hostDiscardAtMs,
+                    submittedRollCount: submittedRolls.length,
+                    submittedAbilitySelectionCount: submittedAbilitySelections.length,
+                    submittedVisibleActionCount: submittedVisibleActions.length,
+                    submittedVisibleActions,
+                    transportWarningCount: transportWarnings.length,
+                    patchApplyFailedCount: patchApplyFailedEvents.length,
+                    secondaryPatchApplyFailedCount: secondaryPatchApplyFailedEvents.length,
+                    activePlayerId: phaseSnapshot.activePlayerId,
+                    phase: phaseSnapshot.phase,
+                    rollCount: phaseSnapshot.rollCount,
+                    attackChainReachedDefensiveRoll,
+                };
+            };
+
+            const isAttackChainReady = (summary: Awaited<ReturnType<typeof summarizeAiAttackChain>>) => {
+                return summary.patchApplyFailedCount === 0
+                    && summary.submittedVisibleActionCount >= 2
+                    && (summary.submittedRollCount >= 2 || summary.attackChainReachedDefensiveRoll);
+            };
+
+            const attackChainDeadline = Date.now() + 45000;
+            let attackChainSummary = await summarizeAiAttackChain();
+            while (!isAttackChainReady(attackChainSummary) && Date.now() < attackChainDeadline) {
+                const dismissedResponse = await dismissHostResponseWindowIfVisible();
+                if (!dismissedResponse) {
+                    await hostPage.waitForTimeout(250);
+                }
+                attackChainSummary = await summarizeAiAttackChain();
+            }
+
+            expect(attackChainSummary.patchApplyFailedCount).toBe(0);
+            expect(attackChainSummary.submittedVisibleActionCount).toBeGreaterThanOrEqual(2);
+            expect(isAttackChainReady(attackChainSummary)).toBe(true);
+            expect(attackChainSummary.submittedRollCount >= 2 || attackChainSummary.attackChainReachedDefensiveRoll).toBe(true);
+
+            await saveEvidenceScreenshot(hostPage, testInfo, '42-online-ai-real-timeline-after-attack-chain');
+
+            const rollSubmittedTimeline = attackChainSummary.submittedVisibleActions.filter((entry) => (
+                entry.actionKind === 'roll-dice'
+            ));
+            const derivedSummary = {
+                matchId,
+                minimumActionDelayMs: 1000,
+                aiTurnStartAtMs: attackChainSummary.aiTurnStartAtMs,
+                handoffGapMs: attackChainSummary.handoffGapMs,
+                submittedRollCount: rollSubmittedTimeline.length,
+                submittedAbilitySelectionCount: attackChainSummary.submittedAbilitySelectionCount,
+                submittedVisibleActionCount: attackChainSummary.submittedVisibleActionCount,
+                attackChainReachedDefensiveRoll: attackChainSummary.attackChainReachedDefensiveRoll,
+                patchApplyFailedCount: attackChainSummary.patchApplyFailedCount,
+                secondaryPatchApplyFailedCount: attackChainSummary.secondaryPatchApplyFailedCount,
+                firstToSecondRollGapMs: rollSubmittedTimeline.length >= 2
+                    ? rollSubmittedTimeline[1].atMs - rollSubmittedTimeline[0].atMs
+                    : null,
+                submittedVisibleActions: attackChainSummary.submittedVisibleActions,
+                transportEvents: consoleTimeline.filter((entry) => entry.text.includes('[ONLINE_AI_TRANSPORT]')),
+                perfEvents: consoleTimeline.filter((entry) => entry.text.includes('[ONLINE_AI_PERF]')),
+            };
+            await mkdir(dirname(consoleJsonPath), { recursive: true });
+            await writeFile(consoleJsonPath, JSON.stringify(consoleTimeline, null, 2), 'utf8');
+            await writeFile(summaryJsonPath, JSON.stringify(derivedSummary, null, 2), 'utf8');
+
+            expect(rollSubmittedTimeline.length >= 2 || attackChainSummary.attackChainReachedDefensiveRoll).toBe(true);
+        } finally {
+            const rollSubmittedTimeline = consoleTimeline.filter((entry) => (
+                entry.text.includes('[ONLINE_AI_PERF]')
+                && entry.text.includes('"stage":"submitted"')
+                && entry.text.includes('"actionKind":"roll-dice"')
+            ));
+            const transportEvents = consoleTimeline.filter((entry) => entry.text.includes('[ONLINE_AI_TRANSPORT]'));
+            const perfEvents = consoleTimeline.filter((entry) => entry.text.includes('[ONLINE_AI_PERF]'));
+            const patchApplyFailedCount = transportEvents.filter((entry) => (
+                entry.text.includes('"stage":"patch-apply-failed"')
+                && entry.text.includes(`"playerId":"${primaryAiSeatId}"`)
+            )).length;
+            const secondaryPatchApplyFailedCount = transportEvents.filter((entry) => (
+                entry.text.includes('"stage":"patch-apply-failed"')
+                && !entry.text.includes(`"playerId":"${primaryAiSeatId}"`)
+            )).length;
+            const aiTurnStartAtMs = transportEvents.find((entry) => (
+                entry.text.includes('"stage":"state-update"')
+                && entry.text.includes('"phase":"main1"')
+                && entry.text.includes(`"currentPlayerId":"${primaryAiSeatId}"`)
+            ))?.atMs ?? null;
+            const hostDiscardAtMs = transportEvents.find((entry) => (
+                entry.text.includes('"stage":"state-update"')
+                && entry.text.includes('"phase":"discard"')
+                && entry.text.includes('"currentPlayerId":"0"')
+            ))?.atMs ?? null;
+            const submittedVisibleActions = perfEvents
+                .filter((entry) => (
+                    entry.text.includes('"stage":"submitted"')
+                    && entry.text.includes('"actionVisibility":"visible"')
+                    && (aiTurnStartAtMs === null || entry.atMs >= aiTurnStartAtMs)
+                ))
+                .map((entry) => {
+                    const actionKindMatch = entry.text.match(/"actionKind":"([^"]+)"/);
+                    return {
+                        atMs: entry.atMs,
+                        actionKind: actionKindMatch?.[1] ?? 'unknown',
+                        text: entry.text,
+                    };
+                });
+            const submittedAbilitySelectionCount = submittedVisibleActions.filter((entry) => entry.actionKind === 'select-ability').length;
+            const finalSnapshot = await readHarnessTurnSnapshot(setup.hostPage).catch(() => null);
+            const finalSummary = {
+                matchId: setup.matchId,
+                minimumActionDelayMs: 1000,
+                aiTurnStartAtMs,
+                handoffGapMs: aiTurnStartAtMs !== null && hostDiscardAtMs !== null
+                    ? aiTurnStartAtMs - hostDiscardAtMs
+                    : null,
+                submittedRollCount: rollSubmittedTimeline.length,
+                submittedAbilitySelectionCount,
+                submittedVisibleActionCount: submittedVisibleActions.length,
+                firstToSecondRollGapMs: rollSubmittedTimeline.length >= 2
+                    ? rollSubmittedTimeline[1].atMs - rollSubmittedTimeline[0].atMs
+                    : null,
+                attackChainReachedDefensiveRoll: finalSnapshot?.activePlayerId === '0' && finalSnapshot?.phase === 'defensiveRoll',
+                patchApplyFailedCount,
+                secondaryPatchApplyFailedCount,
+                transportEventCount: transportEvents.length,
+                perfEventCount: perfEvents.length,
+                finalSnapshot,
+                submittedVisibleActions,
+                transportEvents,
+                perfEvents,
+            };
+            await mkdir(dirname(consoleJsonPath), { recursive: true });
+            await writeFile(consoleJsonPath, JSON.stringify(consoleTimeline, null, 2), 'utf8');
+            await writeFile(summaryJsonPath, JSON.stringify(finalSummary, null, 2), 'utf8');
+            await setup.hostContext.close();
+        }
+    });
+
+    test('Online AI 在 DiceThrone main2 阶段持续卡死时，服务端 watchdog 应自动多步收口到我方回合且不再弹失败提示', async ({ browser }, testInfo) => {
+        test.setTimeout(120000);
+        const baseURL = testInfo.project.use.baseURL as string | undefined;
+
+        const setup = await setupDTOnlineAiRoom(browser, baseURL);
+        if (!setup) {
+            test.skip(true, 'DiceThrone AI 联机房间创建失败');
+            return;
+        }
+
+        try {
+            const { hostPage, matchId } = setup;
+            await waitForCharacterSelection(hostPage, 20000);
+            await waitForAiSeatCredential(hostPage, matchId, '1');
+
+            await selectCharacter(hostPage, 'monk');
+            await expect.poll(async () => {
+                const state = await getMatchState(matchId, hostPage);
+                const hostSelected = state.core?.selectedCharacters?.['0'];
+                const aiSelected = state.core?.selectedCharacters?.['1'];
+                return hostSelected === 'monk'
+                    && aiSelected !== 'unselected'
+                    && state.core?.readyPlayers?.['1'] === true;
+            }, {
+                timeout: 30000,
+                message: '等待 DiceThrone host/AI 一起完成 watchdog 测试前置条件',
+            }).toBe(true);
+
+            const startButton = hostPage.locator('button').filter({ hasText: /开始游戏|Start Game|Press.*Start/i }).first();
+            await expect(startButton).toBeEnabled({ timeout: 10000 });
+            await startButton.click();
+            await hostPage.waitForTimeout(500);
+            await installAiBatchRejectPatch(hostPage, {
+                targetPlayerId: '1',
+                rejectLimit: 99,
+                minCommandCount: 1,
+            });
+            await applyOnlineMatchState(matchId, hostPage, buildOnlineAiStalledMain2State);
+            await waitForPhase(hostPage, 'main2', 30000);
+            await waitForGameBoard(hostPage, 30000);
+            await waitForTestHarness(hostPage, 15000);
+
+            await expect.poll(async () => {
+                const status = await readAiBatchRejectPatchStatus(hostPage);
+                const state = await getMatchState(matchId, hostPage);
+                return {
+                    rejectedCount: status?.rejectedCount ?? 0,
+                    phase: state.sys?.phase ?? null,
+                    activePlayerId: state.core?.activePlayerId ?? null,
+                    hostHandCount: state.core?.players?.['0']?.hand?.length ?? null,
+                    aiHandCount: state.core?.players?.['1']?.hand?.length ?? null,
+                };
+            }, {
+                timeout: 15000,
+                message: '等待 AI main2 卡死场景至少出现一次本地 batch 拒绝',
+            }).toEqual({
+                rejectedCount: 1,
+                phase: 'main2',
+                activePlayerId: '1',
+                hostHandCount: expect.any(Number),
+                aiHandCount: 0,
+            });
+
+            await clearEvidenceScreenshotsForTest(testInfo);
+            await saveEvidenceScreenshot(hostPage, testInfo, '19-online-ai-main2-stalled-before-watchdog');
+
+            await expect.poll(async () => {
+                const status = await readAiBatchRejectPatchStatus(hostPage);
+                const state = await getMatchState(matchId, hostPage);
+                const failureToastVisible = await hostPage.evaluate(() => {
+                    return Array.from(document.querySelectorAll('*')).some((node) => {
+                        const text = node.textContent?.trim() ?? '';
+                        return text.includes('强制结束 AI 回合未成功')
+                            || text.includes('AI 强制结束失败（');
+                    });
+                });
+                return {
+                    rejectedCount: status?.rejectedCount ?? 0,
+                    phase: state.sys?.phase ?? null,
+                    activePlayerId: state.core?.activePlayerId ?? null,
+                    hasGameOver: Boolean(state.sys?.gameover),
+                    failureToastVisible,
+                };
+            }, {
+                timeout: 25000,
+                message: '等待服务端 watchdog 多步推进 main2 → discard → 人类回合起始阶段',
+            }).toMatchObject({
+                rejectedCount: expect.any(Number),
+                activePlayerId: '0',
+                hasGameOver: false,
+                failureToastVisible: false,
+            });
+
+            await expect.poll(async () => {
+                const state = await getMatchState(matchId, hostPage);
+                const phase = state.sys?.phase ?? null;
+                return ['upkeep', 'income', 'main1'].includes(String(phase));
+            }, {
+                timeout: 5000,
+                message: 'watchdog 收口后应进入真人回合的 upkeep/income/main1',
+            }).toBe(true);
+
+            await advanceHostTurnToMain1(matchId, hostPage, '0');
+
+            await expect(hostPage.locator('[data-tutorial-id="dice-roll-button"]')).toBeVisible({ timeout: 10000 });
+            await saveEvidenceScreenshot(hostPage, testInfo, '20-online-ai-main2-stalled-after-watchdog');
         } finally {
             await setup.hostContext.close();
         }

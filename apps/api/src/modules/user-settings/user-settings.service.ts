@@ -91,6 +91,7 @@ export class UserSettingsService {
             { upsert: true }
         );
     }
+
     async getLocalAiMatchPreference(userId: string, gameId: string): Promise<{
         numPlayers: number;
         seatControllers?: Record<string, unknown>;
@@ -106,6 +107,18 @@ export class UserSettingsService {
             return null;
         }
         return normalizeLocalAiMatchPreferenceRecord(record);
+    }
+
+    async getSmashUpPreference(userId: string): Promise<{
+        overlayEnabled: boolean;
+        interactionMode: 'click' | 'drag';
+    } | null> {
+        const doc = await this.uiSettingsModel.findOne({ userId });
+        if (!doc || doc.smashupPreferenceInitialized !== true) return null;
+        return {
+            overlayEnabled: doc.smashupOverlayEnabled !== false,
+            interactionMode: doc.smashupInteractionMode === 'drag' ? 'drag' : 'click',
+        };
     }
 
     async upsertLocalAiMatchPreference(
@@ -127,18 +140,6 @@ export class UserSettingsService {
             },
             { upsert: true },
         );
-    }
-
-    async getSmashUpPreference(userId: string): Promise<{
-        overlayEnabled: boolean;
-        interactionMode: 'click' | 'drag';
-    } | null> {
-        const doc = await this.uiSettingsModel.findOne({ userId });
-        if (!doc || doc.smashupPreferenceInitialized !== true) return null;
-        return {
-            overlayEnabled: doc.smashupOverlayEnabled !== false,
-            interactionMode: doc.smashupInteractionMode === 'drag' ? 'drag' : 'click',
-        };
     }
 
     async upsertSmashUpPreference(

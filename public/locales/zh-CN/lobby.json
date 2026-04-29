@@ -33,6 +33,11 @@
     "exitActiveMatch": {
       "title": "退出当前对局",
       "description": "你正在进行对局，确认退出并加入新的房间吗？"
+    },
+    "forceReplaceOwnerRoom": {
+      "title": "强制清理旧房间",
+      "description": "检测到你还有一个活跃房间（#{{id}}）。继续后会先删除旧房间，再创建新房间。",
+      "confirm": "清理并创建"
     }
   },
   "actions": {
@@ -49,6 +54,7 @@
     "playAi": "对战AI",
     "tutorial": "教程模式",
     "createRoom": "创建房间",
+    "backToDirectory": "返回目录",
     "confirm": "确认",
     "cancel": "取消"
   },
@@ -58,16 +64,12 @@
   "button": {
     "processing": "处理中..."
   },
-  "tutorial": {
-    "steps": {
-      "setup": "准备房间"
-    }
-  },
   "activeMatch": {
     "notice": "您当前正在进行一场对局",
     "return": "返回当前对局 (#{{id}})"
   },
   "rooms": {
+    "title": "游戏房间",
     "loading": "正在加载房间...",
     "empty": "暂无活跃房间",
     "matchTitle": "对局 #{{id}}",
@@ -130,11 +132,10 @@
     "assetPack": "素材包",
     "packIdUnknown": "包标识待同步",
     "sizeUnknown": "大小待同步",
-    "packageSyncing": "同步中",
-    "packageUnpublished": "下载包未发布",
     "runtimeUnsupported": "当前运行环境暂不支持下载游戏包，请在 Android App 内重试。",
     "failedTitle": "下载失败",
     "failedHint": "游戏包下载、校验或激活失败，请稍后重试。",
+    "notificationSettingsAction": "打开通知设置",
     "retryAction": "重新发起",
     "cancelAction": "取消下载",
     "pending": "该游戏的移动端包管理正在接入，入口位置和状态骨架已预留。",
@@ -155,7 +156,11 @@
       "downloadHint": "正在下载当前游戏需要的资源文件。",
       "verifyTitle": "校验中",
       "verifyHint": "正在校验下载内容并激活本地资源。"
-    }
+    },
+    "packageUnpublished": "包体未发布",
+    "packageSyncing": "同步中",
+    "packageSyncFailed": "同步失败",
+    "packageSyncCompleted": "同步完成"
   },
   "player": {
     "guest": "游客{{id}}"
@@ -175,6 +180,7 @@
       "errorTitle": "更新失败",
       "errorDescription": "下载或切换新版本失败，请重试。",
       "bundleVersion": "目标本体版本",
+      "currentAppVersion": "当前 App 版本",
       "requiredAppVersion": "所需 App 版本",
       "progressLabel": "下载进度",
       "progressPercent": "{{percent}}%",
@@ -183,36 +189,33 @@
     }
   },
   "nativeUpdate": {
-    "gate": {
-      "eyebrow": "安装新版 App",
-      "checkingTitle": "正在准备安装包",
-      "checkingDescription": "正在检查并准备新的 App 安装包，请稍候。",
-      "downloadingTitle": "正在下载安装包",
-      "downloadingDescription": "正在下载新的 App 安装包，完成后会自动拉起系统安装界面。",
-      "verifyingTitle": "正在校验安装包",
-      "verifyingDescription": "安装包已下载完成，正在校验完整性。",
-      "permissionTitle": "需要安装授权",
-      "permissionDescription": "请先允许当前 App 安装未知应用，返回后再继续安装。",
-      "installingTitle": "正在打开系统安装器",
-      "installingDescription": "系统安装界面已经准备就绪，请按系统提示完成覆盖安装。",
-      "errorTitle": "安装包更新失败",
-      "errorDescription": "下载安装包或启动安装失败，请重试。",
-      "targetVersion": "目标 App 版本",
-      "progressLabel": "下载进度",
-      "progressPercent": "{{percent}}%",
-      "progressPending": "准备中",
-      "openSettingsAction": "打开授权页",
-      "continueInstallAction": "继续安装",
-      "retryAction": "重新下载"
+    "title": {
+      "checking": "正在检查应用更新",
+      "downloading": "正在下载更新",
+      "verifying": "正在校验更新",
+      "permission": "需要允许安装",
+      "installing": "正在安装更新",
+      "error": "更新失败",
+      "default": "正在更新应用"
     },
-    "toast": {
-      "disabled": "当前 Android 壳未启用原生更新配置。",
-      "upToDate": "当前已经是最新 App 版本。",
-      "available": "发现新的 App 版本 {{version}}，可直接开始安装。",
-      "installerOpened": "系统安装界面已打开，请按提示完成更新。",
-      "openSettingsFailed": "打开安装授权页失败，请稍后重试。",
-      "missingPreparedUpdate": "没有可继续安装的已下载更新包，请重新下载。"
-    }
+    "description": {
+      "checking": "正在检查并准备新版本，请稍候。",
+      "downloading": "正在下载更新包，完成后会进入安装。",
+      "verifying": "正在校验下载内容，请稍候。",
+      "permission": "需要允许安装未知来源应用后才能继续。",
+      "installing": "正在拉起系统安装器，请稍候。",
+      "error": "安装包下载或校验失败，请重试。",
+      "default": "正在准备更新，请稍候。"
+    },
+    "eyebrow": "应用更新",
+    "bundleVersion": "目标版本",
+    "progressLabel": "下载进度",
+    "progressPercent": "{{percent}}%",
+    "progressPending": "准备中",
+    "progressHint": "正在获取下载进度，请稍候。",
+    "openSettings": "打开安装权限设置",
+    "continueInstall": "继续安装",
+    "retryAction": "重新检查"
   },
   "gameDetails": {
     "description": "经典策略游戏。连成3个符号即可获胜。"
@@ -235,7 +238,7 @@
     },
     "smashup": {
       "title": "大杀四方",
-      "description": "这是一款适合2-4人进行的卡牌类互车游戏！玩家控制两个不同种族抢夺基地的控制权，通过争夺基地来获取胜利分数，最快获得15点胜利分数的玩家获胜！不同种族的配合造就玩家不一样的策略，基础版提供8个各具特色的种族，有专门控制部队外星人、狂野的机甲暴龙、灵活的忍者、群龙见首不见尾的海盗、群体攻击力强大的战争机器，控制对方手牌的戏谑妖精，行动能力强大的大魔法师、不停复活的墓地僵尸，多种配合打法让游戏变化多变，谁能更好掌握种族之间微妙的配合，打出优势，谁才能控制更多的基地，从而获得胜利！还在等什么，赶紧来认领自己喜爱的种族，一起大杀四方！（发行年份：2012；类型：竞争/卡牌；评分：7.2）",
+      "description": "2-4 人阵营混搭卡牌对战。选择两个派系组成牌组，围绕基地展开争夺，率先到达胜利分数即可获胜。不同派系组合会带来截然不同的战术节奏。",
       "players": "2-4人"
     },
     "assetslicer": {
@@ -263,10 +266,29 @@
       "description": "交互式节点连线图，展示平台分层架构与模块依赖关系。",
       "players": "单人工具"
     },
+    "airepoworkbench": {
+      "title": "AI 仓库工作台",
+      "description": "围绕 RepoSession、WorkflowRun、DecisionRequest 和 ArtifactBundle 的 repo-centric AI 工作台。",
+      "players": "单人工具"
+    },
     "summonerwars": {
       "title": "召唤师战争",
       "description": "一款战术卡牌游戏，在网格战场上指挥你的阵营战士。召唤单位、施放法术，摧毁敌方召唤师即可获胜。",
       "players": "2人"
+    },
+    "splendor": {
+      "title": "璀璨宝石",
+      "description": "已完成基础版核心规则、主界面与教学引导的璀璨宝石实现。主打公开信息、宝石经营、永久折扣与贵族竞速。",
+      "players": "2-4人",
+      "setup": {
+        "startingPlayerId": {
+          "label": "先手钻石持有者",
+          "player1": "玩家 1",
+          "player2": "玩家 2",
+          "player3": "玩家 3",
+          "player4": "玩家 4"
+        }
+      }
     },
     "ugc": {
       "players": "2人"
@@ -297,12 +319,14 @@
     "tutorialTitle": "正在学习 {{game}}",
     "matchTitle": "正在对局 {{game}}",
     "loadingResources": "正在加载对局资源...",
+    "preparingMatch": "正在准备对局...",
     "creatingRoom": "正在创建房间并进入对局...",
     "namespaceLoadFailed": "游戏文案加载失败",
     "namespaceLoadFailedDesc": "未能加载当前游戏的 i18n 资源，请重试；如果问题持续出现，请提交反馈。",
     "clientLoadFailed": "游戏客户端加载失败",
     "clientLoadFailedDesc": "未能加载当前游戏的客户端代码或资源，请重试；如果问题持续出现，请提交反馈。",
     "joiningRoom": "正在加入房间...",
+    "connectingRoom": "正在连接房间...",
     "loadingProgress": {
       "step": "{{current}}/{{total}}",
       "preparingRoom": "准备房间...",
@@ -400,6 +424,7 @@
     "roomFull": "房间已满",
     "ownerClaimFailed": "无法重连该房间：可能是游客身份丢失或服务器重启导致凭据失效。请使用原浏览器重试，或重新创建房间。",
     "roomCreatedButClaimFailed": "房间已创建但入座失败，请返回大厅重试。",
+    "roomCreatedButEnterFailed": "房间已创建，但自动进入失败，请返回大厅重新进入。",
     "aiSeatClaimFailed": "部分 AI 座位初始化失败，已进入房间，请检查座位状态。",
     "joinRoomFailed": "加入房间失败",
     "actionFailed": "操作失败，请稍后重试。",
@@ -434,7 +459,7 @@
     },
     "policyId": "策略 ID",
     "policyPlaceholder": "留空则使用默认策略",
-    "providerId": "Provider ID",
+    "providerId": "提供方 ID",
     "providerPlaceholder": "留空则使用 astrbot",
     "quickStart": "默认快速开始：1 号位为真人，2 号位在支持时自动使用该游戏的本地 AI。",
     "startLocal": "开始本地对战"
@@ -501,5 +526,10 @@
     "playerJoinedTitle": "玩家加入",
     "playerJoinedBody": "{{username}} 加入了房间",
     "playerJoinedBodyAnonymous": "一位玩家加入了房间"
+  },
+  "tutorial": {
+    "steps": {
+      "setup": "正在准备教学场景..."
+    }
   }
 }

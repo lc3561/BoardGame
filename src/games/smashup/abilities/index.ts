@@ -43,6 +43,9 @@ import { registerCowboysAbilities, registerCowboysInteractionHandlers } from './
 import { registerSamuraiAbilities, registerSamuraiInteractionHandlers } from './samurai';
 import { registerVikingsAbilities, registerVikingsInteractionHandlers } from './vikings';
 import { registerTitanAbilities, registerTitanInteractionHandlers } from './titans';
+import { registerWorldChampsAbilities, registerWorldChampsInteractionHandlers } from './world_champs';
+import { registerSkeletonAbilities, registerSkeletonInteractionHandlers } from './skeletons';
+import { registerMermaidsAbilities, registerMermaidsInteractionHandlers } from './mermaids';
 import { registerBuryInteractionHandlers } from '../domain/bury';
 import {
     registerBaseAbilities,
@@ -51,13 +54,15 @@ import {
     registerPodBaseAbilityAliases,
 } from '../domain/baseAbilities';
 import { registerMultiBaseScoringInteractionHandler } from '../domain/index';
+import { registerDuelInteractionHandlers } from '../domain/duel';
 import { registerReactionQueueInteractionHandlers } from '../domain/reactionQueueHandlers';
 import { registerMulliganInteractionHandlers } from '../domain/mulliganHandlers';
-import { registerDuelInteractionHandlers } from '../domain/duel';
+import { registerImmediateExtraPlayInteractionHandlers } from '../domain/extraPlay';
 import { registerAllOngoingModifiers } from './ongoing_modifiers';
 import { clearPowerModifierRegistry, registerPodPowerModifierAliases } from '../domain/ongoingModifiers';
 import { clearOngoingEffectRegistry, registerPodOngoingAliases } from '../domain/ongoingEffects';
 import { clearDiscardPlayProviders } from '../domain/discardPlayability';
+import { clearDiscardSpecialProviders } from '../domain/discardSpecialAbilities';
 import { clearRegistry, registerPodAbilityAliases } from '../domain/abilityRegistry';
 import { clearInteractionHandlers, registerPodInteractionAliases } from '../domain/abilityInteractionHandlers';
 import { clearTitanAbilityValidators } from '../domain/titanAbilityValidators';
@@ -76,6 +81,7 @@ export function initAllAbilities(): void {
     clearPowerModifierRegistry();
     clearOngoingEffectRegistry();
     clearDiscardPlayProviders();
+    clearDiscardSpecialProviders();
     clearTitanAbilityValidators();
 
     // 基础?8 派系
@@ -107,6 +113,7 @@ export function initAllAbilities(): void {
     registerReactionQueueInteractionHandlers();
     registerMulliganInteractionHandlers();
     registerBuryInteractionHandlers();
+    registerImmediateExtraPlayInteractionHandlers();
     registerDuelInteractionHandlers();
 
     // 扩展派系
@@ -148,6 +155,12 @@ export function initAllAbilities(): void {
     registerSamuraiInteractionHandlers();
     registerVikingsAbilities();
     registerVikingsInteractionHandlers();
+    registerSkeletonAbilities();
+    registerSkeletonInteractionHandlers();
+    registerMermaidsAbilities();
+    registerMermaidsInteractionHandlers();
+    registerWorldChampsAbilities();
+    registerWorldChampsInteractionHandlers();
     registerTitanAbilities();
     registerTitanInteractionHandlers();
 
@@ -175,3 +188,4 @@ export function resetAbilityInit(): void {
     clearDiscardPlayProviders();
     clearTitanAbilityValidators();
 }
+

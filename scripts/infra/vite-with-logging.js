@@ -14,7 +14,7 @@ import { join } from 'path';
 import { runViteCli } from './vite-cli-safe.mjs';
 import { withWindowsHide } from './windows-hide.js';
 
-const DEFAULT_VITE_DEV_PORT = 4173;
+const DEFAULT_VITE_DEV_PORT = 4273;
 
 const logDir = join(process.cwd(), 'logs');
 if (!existsSync(logDir)) {
@@ -84,12 +84,20 @@ function readCliFlagValue(args, flagName) {
 function createViteArgs() {
   const viteArgs = process.argv.slice(2);
   const configLoader = process.env.VITE_CONFIG_LOADER?.trim();
+  const configFile = process.env.VITE_CONFIG_FILE?.trim();
   const hasExplicitConfigLoader = viteArgs.some((arg) => arg === '--configLoader' || arg.startsWith('--configLoader='));
+  const hasExplicitConfig = viteArgs.some((arg) => arg === '--config' || arg.startsWith('--config='));
   const hasExplicitHost = viteArgs.some((arg) => arg === '--host' || arg.startsWith('--host='));
   const hasExplicitPort = viteArgs.some((arg) => arg === '--port' || arg.startsWith('--port='));
   const explicitHost = readCliFlagValue(viteArgs, '--host');
   const configuredHost = explicitHost || process.env.VITE_HOST?.trim() || '127.0.0.1';
   const configuredPort = process.env.VITE_DEV_PORT?.trim();
+  const preferredTsConfigPath = join(process.cwd(), 'vite.config.ts');
+  const resolvedConfigFile = configFile || (existsSync(preferredTsConfigPath) ? preferredTsConfigPath : '');
+
+  if (resolvedConfigFile && !hasExplicitConfig) {
+    viteArgs.push('--config', resolvedConfigFile);
+  }
 
   if (configLoader && !hasExplicitConfigLoader) {
     viteArgs.push('--configLoader', configLoader);
@@ -125,6 +133,15 @@ log(`内存限制: ${process.execArgv.join(' ')}`);
 const viteEntry = 'scripts/infra/vite-cli-safe.mjs';
 const viteArgs = createViteArgs();
 const shouldForceInline = process.env.BG_VITE_FORCE_INLINE === '1';
+
+function resolveMaxOldSpaceSizeArg(defaultMb = 8192) {
+  const fromNodeOptions = process.env.NODE_OPTIONS?.match(/--max-old-space-size=(\d+)/)?.[1];
+  const fromEnv = process.env.BG_NODE_MAX_OLD_SPACE_SIZE?.trim();
+  const parsed = Number.parseInt(fromEnv || fromNodeOptions || String(defaultMb), 10);
+  const resolved = Number.isFinite(parsed) && parsed > 0 ? parsed : defaultMb;
+  return `--max-old-space-size=${resolved}`;
+}
+
 log(`Vite 入口: ${viteEntry}`);
 log(`Vite 参数: ${viteArgs.join(' ')}`);
 
@@ -137,7 +154,7 @@ if (shouldForceInline) {
 
   try {
     vite = spawn(process.execPath, [
-      '--max-old-space-size=4096',
+      resolveMaxOldSpaceSizeArg(),
       viteEntry,
       ...viteArgs,
     ], withWindowsHide({

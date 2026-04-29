@@ -34,8 +34,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.Base64;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -55,14 +54,6 @@ public class GamePackagePlugin extends Plugin {
 
     private static final String TAG = "GamePackagePlugin";
     static final String NOTIFICATION_PERMISSION_ALIAS = "notifications";
-    private static final String ROOT_DIR = "game-packages";
-    private static final String CURRENT_DIR = "current";
-    private static final String STAGING_DIR = "staging";
-    private static final String ASSETS_DIR = "assets";
-    private static final String ARCHIVE_FILE = "package.zip";
-    private static final String ARCHIVE_PART_FILE = "package.zip.part";
-    private static final String METADATA_FILE = "metadata.json";
-    private static final String STATE_FILE = "install-state.json";
     private static final int HTTP_RANGE_NOT_SATISFIABLE = 416;
     private static final int BUFFER_SIZE = 16 * 1024;
     private static final String ERROR_NETWORK_TIMEOUT = "network-timeout";
@@ -119,14 +110,14 @@ public class GamePackagePlugin extends Plugin {
             File[] gameDirs = rootDir.listFiles(File::isDirectory);
             if (gameDirs != null) {
                 for (File gameDir : gameDirs) {
-                    File metadataFile = new File(new File(gameDir, CURRENT_DIR), METADATA_FILE);
+                    File metadataFile = new File(new File(gameDir, GamePackageFs.CURRENT_DIR), GamePackageFs.METADATA_FILE);
                     if (!metadataFile.exists()) {
                         continue;
                     }
 
                     JSONObject metadata = readJsonFile(metadataFile);
-                    File assetRootDir = new File(new File(gameDir, CURRENT_DIR), ASSETS_DIR);
-                    if (!assetRootDir.exists()) {
+                    File assetRootDir = new File(new File(gameDir, GamePackageFs.CURRENT_DIR), GamePackageFs.ASSETS_DIR);
+                    if (metadata == null || !assetRootDir.isDirectory()) {
                         continue;
                     }
 
@@ -253,6 +244,52 @@ public class GamePackagePlugin extends Plugin {
     }
 
     @PluginMethod
+    public void readInstalledAsset(PluginCall call) {
+        String gameId = normalizeNonEmpty(call.getString("gameId"));
+        String relativePath = normalizeNonEmpty(call.getString("relativePath"));
+        if (gameId == null) {
+            call.reject("缺少 gameId");
+            return;
+        }
+        if (relativePath == null) {
+            call.reject("缺少 relativePath");
+            return;
+        }
+
+        executor.execute(() -> {
+            try {
+                String normalizedRelativePath = normalizeInstalledAssetRelativePath(relativePath);
+                if (normalizedRelativePath == null) {
+                    throw new IOException("非法素材相对路径: " + relativePath);
+                }
+
+                File assetFile = resolveInstalledAssetFile(gameId, normalizedRelativePath);
+                if (assetFile == null || !assetFile.isFile()) {
+                    throw new IOException("未找到已安装素材文件: " + normalizedRelativePath);
+                }
+
+                byte[] bytes = Files.readAllBytes(assetFile.toPath());
+                JSObject result = new JSObject();
+                result.put("gameId", gameId);
+                result.put("relativePath", normalizedRelativePath);
+                result.put("mimeType", detectInstalledAssetMimeType(assetFile, normalizedRelativePath));
+                result.put("base64", Base64.getEncoder().encodeToString(bytes));
+                result.put("size", bytes.length);
+                Log.i(
+                    TAG,
+                    "readInstalledAsset success gameId=" + gameId
+                        + " relativePath=" + normalizedRelativePath
+                        + " size=" + bytes.length
+                );
+                resolveOnMainThread(call, result);
+            } catch (Exception error) {
+                Log.e(TAG, "readInstalledAsset failed gameId=" + gameId + " relativePath=" + relativePath, error);
+                rejectOnMainThread(call, "读取已安装素材文件失败", error);
+            }
+        });
+    }
+
+    @PluginMethod
     public void cancelInstall(PluginCall call) {
         String gameId = normalizeNonEmpty(call.getString("gameId"));
         if (gameId == null) {
@@ -287,6 +324,13 @@ public class GamePackagePlugin extends Plugin {
             boolean taskRunning = taskRecord != null && taskRecord.isActive();
             result.put("taskRunning", taskRunning);
             if (payload == null) {
+                payload = buildInstalledStatePayload(gameId);
+            }
+            if (payload == null) {
+                if (GamePackageFs.cleanupBrokenCurrentInstall(getContext(), gameId)) {
+                    Log.w(TAG, "getInstallState cleaned-broken-current gameId=" + gameId);
+                }
+                cleanupInactivePackageArtifacts(gameId, null, taskRunning);
                 Log.i(TAG, "getInstallState empty gameId=" + gameId + " taskRunning=" + taskRunning);
                 result.put("exists", false);
                 call.resolve(result);
@@ -294,6 +338,8 @@ public class GamePackagePlugin extends Plugin {
             }
 
             payload = normalizeStaleInstallState(gameId, payload, taskRunning, taskRecord);
+            payload = normalizeInstalledStateAgainstFiles(gameId, payload, taskRunning);
+            cleanupInactivePackageArtifacts(gameId, null, taskRunning);
 
             result.put("exists", true);
             copyJsonValue(payload, result, "gameId");
@@ -312,6 +358,10 @@ public class GamePackagePlugin extends Plugin {
             Log.e(TAG, "getInstallState failed gameId=" + gameId, error);
             call.reject("读取安装任务状态失败", error);
         }
+    }
+
+    private JSONObject buildInstalledStatePayload(String gameId) {
+        return GamePackageFs.buildInstalledStatePayload(getContext(), gameId);
     }
 
     private JSONObject normalizeStaleInstallState(String gameId, JSONObject payload, boolean taskRunning, AndroidDownloadTaskRecord taskRecord) {
@@ -345,6 +395,73 @@ public class GamePackagePlugin extends Plugin {
         }
     }
 
+    private JSONObject normalizeInstalledStateAgainstFiles(String gameId, JSONObject payload, boolean taskRunning) {
+        if (payload == null) {
+            return null;
+        }
+
+        String status = normalizeNonEmpty(payload.optString("status", null));
+        JSONObject installedPayload = buildInstalledStatePayload(gameId);
+        if (!"installed".equals(status)) {
+            if (taskRunning) {
+                return payload;
+            }
+            if (installedPayload == null) {
+                return payload;
+            }
+
+            try {
+                persistInstallState(gameId, installedPayload);
+            } catch (Exception error) {
+                Log.w(TAG, "normalizeInstalledStateAgainstFiles persist-recovered-installed-state-failed gameId=" + gameId, error);
+            }
+            Log.w(
+                TAG,
+                "normalizeInstalledStateAgainstFiles recovered-installed-state gameId=" + gameId
+                    + " previousPayload=" + payload
+                    + " normalizedPayload=" + installedPayload
+            );
+            return installedPayload;
+        }
+
+        if (installedPayload == null) {
+            try {
+                if (GamePackageFs.cleanupBrokenCurrentInstall(getContext(), gameId)) {
+                    Log.w(TAG, "normalizeInstalledStateAgainstFiles removed-broken-current gameId=" + gameId);
+                }
+                JSONObject normalizedPayload = new JSONObject();
+                normalizedPayload.put("gameId", gameId);
+                normalizedPayload.put("status", "not-installed");
+                normalizedPayload.put("updatedAt", System.currentTimeMillis());
+                persistInstallState(gameId, normalizedPayload);
+                Log.w(TAG, "normalizeInstalledStateAgainstFiles missing-assets gameId=" + gameId + " previousPayload=" + payload);
+                return normalizedPayload;
+            } catch (Exception error) {
+                Log.w(TAG, "normalizeInstalledStateAgainstFiles missing-assets-normalize-failed gameId=" + gameId, error);
+                return payload;
+            }
+        }
+
+        String payloadAssetRootPath = normalizeNonEmpty(payload.optString("assetRootPath", null));
+        String expectedAssetRootPath = normalizeNonEmpty(installedPayload.optString("assetRootPath", null));
+        String payloadAssetPackVersion = normalizeNonEmpty(payload.optString("assetPackVersion", null));
+        String expectedAssetPackVersion = normalizeNonEmpty(installedPayload.optString("assetPackVersion", null));
+        if (
+            safeEquals(payloadAssetRootPath, expectedAssetRootPath)
+            && safeEquals(payloadAssetPackVersion, expectedAssetPackVersion)
+        ) {
+            return payload;
+        }
+
+        try {
+            persistInstallState(gameId, installedPayload);
+        } catch (Exception error) {
+            Log.w(TAG, "normalizeInstalledStateAgainstFiles persist-repaired-state-failed gameId=" + gameId, error);
+        }
+        Log.w(TAG, "normalizeInstalledStateAgainstFiles repaired-installed-state gameId=" + gameId + " previousPayload=" + payload + " normalizedPayload=" + installedPayload);
+        return installedPayload;
+    }
+
     @PluginMethod
     public void installGamePackage(PluginCall call) {
         JSObject notificationPermission = buildNotificationPermissionResult(false);
@@ -354,7 +471,19 @@ public class GamePackagePlugin extends Plugin {
             return;
         }
 
-        enqueueInstallGamePackage(call);
+        enqueueInstallGamePackage(call, false);
+    }
+
+    @PluginMethod
+    public void installGamePackageIncremental(PluginCall call) {
+        JSObject notificationPermission = buildNotificationPermissionResult(false);
+        if (notificationPermission.optBoolean("required", false) && !notificationPermission.optBoolean("granted", false)) {
+            Log.w(TAG, "installGamePackageIncremental missing notification permission gameId=" + call.getString("gameId", ""));
+            requestPermissionForAlias(NOTIFICATION_PERMISSION_ALIAS, call, "handleInstallNotificationPermissionResult");
+            return;
+        }
+
+        enqueueInstallGamePackage(call, true);
     }
 
     @PermissionCallback
@@ -367,16 +496,19 @@ public class GamePackagePlugin extends Plugin {
             return;
         }
 
-        enqueueInstallGamePackage(call);
+        enqueueInstallGamePackage(call, normalizeNonEmpty(call.getString("fileIndexUrl")) != null);
     }
 
-    private void enqueueInstallGamePackage(PluginCall call) {
+    private void enqueueInstallGamePackage(PluginCall call, boolean incrementalMode) {
         String gameId = normalizeNonEmpty(call.getString("gameId"));
         String runtimeChannel = normalizeNonEmpty(call.getString("runtimeChannel"));
         String assetPackId = normalizeNonEmpty(call.getString("assetPackId"));
         String assetPackVersion = normalizeNonEmpty(call.getString("assetPackVersion"));
         String assetPackUrl = normalizeNonEmpty(call.getString("assetPackUrl"));
         String assetPackChecksum = normalizeChecksum(call.getString("assetPackChecksum"));
+        String assetBaseUrl = normalizeNonEmpty(call.getString("assetBaseUrl"));
+        String fileIndexUrl = normalizeNonEmpty(call.getString("fileIndexUrl"));
+        String fileIndexChecksum = normalizeChecksum(call.getString("fileIndexChecksum"));
         Log.i(
             TAG,
             "installGamePackage requested gameId=" + gameId
@@ -385,6 +517,8 @@ public class GamePackagePlugin extends Plugin {
                 + " assetPackVersion=" + assetPackVersion
                 + " assetPackUrl=" + assetPackUrl
                 + " assetPackChecksum=" + (assetPackChecksum != null ? assetPackChecksum : "")
+                + " incrementalMode=" + incrementalMode
+                + " fileIndexUrl=" + (fileIndexUrl != null ? fileIndexUrl : "")
         );
 
         if (gameId == null) {
@@ -396,12 +530,23 @@ public class GamePackagePlugin extends Plugin {
             call.reject("缺少 assetPackUrl");
             return;
         }
+        if (incrementalMode && (assetBaseUrl == null || fileIndexUrl == null)) {
+            call.reject("缺少增量安装所需的 assetBaseUrl 或 fileIndexUrl");
+            return;
+        }
         String resolvedAssetPackId = assetPackId != null ? assetPackId : gameId;
         String resolvedAssetPackVersion = assetPackVersion != null ? assetPackVersion : "unknown";
-        File gameDir = new File(getRootDir(), gameId);
-        File stagingDir = new File(new File(gameDir, STAGING_DIR), sanitizeFileSegment(resolvedAssetPackVersion));
-        File archiveFile = new File(stagingDir, ARCHIVE_FILE);
-        File archivePartFile = new File(stagingDir, ARCHIVE_PART_FILE);
+        String installMode = incrementalMode ? "incremental" : "full";
+        AndroidDownloadTaskRecord existingRecord = taskStore.getLatestByTarget(AndroidDownloadTaskRecord.KIND_GAME_PACKAGE, gameId);
+        if (existingRecord == null || existingRecord.isTerminal()) {
+            if (GamePackageFs.cleanupBrokenCurrentInstall(getContext(), gameId)) {
+                Log.w(TAG, "enqueueInstallGamePackage cleaned-broken-current gameId=" + gameId);
+            }
+            cleanupInactivePackageArtifacts(gameId, resolvedAssetPackVersion, false);
+        }
+        File stagingDir = GamePackageFs.resolveVersionedStagingDir(getContext(), gameId, resolvedAssetPackVersion);
+        File archiveFile = new File(stagingDir, GamePackageFs.ARCHIVE_FILE);
+        File archivePartFile = new File(stagingDir, GamePackageFs.ARCHIVE_PART_FILE);
         AndroidDownloadForegroundService.startManagedIntent(
             getContext(),
             AndroidDownloadForegroundService.buildEnqueueIntent(
@@ -414,6 +559,10 @@ public class GamePackagePlugin extends Plugin {
                 resolvedAssetPackVersion,
                 assetPackUrl,
                 assetPackChecksum,
+                installMode,
+                assetBaseUrl,
+                fileIndexUrl,
+                fileIndexChecksum,
                 archiveFile.getAbsolutePath(),
                 archivePartFile.getAbsolutePath()
             )
@@ -427,6 +576,10 @@ public class GamePackagePlugin extends Plugin {
             resolvedAssetPackVersion,
             assetPackUrl,
             assetPackChecksum,
+            installMode,
+            assetBaseUrl,
+            fileIndexUrl,
+            fileIndexChecksum,
             archiveFile.getAbsolutePath(),
             archivePartFile.getAbsolutePath()
         );
@@ -441,15 +594,11 @@ public class GamePackagePlugin extends Plugin {
     }
 
     private File getRootDir() {
-        File rootDir = new File(getContext().getFilesDir(), ROOT_DIR);
-        if (!rootDir.exists()) {
-            rootDir.mkdirs();
-        }
-        return rootDir;
+        return GamePackageFs.getRootDir(getContext());
     }
 
     private String buildAssetRootPath(File assetRootDir) {
-        return assetRootDir.getAbsolutePath();
+        return GamePackageFs.buildAssetRootPath(assetRootDir);
     }
 
     private void downloadArchive(
@@ -655,35 +804,11 @@ public class GamePackagePlugin extends Plugin {
         String assetPackVersion,
         long installedAt
     ) throws IOException, JSONException {
-        JSONObject metadata = new JSONObject();
-        metadata.put("gameId", gameId);
-        metadata.put("runtimeChannel", runtimeChannel);
-        metadata.put("assetPackId", assetPackId);
-        metadata.put("assetPackVersion", assetPackVersion);
-        metadata.put("installedAt", installedAt);
-
-        File parent = targetFile.getParentFile();
-        if (parent != null && !parent.mkdirs() && !parent.exists()) {
-            throw new IOException("创建元数据目录失败");
-        }
-
-        try (FileOutputStream output = new FileOutputStream(targetFile)) {
-            output.write((metadata.toString(2) + "\n").getBytes(StandardCharsets.UTF_8));
-        }
+        GamePackageFs.writeMetadata(targetFile, gameId, runtimeChannel, assetPackId, assetPackVersion, installedAt);
     }
 
     private JSONObject readJsonFile(File file) throws IOException, JSONException {
-        if (file == null || !file.exists()) {
-            return null;
-        }
-        StringBuilder builder = new StringBuilder();
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                builder.append(line);
-            }
-        }
-        return new JSONObject(builder.toString());
+        return GamePackageFs.readJsonFile(file);
     }
 
     private String readInputStream(InputStream inputStream) throws IOException {
@@ -760,6 +885,63 @@ public class GamePackagePlugin extends Plugin {
         mainHandler.post(() -> call.reject(message, error));
     }
 
+    private String normalizeInstalledAssetRelativePath(String relativePath) {
+        if (relativePath == null) {
+            return null;
+        }
+
+        String normalized = relativePath.trim().replace('\\', '/');
+        while (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
+        while (normalized.contains("//")) {
+            normalized = normalized.replace("//", "/");
+        }
+        if (normalized.isEmpty()) {
+            return null;
+        }
+
+        String[] segments = normalized.split("/");
+        for (String segment : segments) {
+            if (segment == null || segment.isEmpty() || ".".equals(segment) || "..".equals(segment)) {
+                return null;
+            }
+        }
+        return normalized;
+    }
+
+    private File resolveInstalledAssetFile(String gameId, String normalizedRelativePath) throws IOException {
+        File assetRootDir = GamePackageFs.resolveCurrentAssetsDir(getContext(), gameId);
+        if (!assetRootDir.isDirectory()) {
+            return null;
+        }
+
+        File assetFile = new File(assetRootDir, normalizedRelativePath.replace("/", File.separator));
+        String assetRootPath = assetRootDir.getCanonicalPath();
+        String assetFilePath = assetFile.getCanonicalPath();
+        String allowedPrefix = assetRootPath.endsWith(File.separator)
+            ? assetRootPath
+            : assetRootPath + File.separator;
+        if (!assetFilePath.startsWith(allowedPrefix)) {
+            throw new IOException("素材路径越界: " + normalizedRelativePath);
+        }
+        return assetFile;
+    }
+
+    private String detectInstalledAssetMimeType(File assetFile, String normalizedRelativePath) throws IOException {
+        String mimeType = normalizeNonEmpty(Files.probeContentType(assetFile.toPath()));
+        if (mimeType != null) {
+            return mimeType;
+        }
+
+        String lowerPath = normalizedRelativePath.toLowerCase();
+        if (lowerPath.endsWith(".webp")) return "image/webp";
+        if (lowerPath.endsWith(".png")) return "image/png";
+        if (lowerPath.endsWith(".jpg") || lowerPath.endsWith(".jpeg")) return "image/jpeg";
+        if (lowerPath.endsWith(".json")) return "application/json";
+        return "application/octet-stream";
+    }
+
     private String normalizeNonEmpty(String value) {
         if (value == null) {
             return null;
@@ -785,6 +967,10 @@ public class GamePackagePlugin extends Plugin {
             builder.append(String.format("%02x", value));
         }
         return builder.toString();
+    }
+
+    private boolean safeEquals(String left, String right) {
+        return GamePackageFs.safeEquals(left, right);
     }
 
     private boolean isChecksumMatch(File file, String checksum) throws Exception {
@@ -832,7 +1018,7 @@ public class GamePackagePlugin extends Plugin {
     }
 
     private File resolveStateFile(String gameId) {
-        return new File(new File(getRootDir(), gameId), STATE_FILE);
+        return GamePackageFs.resolveStateFile(getContext(), gameId);
     }
 
     private boolean isTaskRunning(String gameId) {
@@ -849,16 +1035,25 @@ public class GamePackagePlugin extends Plugin {
 
     private void persistInstallState(String gameId, JSONObject payload) {
         try {
-            File stateFile = resolveStateFile(gameId);
-            File parent = stateFile.getParentFile();
-            if (parent != null && !parent.exists() && !parent.mkdirs()) {
-                throw new IOException("创建安装状态目录失败");
-            }
-            try (FileOutputStream outputStream = new FileOutputStream(stateFile)) {
-                outputStream.write((payload.toString() + "\n").getBytes(StandardCharsets.UTF_8));
-            }
+            GamePackageFs.writeJsonFile(resolveStateFile(gameId), payload);
         } catch (Exception error) {
             Log.w(TAG, "persistInstallState failed gameId=" + gameId, error);
+        }
+    }
+
+    private void cleanupInactivePackageArtifacts(String gameId, String keepPackageVersion, boolean taskRunning) {
+        if (taskRunning) {
+            return;
+        }
+
+        int deletedCount = GamePackageFs.cleanupStagingDirectories(getContext(), gameId, keepPackageVersion);
+        if (deletedCount > 0) {
+            Log.i(
+                TAG,
+                "cleanupInactivePackageArtifacts gameId=" + gameId
+                    + " deletedCount=" + deletedCount
+                    + " keepPackageVersion=" + (keepPackageVersion != null ? keepPackageVersion : "")
+            );
         }
     }
 
@@ -910,7 +1105,7 @@ public class GamePackagePlugin extends Plugin {
     }
 
     private String sanitizeFileSegment(String value) {
-        return value.replaceAll("[^a-zA-Z0-9._-]", "_");
+        return GamePackageFs.sanitizeFileSegment(value);
     }
 
     private String classifyInstallErrorCode(Exception error) {
@@ -958,19 +1153,6 @@ public class GamePackagePlugin extends Plugin {
     }
 
     private void deleteRecursively(File target) {
-        if (target == null || !target.exists()) {
-            return;
-        }
-
-        File[] children = target.listFiles();
-        if (children != null) {
-            for (File child : children) {
-                deleteRecursively(child);
-            }
-        }
-
-        if (!target.delete() && target.exists()) {
-            Log.w(TAG, "deleteRecursively failed: " + target.getAbsolutePath());
-        }
+        GamePackageFs.deleteRecursively(target);
     }
 }

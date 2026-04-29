@@ -23,8 +23,8 @@ import {
 
 const rootDir = process.cwd();
 const args = process.argv.slice(2);
-const defaultAppId = 'top.easyboardgame.app';
-const defaultCustomUrlScheme = 'top.easyboardgame.app';
+const defaultAppId = 'top.easyboardgame.app.debug';
+const defaultCustomUrlScheme = 'top.easyboardgame.app.debug';
 const defaultEmulatorPortStart = 5560;
 const defaultEmulatorPortEnd = 5680;
 const webViewCdpLoadingHints = [
@@ -86,7 +86,7 @@ const printUsage = () => {
         '  --serial <adb serial>          直接使用已连接设备/模拟器',
         '  --avd <name>                   优先使用/启动指定 AVD，并忽略其他已连接实体机',
         '  --apk <path>                   安装指定 APK；默认优先用 debug APK',
-        '  --app-id <id>                  默认 top.easyboardgame.app',
+        '  --app-id <id>                  默认 top.easyboardgame.app.debug',
         '  --route <path>                 启动后直接深链到指定应用内路由，例如 /play/dicethrone/local',
         `  --custom-url-scheme <scheme>   默认 ${defaultCustomUrlScheme}`,
         `  --min-webview-major <n>        默认 ${DEFAULT_ANDROID_COMPAT_MIN_WEBVIEW_MAJOR}`,

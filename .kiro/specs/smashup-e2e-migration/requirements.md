@@ -85,7 +85,7 @@
 2. THE Migration_System SHALL 提供测试质量检查清单（测试通过、截图清晰、时间 < 60 秒、无 flaky 行为）
 3. THE Migration_System SHALL 提供文档检查清单（测试名称清晰、有注释、截图有描述性文件名）
 4. WHEN 迁移每个测试，THE Developer SHALL 使用检查清单验证迁移质量
-5. THE Migration_System SHALL 在 `evidence/smashup-e2e-migration-progress.md` 中记录每个测试的迁移状态
+5. THE Migration_System SHALL 在 `evidence/smashup/smashup-e2e-migration-progress.md` 中记录每个测试的迁移状态
 
 ### Requirement 6: 删除旧代码和更新文档
 
@@ -96,7 +96,7 @@
 1. WHEN 所有测试迁移完成，THE Migration_System SHALL 删除 `e2e/fixtures/` 目录
 2. WHEN 所有测试迁移完成，THE Migration_System SHALL 删除 `e2e/helpers/smashup.ts` 中的旧函数（`setupSmashUpOnlineMatch`、`readCoreState`、`applyCoreState`）
 3. WHEN 所有测试迁移完成，THE Migration_System SHALL 更新 `docs/automated-testing.md` 文档
-4. WHEN 所有测试迁移完成，THE Migration_System SHALL 在 `evidence/smashup-e2e-migration-progress.md` 中记录最终统计数据
+4. WHEN 所有测试迁移完成，THE Migration_System SHALL 在 `evidence/smashup/smashup-e2e-migration-progress.md` 中记录最终统计数据
 5. THE Migration_System SHALL 确保 `npm run test:e2e:ci` 全部通过
 
 ### Requirement 7: 保留页面流和资源验证测试
@@ -129,7 +129,7 @@
 
 #### Acceptance Criteria
 
-1. THE Migration_System SHALL 在 `evidence/smashup-e2e-migration-progress.md` 中记录总体进度（已完成/总数、百分比）
+1. THE Migration_System SHALL 在 `evidence/smashup/smashup-e2e-migration-progress.md` 中记录总体进度（已完成/总数、百分比）
 2. THE Migration_System SHALL 在进度文档中记录每个优先级的迁移状态（第一优先级、第二优先级、第三优先级、第四优先级）
 3. THE Migration_System SHALL 在进度文档中记录每日进度（日期、完成的测试、遇到的问题）
 4. THE Migration_System SHALL 在进度文档中记录遇到的问题和解决方案（问题描述、解决方法、结果）

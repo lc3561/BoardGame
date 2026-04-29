@@ -48,6 +48,9 @@ bash deploy-image.sh update
 bash deploy-image.sh update v1.2.3  # 部署指定 tag
 ```
 
+**强制规则**：生产环境更新必须**等待 CI 镜像构建完成**后再执行（对应 commit/tag 的镜像已推送到仓库）。  
+未确认 CI 构建完成时禁止执行 `update`，避免拉取到旧镜像或半成品镜像。
+
 ### 回滚 / 状态 / 日志
 
 ```bash
@@ -204,7 +207,8 @@ SMTP_PASS=xxx
 - 远程模式下，Android App 会与线上 Web 同步更新；如果线上前端需要回滚，App 也会一起回滚，不再依赖重新发 APK
 - Android `remote` 打包应视为“纯壳模式”：不会执行 `vite build`，也不会把 `dist` 前端资源复制进 APK；打包只更新原生壳、Capacitor 配置和壳内静态资产（例如方向映射、图标、启动图）
 - Android `remote` 的 `build-debug / build-release / build-bundle` 不再自动执行 `capacitor sync/update`；如果你新增了 Capacitor 插件、修改了 Android 原生模板或首次初始化工程，先手动执行一次 `npm run mobile:android:sync`
-- 当前 Android 壳默认行为：游戏页按 `preferredOrientation` 自动切换横竖屏，并隐藏顶部状态栏；非游戏页恢复竖屏和系统状态栏
+- 当前 Android 壳默认行为：游戏页按 `preferredOrientation` 自动切换横竖屏，并隐藏顶部状态栏；未声明固定方向的非游戏页恢复系统默认方向和系统状态栏
+- 若首页 V2、活动页、教程页等**非游戏页**也要求固定方向，必须让原生 `MainActivity` 显式识别该路由或读取构建元数据；**不能只靠 H5 层 `MobileOrientationGuard` 试图锁屏**
 - Android 壳进入后台、按 Home、锁屏或熄屏时，会主动通知 H5 停止当前 BGM；恢复前台后默认不自动续播
 
 > **主线口径**：`remote WebView` 只作为兼容 / 调试 / 短期灰度路径保留。Android 的长期主线应是 `embedded` 打包；若未来需要热更新 H5 本体，应演进为 `embedded + OTA/Live Update`，而不是继续把 `remote` 当默认产品方案。
@@ -239,10 +243,13 @@ node scripts/mobile/release-android.mjs ota --channel stable
 
 GitHub Actions 自动化：
 
-- workflow：`.github/workflows/android-ota-publish.yml`
-- 自动触发：`main` 分支合入影响 H5 bundle 的改动后，自动发布到非生产 channel，默认 `edge`
-- 手动触发：可手动选择 `stable` / `gray` / `edge`，并支持 `dry_run`、`skip_latest`
-- 正式门禁：`stable` 发布应绑定 `android-ota-production` Environment 审批
+- 自动正式发版 workflow：`.github/workflows/android-push-release.yml`
+- 手动 OTA workflow：`.github/workflows/android-ota-publish.yml`
+- `main` 自动发版：命中 Android H5 相关路径后，自动发布 **stable OTA**；**原生壳仍需手动发包**
+- 自动版本管理：默认会在自动发版成功后把 `package.json` / `package-lock.json` 自动递增到下一个 patch 版本，并回推一个带 `[skip android release]` 的 bot commit，避免发版循环；如需临时关闭，可把仓库变量 `ANDROID_AUTO_BUMP_VERSION` 设为 `false`
+- 手动触发：仍可手动选择 `stable` / `gray` / `edge` 单独发布 OTA，并支持 `dry_run`、`skip_latest`、`force_update`
+- 正式门禁：如需人工审批，可在**手动** OTA workflow 上绑定 `android-ota-production` Environment
+- 项目强制规则：OTA manifest 不得再写 `targetNativeVersion` / `minNativeVersion` / `maxNativeVersion`；所有已安装版本默认都必须收到 OTA。若误传这些参数，发布脚本必须直接失败。
 
 约束：
 
@@ -250,14 +257,6 @@ GitHub Actions 自动化：
 - `--skip-latest` 会上传 bundle 与版本 manifest，但不会切换该 channel 的 `latest.json`
 - 正式覆盖 `latest.json` 后，指向该 channel 的 Android App 会在下一次启动后的后台检查中感知到新 bundle，并在切后台或重启后生效
 - OTA 只覆盖 Web bundle；涉及原生层改动时仍必须重新发 APK / AAB
-
-## Android 原生 APK 更新源
-
-- 路径前缀：`official/native-app-updates/android/<channel>/...`
-- `latest.json`：`https://assets.easyboardgame.top/official/native-app-updates/android/<channel>/latest.json`
-- APK：`https://assets.easyboardgame.top/official/native-app-updates/android/<channel>/packages/<version>.apk`
-- version manifest：`https://assets.easyboardgame.top/official/native-app-updates/android/<channel>/manifests/<version>.json`
-- 当前 App 内置的是“下载 APK -> 调起系统安装器”的私有分发链路，不是静默安装
 
 ## Nginx 反向代理（自动管理）
 
@@ -287,6 +286,8 @@ GitHub Actions 自动化：
 > **生产环境更新必须使用部署脚本**：`bash scripts/deploy/deploy-image.sh update [tag]`
 >
 > 禁止在生产服务器上直接运行 `docker compose up -d`，因为默认使用 `docker-compose.yml` 而非 `docker-compose.prod.yml`，两者的端口映射和环境变量配置不同。
+>
+> **当前部署脚本已内建 post-deploy smoke + 自动回退**：更新后会自动等待关键容器 ready，并检查首页、`/health`、`/notifications`。若新版本 smoke 失败，脚本会自动回退到部署前实际运行的 `web` / `game-server` 镜像引用，并再次执行 smoke。即使自动回退成功，本次更新命令仍会以失败状态退出，用于明确提示“服务已恢复，但升级未成功”。
 
 ## 同域策略
 
@@ -334,18 +335,20 @@ GitHub Actions 自动化：
 
 Android OTA 产物也走同一个对象存储桶，但前缀独立：
 
-1. 先执行 `npm run mobile:android:sync`，确保 `dist/` 与 Android embedded 资源同步
-2. 预演发布：`node scripts/mobile/release-android.mjs ota --channel gray --dry-run`
-3. 灰度上传但不切流：`node scripts/mobile/release-android.mjs ota --channel gray --skip-latest`
-4. 准备正式生效时，再执行不带 `--skip-latest` 的正式发布命令
+1. 日常主线：直接 `push main`，GitHub Actions **自动发布 stable OTA（原生壳手动）**
+2. 自动发版成功后，bot 会把仓库版本号自动 bump 到下一个 patch，作为下一次发版基线
+3. 若只想单独操作 OTA 灰度/预演，继续手动执行：
+   - `node scripts/mobile/release-android.mjs ota --channel gray --dry-run`
+   - `node scripts/mobile/release-android.mjs ota --channel gray --skip-latest`
+   - `node scripts/mobile/release-android.mjs ota --channel gray`
+4. 若要本地一次性正式发布 stable OTA + native，可执行：`node scripts/mobile/release-android.mjs full --channel stable`
 
-建议把 `stable`、`gray` 等 channel 作为独立发布轨道管理，不要把未验证 bundle 直接覆盖到 `stable/latest.json`
+当前默认发布节奏：
 
-建议的 OTA 发布节奏：
-
-1. `main` 自动发 `edge`
-2. 测试确认后手动发 `gray`
-3. 最后经审批手动发 `stable`
+1. 开发者把待发版版本号写进 `package.json`
+2. `push main`
+3. CI 直接发布该版本到 stable
+4. CI 自动把仓库版本号 bump 到下一个 patch，等待下一次 push
 
 ## UGC 资源前缀预留（未实现）
 

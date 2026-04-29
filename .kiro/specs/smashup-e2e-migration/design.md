@@ -5,7 +5,7 @@
 本文档定义 Smash Up E2E 测试框架迁移的设计方案。
 
 
-本设计基于已完成的状态注入服务端同步功能（`evidence/framework-migration-state-injection-sync.md`），将所有 Smash Up E2E 测试从旧框架迁移到新框架（"三板斧"模式）。
+本设计基于已完成的状态注入服务端同步功能（`evidence/smashup/framework-migration-state-injection-sync.md`），将所有 Smash Up E2E 测试从旧框架迁移到新框架（"三板斧"模式）。
 
 ### 设计目标
 
@@ -930,7 +930,7 @@ interface TestReport {
 
 3. **Day 3**：更新文档
    - 更新 `docs/automated-testing.md`
-   - 更新 `evidence/smashup-e2e-migration-progress.md`
+   - 更新 `evidence/smashup/smashup-e2e-migration-progress.md`
    - 创建迁移总结文档
 
 4. **Day 4-5**：缓冲时间
@@ -1092,7 +1092,7 @@ async function updateProgress(
   testFile: string,
   validation: ValidationResult
 ): Promise<void> {
-  const progressFile = 'evidence/smashup-e2e-migration-progress.md';
+  const progressFile = 'evidence/smashup/smashup-e2e-migration-progress.md';
   const content = readFileSync(progressFile, 'utf-8');
   
   // 更新测试状态

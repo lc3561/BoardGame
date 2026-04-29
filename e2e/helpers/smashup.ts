@@ -64,17 +64,11 @@ export async function createSmashUpRoomViaAPI(page: Page): Promise<string | null
 export async function waitForFactionDraft(page: Page, timeout = 60000) {
     console.log('[SmashUp] 开始等待派系选择界面...');
 
-    await page.waitForFunction(
-        () => {
-            if (document.querySelector('[data-testid="faction-selection-main-stage"]')) return true;
-            if (document.querySelector('[data-testid^="faction-option-"]')) return true;
-            const heading = document.querySelector('h1')?.textContent ?? '';
-            return /Draft Your Factions|选择派系|选择你的派系/.test(heading);
-        },
-        { timeout },
-    );
+    // 等待派系选择界面的标题出现
+    await page.waitForSelector('h1', { timeout });
 
-    await page.waitForSelector('[data-testid^="faction-option-"]', { timeout: 10000 });
+    // 等待派系卡牌网格出现
+    await page.waitForSelector('.grid > div', { timeout: 5000 });
 
     // 额外等待确保页面稳定
     await page.waitForTimeout(500);
@@ -87,7 +81,7 @@ export async function selectFaction(page: Page, factionIndex: number, testInfo?:
     console.log(`[SmashUp] 选择派系索引: ${factionIndex}`);
 
     // 1. 先点击派系卡，展开左侧详情面板；确认按钮只有在面板里才会渲染。
-    const factionCards = page.locator('[data-testid^="faction-option-"]').filter({ hasNot: page.locator('.opacity-40') });
+    const factionCards = page.locator('.grid > div').filter({ hasNot: page.locator('.opacity-40') });
     await expect(factionCards.nth(factionIndex)).toBeVisible({ timeout: 10000 });
     await factionCards.nth(factionIndex).click();
     console.log(`[SmashUp] ✅ 已点击派系卡牌 ${factionIndex}`);

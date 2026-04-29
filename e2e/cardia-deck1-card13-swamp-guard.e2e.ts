@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 import { 
     setupCardiaTestScenario,
     readCoreState,
@@ -135,7 +135,7 @@ test.describe('Cardia 一号牌组 - 沼泽守卫（新API）', () => {
             await setup.player1Page.waitForTimeout(1000);
             
             // 6. 等待卡牌选择弹窗出现
-            const modal = setup.player1Page.locator('.fixed.inset-0.z-50');
+            const modal = setup.player1Page.locator('[data-testid="card-selection-modal"]');
             await modal.waitFor({ state: 'visible', timeout: 5000 });
             console.log('✅ 卡牌选择弹窗已显示');
             
@@ -241,6 +241,234 @@ test.describe('Cardia 一号牌组 - 沼泽守卫（新API）', () => {
             
             console.log('✅ 所有断言通过');
             
+        } finally {
+            await setup.player1Context.close();
+            await setup.player2Context.close();
+        }
+    });
+
+    test('影响力13 - 沼泽守卫：没有己方场上卡牌时不可用（边界场景）', async ({ browser }) => {
+        // 边界场景：沼泽守卫是己方唯一的场上卡牌时，能力不可用
+        const setup = await setupCardiaTestScenario(browser, {
+            player1: {
+                hand: ['deck_i_card_13'], // 沼泽守卫（影响力13）
+                deck: ['deck_i_card_01', 'deck_i_card_02'],
+                playedCards: [], // 没有其他已打出的牌
+            },
+            player2: {
+                hand: ['deck_i_card_14'], // 女导师（影响力14）
+                deck: ['deck_i_card_07', 'deck_i_card_11'],
+                playedCards: [
+                    { defId: 'deck_i_card_02', signets: 0, encounterIndex: 0 }, // 虚空法师
+                ],
+            },
+            phase: 'play',
+        });
+        
+        try {
+            console.log('\n=== 边界场景：没有己方场上卡牌 ===');
+            
+            // 验证初始状态
+            const initialState = await readCoreState(setup.player1Page);
+            type PlayerState = { 
+                hand: Array<{ uid: string; defId: string }>;
+                playedCards: Array<{ uid: string; defId: string }>;
+            };
+            const players = initialState.players as Record<string, PlayerState>;
+            
+            console.log('初始状态:', {
+                p1PlayedCards: players['0'].playedCards.length,
+            });
+            
+            expect(players['0'].playedCards.length).toBe(0); // 没有已打出的牌
+            
+            console.log('\n=== 阶段2：打出卡牌 ===');
+            
+            // P1 打出沼泽守卫（13）
+            console.log('P1 打出沼泽守卫（13）');
+            await playCard(setup.player1Page, 0);
+            
+            // P2 打出女导师（14）
+            console.log('P2 打出女导师（14）');
+            await playCard(setup.player2Page, 0);
+            
+            // 等待进入能力阶段
+            await waitForPhase(setup.player1Page, 'ability', 10000);
+            
+            console.log('\n=== 阶段3：验证能力不可用 ===');
+            
+            // 验证：能力按钮存在（UI 层无法预知能力是否有有效目标）
+            const abilityButton = setup.player1Page.locator('[data-testid="cardia-activate-ability-btn"]');
+            await abilityButton.waitFor({ state: 'visible', timeout: 5000 });
+            console.log('✅ 能力按钮已显示');
+            
+            // 点击能力按钮，触发能力执行器
+            await abilityButton.click();
+            await setup.player1Page.waitForTimeout(1000);
+            
+            // 验证：没有弹出卡牌选择弹窗（因为没有有效目标）
+            const modal = setup.player1Page.locator('[data-testid="card-selection-modal"]');
+            const modalVisible = await modal.isVisible().catch(() => false);
+            expect(modalVisible).toBe(false);
+            console.log('✅ 没有弹出卡牌选择弹窗（没有有效目标）');
+            
+            // 验证：自动推进到下一阶段（因为能力执行器发射了 ABILITY_NO_VALID_TARGET 事件）
+            await waitForPhase(setup.player1Page, 'play', 10000);
+            
+            const finalState = await readCoreState(setup.player1Page);
+            console.log('最终状态:', {
+                phase: finalState.phase,
+            });
+            
+            expect(finalState.phase).toBe('play');
+            console.log('✅ 自动推进到下一阶段（能力无有效目标）');
+            
+            console.log('✅ 所有断言通过');
+        } finally {
+            await setup.player1Context.close();
+            await setup.player2Context.close();
+        }
+    });
+
+    test('影响力13 - 沼泽守卫：没有相对的牌时只回收己方卡牌（边界场景）', async ({ browser }) => {
+        // 边界场景：选中的卡牌没有相对的牌时，只回收己方卡牌
+        const setup = await setupCardiaTestScenario(browser, {
+            player1: {
+                hand: ['deck_i_card_13'], // 沼泽守卫（影响力13）
+                deck: ['deck_i_card_15', 'deck_i_card_16'],
+                playedCards: [
+                    { defId: 'deck_i_card_01', signets: 1, encounterIndex: 0 }, // 雇佣剑士（有相对的牌）
+                    { defId: 'deck_i_card_03', signets: 0, encounterIndex: 1 }, // 外科医生（没有相对的牌）
+                ],
+            },
+            player2: {
+                hand: ['deck_i_card_14'], // 女导师（影响力14）
+                deck: ['deck_i_card_07', 'deck_i_card_11'],
+                playedCards: [
+                    { defId: 'deck_i_card_02', signets: 0, encounterIndex: 0 }, // 虚空法师（相对雇佣剑士）
+                    // 注意：没有 encounterIndex=1 的牌（外科医生没有相对的牌）
+                ],
+            },
+            phase: 'play',
+        });
+        
+        try {
+            console.log('\n=== 边界场景：没有相对的牌 ===');
+            
+            // 验证初始状态
+            const initialState = await readCoreState(setup.player1Page);
+            type PlayerState = { 
+                hand: Array<{ uid: string; defId: string }>;
+                playedCards: Array<{ uid: string; defId: string; encounterIndex: number }>;
+                discard: unknown[];
+            };
+            const players = initialState.players as Record<string, PlayerState>;
+            
+            const initialP1HandSize = players['0'].hand.length;
+            const initialP2DiscardSize = players['1'].discard.length;
+            
+            // 记录要回收的牌（encounterIndex=1，没有相对的牌）
+            const targetCard = players['0'].playedCards.find(c => c.encounterIndex === 1);
+            const targetCardUid = targetCard?.uid;
+            const targetCardDefId = targetCard?.defId;
+            
+            console.log('初始状态:', {
+                p1HandSize: initialP1HandSize,
+                p1PlayedCards: players['0'].playedCards.map(c => ({ defId: c.defId, encounterIndex: c.encounterIndex })),
+                p2PlayedCards: players['1'].playedCards.map(c => ({ defId: c.defId, encounterIndex: c.encounterIndex })),
+                p2DiscardSize: initialP2DiscardSize,
+                targetCard: { uid: targetCardUid, defId: targetCardDefId },
+            });
+            
+            expect(targetCard).toBeDefined();
+            expect(targetCard!.encounterIndex).toBe(1);
+            
+            console.log('\n=== 阶段2：打出卡牌 ===');
+            
+            // P1 打出沼泽守卫（13）
+            console.log('P1 打出沼泽守卫（13）');
+            await playCard(setup.player1Page, 0);
+            
+            // P2 打出女导师（14）
+            console.log('P2 打出女导师（14）');
+            await playCard(setup.player2Page, 0);
+            
+            // 等待进入能力阶段
+            await waitForPhase(setup.player1Page, 'ability', 10000);
+            
+            console.log('\n=== 阶段3：激活能力并选择没有相对牌的卡牌 ===');
+            
+            // 激活能力
+            const abilityButton = setup.player1Page.locator('[data-testid="cardia-activate-ability-btn"]');
+            await abilityButton.waitFor({ state: 'visible', timeout: 5000 });
+            await abilityButton.click();
+            await setup.player1Page.waitForTimeout(1000);
+            
+            // 等待卡牌选择弹窗出现
+            const modal = setup.player1Page.locator('[data-testid="card-selection-modal"]');
+            await modal.waitFor({ state: 'visible', timeout: 5000 });
+            console.log('✅ 卡牌选择弹窗已显示');
+            
+            // 选择第二张已打出的牌（encounterIndex=1，外科医生，没有相对的牌）
+            const allButtons = modal.locator('button');
+            const count = await allButtons.count();
+            
+            // 找到第二个卡牌按钮（第一个是雇佣剑士，第二个是外科医生）
+            let cardButtonIndex = -1;
+            let foundCount = 0;
+            for (let i = 0; i < count; i++) {
+                const text = await allButtons.nth(i).textContent();
+                const isEnabled = await allButtons.nth(i).isEnabled();
+                if (text && !text.match(/确认|Confirm|取消|Cancel/) && isEnabled) {
+                    foundCount++;
+                    if (foundCount === 2) { // 选择第二张卡牌
+                        cardButtonIndex = i;
+                        break;
+                    }
+                }
+            }
+            
+            if (cardButtonIndex >= 0) {
+                await allButtons.nth(cardButtonIndex).click();
+                await setup.player1Page.waitForTimeout(500);
+                console.log('✅ 已选择第二张已打出的牌（外科医生，没有相对的牌）');
+            } else {
+                throw new Error('未找到第二张卡牌按钮');
+            }
+            
+            // 点击确认按钮
+            const confirmButton = modal.locator('button').filter({ hasText: /Confirm|确认/ });
+            await confirmButton.first().click({ timeout: 5000 });
+            console.log('✅ 已确认选择');
+            
+            // 等待弹窗关闭
+            await modal.waitFor({ state: 'hidden', timeout: 5000 });
+            
+            // 等待能力执行完成
+            await waitForPhase(setup.player1Page, 'play', 10000);
+            
+            console.log('\n=== 阶段4：验证结果 ===');
+            
+            // 验证：目标牌回到 P1 手上
+            const finalState = await readCoreState(setup.player1Page);
+            const playersFinal = finalState.players as Record<string, PlayerState>;
+            
+            console.log('最终状态:', {
+                p1HandSize: playersFinal['0'].hand.length,
+                p1Hand: playersFinal['0'].hand.map(c => c.defId),
+                p2DiscardSize: playersFinal['1'].discard.length,
+            });
+            
+            // 验证：外科医生回到 P1 手上
+            const recoveredCard = playersFinal['0'].hand.find(c => c.defId === targetCardDefId);
+            expect(recoveredCard).toBeDefined();
+            console.log('✅ 外科医生已回到 P1 手上');
+            
+            // 验证：P2 的弃牌堆没有增加（没有相对的牌被弃掉）
+            expect(playersFinal['1'].discard.length).toBe(initialP2DiscardSize);
+            console.log('✅ P2 的弃牌堆没有增加（没有相对的牌）');
+            
+            console.log('✅ 所有断言通过');
         } finally {
             await setup.player1Context.close();
             await setup.player2Context.close();

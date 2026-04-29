@@ -1,0 +1,219 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1820" height="980" viewBox="0 0 1820 980" role="img" aria-labelledby="title desc">
+  <title id="title">Home V2 YAML UI Scene Concept</title>
+  <desc id="desc">双状态书本式首页概念图，展示 overview 与 detail 两种 scene state，以及 artboard zones、book tabs、九宫格面板和宿主 action 绑定的理解。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#26160f"/>
+      <stop offset="100%" stop-color="#110905"/>
+    </linearGradient>
+    <radialGradient id="deskGlow" cx="50%" cy="40%" r="48%">
+      <stop offset="0%" stop-color="#8a5c31" stop-opacity="0.28"/>
+      <stop offset="45%" stop-color="#442616" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#0f0805" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="bookCover" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#6a462c"/>
+      <stop offset="55%" stop-color="#52311f"/>
+      <stop offset="100%" stop-color="#3d2418"/>
+    </linearGradient>
+    <linearGradient id="page" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f5e7c8"/>
+      <stop offset="100%" stop-color="#e1c999"/>
+    </linearGradient>
+    <linearGradient id="pageShade" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#000000" stop-opacity="0.10"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="goldPanelFill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ead5ad"/>
+      <stop offset="100%" stop-color="#d1b17a"/>
+    </linearGradient>
+    <linearGradient id="goldBorder" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f6df9f"/>
+      <stop offset="55%" stop-color="#bf8e43"/>
+      <stop offset="100%" stop-color="#7e5526"/>
+    </linearGradient>
+    <linearGradient id="bookmark" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#d59d48"/>
+      <stop offset="100%" stop-color="#8e5d22"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#000000" flood-opacity="0.30"/>
+    </filter>
+    <filter id="innerGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="#f7e4bc" flood-opacity="0.35"/>
+    </filter>
+    <style>
+      .label{font-family:Georgia,'Times New Roman',serif;fill:#f3dfbf}
+      .small{font-size:20px;letter-spacing:1px}
+      .section{font-size:28px;font-weight:700}
+      .sceneTitle{font-size:40px;font-weight:700}
+      .bookTitle{font-size:24px;font-weight:700;fill:#5b3e21}
+      .body{font-size:18px;fill:#69492a}
+      .tiny{font-size:15px;fill:#7a5a38}
+      .tabText{font-size:17px;font-weight:700;fill:#3f220e}
+      .chip{font-size:16px;font-weight:700;fill:#2f180a}
+      .callout{font-size:16px;fill:#d9c19b}
+      .code{font-family:'Cascadia Code',Consolas,monospace;font-size:16px;fill:#efd6aa}
+      .dash{stroke-dasharray:10 8}
+    </style>
+  </defs>
+
+  <rect width="1820" height="980" fill="url(#bg)"/>
+  <rect width="1820" height="980" fill="url(#deskGlow)"/>
+
+  <text x="80" y="86" class="label sceneTitle">Home V2 Scene Concept</text>
+  <text x="82" y="118" class="label small">基于我刚才的 spec 理解绘制：书本式 artboard + 5 个书签槽位 + 左右页 zones + YAML scene/skin/runtime 思路</text>
+
+  <g transform="translate(65,165)">
+    <text x="0" y="-18" class="label section">Overview State</text>
+    <g filter="url(#shadow)">
+      <rect x="0" y="0" width="790" height="630" rx="42" fill="url(#bookCover)"/>
+      <rect x="56" y="56" width="278" height="520" rx="20" fill="url(#page)"/>
+      <rect x="456" y="56" width="278" height="520" rx="20" fill="url(#page)"/>
+      <rect x="341" y="44" width="106" height="544" rx="26" fill="#472819"/>
+      <rect x="341" y="44" width="106" height="544" rx="26" fill="url(#pageShade)" opacity="0.7"/>
+
+      <rect x="74" y="74" width="242" height="484" rx="18" fill="none" stroke="#d7b47c" stroke-width="3" opacity="0.55"/>
+      <rect x="474" y="74" width="242" height="484" rx="18" fill="none" stroke="#d7b47c" stroke-width="3" opacity="0.55"/>
+
+      <g transform="translate(365,74)">
+        <rect x="0" y="0" width="58" height="72" rx="16" fill="url(#bookmark)" filter="url(#innerGlow)"/>
+        <rect x="0" y="84" width="58" height="72" rx="16" fill="url(#bookmark)" opacity="0.95"/>
+        <rect x="0" y="168" width="58" height="72" rx="16" fill="url(#bookmark)" opacity="0.90"/>
+        <rect x="0" y="252" width="58" height="72" rx="16" fill="url(#bookmark)" opacity="0.86"/>
+        <rect x="0" y="336" width="58" height="72" rx="16" fill="url(#bookmark)" opacity="0.82"/>
+        <text x="29" y="42" text-anchor="middle" class="tabText">大厅</text>
+        <text x="29" y="126" text-anchor="middle" class="tabText">房间</text>
+        <text x="29" y="210" text-anchor="middle" class="tabText">排行</text>
+        <text x="29" y="294" text-anchor="middle" class="tabText">更新</text>
+        <text x="29" y="378" text-anchor="middle" class="tabText">关于</text>
+      </g>
+
+      <g transform="translate(92,92)">
+        <rect x="0" y="0" width="206" height="460" rx="20" fill="url(#goldPanelFill)" stroke="url(#goldBorder)" stroke-width="8"/>
+        <text x="22" y="38" class="bookTitle">精选游戏</text>
+        <rect x="22" y="56" width="162" height="2" fill="#8a673b" opacity="0.45"/>
+        <g transform="translate(22,84)">
+          <rect x="0" y="0" width="160" height="76" rx="14" fill="#f4e7ca" stroke="#a77a42" stroke-width="3"/>
+          <text x="16" y="30" class="body">Dice Throne</text>
+          <text x="16" y="54" class="tiny">双人对战 / 角色构筑</text>
+          <circle cx="136" cy="38" r="14" fill="#c39143"/>
+          <text x="136" y="44" text-anchor="middle" class="chip">开</text>
+        </g>
+        <g transform="translate(22,174)">
+          <rect x="0" y="0" width="160" height="76" rx="14" fill="#f4e7ca" stroke="#a77a42" stroke-width="3"/>
+          <text x="16" y="30" class="body">Smash Up</text>
+          <text x="16" y="54" class="tiny">派系组合 / 快节奏冲突</text>
+          <circle cx="136" cy="38" r="14" fill="#c39143"/>
+          <text x="136" y="44" text-anchor="middle" class="chip">开</text>
+        </g>
+        <g transform="translate(22,264)">
+          <rect x="0" y="0" width="160" height="76" rx="14" fill="#f4e7ca" stroke="#a77a42" stroke-width="3"/>
+          <text x="16" y="30" class="body">Summoner Wars</text>
+          <text x="16" y="54" class="tiny">战棋推进 / 卡位资源</text>
+          <circle cx="136" cy="38" r="14" fill="#c39143"/>
+          <text x="136" y="44" text-anchor="middle" class="chip">开</text>
+        </g>
+        <g transform="translate(22,354)">
+          <rect x="0" y="0" width="160" height="76" rx="14" fill="#f4e7ca" stroke="#a77a42" stroke-width="3"/>
+          <text x="16" y="30" class="body">Tic Tac Toe</text>
+          <text x="16" y="54" class="tiny">教学入口 / 快速试玩</text>
+          <circle cx="136" cy="38" r="14" fill="#c39143"/>
+          <text x="136" y="44" text-anchor="middle" class="chip">开</text>
+        </g>
+      </g>
+
+      <g transform="translate(492,92)">
+        <rect x="0" y="0" width="206" height="460" rx="20" fill="#f3e2c0" stroke="#b48544" stroke-width="3" opacity="0.65"/>
+        <text x="22" y="38" class="bookTitle">总览页说明</text>
+        <text x="22" y="80" class="body">右页在 overview 态不是主交互区，</text>
+        <text x="22" y="106" class="body">更像目录说明 / 品牌氛围区。</text>
+        <rect x="22" y="136" width="162" height="120" rx="18" fill="#d9bf95"/>
+        <text x="103" y="202" text-anchor="middle" class="bookTitle" fill="#6a4a29">Book Key Art</text>
+        <rect x="22" y="282" width="162" height="128" rx="18" fill="#ebd7b1" stroke="#a77a42" stroke-width="3"/>
+        <text x="22" y="316" class="body">这里我理解成：</text>
+        <text x="22" y="344" class="tiny">1. 游戏简介 / 品牌句</text>
+        <text x="22" y="370" class="tiny">2. 当前 tab 对应说明</text>
+        <text x="22" y="396" class="tiny">3. 或保留为空气感留白</text>
+      </g>
+    </g>
+
+    <g opacity="0.95">
+      <rect x="74" y="74" width="242" height="484" fill="none" stroke="#38bdf8" stroke-width="3" class="dash"/>
+      <rect x="474" y="74" width="242" height="484" fill="none" stroke="#f472b6" stroke-width="3" class="dash"/>
+      <rect x="365" y="74" width="58" height="408" fill="none" stroke="#fbbf24" stroke-width="3" class="dash"/>
+      <text x="80" y="598" class="callout">left_page zone</text>
+      <text x="478" y="598" class="callout">right_page zone</text>
+      <text x="338" y="612" class="callout">bookmark_slot stack</text>
+    </g>
+  </g>
+
+  <g transform="translate(955,165)">
+    <text x="0" y="-18" class="label section">Detail State</text>
+    <g filter="url(#shadow)">
+      <rect x="0" y="0" width="790" height="630" rx="42" fill="url(#bookCover)"/>
+      <rect x="56" y="56" width="278" height="520" rx="20" fill="url(#page)"/>
+      <rect x="456" y="56" width="278" height="520" rx="20" fill="url(#page)"/>
+      <rect x="341" y="44" width="106" height="544" rx="26" fill="#472819"/>
+      <rect x="341" y="44" width="106" height="544" rx="26" fill="url(#pageShade)" opacity="0.7"/>
+
+      <g transform="translate(365,74)">
+        <rect x="0" y="84" width="58" height="72" rx="16" fill="url(#bookmark)" opacity="0.55"/>
+        <rect x="0" y="168" width="58" height="72" rx="16" fill="url(#bookmark)" opacity="0.55"/>
+        <rect x="0" y="252" width="58" height="72" rx="16" fill="url(#bookmark)" opacity="0.55"/>
+        <rect x="0" y="336" width="58" height="72" rx="16" fill="url(#bookmark)" opacity="0.55"/>
+        <rect x="0" y="0" width="58" height="72" rx="16" fill="#f0c774" filter="url(#innerGlow)"/>
+        <text x="29" y="42" text-anchor="middle" class="tabText">返回</text>
+      </g>
+
+      <g transform="translate(92,92)">
+        <rect x="0" y="0" width="206" height="460" rx="20" fill="url(#goldPanelFill)" stroke="url(#goldBorder)" stroke-width="8"/>
+        <text x="22" y="38" class="bookTitle">Dice Throne</text>
+        <text x="22" y="62" class="tiny">actionId: openGameDetails</text>
+        <rect x="22" y="88" width="162" height="150" rx="18" fill="#d9bf95"/>
+        <text x="103" y="170" text-anchor="middle" class="bookTitle">Game Art</text>
+        <text x="22" y="278" class="body">双人对战，节奏清晰，</text>
+        <text x="22" y="304" class="body">适合演示“从目录跳详情”。</text>
+        <rect x="22" y="340" width="162" height="54" rx="14" fill="#7f4d21"/>
+        <text x="103" y="374" text-anchor="middle" class="label small">返回总览</text>
+        <rect x="22" y="412" width="162" height="112" rx="18" fill="#f4e7ca" stroke="#a77a42" stroke-width="3"/>
+        <text x="22" y="442" class="tiny">left_page in detail:</text>
+        <text x="22" y="468" class="tiny">封面、标签、返回按钮、摘要</text>
+      </g>
+
+      <g transform="translate(492,92)">
+        <rect x="0" y="0" width="206" height="460" rx="20" fill="url(#goldPanelFill)" stroke="url(#goldBorder)" stroke-width="8"/>
+        <text x="22" y="38" class="bookTitle">详情页</text>
+        <text x="22" y="74" class="body">这里是右页主内容区，</text>
+        <text x="22" y="100" class="body">承载玩法介绍、特性、CTA。</text>
+        <rect x="22" y="126" width="162" height="94" rx="16" fill="#f4e7ca" stroke="#a77a42" stroke-width="3"/>
+        <text x="34" y="158" class="tiny">- 对战人数</text>
+        <text x="34" y="184" class="tiny">- 上手难度</text>
+        <text x="34" y="210" class="tiny">- 教学入口</text>
+        <rect x="22" y="246" width="162" height="136" rx="18" fill="#eedabd" stroke="#a77a42" stroke-width="3"/>
+        <text x="22" y="278" class="tiny">这里我理解成更完整的</text>
+        <text x="22" y="304" class="tiny">介绍文案和玩法亮点，</text>
+        <text x="22" y="330" class="tiny">而不是 overview 态的目录卡。</text>
+        <rect x="22" y="412" width="162" height="54" rx="14" fill="#9d6a2d"/>
+        <text x="103" y="446" text-anchor="middle" class="label small">开始对局</text>
+      </g>
+    </g>
+
+    <g opacity="0.95">
+      <rect x="74" y="74" width="242" height="484" fill="none" stroke="#38bdf8" stroke-width="3" class="dash"/>
+      <rect x="474" y="74" width="242" height="484" fill="none" stroke="#f472b6" stroke-width="3" class="dash"/>
+      <text x="90" y="598" class="callout">detail.left_page = summary + back</text>
+      <text x="492" y="598" class="callout">detail.right_page = full game details</text>
+    </g>
+  </g>
+
+  <g transform="translate(74,845)">
+    <rect x="0" y="0" width="1670" height="90" rx="22" fill="#1a100b" stroke="#7a532c" stroke-width="2"/>
+    <text x="24" y="30" class="label small">Scene Mapping</text>
+    <text x="24" y="60" class="code">artboard.zones: left_page / right_page / bookmark_slot</text>
+    <text x="520" y="60" class="code">nodes: panel + text + button + image</text>
+    <text x="930" y="60" class="code">skin: nineSlice(home_v2.gold_panel)</text>
+    <text x="1310" y="60" class="code">actionId: openGameDetails / backToOverview / startMatch</text>
+  </g>
+</svg>

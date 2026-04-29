@@ -59,12 +59,6 @@ npm run assets:upload
 
 Failure to do this will cause new audio to fail playback (missing keys in remote registry.json).
 
-### Monitoring
-
-```bash
-npm run monitor:kiro:timer:20min # Auto-recovery for Kiro (sends continue every 20 min)
-```
-
 ## Architecture Overview
 
 ### Monorepo Structure

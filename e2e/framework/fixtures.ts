@@ -56,13 +56,13 @@ interface FrameworkFixtures {
  * 获取当前 worker 的端口信息
  */
 function getWorkerPorts(parallelIndex: number): WorkerPorts {
-    // 多 worker 模式：从文件读取动态分配的端口
-    const ports = loadWorkerPorts(parallelIndex);
+    // 优先使用 runtime 记录的端口；单 worker fallback 到 worker 0
+    const ports = loadWorkerPorts(parallelIndex) ?? loadWorkerPorts(0);
     if (ports) {
         return ports;
     }
     
-    // 单 worker 模式：使用固定端口
+    // 最后兜底到固定默认端口
     return {
         frontend: E2E_SINGLE_WORKER_PORTS.frontend,
         gameServer: E2E_SINGLE_WORKER_PORTS.gameServer,
@@ -86,6 +86,17 @@ export const test = base.extend<FrameworkFixtures>({
 
         await context.addInitScript((ports) => {
             (window as any).__E2E_WORKER_PORTS__ = ports;
+        }, workerPorts);
+
+        await context.addInitScript((ports) => {
+            (window as Window & {
+                __FORCE_GAME_SERVER_URL__?: string;
+                __FORCE_API_SERVER_URL__?: string;
+            }).__FORCE_GAME_SERVER_URL__ = `http://127.0.0.1:${ports.gameServer}`;
+            (window as Window & {
+                __FORCE_GAME_SERVER_URL__?: string;
+                __FORCE_API_SERVER_URL__?: string;
+            }).__FORCE_API_SERVER_URL__ = `http://127.0.0.1:${ports.apiServer}`;
         }, workerPorts);
 
         await context.addInitScript(() => {

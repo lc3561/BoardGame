@@ -76,10 +76,10 @@
       "aiTurn": "Opponent's turn in progress...",
       "knockdownExplain": "The opponent played Palm Strike, inflicting Knockdown on you! Knockdown forces you to skip offensive roll, but you can remove it with Purify.",
       "enlightenmentPlay": "Play the Enlightenment card from your hand to roll 1 die. Rolling a Lotus face grants Taiji, Evasive, and Purify tokens.",
-      "sellCardIntro": "You can **sell cards for CP** anytime! **Drag a card to the discard pile** on the left to sell it and gain **1 CP**. Selling is always available, regardless of phase. Try selling a card now!",
+      "sellCardIntro": "You can **sell cards for CP** anytime! **Drag a card to the discard pile** on the right to sell it and gain **1 CP**. Selling is always available, regardless of phase. Try selling a card now!",
       "main2Intro": "Attack resolved! Now entering Main Phase 2. You can play action or upgrade cards here, same as Main Phase 1.",
       "aiTurnIntro": "Your actions are done. Now it's your opponent's turn. Watch how they play cards and attack.",
-      "undoSellIntro": "You can undo your last sold card! Click the discard pile on the left to take it back. Useful if you sell the wrong card by mistake.",
+      "undoSellIntro": "You can undo your last sold card! Click the discard pile on the right to take it back. Useful if you sell the wrong card by mistake.",
       "undoSell": "Click the discard pile to undo the last sold card."
     }
   },
@@ -245,13 +245,15 @@
     "honor": {
       "name": "Honor",
       "description": [
-        "Before your attack deals damage, spend 1 Honor to increase damage by 1."
+        "Before your attack deals damage, you may spend 1 or 2 Honor:",
+        "Spend 1 to increase damage by 1; spend 2 to increase damage by 3."
       ]
     },
     "shame": {
       "name": "Shame",
       "description": [
-        "When you calculate attack damage, remove 1 Shame to reduce that attack's damage by 1."
+        "When you calculate attack damage, you may spend Shame by stacks.",
+        "Each 1 spent reduces that attack's damage by 1."
       ]
     },
     "samurai_retribution": {
@@ -267,6 +269,10 @@
     "playerLabel": "Player {{playerId}}",
     "playCard": "Play card",
     "playUpgradeCard": "Play upgrade card",
+    "sellCard": "Sell card",
+    "sellCardCp": "Gain 1 CP",
+    "discardCard": "Discard card",
+    "undoSellCard": "Undo sell",
     "advancePhase": "Advance phase: {{phase}}",
     "abilityActivated": "Activate ability: {{abilityName}}",
     "abilityActivatedDefense": "Activate defensive ability: {{abilityName}}",
@@ -439,7 +445,9 @@
   "attackShowcase": {
     "title": "Incoming Attack",
     "attackerLabel": "{{name}} used an ability",
-    "continue": "Defend"
+    "continue": "Defend",
+    "previewTitle": "Ability Revealed",
+    "previewContinue": "Continue"
   },
   "response": {
     "waitingOpponent": "Waiting for opponent to respond...",
@@ -492,6 +500,19 @@
   "bonusDie": {
     "title": "Bonus Roll",
     "confirm": "Confirm",
+    "summary": {
+      "attackDamageBonus": "+{{amount}} damage this attack",
+      "damage": "Deal {{amount}} damage",
+      "heal": "Heal {{amount}}",
+      "loseCp": "Opponent loses {{amount}} CP",
+      "inflictShame": "Inflict {{count}} Shame",
+      "inflictBlinded": "Inflict Blinded",
+      "inflictEntangle": "Inflict Entangle",
+      "inflictConcussion": "Inflict Concussion",
+      "inflictKnockdown": "Inflict Knockdown",
+      "gainBackStrike": "Gain {{count}} Back Strike",
+      "backStrikeAtLimit": "Back Strike is already at the stack limit"
+    },
     "effect": {
       "fist": "Fist: +2 Damage",
       "palm": "Palm: +3 Damage",
@@ -500,23 +521,31 @@
       "gainCp": "Gain {{cp}} CP",
       "enlightenmentLotus": "Lotus! Gain 2 Taiji + Evasive + Purify",
       "enlightenmentOther": "Draw 1 card",
-      "thunderStrikeDie": "Thunder Strike Roll: {{value}}",
-      "thunderStrikeReroll": "Rerolled to {{value}}",
-      "thunderStrike2Die": "Thunder Strike Roll: {{value}}",
-      "thunderStrike2Reroll": "Rerolled to {{value}}",
-      "gunslingerLoadedDie": "Reload Roll: {{value}}",
-      "gunslingerLoadedReroll": "Reload Reroll: {{value}}",
-      "gunslingerHighNoonBullet": "Bullet: deal 2 damage",
-      "gunslingerHighNoonDash": "Spur: inflict Knockdown",
-      "gunslingerHighNoonBullseye": "Bullseye: inflict Bounty",
-      "gunslingerEatMyLeadDie": "Eat My Lead! Roll: {{value}}",
-      "barbarianSuppress": "Suppress Roll: {{value}}",
+      "thunderStrikeDie": "This die's {{value}} counts toward the final damage",
+      "thunderStrikeReroll": "Reroll: {{value}} (counts toward total damage)",
+      "thunderStrike2Die": "Thunder Strike Roll: {{value}} (3-dice total damage; total ≥12: Knockdown)",
+      "thunderStrike2Reroll": "Reroll: {{value}} (total ≥12: Knockdown)",
+      "gunslingerLoadedDie": "Loaded Roll: {{value}} (damage +{{bonusDamage}})",
+      "gunslingerLoadedReroll": "Loaded Reroll: {{value}} (damage +{{bonusDamage}})",
+      "gunslingerHighNoonBullet": "Bullet: deal 2 undefendable damage",
+      "gunslingerHighNoonDash": "Spur: inflict Knockdown on the target",
+      "gunslingerHighNoonBullseye": "Bullseye: give the target 1 Bounty",
+      "gunslingerEatMyLeadDie": "This die contributes to the final damage bonus",
+      "gunslingerEatMyLead.bulletContribution": "Bullet: +1 damage this attack",
+      "gunslingerEatMyLead.otherContribution": "Non-bullet face: no extra damage",
+      "gunslingerEatMyLead.result": "{{bulletCount}} Bullet: +{{bonusDamage}} damage this attack",
+      "gunslingerEatMyLead.resultKnockdown": "{{bulletCount}} Bullet: +{{bonusDamage}} damage this attack and inflict Knockdown",
+      "barbarianSuppress": "This die's {{value}} counts toward the final damage; reaching the threshold also inflicts Concussion",
       "energeticStrength": "Strength! Heal 2 and inflict Concussion",
       "energeticOther": "Draw 1 card",
-      "luckyRoll": "Lucky Roll: {{value}}",
+      "luckyRoll": "This die contributes to the final heal",
       "luckyRoll.result": "{{heartCount}} Heart: Heal {{healAmount}}",
-      "morePleaseRoll": "More Please Roll: {{value}}",
-      "morePleaseRoll.result": "{{swordCount}} Sword: +{{damage}} Damage",
+      "luckyRoll.heartContribution": "Heart: +2 final heal",
+      "luckyRoll.otherContribution": "Non-heart face: no extra heal",
+      "morePleaseRoll": "This die contributes to the final damage",
+      "morePleaseRoll.result": "{{swordCount}} Sword(s): Damage +{{damage}}, apply Concussion",
+      "morePleaseRoll.swordContribution": "Sword: +1 final damage",
+      "morePleaseRoll.otherContribution": "Non-sword face: no extra damage",
       "holyLight": "Holy Light",
       "holyDefense": "Holy Defense",
       "godsGrace": "God's Grace",
@@ -540,28 +569,31 @@
       "infernalEmbrace.4": "Draw 1 Card",
       "infernalEmbrace.5": "Draw 1 Card",
       "infernalEmbrace.6": "Max Fire Mastery!",
-      "pyroBlast2Die": "Pyro Blast!",
-      "pyroBlast2Reroll": "Rerolled!",
-      "pyroBlast3Die": "Pyro Blast!",
-      "pyroBlast3Reroll": "Rerolled!",
-      "shadowDamage": "Shadow Dance",
+      "pyroBlast2Die": "Resolve the actual effect from this face",
+      "pyroBlast2Reroll": "Reroll: {{value}} (Fire=3 dmg / Magma=Burn / Fiery Soul=+2 Fire Mastery / Meteor=Knockdown)",
+      "pyroBlast3Die": "Resolve the actual effect from this face",
+      "pyroBlast3Reroll": "Reroll: {{value}} (Fire=3 dmg / Magma=Burn / Fiery Soul=+2 Fire Mastery / Meteor=Knockdown)",
+      "shadowDamage": "Shadow Dance: {{value}} → deal {{damage}} damage",
       "default": "Bonus Die",
       "oneWithShadowsHit": "Shadow! Sneak Attack+2CP",
       "oneWithShadowsMiss": "Draw 1 card",
-      "sneakAttack": "Sneak Attack!",
+      "sneakAttack": "Sneak Attack: add the roll value to this attack's damage",
       "explodingArrow": "Exploding Arrow Roll: {{value}}",
       "moonShadowStrike": "Moon Shadow Strike Roll: {{value}}",
       "moonShadowStrike.moon": "Moon🌙: Inflict Blinded, Entangle, Targeted",
       "moonShadowStrike.other": "Draw 1 card",
-      "volley": "Volley Roll: {{value}}",
-      "volley.result": "{{bowCount}} Bow: +{{bonusDamage}} Damage",
-      "explodingArrow.result": "{{bowCount}}Bow {{footCount}}Foot {{moonCount}}Moon: 3 + 2×{{bowCount}} + 1×{{footCount}} = {{damage}} Damage",
-      "explodingArrow2.result": "{{bowCount}}Bow {{footCount}}Foot {{moonCount}}Moon: 3 + 1×{{bowCount}} + 2×{{footCount}} = {{damage}} Damage",
-      "explodingArrow3.result": "{{bowCount}}Bow {{footCount}}Foot {{moonCount}}Moon: 3 + 1×{{bowCount}} + 2×{{footCount}} = {{damage}} Damage",
-      "watchOut": "Watch Out Roll: {{value}}",
+      "volley": "This die contributes to the final damage bonus",
+      "volley.result": "{{bowCount}} Bow(s): Damage +{{bonusDamage}}, apply Entangle",
+      "volley.bowContribution": "Bow: +1 damage this attack",
+      "volley.otherContribution": "Non-bow face: no extra damage",
+      "explodingArrow.result": "{{bowCount}} Bow {{footCount}} Foot {{moonCount}} Moon: 3 + 2×{{bowCount}} + 1×{{footCount}} = {{damage}} damage; Opponent loses {{moonCount}} CP; Apply Blinded",
+      "explodingArrow2.result": "{{bowCount}} Bow {{footCount}} Foot {{moonCount}} Moon: 3 + 1×{{bowCount}} + 2×{{footCount}} = {{damage}} damage; Opponent loses {{moonCount}} CP; Apply Blinded",
+      "explodingArrow3.result": "{{bowCount}} Bow {{footCount}} Foot {{moonCount}} Moon: 3 + 1×{{bowCount}} + 2×{{footCount}} = {{damage}} damage; Opponent loses {{moonCount}} CP; Apply Blinded and Entangle",
+      "watchOut": "No extra effect triggered",
       "watchOut.bow": "Bow🏹: +2 Damage",
       "watchOut.foot": "Foot🦶: Inflict Entangle",
       "watchOut.moon": "Moon🌙: Inflict Blinded",
+      "watchOut.none": "No extra effect triggered",
       "blinded": "Blinded Check",
       "blinded.miss": "Attack Failed!",
       "blinded.hit": "Attack Success",
@@ -587,13 +619,18 @@
       "absolution.pray": "Pray: Shield 2 + 2 CP",
       "godsGrace.pray": "Pray: Gain 4 CP",
       "infernalEmbrace.fire": "Fire: Gain 2 Fire Mastery",
-      "samuraiBackStrikeDie": "Back Strike Roll: {{value}}",
+      "samuraiBackStrikeDie": "Back Strike Roll: {{value}} (deal {{damage}} to the original attacker)",
       "samuraiRighteousnessKatana": "Katana: +2 damage",
-      "samuraiRighteousnessHelm": "Helm: inflict 2 Shame",
-      "samuraiRighteousnessRisingSun": "Rising Sun: gain 1 Back Strike"
+      "samuraiRighteousnessHelm": "Helm: inflict 2 Shame on your opponent",
+      "samuraiRighteousnessRisingSun": "Rising Sun: gain 1 Back Strike",
+      "samuraiMasamune.result": "{{katanaCount}} Katana: +{{katanaCount}} damage; {{shameCount}} Helm: inflict {{shameCount}} Shame; {{retributionCount}} Rising Sun: gain {{retributionCount}} Back Strike (extra gains are ignored if you are at the stack limit)",
+      "godsGrace.other": "Draw 1 card",
+      "totalDamageContribution": "This die's {{value}} counts toward the final damage",
+      "totalDamageContributionThreshold": "This die's {{value}} counts toward the final damage; reaching the threshold also triggers the extra effect"
     },
     "selectToReroll": "Click a die to spend {{cost}} {{token}} to reroll",
     "noTokenToReroll": "No {{token}} tokens available to reroll",
+    "rerollLimitReached": "Reroll limit reached",
     "diceResult": "Dice Results",
     "total": "Total Damage",
     "confirmDamage": "Confirm Damage",
@@ -631,6 +668,7 @@
     "requireOpponentTurn": "This card can only be played on opponent's turn",
     "requireHasRolled": "Must roll dice first before playing this card",
     "requireDiceExists": "Must have dice results to play this card",
+    "requireLoaded": "Must spend 1 Loaded to play this card",
     "requireOpponentDiceExists": "Opponent must have dice results to play this card",
     "requireIsRoller": "This card can only be played by the current roller",
     "requireIsNotRoller": "This card can only be played by the non-roller (responding to opponent's dice)",
@@ -643,6 +681,7 @@
     "tutorial_command_blocked": "This action is blocked in the tutorial",
     "tutorial_step_locked": "The current step cannot be skipped",
     "defense_ability_not_selected": "Must select a defense ability before rolling",
+    "defense_roll_disabled_for_duel": "Duel defense cannot be rolled manually. Click \"End Defense\" directly.",
     "invalid_character": "Invalid character selection",
     "character_not_selected": "Please select a character first",
     "game_already_started": "The match has already started, so seating and ready state can no longer be changed",
@@ -669,6 +708,7 @@
     "not_enough_token": "Not enough tokens to pay the cost",
     "invalid_die_index": "Invalid die index",
     "player_is_dazed": "Player is dazed",
+    "player_is_stunned": "Player is stunned and cannot play cards",
     "attack_already_initiated": "Attack already initiated, cannot reselect ability"
   },
   "actions": {
@@ -732,7 +772,10 @@
       "helm": "Helm",
       "pray": "Pray",
       "katana": "Katana",
-      "rising_sun": "Rising Sun"
+      "rising_sun": "Rising Sun",
+      "bullet": "Bullet",
+      "bullseye": "Bullseye",
+      "dash": "Dash"
     },
     "trigger": {
       "generic": "variant condition",
@@ -750,26 +793,6 @@
         "defensiveRoll": "Defensive Roll",
         "main2": "Main Phase 2",
         "discard": "Discard"
-      }
-    }
-  },
-  "compareRoll": {
-    "confirming": "Confirming the face-off...",
-    "rolled": "Rolled {{value}}",
-    "gunslinger": {
-      "showdown": {
-        "title": "Showdown",
-        "attackerLabel": "Gunslinger",
-        "defenderLabel": "Opponent",
-        "win": "You win the face-off. This attack gains +{{bonus}} damage.",
-        "lose": "You lose the face-off. The attack stays at its base damage."
-      },
-      "duel": {
-        "title": "Duel",
-        "defenderLabel": "Gunslinger",
-        "attackerLabel": "Attacker",
-        "win": "You win the duel. Choose the resolution.",
-        "lose": "You lose the duel and deal 1 undefendable damage to the attacker."
       }
     }
   },
@@ -870,10 +893,10 @@
     },
     "fist-technique-3": {
       "name": "Fist Technique III",
-      "description": "3/4/5 Fists: deal 7/8/9 damage. If you roll 4 matching numbers, inflict Knockdown.",
+      "description": "3/4/5 Fists: deal 7/8/9 damage. If there are 4 matching numbers, inflict Knockdown.",
       "effects": {
         "damage4": "Deal 4 damage",
-        "inflictKnockdownOnFourOfAKind": "If you roll 4 matching numbers, inflict Knockdown."
+        "knockdownIfFourKind": "If there are 4 matching numbers, inflict Knockdown."
       }
     },
     "fist-technique-4": {
@@ -991,12 +1014,6 @@
         "taijiByResult": "Gain Taiji tokens equal to Taiji faces rolled",
         "damageByFist": "Deal damage equal to Fist faces rolled"
       }
-    },
-    "meditation-2": {
-      "name": "Meditation II",
-      "description": "During Defensive Roll Phase, roll 5 dice. Gain Taiji tokens based on results. Deal 1 damage for each [Fist].",
-      "taijiByResult": "Gain Taiji tokens based on results",
-      "damageByFist": "Deal 1 damage for each [Fist]"
     },
     "transcendence": {
       "name": "Transcendence!",
@@ -1120,7 +1137,7 @@
     },
     "righteous-combat-2": {
       "name": "Righteous Combat II",
-      "description": "Two variants: Tenacity and Righteous Combat",
+      "description": "3 Sword + 2 Helm: Deal 5 damage, then roll 3 dice for bonus effects",
       "effects": {
         "heal2": "Heal 2",
         "damage2Unblockable": "Deal 2 undefendable damage",
@@ -1325,7 +1342,7 @@
     },
     "covert-fire": {
       "name": "Covert Fire",
-      "description": "3 Bow + 3 Moon: inflict Targeted, then deal 4 damage",
+      "description": "3 Bow + 2 Moon: inflict Targeted, then deal 4 damage",
       "effects": {
         "inflictTargeted": "Inflict 1 Targeted token",
         "damage4": "Deal 4 damage"
@@ -1474,14 +1491,14 @@
     },
     "elusive-step": {
       "name": "Elusive Step",
-      "description": "Defensive phase (5 dice): if ≥2 Foot, block half damage (round up); for each Foot, deal 1 damage",
+      "description": "Defensive phase (5 dice): if ≥2 Foot, block half damage (round up); for every 2 Bow, deal 1 damage",
       "effects": {
         "resolveDefense": "Resolve defense"
       }
     },
     "elusive-step-2": {
       "name": "Elusive Step II",
-      "description": "Defensive phase (5 dice): if ≥2 Foot, block half damage (round up); deal 1 × Bow count damage",
+      "description": "Defensive phase (5 dice): if ≥2 Foot, block half damage (round up); for every 2 Bow, deal 1 damage",
       "effects": {
         "resolveDefense": "Resolve defense"
       }
@@ -1711,14 +1728,6 @@
         "selfDamage4": "Take 4 self-damage (only if damage was dealt)"
       }
     },
-    "rage": {
-      "name": "Rage",
-      "description": "Ultimate Ability: 5 Strength faces, inflict Daze and deal 15 damage.",
-      "effects": {
-        "inflictDaze": "Inflict Daze",
-        "damage15": "Deal 15 damage"
-      }
-    },
     "thick-skin": {
       "name": "Thick Skin",
       "description": "Defense: heal 2 × Heart faces.",
@@ -1777,22 +1786,22 @@
     },
     "slap-2": {
       "name": "Slap II",
-      "description": "3/4/5 Swords: deal 5/7/9 damage. If you roll 4 matching numbers, this attack deals undefendable damage.",
+      "description": "3/4/5 Swords: deal 5/7/9 damage. If there are 4 matching numbers, this attack is undefendable.",
       "effects": {
         "damage5": "Deal 5 damage",
-        "damage7": "Deal 7 damage",
-        "damage9": "Deal 9 damage",
-        "makeUnblockableOnFourOfAKind": "If you roll 4 matching numbers, this attack deals undefendable damage."
+        "damage7Unblockable": "Deal 7 damage",
+        "damage9Unblockable": "Deal 9 damage",
+        "unblockableIfFourKind": "If there are 4 matching numbers, this attack is undefendable."
       }
     },
     "slap-3": {
       "name": "Slap III",
-      "description": "3/4/5 Swords: deal 6/8/10 damage. If you roll 4 matching numbers, this attack deals undefendable damage.",
+      "description": "3/4/5 Swords: deal 6/8/10 damage. If there are 4 matching numbers, this attack is undefendable.",
       "effects": {
         "damage6": "Deal 6 damage",
-        "damage8": "Deal 8 damage",
-        "damage10": "Deal 10 damage",
-        "makeUnblockableOnFourOfAKind": "If you roll 4 matching numbers, this attack deals undefendable damage."
+        "damage8Unblockable": "Deal 8 damage",
+        "damage10Unblockable": "Deal 10 damage",
+        "unblockableIfFourKind": "If there are 4 matching numbers, this attack is undefendable."
       }
     },
     "all-out-strike-2": {
@@ -1980,11 +1989,11 @@
     },
     "katana-slice-2": {
       "name": "Katana Slice II",
-      "description": "3/4/5 Katana: deal 6/7/8 damage. If at least 4 dice show the same pip value, inflict 1 Shame."
+      "description": "3/4/5 Katana: deal 6/7/8 damage. If at least 4 dice show the same number, inflict 1 Shame."
     },
     "katana-slice-3": {
       "name": "Katana Slice III",
-      "description": "3/4/5 Katana: deal 6/7/8 damage. If at least 3 dice show the same pip value, inflict 1 Shame."
+      "description": "3/4/5 Katana: deal 6/7/8 damage. If at least 3 dice show the same number, inflict 1 Shame."
     },
     "wakizashi": {
       "name": "Wakizashi",
@@ -2102,7 +2111,7 @@
     },
     "upgrade-revolver-2": {
       "name": "Revolver II",
-      "description": "Upgrade your Revolver. 3/4/5 bullets deal 4/5/6 damage. If at least 4 dice show the same result, also inflict Knockdown."
+      "description": "Upgrade your Revolver. 3/4/5 bullets deal 4/5/6 damage. If at least 4 dice show the same number, also inflict Knockdown."
     },
     "upgrade-bounty-hunter-2": {
       "name": "Bounty Hunter II",
@@ -2146,11 +2155,11 @@
     },
     "card-high-noon": {
       "name": "High Noon!",
-      "description": "Roll 1 die: Bullet deals 2 damage; Spur inflicts Knockdown; Bullseye inflicts Bounty."
+      "description": "Choose a target player (in 1v1, your only opponent). Roll 1 die: Bullet deals 2 undefendable damage to that target; Spur inflicts Knockdown; Bullseye gives the target 1 Bounty."
     },
     "card-wild-west": {
       "name": "Wild West!",
-      "description": "Increase your total attack value by 1. The card's separate reload-reroll clause is still tracked as a follow-up gap."
+      "description": "When you spend 1 Loaded and roll your Reload bonus die, you may reroll that bonus die once, then increase your total attack value by 1."
     },
     "card-eat-my-lead": {
       "name": "Eat My Lead!",
@@ -2186,7 +2195,7 @@
     },
     "card-thrust-punch-3": {
       "name": "Thrust Punch III",
-      "description": "3/4/5 Fists: deal 7/8/9 damage. If you roll 4 matching numbers, inflict Knockdown."
+      "description": "3/4/5 Fists: deal 7/8/9 damage. If there are 4 matching numbers, inflict Knockdown."
     },
     "card-contemplation-2": {
       "name": "Contemplation II",
@@ -2669,6 +2678,18 @@
     "playerPlayed": "{{player}} played a card",
     "confirm": "OK"
   },
+  "compareRoll": {
+    "confirming": "Confirming...",
+    "rolled": "Rolled {{value}}",
+    "gunslingerDuel": {
+      "title": "Duel Roll-Off",
+      "defender": "Defender",
+      "attacker": "Attacker",
+      "win": "You won the duel. Choose the resolution.",
+      "lose": "You lost the duel: deal 1 undefendable damage to the attacker.",
+      "tieLose": "Tie does not win this duel: deal 1 undefendable damage to the attacker."
+    }
+  },
   "selection": {
     "title": "Select Your Hero",
     "selectHero": "Select Hero",
@@ -2689,9 +2710,9 @@
       "title": "2v2 Seating",
       "swapHint": "Click a target portrait to swap seats. AI swaps instantly; human targets receive a request.",
       "swapWaiting": "Seat swap request sent to {{player}}. Waiting for a response.",
-      "swapWaitingHint": "Seats will not change until the other player responds, and you can still cancel here.",
+      "swapWaitingHint": "Seats won't change until the other player confirms. You can cancel the request here.",
       "swapIncoming": "{{player}} wants to swap seats with you.",
-      "swapReviewHint": "Approving swaps your two seats immediately. Rejecting keeps the current seating.",
+      "swapReviewHint": "Confirming will immediately swap your seats; rejecting keeps the current seating.",
       "swapPendingOther": "{{requester}} is waiting for {{target}} to respond to a seat swap request.",
       "swapApprove": "Approve",
       "swapReject": "Reject",
@@ -2708,3 +2729,5 @@
     "ariaPanel": "Game Over Panel"
   }
 }
+
+

@@ -45,6 +45,7 @@
     "confirmMove": "确认移动",
     "withdrawCharge": "消耗充能",
     "withdrawMagic": "消耗1魔力",
+    "payMagic": "消耗1魔力",
     "confirmControl": "控制",
     "continue": "继续",
     "finish": "完成",
@@ -60,7 +61,8 @@
     "chargeSelf": "充能自身",
     "playEvent": "打出",
     "discardForMagic": "弃牌",
-    "attachToSoldier": "附加到士兵"
+    "attachToSoldier": "附加到士兵",
+    "position": "({{row}},{{col}})"
   },
   "player": {
     "default1": "玩家1",
@@ -319,6 +321,14 @@
       "needStandardEvents": "需要6张标准事件",
       "needChampions": "需要3个冠军单位",
       "needCommons": "需要16个普通单位",
+      "requireSummoner": "牌组必须包含一个召唤师",
+      "commonsTooFew": "普通单位需要 {{required}} 张，当前 {{current}} 张",
+      "commonsTooMany": "普通单位最多 {{required}} 张，当前 {{current}} 张",
+      "championsTooFew": "冠军单位需要 {{required}} 个，当前 {{current}} 个",
+      "championsTooMany": "冠军单位最多 {{required}} 个，当前 {{current}} 个",
+      "standardEventsTooFew": "标准事件需要 {{required}} 张，当前 {{current}} 张",
+      "standardEventsTooMany": "标准事件最多 {{required}} 张，当前 {{current}} 张",
+      "symbolMismatchCount": "{{count}} 张卡牌的符号与召唤师不匹配",
       "symbolMismatch": "卡牌「{{name}}」的符号与召唤师不匹配",
       "maxStandardEvents": "同名标准事件最多2张",
       "maxChampions": "同名冠军单位最多1个",
@@ -371,9 +381,36 @@
   "eventCard": {
     "noSummoner": "召唤师不在场上",
     "noValidTarget": "没有符合条件的目标",
+    "chantPowerNeedFriendlyInRange": "力量颂歌需要召唤师3格内至少1个友方士兵/英雄",
     "entanglementNeedTwoCommons": "交缠颂歌需要召唤师3格内至少2个友方士兵"
   },
   "interaction": {
+    "sw": {
+      "eventTarget": "选择事件卡目标",
+      "magicEventChoice": "魔力阶段：选择打出或弃牌换魔力",
+      "funeralPyre": "殉葬火堆：选择治疗目标",
+      "bloodSummonTarget": "血契召唤：选择承伤友方单位",
+      "bloodSummonCard": "血契召唤：选择要召唤的单位卡",
+      "bloodSummonPosition": "血契召唤：选择放置位置",
+      "bloodSummonConfirm": "血契召唤：确认是否继续",
+      "annihilateTargets": "除灭：选择要牺牲的友方单位",
+      "annihilateDamage": "除灭：为目标选择伤害承受者",
+      "mindControl": "心灵操控：选择敌方目标",
+      "stunTarget": "震慑：选择目标",
+      "stunDestination": "震慑：选择推拉终点",
+      "hypnoticLure": "催眠引诱：选择目标",
+      "chantEntanglement": "交缠颂歌：选择两个友方士兵",
+      "sneakUnit": "潜行：选择要移动的友方单位",
+      "sneakDirection": "潜行：选择移动方向",
+      "glacialShiftBuilding": "冰川位移：选择友方建筑",
+      "glacialShiftDestination": "冰川位移：选择目标位置",
+      "infection": "感染：选择要复活的疫病体",
+      "grabFollow": "抓附：选择跟随位置",
+      "soulTransfer": "灵魂转移：确认是否移动",
+      "mindCapture": "心灵捕获：选择控制或造成伤害",
+      "iceShards": "寒冰碎屑：确认是否消耗充能",
+      "feedBeast": "喂养巨食兽：选择吞噬目标或自毁"
+    },
     "fireSacrifice": {
       "mustSelectAlly": "请选择一个友方单位作为牺牲品"
     },
@@ -390,6 +427,9 @@
   "statusBanners": {
     "insufficientMagic": "魔力不足",
     "insufficientCharge": "需要至少1点充能",
+    "eventTarget": {
+      "message": "选择事件卡目标"
+    },
     "magicEventChoice": {
       "message": "选择：打出事件卡或弃牌换魔力"
     },
@@ -418,6 +458,7 @@
       },
       "illusion": "幻化：选择3格内的一个士兵复制其技能",
       "bloodRune": "鲜血符文：选择自伤1点或消耗1魔力充能",
+      "fortressPower": "城塞之力：从弃牌堆选择一个城塞单位",
       "iceShards": "寒冰碎屑：消耗1充能，对建筑相邻敌方造成1伤？",
       "feedBeast": "喂养巨食兽：选择相邻友方单位移除，或自毁",
       "spiritBond": "祖灵交流：选择3格内目标转移充能，或充能自身",
@@ -429,6 +470,8 @@
       "frostAxeSelectTarget": "冰霜战斧：选择3格内友方士兵",
       "iceRamSelectTarget": "寒冰冲撞：选择建筑相邻的一个单位",
       "iceRamSelectPush": "寒冰冲撞：选择推拉方向（或跳过）",
+      "telekinesisInstead": "念力代替攻击：选择一个目标进行推拉",
+      "highTelekinesisInstead": "高阶念力代替攻击：选择一个目标进行推拉",
       "vanish": "神出鬼没：选择一个0费友方单位交换位置"
     },
     "beforeAttack": {
@@ -490,6 +533,8 @@
     "abilityNames": {
       "telekinesis": "念力",
       "high_telekinesis": "高阶念力",
+      "telekinesis_instead": "念力代替攻击",
+      "high_telekinesis_instead": "高阶念力代替攻击",
       "mind_transmission": "读心传念"
     }
   },

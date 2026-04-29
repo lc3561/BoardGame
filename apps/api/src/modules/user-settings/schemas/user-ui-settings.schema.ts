@@ -35,6 +35,7 @@ export class UserUISettings {
         seatControllers?: Record<string, unknown>;
         setupSelections?: Record<string, string | string[]>;
     }>;
+
     /** 大杀四方偏好是否已初始化（用于首登本地迁移） */
     @Prop({ type: Boolean, default: false })
     smashupPreferenceInitialized!: boolean;
@@ -46,6 +47,7 @@ export class UserUISettings {
     /** 大杀四方交互模式 */
     @Prop({ type: String, enum: ['click', 'drag'], default: 'click' })
     smashupInteractionMode!: 'click' | 'drag';
+
     createdAt!: Date;
     updatedAt!: Date;
 }

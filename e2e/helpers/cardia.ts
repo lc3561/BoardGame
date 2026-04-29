@@ -26,11 +26,13 @@ export interface CardiaMatchSetup {
     player1Page: Page;
     player2Page: Page;
     matchId: string;
+    cleanup: () => Promise<void>;
 }
 
 export interface SetupOnlineMatchOptions {
     player1Deck?: string;
     player2Deck?: string;
+    aiSeats?: string[];
 }
 
 function resolveCardiaFrontendBaseURL(page?: Page): string {
@@ -61,7 +63,7 @@ async function warmCardiaMatchRoute(page: Page, baseURL: string) {
  */
 export const setupOnlineMatch = async (
     page: Page,
-    _options: SetupOnlineMatchOptions = {}
+    options: SetupOnlineMatchOptions = {}
 ): Promise<CardiaMatchSetup> => {
     const browser = page.context().browser();
     if (!browser) throw new Error('Browser not available');
@@ -92,9 +94,29 @@ export const setupOnlineMatch = async (
 
     await warmCardiaMatchRoute(player1Page, baseURL);
     
+    // 构建 setupData，包含 AI 配置
+    const guestId = `e2e_player1_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+    const setupData: Record<string, unknown> = {
+        guestId,
+        ownerKey: `guest:${guestId}`,
+        ownerType: 'guest',
+        enableAi: true, // 关键：启用 AI 支持
+    };
+    
+    // 如果指定了 AI 座位，添加 seatControllers
+    if (options.aiSeats && options.aiSeats.length > 0) {
+        const seatControllers: Record<string, { type: string; minimumActionDelayMs?: number }> = {};
+        for (const seatId of options.aiSeats) {
+            seatControllers[seatId] = { 
+                type: 'local-ai',
+                minimumActionDelayMs: 500, // 添加最小延迟，便于观察
+            };
+        }
+        setupData.seatControllers = seatControllers;
+    }
+    
     // 创建房间
-    const player1GuestId = `e2e_player1_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
-    const matchId = await createCardiaRoomViaAPI(player1Page, player1GuestId);
+    const matchId = await createCardiaRoomViaAPI(player1Page, setupData);
     if (!matchId) throw new Error('Failed to create room');
     
     // Player1 加入房间
@@ -103,58 +125,136 @@ export const setupOnlineMatch = async (
         matchId,
         '0',
         `Player1-${Date.now()}`,
-        player1GuestId
+        guestId
     );
     if (!player1Credentials) throw new Error('Failed to join as player1');
     
     await seedCardiaMatchCredentials(player1Context, matchId, '0', player1Credentials);
     await player1Page.goto(`/play/${GAME_NAME}/match/${matchId}?playerID=0`, { waitUntil: 'domcontentloaded' });
     
-    // 创建 player2 context
-    const player2Context = await browser.newContext({ baseURL });
-    await initContext(player2Context, { storageKey: '__cardia_storage_reset', skipTutorial: false });
-    const player2Page = await player2Context.newPage();
-    
-    await player2Page.goto('/', { waitUntil: 'domcontentloaded' }).catch(() => {});
-    await player2Page.waitForTimeout(500);
-    await warmCardiaMatchRoute(player2Page, baseURL);
-    
-    // Player2 加入房间
-    const player2GuestId = `e2e_player2_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
-    const player2Credentials = await joinCardiaMatchViaAPI(
-        player2Page,
-        matchId,
-        '1',
-        `Player2-${Date.now()}`,
-        player2GuestId
-    );
-    if (!player2Credentials) throw new Error('Failed to join as player2');
-    
-    await seedCardiaMatchCredentials(player2Context, matchId, '1', player2Credentials);
-    await player2Page.goto(`/play/${GAME_NAME}/match/${matchId}?playerID=1`, { waitUntil: 'domcontentloaded' });
+    // 如果有 AI 座位，手动 claim AI 座位并存储凭据
+    if (options.aiSeats && options.aiSeats.length > 0) {
+        const aiCredentials: Record<string, string> = {};
+        
+        // 如果座位 0 是 AI 控制，使用 player1 的凭据
+        if (options.aiSeats.includes('0')) {
+            aiCredentials['0'] = player1Credentials;
+        }
+        
+        for (const seatId of options.aiSeats) {
+            // 跳过玩家 0（已经处理过）
+            if (seatId === '0') continue;
+            
+            // 手动 claim AI 座位
+            const aiPlayerName = `AI-Player-${seatId}`;
+            const aiGuestId = `e2e_ai_${seatId}_${Date.now()}`;
+            const aiCreds = await joinCardiaMatchViaAPI(
+                player1Page,
+                matchId,
+                seatId,
+                aiPlayerName,
+                aiGuestId
+            );
+            
+            if (aiCreds) {
+                aiCredentials[seatId] = aiCreds;
+            }
+        }
+        
+        // 将 AI 座位凭据存储到 localStorage
+        if (Object.keys(aiCredentials).length > 0) {
+            await player1Page.evaluate(({ matchId, credentials }) => {
+                localStorage.setItem(`match_ai_creds_${matchId}`, JSON.stringify(credentials));
+            }, { matchId, credentials: aiCredentials });
+            
+            console.log('[setupOnlineMatch] AI 座位凭据已设置:', Object.keys(aiCredentials));
+            
+            // 给前端一些时间加载 AI 座位
+            await player1Page.waitForTimeout(2000);
+        }
+    }
     
     // 等待游戏加载
     await waitForGameBoard(player1Page);
-    await waitForGameBoard(player2Page);
     
-    return { player1Context, player2Context, player1Page, player2Page, matchId };
+    // 如果座位 1 是 AI 控制，则不创建 player2
+    const isPlayer2AI = options.aiSeats && options.aiSeats.includes('1');
+    
+    let player2Context: BrowserContext;
+    let player2Page: Page;
+    
+    if (isPlayer2AI) {
+        // AI vs AI 或 Player vs AI（AI 在座位 1）：复用 player1 的 context 和 page
+        player2Context = player1Context;
+        player2Page = player1Page;
+        console.log('[setupOnlineMatch] 座位 1 由 AI 控制，不创建 player2');
+    } else {
+        // 创建 player2 context
+        player2Context = await browser.newContext({ baseURL });
+        await initContext(player2Context, { storageKey: '__cardia_storage_reset', skipTutorial: false });
+        player2Page = await player2Context.newPage();
+        
+        await player2Page.goto('/', { waitUntil: 'domcontentloaded' }).catch(() => {});
+        await player2Page.waitForTimeout(500);
+        await warmCardiaMatchRoute(player2Page, baseURL);
+        
+        // Player2 加入房间
+        const player2GuestId = `e2e_player2_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+        const player2Credentials = await joinCardiaMatchViaAPI(
+            player2Page,
+            matchId,
+            '1',
+            `Player2-${Date.now()}`,
+            player2GuestId
+        );
+        if (!player2Credentials) throw new Error('Failed to join as player2');
+        
+        await seedCardiaMatchCredentials(player2Context, matchId, '1', player2Credentials);
+        await player2Page.goto(`/play/${GAME_NAME}/match/${matchId}?playerID=1`, { waitUntil: 'domcontentloaded' });
+        
+        // 等待游戏加载
+        await waitForGameBoard(player2Page);
+    }
+    
+    return {
+        player1Context,
+        player2Context,
+        player1Page,
+        player2Page,
+        matchId,
+        cleanup: async () => {
+            // 如果 player2Context 与 player1Context 相同（AI vs AI 场景），只关闭一次
+            if (player2Context === player1Context) {
+                await player1Context.close();
+            } else {
+                await player1Context.close();
+                await player2Context.close();
+            }
+        },
+    };
 };
 
 /**
  * 创建 Cardia 房间
  */
-async function createCardiaRoomViaAPI(page: Page, guestId: string): Promise<string | null> {
+async function createCardiaRoomViaAPI(page: Page, setupData: Record<string, unknown>): Promise<string | null> {
     const baseURL = getGameServerBaseURL();
+    console.log('[createCardiaRoomViaAPI] Sending setupData:', JSON.stringify(setupData));
     const response = await page.request.post(`${baseURL}/games/${GAME_NAME}/create`, {
         data: {
             numPlayers: 2,
-            setupData: { guestId },
+            setupData,
             unlisted: false,
         },
     });
     
-    if (!response.ok()) return null;
+    if (!response.ok()) {
+        console.log('[createCardiaRoomViaAPI] Failed:', response.status(), response.statusText());
+        return null;
+    }
+    
     const data = await response.json();
+    console.log('[createCardiaRoomViaAPI] Response:', JSON.stringify(data));
     return data.matchID;
 }
 
@@ -366,15 +466,26 @@ export const playCard = async (page: Page, index: number) => {
  * @param timeout - 超时时间（毫秒）
  */
 export const waitForPhase = async (page: Page, phase: string, timeout = 10000) => {
-    const phaseMap: Record<string, string> = {
-        play: 'Play Card',
-        ability: 'Ability',
-        end: 'End',
+    const phaseMap: Record<string, string[]> = {
+        play: ['Play Card', '打出卡牌'],
+        ability: ['Ability', '能力'],
+        end: ['End', '结束'],
     };
     
-    const phaseText = phaseMap[phase] || phase;
+    const phaseTexts = phaseMap[phase] || [phase];
     const indicator = page.locator('[data-testid="cardia-phase-indicator"]');
-    await expect(indicator).toContainText(phaseText, { timeout });
+    
+    // 等待任意一个匹配的文本出现
+    await page.waitForFunction(
+        ({ texts, timeout: timeoutMs }) => {
+            const indicator = document.querySelector('[data-testid="cardia-phase-indicator"]');
+            if (!indicator) return false;
+            const text = indicator.textContent || '';
+            return texts.some((t: string) => text.includes(t));
+        },
+        { texts: phaseTexts, timeout },
+        { timeout }
+    );
 };
 
 // ============================================================================
@@ -385,14 +496,17 @@ export const waitForPhase = async (page: Page, phase: string, timeout = 10000) =
  * Cardia 测试场景配置
  */
 export interface CardiaTestScenario {
-    /** 玩家1配置 */
-    player1: PlayerScenario;
+    /** 玩家1配置（可选，用于 AI-only 场景） */
+    player1?: PlayerScenario;
     
-    /** 玩家2配置 */
-    player2: PlayerScenario;
+    /** 玩家2配置（可选，用于 AI-only 场景） */
+    player2?: PlayerScenario;
     
     /** 游戏阶段（默认 'play'） */
     phase?: 'play' | 'ability' | 'end';
+
+    /** 可选：期望的当前/下一遭遇索引；未指定时由 helper 自动推导 */
+    turnNumber?: number;
     
     /** 修正标记（可选） */
     modifierTokens?: ModifierToken[];
@@ -408,7 +522,15 @@ export interface CardiaTestScenario {
         player1Influence: number;
         player2Influence: number;
         winnerId?: string;
+        /** 可选：当前遭遇索引；多回合场景下建议显式传入 */
+        encounterIndex?: number;
     };
+    
+    /** AI 控制的玩家座位（可选，用于测试 AI 对手） */
+    aiSeats?: string[];
+    
+    /** 目标印戒数（可选，用于测试胜利条件） */
+    targetSignets?: number;
 }
 
 /**
@@ -517,7 +639,9 @@ export const setupCardiaTestScenario = async (
     const tempPage = await tempContext.newPage();
     
     try {
-        const setup = await setupOnlineMatch(tempPage);
+        const setup = await setupOnlineMatch(tempPage, {
+            aiSeats: scenario.aiSeats,
+        });
         await tempPage.close();
         
         const currentState = await readCoreState(setup.player1Page);
@@ -543,9 +667,11 @@ export const applyCardiaScenarioToPage = async (
     scenario: CardiaTestScenario,
     prebuiltCoreState?: Record<string, unknown>,
 ) => {
-    const currentState = prebuiltCoreState ?? await readCoreState(page);
+    const currentState = await readCoreState(page);
     const nextCoreState = prebuiltCoreState ?? await buildStateFromScenario(page, currentState, scenario);
 
+    console.log('[applyCardiaScenarioToPage] Applying state with currentPlayerId:', nextCoreState.currentPlayerId);
+    
     await applyCoreStateDirect(page, nextCoreState);
 
     if (scenario.phase) {
@@ -601,7 +727,17 @@ async function buildStateFromScenario(
         state.phase = scenario.phase;
     }
     
-    // 4. 设置修正标记（自动解析 cardId 引用）
+    // 4. 确保 currentPlayerId 已设置（如果未设置，默认为玩家0）
+    if (!state.currentPlayerId) {
+        state.currentPlayerId = '0';
+    }
+    
+    // 5. 设置目标印戒数（如果指定）
+    if (scenario.targetSignets !== undefined) {
+        state.targetSignets = scenario.targetSignets;
+    }
+    
+    // 6. 设置修正标记（自动解析 cardId 引用）
     if (scenario.modifierTokens) {
         const resolvedModifierTokens = scenario.modifierTokens.map(token => {
             // 如果 cardId 为空字符串，尝试从 playedCards 中查找第一张匹配的卡牌
@@ -622,7 +758,7 @@ async function buildStateFromScenario(
         state.modifierTokens = resolvedModifierTokens;
     }
     
-    // 5. 设置持续能力（state 本身就是 core，不需要 .core）
+    // 7. 设置持续能力（state 本身就是 core，不需要 .core）
     if (scenario.ongoingAbilities) {
         state.ongoingAbilities = scenario.ongoingAbilities;
     } else {
@@ -630,7 +766,7 @@ async function buildStateFromScenario(
         const ongoingAbilities: Array<Record<string, unknown>> = [];
         
         // 处理 P1 的 playedCards
-        if (scenario.player1.playedCards) {
+        if (scenario.player1?.playedCards) {
             for (const playedCard of scenario.player1.playedCards) {
                 if (playedCard.ongoingMarkers && playedCard.ongoingMarkers.length > 0) {
                     const cardInstance = (player1State.playedCards as Array<Record<string, unknown>>).find(
@@ -653,7 +789,7 @@ async function buildStateFromScenario(
         }
         
         // 处理 P2 的 playedCards
-        if (scenario.player2.playedCards) {
+        if (scenario.player2?.playedCards) {
             for (const playedCard of scenario.player2.playedCards) {
                 if (playedCard.ongoingMarkers && playedCard.ongoingMarkers.length > 0) {
                     const cardInstance = (player2State.playedCards as Array<Record<string, unknown>>).find(
@@ -680,19 +816,44 @@ async function buildStateFromScenario(
         }
     }
     
-    // 6. 设置揭示顺序
+    // 8. 设置揭示顺序
     if (scenario.revealFirstNextEncounter !== undefined) {
         state.revealFirstNextEncounter = scenario.revealFirstNextEncounter;
     }
     
-    // 7. 设置当前遭遇
+    // 9. 设置当前遭遇
     if (scenario.currentEncounter) {
         // 从 playedCards 中查找对应的卡牌实例
         const p1Cards = player1State.playedCards as Array<Record<string, unknown>>;
         const p2Cards = player2State.playedCards as Array<Record<string, unknown>>;
-        
-        const player1Card = p1Cards && p1Cards.length > 0 ? p1Cards[0] : null;
-        const player2Card = p2Cards && p2Cards.length > 0 ? p2Cards[0] : null;
+
+        const requestedEncounterIndex =
+            typeof scenario.currentEncounter.encounterIndex === 'number'
+                ? scenario.currentEncounter.encounterIndex
+                : typeof scenario.turnNumber === 'number'
+                  ? scenario.turnNumber
+                  : undefined;
+
+        const resolveCurrentEncounterIndex = () => {
+            if (typeof requestedEncounterIndex === 'number') {
+                const hasRequestedEncounter =
+                    p1Cards.some(card => card.encounterIndex === requestedEncounterIndex) ||
+                    p2Cards.some(card => card.encounterIndex === requestedEncounterIndex);
+                if (hasRequestedEncounter) {
+                    return requestedEncounterIndex;
+                }
+            }
+            return Math.max(
+                ...[
+                    ...p1Cards.map(card => Number(card.encounterIndex ?? -1)),
+                    ...p2Cards.map(card => Number(card.encounterIndex ?? -1)),
+                ]
+            );
+        };
+
+        const resolvedEncounterIndex = resolveCurrentEncounterIndex();
+        const player1Card = p1Cards.find(card => card.encounterIndex === resolvedEncounterIndex) ?? null;
+        const player2Card = p2Cards.find(card => card.encounterIndex === resolvedEncounterIndex) ?? null;
         
         if (player1Card && player2Card) {
             const winnerId = scenario.currentEncounter.winnerId;
@@ -709,7 +870,11 @@ async function buildStateFromScenario(
         }
     }
     
-    // 8. 自动计算 turnNumber（基于已打出牌的最大 encounterIndex）
+    // 10. 自动计算 turnNumber
+    // 规则：
+    // - play 阶段：turnNumber 指向“下一次遭遇”的索引，因此取 maxEncounterIndex + 1
+    // - ability / end 阶段：turnNumber 仍指向“当前遭遇”的索引，必须与 currentEncounter 对应卡牌的 encounterIndex 一致
+    //   否则 Board 无法从 playedCards 中定位当前失败方卡牌，能力按钮不会显示
     const allPlayedCards = [
         ...(player1State.playedCards as Array<Record<string, unknown>>),
         ...(player2State.playedCards as Array<Record<string, unknown>>),
@@ -718,10 +883,23 @@ async function buildStateFromScenario(
         const encounterIndex = card.encounterIndex as number;
         return encounterIndex > max ? encounterIndex : max;
     }, -1);
-    
-    // turnNumber 应该是下一个遭遇的序号（maxEncounterIndex + 1）
-    // 但如果没有已打出的牌，turnNumber 应该是 0
-    state.turnNumber = maxEncounterIndex >= 0 ? maxEncounterIndex + 1 : 0;
+
+    const currentEncounterRecord = state.currentEncounter as Record<string, unknown> | undefined;
+    const currentEncounterPlayer1Card = currentEncounterRecord?.player1Card as Record<string, unknown> | undefined;
+    const currentEncounterPlayer2Card = currentEncounterRecord?.player2Card as Record<string, unknown> | undefined;
+    const currentEncounterIndex =
+        typeof currentEncounterPlayer1Card?.encounterIndex === 'number'
+            ? currentEncounterPlayer1Card.encounterIndex
+            : typeof currentEncounterPlayer2Card?.encounterIndex === 'number'
+              ? currentEncounterPlayer2Card.encounterIndex
+              : undefined;
+
+    if ((scenario.phase === 'ability' || scenario.phase === 'end') && typeof currentEncounterIndex === 'number') {
+        state.turnNumber = currentEncounterIndex;
+    } else {
+        // play 阶段默认指向“下一次遭遇”的序号；如果没有已打出的牌，则从 0 开始
+        state.turnNumber = maxEncounterIndex >= 0 ? maxEncounterIndex + 1 : 0;
+    }
     
     return state;
 }
@@ -732,13 +910,18 @@ async function buildStateFromScenario(
 async function buildPlayerState(
     page: Page,
     basePlayer: Record<string, unknown>,
-    playerScenario: PlayerScenario,
+    playerScenario: PlayerScenario | undefined,
     playerId: string
 ): Promise<Record<string, unknown>> {
     const player = JSON.parse(JSON.stringify(basePlayer)) as Record<string, unknown>; // 深拷贝
     
+    // 如果没有提供 playerScenario，返回基础玩家状态（用于 AI-only 场景）
+    if (!playerScenario) {
+        return player;
+    }
+    
     // 1. 构建手牌
-    player.hand = await createCardInstances(page, playerScenario.hand, playerId, 0);
+    player.hand = await createCardInstances(page, playerScenario.hand || [], playerId, 0);
     
     // 2. 构建牌库（如果指定）
     if (playerScenario.deck) {

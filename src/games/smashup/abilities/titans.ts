@@ -5699,7 +5699,6 @@ export function registerTitanInteractionHandlers(): void {
             events: [removeTitanFromPlay(titan, 'titan_clash', timestamp)],
         };
     });
-
     registerInteractionHandler('titan_vampires_ancient_lord_special', (state, playerId, value, _data, _random, timestamp) => {
         const selected = value as {
             mode?: 'skip' | 'store' | 'storeAndPlay';

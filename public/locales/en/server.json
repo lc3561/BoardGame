@@ -124,10 +124,11 @@
       "userRoleUpdated": "User role updated"
     }
   },
-  "email": {
-    "error": {
-      "missingConfig": "Email service is not configured"
-    },
+    "email": {
+      "error": {
+        "missingConfig": "Email service is not configured",
+        "sendFailed": "Failed to send email. Please try again later"
+      },
     "subject": "Email Verification Code - Yizhuo Board Game",
     "reset": {
       "subject": "Password Reset Code - Yizhuo Board Game",

@@ -121,7 +121,6 @@ describe('SmashUp command validation', () => {
         expect(validResult.valid).toBe(true);
         expect(invalidResult.valid).toBe(false);
     });
-
     it('rejects summoning a second titan while another titan is already in play', () => {
         registerAbility('ghosts_creampuff_man', 'special', () => ({ events: [] }));
         const core = makeState({

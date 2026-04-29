@@ -1,0 +1,12 @@
+errors:
+  - file: home-v2.ui.yaml
+    path: scene.root.children[1].zoneRef
+    code: UNKNOWN_ZONE_REF
+    message: zoneRef "right_pag" 不存在
+    suggestion: 使用已定义的 zones.right_page
+
+  - file: home-v2.skin.yaml
+    path: skins.home_v2.gold_panel.slice.left
+    code: MISSING_REQUIRED_FIELD
+    message: nineSlice 缺少 left 切片值
+    suggestion: 补齐 top/right/bottom/left 四个字段

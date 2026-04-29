@@ -223,45 +223,6 @@ className="px-2 py-0.5 rounded text-xs font-medium bg-red-500/20 text-red-400 bo
 className="px-2 py-0.5 rounded text-xs font-medium bg-slate-600 text-slate-300"
 ```
 
-#### 施工中 / 禁用斜带
-
-适用：角色选择、卡牌预览、阵营选择等“对象仍需露出，但当前不可用”的场景。
-
-视觉规则：
-- **一根扁平斜带横穿卡面中部**，不要额外整卡遮罩。
-- **纯黑 + 高饱和黄**，不要发灰、不要低对比。
-- **文字与底纹反相**：文字落在黄区时读成黑字，落在黑条时读成黄字。
-- **不要第二背景块**：禁止在斜带中部再叠一块深色牌子或说明框。
-- **信息短促**：文案控制在 2-4 个字，如 `施工中` / `开发中` / `未开放`。
-
-推荐实现要点：
-
-```tsx
-// 外层：absolute 覆盖卡面中线
-className="absolute inset-0 pointer-events-none overflow-hidden"
-
-// 斜带：宽度要明显超过卡面，确保完整切过
-style={{
-  width: '180%+',
-  left: '50%',
-  top: '50%',
-  transform: 'translate(-50%, -50%) rotate(-12deg)',
-}}
-
-// 底纹：单一黑黄斜纹，不再叠第二层底
-backgroundImage:
-  'repeating-linear-gradient(135deg, #111111 0 18px, #111111 18px 28px, #facc15 28px 48px)'
-
-// 文字：用反向同纹理做 text clip
-backgroundImage:
-  'repeating-linear-gradient(135deg, #facc15 0 18px, #facc15 18px 28px, #111111 28px 48px)'
-```
-
-反模式：
-- 黄底上再盖一块深色矩形文字区
-- 斜带只有底部半截，没有完整切过卡面
-- 黑色用半透明灰替代纯黑，导致警示力度不够
-
 ### 网格/棋盘
 
 #### 格子

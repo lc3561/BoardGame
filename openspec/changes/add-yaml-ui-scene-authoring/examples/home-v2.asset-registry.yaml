@@ -1,0 +1,13 @@
+assets:
+  home_v2.book.cover:
+    type: image
+    path: common/home-v2/book-cover
+    preload: critical
+
+  home_v2.skin.gold_panel:
+    type: image
+    path: common/home-v2/gold-panel
+
+  common.ui.arrow_right:
+    type: image
+    path: common/ui/arrow-right

@@ -7,10 +7,10 @@ Commit 6ea1f9f (2026-02-28) titled "feat: add Smash Up POD faction support" inco
 **Impact Severity**: Critical - affects all games and core systems
 
 **Evidence**: 
-- `evidence/pod-commit-scope-audit.md` - Original audit report
-- `evidence/phase-a-complete-audit-plan.md` - Complete file inventory (512 files)
-- `evidence/dicethrone-endgame-ui-deletion.md` - Endgame UI deletion analysis
-- `evidence/pod-commit-incremental-fix-proposal.md` - Incremental fix proposal
+- `evidence/_shared/pod-commit-scope-audit.md` - Original audit report
+- `evidence/_shared/phase-a-complete-audit-plan.md` - Complete file inventory (512 files)
+- `evidence/dicethrone/dicethrone-endgame-ui-deletion.md` - Endgame UI deletion analysis
+- `evidence/_shared/pod-commit-incremental-fix-proposal.md` - Incremental fix proposal
 
 **Known Issues** (from 3.7% audit coverage):
 1. ✅ DiceThrone `hasDivergentVariants` effect type comparison deleted - Fixed

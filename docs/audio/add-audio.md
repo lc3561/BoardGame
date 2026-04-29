@@ -1,19 +1,15 @@
 # 新增音频资产全链路流程
 
 > 本文覆盖“新增音频 → 压缩 → 生成 registry → 中文友好名 → 生成清单 → 预览验证 → 代码接入”的完整流程。
-> **适用范围**：跨游戏复用的公共音效/音乐统一放在 `public/assets/common/audio/`。
-> 游戏私有音频如果未来需要跟随某个游戏 asset pack 一起下发，放在该游戏自己的 `public/assets/<gameId>/...` 资源树，不放进 `common/audio`。
+> **适用范围**：所有音效/音乐统一放在 `public/assets/common/audio/`。
 
 ---
 
 ## 0. 前置准备（必读）
 
 1. **安装 ffmpeg**（用于压缩）：命令行需能直接执行 `ffmpeg`。
-2. **不要把音频放进 `src/games/<gameId>/`**：运行时二进制资源必须放在 `public/assets/` 下。
-3. **公共/私有要分清**：
-   - 会被多个游戏复用的音频：放 `public/assets/common/audio/`
-   - 只属于某个游戏的音频：放该游戏自己的 `public/assets/<gameId>/...`
-4. **只放“原始素材”**：源文件保留在原路径，压缩产物会写入同级 `compressed/` 目录。
+2. **只使用公共目录**：禁止在 `src/games/<gameId>/` 下放音频。
+3. **只放“原始素材”**：源文件保留在原路径，压缩产物会写入同级 `compressed/` 目录。
 
 ---
 
@@ -115,40 +111,6 @@ node scripts/audio/generate_common_audio_registry.js \
 
 产出：`public/assets/common/audio/registry.json`
 
-### 3.1 同步前端全量 registry（强制）
-
-运行时和 `/dev/audio` 读取的是 `src/assets/audio/` 下的打包 JSON，不会直接去读 `public/assets/common/audio/registry.json`。
-
-因此生成全量表后，必须同步到：
-
-```bash
-Copy-Item public/assets/common/audio/registry.json src/assets/audio/registry.json -Force
-```
-
-> 若只更新了 `public` 下的全量 registry，没有同步到 `src/assets/audio/registry.json`，`/dev/audio` 和前端构建产物都会继续使用旧表。
-
-### 3.2 生成运行时 slim registry（强制）
-
-使用脚本：`scripts/audio/generate-slim-registry.mjs`
-
-```bash
-node scripts/audio/generate-slim-registry.mjs
-```
-
-- 产出：`src/assets/audio/registry-slim.json`
-- 规则：扫描 `src/**/*.ts(x)` 中实际引用的音频 key，再从全量 registry 中筛出运行时需要的条目
-- 何时必须执行：只要这次改动新增了代码中的音频 key 引用，就必须重新生成
-
-### 3.3 校验 slim registry（推荐）
-
-```bash
-node scripts/audio/verify-slim-registry.mjs
-```
-
-用于确认：
-- 代码里引用的 key 都在 slim registry 中
-- slim registry 中的条目都来自全量 registry
-
 ---
 
 ## 4. 更新中文友好名（强制）
@@ -209,8 +171,6 @@ node scripts/audio/generate_audio_assets_md.js
 产出：`docs/audio/common-audio-assets.md`
 
 > 清单用于人工检索与审核，必须与 registry 同步更新。
-> **标准产物优先（强制）**：后续如果用户要“当前音效表 / 实际使用列表 / 按游戏导出已用 key”，必须优先复用这里生成的清单、`registry.ai*.json`、`registry-slim.json` 等标准产物；禁止绕过脚本再手写一份新的 Markdown 表。
-> **缺脚本时的处理（强制）**：如果仓库里没有对应游戏的专用导出脚本，必须先明确告知“现有标准产物能提供什么、缺什么”，再决定复用全仓产物还是补脚本；禁止直接新增临时 evidence 表来充当标准结果。
 
 ---
 
@@ -237,28 +197,11 @@ node scripts/audio/generate_audio_catalog.js
 
 > 若缺失，优先检查：是否压缩、是否生成 registry、是否补翻译。
 
-### 7.1 远端资源验证（生产/R2 必做）
-
-如果当前环境音频二进制资源走 `VITE_ASSETS_BASE_URL` 指向的对象存储/CDN（默认官方资源域名）：
-
-- 必须确认新增音频对应的 `compressed/*.ogg` 已上传到 R2/CDN
-- 必须确认上传路径与 registry 中记录的相对路径一致
-- 必须确认不是只有本地 `public/assets/common/audio/.../compressed/` 存在，而远端桶里缺文件
-
-> 运行时会自动把 registry 中的相对路径改写为 `compressed/` 版本 URL。  
-> 所以“key 已进 registry”只说明注册成功，不代表远端实际可播。
-
 ---
 
 ## 8. 代码接入（强制）
 
-**原则**：只使用 registry 中的 key，禁止手写路径与 `compressed/`。
-
-## 9. Android 分包补充
-
-- `common/audio/**` 会作为公共音频包单独发布，多个游戏共享，避免重复下载。
-- 某个游戏自己的图片/图集/私有音频，继续跟该游戏 asset pack 一起发布。
-- 网页端默认行为不变：未安装 Android 本地资源包时，公共音频仍按现有远端资源基址加载。
+**原则**：只使用 `registry.json` 中的 key，禁止手写路径与 `compressed/`。
 
 示例：
 ```ts
@@ -277,15 +220,7 @@ playSound('combat.impact.hit_heavy_001');
 > `getOptimizedAudioUrl()` 会自动优先使用压缩音频路径，无需自行处理。
 > **已废弃**：`DeferredSoundMap`、`AudioTiming`、`EventSoundResult` 已移除，`feedbackResolver` 不再返回 `{ key, timing }` 对象。
 
-### 8.1 语义优先级（强制）
-- **状态变化优先**：只要事件核心是对象规则状态的变化，就必须优先选择表达该变化的音效，而不是按素材载体来选。
-- **纯 handling 仅用于普通搬运**：只有当事件不改变对象规则身份、可见性、访问权限、状态边界时，才使用 `card.handling.*` / `card.fx.*`。
-- **复合事件按主语义选音**：当事件同时包含“状态变化 + 位置变化”时，优先映射玩家首先感知到的状态变化，而不是位移结果。
-- **通用禁令**：凡是涉及隐藏信息与公开信息切换、访问权限切换、锁定与释放切换、特殊规则身份获得/失去、特殊区域边界进出等事件，不得默认映射成 `cards_scrolling_001`、`card_take_001` 之类的抽象 handling 音。
-- **基础池默认 1-2 条**：阵营/牌组/职业的通用基础音效池应优先收敛到 1-2 条；只有在高频触发且确有必要降低重复感时，才扩到更多变体。
-- **明显语义必须单配**：当单张卡的名称、描述或演出目标已经明显指向特定语义时，必须优先配置更贴切的专属 `soundKey`，不能继续落回基础池。
-
-### 8.2 预加载策略（新增）
+### 8.1 预加载策略（新增）
 - **criticalSounds**：进入游戏后立即预加载（适合首回合高频音效）。
 - **contextualPreloadKeys**：基于上下文增量预热（如选派系/卡组后加载对应音效）。
 - **UI 层预热**：按钮/教程步骤等可在显示前手动调用 `AudioManager.preloadKeys()`。
@@ -308,17 +243,11 @@ AudioManager.preloadKeys(['ui.general.menu_click_01']);
 - [ ] 原始音频已放入 `public/assets/common/audio/`
 - [ ] 已运行 `npm run compress:audio -- public/assets/common/audio`
 - [ ] 已生成 `public/assets/common/audio/registry.json`
-- [ ] 已同步 `src/assets/audio/registry.json`
-- [ ] 已生成 `src/assets/audio/registry-slim.json`
 - [ ] 已更新 `phrase-mappings.zh-CN.json`
 - [ ] 已生成 `docs/audio/common-audio-assets.md`
 - [ ] 已生成 `docs/audio/audio-catalog.md`
 - [ ] `/dev/audio` 可预览且显示中文
-- [ ] 若生产走 R2/CDN，已确认远端 `compressed/` 音频已上传
 - [ ] 代码中不出现 `compressed/`
-- [ ] 可见性/访问权限/状态边界/规则身份变化类事件没有被偷换成抽象 handling 音
-- [ ] 基础池没有为了“凑丰富度”盲目堆到 3 条以上
-- [ ] 语义明显的卡牌没有错误复用基础池
 
 ---
 
@@ -331,15 +260,8 @@ AudioManager.preloadKeys(['ui.general.menu_click_01']);
 ### 10.2 registry 没更新
 - 是否忘记执行 `generate_common_audio_registry.js`
 - 是否指向了错误的 `--source` 路径
-- 是否忘记把 `public/assets/common/audio/registry.json` 同步到 `src/assets/audio/registry.json`
-- 是否忘记重新生成 `src/assets/audio/registry-slim.json`
 
 ### 10.3 中文名不生效
 - 是否遗漏 `phrase-mappings.zh-CN.json`
 - 是否没有刷新 `/dev/audio`
 - 是否在翻译中使用了错误的“英文词干”
-
-### 10.4 `/dev/audio` 能看到，但游戏里没声音
-- 先确认代码运行时引用的 key 是否已进入 `src/assets/audio/registry-slim.json`
-- 再确认远端 R2/CDN 是否已有对应 `compressed/*.ogg`
-- 最后再看浏览器网络请求是否命中了错误的 `VITE_ASSETS_BASE_URL`

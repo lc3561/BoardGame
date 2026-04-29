@@ -2143,6 +2143,60 @@ test.describe('Smash Up - Alien Terraform', () => {
         await game.screenshot('cthulhu-titan-after-rail-play', testInfo);
     });
 
+    test('触发式 special 不应在泰坦栏或基地上被错误高亮为可手动激活', async ({ game, page }, testInfo) => {
+        await openTitanRailScene(game, {
+            bases: [
+                {
+                    defId: 'base_saloon_pod',
+                    minions: [
+                        {
+                            uid: 'deputy-ui-1',
+                            defId: 'cowboys_deputy_pod',
+                            owner: '0',
+                            controller: '0',
+                            basePower: 2,
+                            powerCounters: 0,
+                            powerModifier: 0,
+                            tempPowerModifier: 0,
+                            talentUsed: false,
+                            attachedActions: [],
+                        },
+                    ],
+                },
+            ],
+            extraCore: {
+                titans: [
+                    {
+                        uid: 'titan-pecos-ui',
+                        defId: 'pecos_bill',
+                        faction: 'cowboys',
+                        ownerId: '0',
+                        controllerId: '0',
+                        powerCounters: 0,
+                        talentUsed: false,
+                        location: { zone: 'setaside' },
+                    },
+                ],
+            },
+        });
+
+        const titanRail = page.getByTestId('su-titan-rail');
+        await expect(titanRail).toBeVisible();
+        await expect(page.getByTestId('su-rail-titan-badge-titan-pecos-ui')).toHaveCount(0);
+        await expect(page.locator('[data-minion-uid="deputy-ui-1"] .ring-green-400')).toHaveCount(0);
+        await expect(page.locator('[data-minion-uid="deputy-ui-1"] .border-green-400')).toHaveCount(0);
+
+        await saveEvidenceLocatorScreenshot(page, titanRail, testInfo, 'smashup-titan-rail', 'pecos-titan-rail-not-activatable');
+        await saveEvidenceLocatorScreenshot(
+            page,
+            page.locator('[data-minion-uid="deputy-ui-1"]'),
+            testInfo,
+            'smashup-titan-rail',
+            'cowboys-deputy-no-false-activation-glow',
+        );
+        await game.screenshot('pecos-and-deputy-no-false-special-highlight', testInfo);
+    });
+
     test('克苏鲁泰坦天赋可在分支选择后抽 1 张疯狂卡', async ({ game, page }, testInfo) => {
         await openTitanRailScene(game, {
             hand: ['special_madness'],

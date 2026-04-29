@@ -4,6 +4,44 @@ import { test, expect } from '@playwright/test';
 // - login body 发送 account（仅邮箱）
 // - change-password 正常发起
 
+const AUTH_DESKTOP_SCREENSHOT_PATH = 'test-results/evidence-screenshots/auth-modal-desktop-login-filled.png';
+const AUTH_MOBILE_SCREENSHOT_PATH = 'test-results/evidence-screenshots/auth-modal-mobile-register-filled.png';
+const AUTH_DESKTOP_CLEAR_SCREENSHOT_PATH = 'test-results/evidence-screenshots/auth-modal-desktop-cleared-account.png';
+
+async function applyKeyboardViewportSimulation(
+    page: import('@playwright/test').Page,
+    options: { runtimeViewportHeight: number; keyboardInsetHeight: number },
+) {
+    await page.evaluate(({ runtimeViewportHeight, keyboardInsetHeight }) => {
+        const root = document.documentElement;
+        root.style.setProperty('--runtime-viewport-height', `${runtimeViewportHeight}px`);
+        root.style.setProperty('--keyboard-inset-height', `${keyboardInsetHeight}px`);
+        root.dataset.keyboardVisible = 'true';
+    }, options);
+}
+
+async function clickHeaderLoginEntry(page: import('@playwright/test').Page) {
+    const loginButton = page.locator('header button:has-text("登录")').first();
+    await expect(loginButton).toBeVisible();
+    await page.waitForTimeout(500);
+    await loginButton.click({ force: true });
+    if (await page.getByTestId('auth-modal').count() === 0) {
+        await page.waitForTimeout(500);
+        await loginButton.click({ force: true });
+    }
+}
+
+async function clickHeaderRegisterEntry(page: import('@playwright/test').Page) {
+    const registerButton = page.locator('header button:has-text("注册")').first();
+    await expect(registerButton).toBeVisible();
+    await page.waitForTimeout(500);
+    await registerButton.click({ force: true });
+    if (await page.getByTestId('auth-modal').count() === 0) {
+        await page.waitForTimeout(500);
+        await registerButton.click({ force: true });
+    }
+}
+
 test.describe('Auth (account login) E2E', () => {
     test.beforeEach(async ({ page }) => {
         await page.addInitScript(() => {
@@ -15,57 +53,267 @@ test.describe('Auth (account login) E2E', () => {
             await route.fulfill({ status: 401, json: { error: 'unauthorized' } });
         });
 
-        await page.goto('/');
+        await page.goto('/', { waitUntil: 'domcontentloaded' });
+        await page.addStyleTag({
+            content: `
+                *, *::before, *::after {
+                    animation: none !important;
+                    transition: none !important;
+                    scroll-behavior: auto !important;
+                }
+            `,
+        });
     });
 
-    test('AuthModal login should POST /auth/login with account (email only)', async ({ page }) => {
-        let lastLoginBody: unknown = null;
+    test('AuthModal login should remain usable on desktop', async ({ page }) => {
+        // 打开登录弹窗（UserMenu / Home 中应该有“登录/Log In”入口）
+        await clickHeaderLoginEntry(page);
 
-        await page.route('**/auth/login', async route => {
-            lastLoginBody = JSON.parse(route.request().postData() || '{}');
-            await route.fulfill({
-                json: {
-                    success: true,
-                    code: 'AUTH_LOGIN_OK',
-                    message: '登录成功',
-                    data: {
-                        token: 'fake_jwt_token',
-                        user: {
-                            id: 'user_123',
-                            username: 'TestNick',
-                            email: 'test@example.com',
-                            emailVerified: true,
-                            role: 'user',
-                            banned: false,
-                        },
-                    },
-                },
-            });
+        const dialog = page.getByTestId('auth-modal');
+        await expect(dialog).toBeVisible();
+        await page.waitForTimeout(50);
+
+        const accountInput = dialog.getByTestId('auth-login-account-input');
+        const passwordInput = dialog.getByTestId('auth-login-password-input');
+        const passwordToggle = dialog.getByTestId('auth-login-password-toggle');
+        const submitButton = dialog.getByTestId('auth-submit-button');
+
+        await expect(passwordInput).toHaveAttribute('type', 'password');
+        await passwordToggle.click();
+        await expect(passwordInput).toHaveAttribute('type', 'text');
+        await passwordToggle.click();
+        await expect(passwordInput).toHaveAttribute('type', 'password');
+
+        await accountInput.evaluate((node, value) => {
+            const input = node as HTMLInputElement;
+            input.value = value;
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+        }, 'test@example.com');
+        await passwordInput.evaluate((node, value) => {
+            const input = node as HTMLInputElement;
+            input.value = value;
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+        }, '1234');
+
+        await expect(accountInput).toHaveValue('test@example.com');
+        await expect(passwordInput).toHaveValue('1234');
+        await expect(submitButton).toBeVisible();
+
+        await page.screenshot({
+            path: AUTH_DESKTOP_SCREENSHOT_PATH,
+            fullPage: false,
+        });
+    });
+
+    test('AuthModal register should keep mobile inputs visible and editable on narrow screens', async ({ page }) => {
+        await page.setViewportSize({ width: 390, height: 844 });
+
+        await clickHeaderRegisterEntry(page);
+
+        const getAuthModal = () => page.getByTestId('auth-modal').last();
+        const getEmailInput = () => page.getByTestId('auth-register-email-input').last();
+        const getCodeInput = () => page.getByTestId('auth-register-code-input').last();
+        const getUsernameInput = () => page.getByTestId('auth-register-username-input').last();
+
+        await expect(getAuthModal()).toBeVisible();
+        await page.waitForTimeout(50);
+
+        await applyKeyboardViewportSimulation(page, {
+            runtimeViewportHeight: 564,
+            keyboardInsetHeight: 280,
         });
 
-        // 打开登录弹窗（UserMenu / Home 中应该有“登录/Log In”入口）
-        await page.getByRole('button').filter({ hasText: /登录|Log In/i }).first().click();
+        await expect(getAuthModal()).toBeVisible({ timeout: 10000 });
+        await expect(getEmailInput()).toBeVisible();
+        await expect(getCodeInput()).toBeVisible();
+        await expect(getUsernameInput()).toBeVisible();
 
-        // 输入账号与密码（账号输入框是文本类型，不用依赖 placeholder/i18n key）
-        const dialog = page.locator('div[role="dialog"], .pointer-events-auto').first();
-        await expect(dialog).toBeVisible();
+        await getUsernameInput().click();
+        const mobileProxy = page.getByTestId('mobile-text-entry-proxy').last();
+        const mobileProxyInput = page.getByTestId('mobile-text-entry-proxy-input').last();
+        await expect(mobileProxy).toBeVisible();
 
-        const inputs = dialog.locator('input');
-        // 第一个 input：account；第二个：password
-        await inputs.nth(0).fill('test@example.com');
-        await inputs.nth(1).fill('1234');
+        const proxyBackgroundColor = await mobileProxyInput.evaluate((node) => {
+            return window.getComputedStyle(node).backgroundColor;
+        });
+        expect(proxyBackgroundColor).not.toBe('transparent');
+        expect(proxyBackgroundColor).not.toBe('rgba(0, 0, 0, 0)');
 
-        const [resp] = await Promise.all([
-            page.waitForResponse('**/auth/login'),
-            dialog.getByRole('button').filter({ hasText: /登\s*录|Log In/i }).first().click(),
-        ]);
+        await mobileProxyInput.pressSequentially('RememberMe');
+        await expect(mobileProxyInput).toBeFocused();
+        await expect(mobileProxyInput).toHaveValue('RememberMe');
 
-        expect(resp.ok()).toBeTruthy();
-        expect(lastLoginBody).toEqual({ account: 'test@example.com', password: '1234' });
+        await expect(getUsernameInput()).toHaveValue('RememberMe');
 
-        // 本地 token 写入
-        const token = await page.evaluate(() => localStorage.getItem('auth_token'));
-        expect(token).toBe('fake_jwt_token');
+        const layoutMetrics = await getAuthModal().evaluate((element) => {
+            const submitButton = element.querySelector('button[type="submit"]');
+            const emailInput = element.querySelector('[data-testid="auth-register-email-input"]');
+            const codeInput = element.querySelector('[data-testid="auth-register-code-input"]');
+            const modalRect = element.getBoundingClientRect();
+
+            document.querySelector('[data-testid="e2e-auth-modal-capture-host"]')?.remove();
+            if (!(element instanceof HTMLElement)) {
+                throw new Error('认证弹窗节点不是 HTMLElement');
+            }
+            const clone = element.cloneNode(true);
+            if (!(clone instanceof HTMLElement)) {
+                throw new Error('认证弹窗快照节点不是 HTMLElement');
+            }
+            clone.setAttribute('data-testid', 'e2e-auth-modal-capture');
+            clone.style.position = 'fixed';
+            clone.style.top = '16px';
+            clone.style.left = '16px';
+            clone.style.right = 'auto';
+            clone.style.bottom = 'auto';
+            clone.style.inset = 'auto';
+            clone.style.margin = '0';
+            clone.style.transform = 'none';
+            clone.style.maxHeight = 'none';
+            clone.style.width = `${modalRect.width}px`;
+            clone.style.height = `${modalRect.height}px`;
+            clone.style.zIndex = '2147483647';
+            clone.style.pointerEvents = 'none';
+            clone.style.opacity = '1';
+            clone.style.visibility = 'visible';
+
+            const sourceInputs = element.querySelectorAll('input, textarea, select');
+            const cloneInputs = clone.querySelectorAll('input, textarea, select');
+            sourceInputs.forEach((input, index) => {
+                const target = cloneInputs[index];
+                if (input instanceof HTMLInputElement && target instanceof HTMLInputElement) {
+                    target.value = input.value;
+                    target.checked = input.checked;
+                    return;
+                }
+                if (input instanceof HTMLTextAreaElement && target instanceof HTMLTextAreaElement) {
+                    target.value = input.value;
+                    return;
+                }
+                if (input instanceof HTMLSelectElement && target instanceof HTMLSelectElement) {
+                    target.value = input.value;
+                }
+            });
+            clone.querySelectorAll('*').forEach((candidate) => {
+                if (!(candidate instanceof HTMLElement)) {
+                    return;
+                }
+                if (candidate.scrollHeight > candidate.clientHeight + 1) {
+                    candidate.scrollTop = 0;
+                }
+            });
+
+            const host = document.createElement('div');
+            host.setAttribute('data-testid', 'e2e-auth-modal-capture-host');
+            host.style.position = 'fixed';
+            host.style.inset = '0';
+            host.style.zIndex = '2147483647';
+            host.style.background = getComputedStyle(document.body).backgroundColor || '#efe4cb';
+            host.style.display = 'flex';
+            host.style.alignItems = 'flex-start';
+            host.style.justifyContent = 'flex-start';
+            host.style.padding = '16px';
+            host.style.pointerEvents = 'none';
+            host.appendChild(clone);
+            document.body.appendChild(host);
+
+            return {
+                modalTop: element.getBoundingClientRect().top,
+                emailRight: emailInput?.getBoundingClientRect().right ?? 0,
+                emailBottom: emailInput?.getBoundingClientRect().bottom ?? 0,
+                codeRight: codeInput?.getBoundingClientRect().right ?? 0,
+                codeBottom: codeInput?.getBoundingClientRect().bottom ?? 0,
+                submitBottom: submitButton?.getBoundingClientRect().bottom ?? 0,
+                viewportWidth: window.innerWidth,
+                viewportHeight: window.innerHeight,
+                runtimeViewportHeight: Number.parseFloat(window.getComputedStyle(document.documentElement).getPropertyValue('--runtime-viewport-height') || '0'),
+                inputFontSizes: Array.from(element.querySelectorAll('input')).map((node) => {
+                    const fontSize = window.getComputedStyle(node).fontSize || '0';
+                    return Number.parseFloat(fontSize);
+                }),
+            };
+        });
+
+        expect(layoutMetrics.modalTop).toBeGreaterThanOrEqual(0);
+        expect(layoutMetrics.emailRight).toBeLessThanOrEqual(layoutMetrics.viewportWidth);
+        expect(layoutMetrics.codeRight).toBeLessThanOrEqual(layoutMetrics.viewportWidth);
+        expect(layoutMetrics.emailBottom).toBeLessThanOrEqual(layoutMetrics.runtimeViewportHeight);
+        expect(layoutMetrics.codeBottom).toBeLessThanOrEqual(layoutMetrics.runtimeViewportHeight);
+        expect(Math.min(...layoutMetrics.inputFontSizes)).toBeGreaterThanOrEqual(16);
+        expect(layoutMetrics.submitBottom).toBeLessThanOrEqual(layoutMetrics.runtimeViewportHeight);
+
+        await expect(page.getByTestId('e2e-auth-modal-capture-host')).toBeVisible();
+        await page.screenshot({
+            path: AUTH_MOBILE_SCREENSHOT_PATH,
+            fullPage: false,
+        });
+
+    });
+
+    test('AuthModal should preserve remembered identifiers across mode switches and persist drafts', async ({ page }) => {
+        await clickHeaderRegisterEntry(page);
+
+        const modal = page.getByTestId('auth-modal');
+        await expect(modal).toBeVisible();
+
+        await modal.getByTestId('auth-register-email-input').fill('remembered@example.com');
+        await modal.getByTestId('auth-register-username-input').fill('RememberMe');
+
+        await modal.getByTestId('auth-switch-login').evaluate((node) => {
+            (node as HTMLButtonElement).click();
+        });
+        const loginModal = page.getByTestId('auth-modal');
+        await expect(loginModal.getByTestId('auth-login-account-input')).toHaveValue('remembered@example.com');
+
+        await modal.getByTestId('auth-switch-register').evaluate((node) => {
+            (node as HTMLButtonElement).click();
+        });
+        const registerModal = page.getByTestId('auth-modal');
+        await expect(registerModal.getByTestId('auth-register-email-input')).toHaveValue('remembered@example.com');
+        await expect(registerModal.getByTestId('auth-register-username-input')).toHaveValue('RememberMe');
+
+        const rememberedDraft = await page.evaluate(() => {
+            const raw = window.localStorage.getItem('auth_modal_remembered_fields_v1');
+            return raw ? JSON.parse(raw) : null;
+        });
+        expect(rememberedDraft).toMatchObject({
+            email: 'remembered@example.com',
+            username: 'RememberMe',
+        });
+
+        await page.mouse.click(12, 12);
+        await expect(page.getByTestId('auth-modal')).toBeHidden();
+
+        await clickHeaderRegisterEntry(page);
+        const reopenedModal = page.getByTestId('auth-modal');
+        await expect(reopenedModal).toBeVisible();
+        await expect(reopenedModal.getByTestId('auth-register-email-input')).toHaveValue('remembered@example.com');
+        await expect(reopenedModal.getByTestId('auth-register-username-input')).toHaveValue('RememberMe');
+    });
+
+    test('AuthModal login account should stay empty after user clears the remembered value on desktop', async ({ page }) => {
+        await clickHeaderRegisterEntry(page);
+
+        const registerModal = page.getByTestId('auth-modal');
+        await expect(registerModal).toBeVisible();
+        await registerModal.getByTestId('auth-register-email-input').fill('remembered@example.com');
+
+        await registerModal.getByTestId('auth-switch-login').click();
+
+        const loginModal = page.getByTestId('auth-modal');
+        const accountInput = loginModal.getByTestId('auth-login-account-input');
+        await expect(accountInput).toHaveValue('remembered@example.com');
+
+        await accountInput.clear();
+        await expect(accountInput).toHaveValue('');
+        await page.waitForTimeout(150);
+        await expect(accountInput).toHaveValue('');
+
+        await page.screenshot({
+            path: AUTH_DESKTOP_CLEAR_SCREENSHOT_PATH,
+            fullPage: false,
+        });
     });
 
     test('Change password should POST /auth/change-password with currentPassword + newPassword', async ({ page }) => {

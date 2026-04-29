@@ -4,10 +4,11 @@ import { assertChildProcessSupport } from './assert-child-process-support.mjs';
 import { removeDevRuntimePorts } from './dev-port-runtime.js';
 import { cleanupPorts as cleanupBoundPorts } from './port-allocator.js';
 import { waitForPortsFree } from './port-allocator.js';
+import { withWindowsHide } from './windows-hide.js';
 
 await assertChildProcessSupport('开发端口清理');
 
-const defaultPorts = [4173, 5173, 18000, 18001];
+const defaultPorts = [4273, 4173, 5173, 18000, 18001];
 const envPorts = process.env.CLEAN_PORTS
     ? process.env.CLEAN_PORTS.split(',').map((value) => Number(value.trim()))
     : [];
@@ -30,6 +31,10 @@ const devProcessMatchers = [
     'server.ts',
 ];
 
+function execHidden(command, options = {}) {
+    return execSync(command, withWindowsHide(options));
+}
+
 function killPids(pids, label, { tree = false } = {}) {
     for (const rawPid of pids) {
         const pid = Number(rawPid);
@@ -40,15 +45,15 @@ function killPids(pids, label, { tree = false } = {}) {
         try {
             if (process.platform === 'win32') {
                 const treeFlag = tree ? '/T ' : '';
-                execSync(`taskkill /F ${treeFlag}/PID ${pid}`, { stdio: 'pipe' });
+                execHidden(`taskkill /F ${treeFlag}/PID ${pid}`, { stdio: 'pipe' });
             } else {
                 if (tree) {
                     try {
-                        execSync(`pkill -TERM -P ${pid}`, { stdio: 'pipe' });
+                        execHidden(`pkill -TERM -P ${pid}`, { stdio: 'pipe' });
                     } catch {
                     }
                 }
-                execSync(`kill -9 ${pid}`, { stdio: 'pipe' });
+                execHidden(`kill -9 ${pid}`, { stdio: 'pipe' });
             }
             console.log(`已清理进程(${label}): PID ${pid}`);
         } catch {
@@ -113,7 +118,7 @@ function isRepoDevProcess(commandLine = '') {
 function collectResidualDevProcessPids() {
     if (process.platform === 'win32') {
         try {
-            const output = execSync(
+            const output = execHidden(
                 'powershell -NoProfile -Command "Get-CimInstance Win32_Process | Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress"',
                 { encoding: 'utf8' }
             ).trim();
@@ -135,7 +140,7 @@ function collectResidualDevProcessPids() {
 
     let output = '';
     try {
-        output = execSync('ps -axo pid=,command=', { encoding: 'utf8' });
+        output = execHidden('ps -axo pid=,command=', { encoding: 'utf8' });
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         console.warn(`[Dev] 跳过残留进程扫描：无法执行 ps (${message})`);

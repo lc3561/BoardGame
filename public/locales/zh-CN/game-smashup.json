@@ -457,11 +457,11 @@
     "world_champs": {
       "name": "世界冠军",
       "description": "由冠军卡牌混编，擅长额外行动、指示物与高机动爆发。"
-    },
-    "fairies": {
-      "name": "仙灵",
-      "description": "通过持续行动转移、临时力量修正和战术封锁灵活掌控基地节奏。"
-    }
+      },
+      "fairies": {
+        "name": "仙灵",
+        "description": "通过持续行动转移、临时力量修正和战术封锁灵活掌控基地节奏。"
+      }
   },
   "tutorial": {
     "title": "大杀四方教学",
@@ -3616,10 +3616,10 @@
     "base_hall_of_fame": {
       "name": "名人堂",
       "abilityText": "你每回合首次在此打出的随从在本回合结束前力量 +2。"
-    },
-    "fairies_titania": {
-      "name": "Titania",
-      "abilityText": "你可以将一个随从移回其拥有者的手牌，或打出一个额外的随从。"
+      },
+      "fairies_titania": {
+        "name": "Titania",
+        "abilityText": "你可以将一个随从移回其拥有者的手牌，或打出一个额外的随从。"
     },
     "fairies_glymmer": {
       "name": "Glymmer",
@@ -3661,10 +3661,10 @@
       "name": "结果",
       "effectText": "打在一个基地上。选择一项：持续，这里的所有随从具有 +1 力量；或持续，这里的所有随从具有 -1 力量。"
     },
-    "fairies_fairy_ballet": {
-      "name": "精灵芭蕾",
-      "effectText": "选择一项：抽取两张卡牌；或抽取一张卡牌并打出一张额外的战术。"
-    }
+      "fairies_fairy_ballet": {
+        "name": "精灵芭蕾",
+        "effectText": "选择一项：抽取两张卡牌；或抽取一张卡牌并打出一张额外的战术。"
+      }
   },
   "endgame": {
     "victory": "胜利",

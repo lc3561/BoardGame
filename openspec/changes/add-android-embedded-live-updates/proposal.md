@@ -12,7 +12,7 @@
 - 定义 OTA bundle 的版本、渠道、兼容性、完整性校验和激活/回滚机制
 - 为 Android App 增加启动时检查更新、后台下载、下次启动生效或安全切换的统一流程
 - 增加服务端/静态清单侧的 bundle 发布元数据约定
-- 增加 GitHub Actions OTA 自动发布链路，区分非生产自动 channel 与受保护的正式 channel
+- 增加 GitHub Actions Android 自动发布链路：`push main` 直接发布 stable 正式版本，并在成功后自动回写下一 patch 版本
 - 明确 `embedded + OTA` 为 Android 主线；`remote WebView` 仅保留为兼容/调试路径
 - 明确“哪些改动可以 OTA，哪些改动仍必须重新发包”
 

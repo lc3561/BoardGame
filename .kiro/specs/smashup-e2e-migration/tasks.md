@@ -152,7 +152,7 @@
   - _Requirements: 5.1, 5.2, 5.3, 8.1, 8.2_
 
 - [ ] 22. 建立进度追踪机制
-  - 在 `evidence/smashup-e2e-migration-progress.md` 中记录总体进度
+  - 在 `evidence/smashup/smashup-e2e-migration-progress.md` 中记录总体进度
   - 记录每个优先级的迁移状态
   - 记录每日进度（日期、完成的测试、遇到的问题）
   - 记录遇到的问题和解决方案
@@ -172,7 +172,7 @@
 
 - [ ] 25. 更新文档
   - 更新 `docs/automated-testing.md`
-  - 更新 `evidence/smashup-e2e-migration-progress.md`
+  - 更新 `evidence/smashup/smashup-e2e-migration-progress.md`
   - 创建迁移总结文档
   - _Requirements: 6.3, 6.4_
 

@@ -15,6 +15,7 @@ import { LayoutModule } from './modules/layout/layout.module';
 import { UserSettingsModule } from './modules/user-settings/user-settings.module';
 import { CustomDeckModule } from './modules/custom-deck/custom-deck.module';
 import { SponsorModule } from './modules/sponsor/sponsor.module';
+import { AiRepoWorkbenchModule } from './modules/ai-repo-workbench/ai-repo-workbench.module';
 
 import { FeedbackModule } from './modules/feedback/feedback.module';
 import { GameChangelogModule } from './modules/game-changelog/game-changelog.module';
@@ -87,6 +88,7 @@ import { NotificationModule } from './modules/notification/notification.module';
         UserSettingsModule,
         CustomDeckModule,
         SponsorModule,
+        AiRepoWorkbenchModule,
     ],
 })
 export class AppModule { }

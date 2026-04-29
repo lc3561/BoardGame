@@ -39,33 +39,6 @@
 - **THEN** 系统 MUST 拒绝安装该包
 - **AND** MUST 向用户展示明确失败原因
 
-### Requirement: 公共复用音频必须支持 shared audio pack，避免重复下载
-系统 SHALL 允许把 `common/audio` 这类跨游戏复用音频发布为独立的 `shared audio pack`，并允许多个游戏 manifest 共同依赖它。
-
-#### Scenario: 第二个游戏复用已安装的公共音频包
-- **GIVEN** 用户已经安装了兼容版本的 `shared audio pack`
-- **AND** 第一个游戏和第二个游戏都依赖该公共音频包
-- **WHEN** 用户安装第二个游戏
-- **THEN** 系统 MUST 复用已安装的 `shared audio pack`
-- **AND** 不得再次下载同一版本的公共音频内容
-
-#### Scenario: 公共音频包版本不满足新游戏要求
-- **GIVEN** 设备里已有旧版本 `shared audio pack`
-- **AND** 某个游戏 manifest 声明需要更新的公共音频包版本
-- **WHEN** 用户安装或更新该游戏
-- **THEN** 系统 MUST 先安装兼容的公共音频包
-- **AND** 成功后再继续该游戏自己的 asset pack 安装
-
-### Requirement: 游戏私有音频必须跟随游戏 asset pack 本地优先加载
-系统 SHALL 允许游戏私有音频与游戏图片/图集一起打进该游戏自己的 asset pack，并在本地已安装时优先从该游戏 asset pack 解析音频 URL。
-
-#### Scenario: 已安装游戏包后播放游戏私有音频
-- **GIVEN** 某个游戏的私有音频文件位于该游戏 asset pack 中
-- **AND** 当前设备已安装该游戏的本地 asset pack
-- **WHEN** 运行时为该游戏解析音频资源路径
-- **THEN** 系统 MUST 优先使用该游戏 asset pack 的本地资源根路径
-- **AND** 不得继续回退到远端公共资源域名作为首选
-
 ### Requirement: 本地安装、更新与激活切换必须原子化
 系统 SHALL 将 runtime、模块包与素材包存储为可版本化的本地目录，并在激活版本切换时保证原子性与可回退性。
 

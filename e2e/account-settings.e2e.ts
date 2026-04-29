@@ -1,5 +1,14 @@
 import { test, expect } from '@playwright/test';
 
+const ACCOUNT_SETTINGS_MOBILE_SCREENSHOT_PATH = 'test-results/evidence-screenshots/account-settings-mobile-password-inputs.png';
+const EMAIL_BIND_MOBILE_SCREENSHOT_PATH = 'test-results/evidence-screenshots/email-bind-mobile-verify-input.png';
+
+async function openAccountSettings(page: import('@playwright/test').Page) {
+    await page.getByText('旧昵称').click();
+    await page.getByText('账户设置').click();
+    return page.getByTestId('account-settings-modal');
+}
+
 /**
  * 账户设置弹窗 E2E 测试
  * 
@@ -47,19 +56,23 @@ test.describe('账户设置', () => {
         await page.route('**/notifications', async route => {
             await route.fulfill({ json: { notifications: [] } });
         });
+
+        await page.addStyleTag({
+            content: `
+                *, *::before, *::after {
+                    animation: none !important;
+                    transition: none !important;
+                    scroll-behavior: auto !important;
+                }
+            `,
+        }).catch(() => {});
     });
 
     test('打开账户设置弹窗并显示用户信息', async ({ page }) => {
         await page.goto('/');
 
         // 点击用户名/头像打开菜单
-        await page.getByText('旧昵称').click();
-
-        // 点击"账户设置"
-        await page.getByText('账户设置').click();
-
-        // 验证弹窗打开
-        const modal = page.locator('.pointer-events-auto').first();
+        const modal = await openAccountSettings(page);
         await expect(modal).toBeVisible();
 
         // 验证显示当前昵称
@@ -70,6 +83,86 @@ test.describe('账户设置', () => {
 
         // 验证密码区域显示
         await expect(modal.getByText('••••••')).toBeVisible();
+    });
+
+    test('移动端账户设置与邮箱绑定输入应保持可见可编辑', async ({ page }) => {
+        await page.setViewportSize({ width: 390, height: 844 });
+        await page.goto('/', { waitUntil: 'domcontentloaded' });
+
+        await page.route('**/auth/send-email-code', async route => {
+            await route.fulfill({ status: 200, json: { message: 'ok' } });
+        });
+
+        await openAccountSettings(page);
+        const modal = page.getByTestId('account-settings-modal');
+        await expect(modal).toBeVisible();
+
+        await page.getByTestId('account-settings-edit-password').dispatchEvent('click');
+
+        const currentPasswordInput = page.getByTestId('account-settings-current-password-input');
+        const newPasswordInput = page.getByTestId('account-settings-new-password-input');
+        const confirmPasswordInput = page.getByTestId('account-settings-confirm-password-input');
+        const currentPasswordToggle = page.getByTestId('account-settings-current-password-toggle');
+
+        await expect(currentPasswordInput).toHaveAttribute('type', 'password');
+        await currentPasswordToggle.click();
+        await expect(currentPasswordInput).toHaveAttribute('type', 'text');
+
+        await currentPasswordInput.fill('oldpass');
+        await newPasswordInput.fill('newpass1234');
+        await confirmPasswordInput.fill('newpass1234');
+
+        const passwordMetrics = await modal.evaluate((element) => {
+            const inputs = [
+                element.querySelector('[data-testid="account-settings-current-password-input"]'),
+                element.querySelector('[data-testid="account-settings-new-password-input"]'),
+                element.querySelector('[data-testid="account-settings-confirm-password-input"]'),
+            ].filter((node): node is HTMLInputElement => node instanceof HTMLInputElement);
+            return {
+                viewportWidth: window.innerWidth,
+                viewportHeight: window.innerHeight,
+                inputRights: inputs.map((node) => node.getBoundingClientRect().right),
+                inputFontSizes: inputs.map((node) => Number.parseFloat(window.getComputedStyle(node).fontSize || '0')),
+            };
+        });
+
+        expect(Math.max(...passwordMetrics.inputRights)).toBeLessThanOrEqual(passwordMetrics.viewportWidth);
+        expect(Math.min(...passwordMetrics.inputFontSizes)).toBeGreaterThanOrEqual(16);
+        await page.screenshot({ path: ACCOUNT_SETTINGS_MOBILE_SCREENSHOT_PATH });
+
+        await page.getByTestId('account-settings-open-email').dispatchEvent('click');
+        const emailBindModal = page.getByTestId('email-bind-modal');
+        await expect(emailBindModal).toBeVisible();
+
+        const emailInput = emailBindModal.getByTestId('email-bind-address-input');
+        await emailInput.fill('mobile@example.com');
+        await emailBindModal.getByTestId('email-bind-send-code').click();
+
+        const codeInput = emailBindModal.getByTestId('email-bind-code-input');
+        await expect(codeInput).toBeVisible();
+        await codeInput.fill('123456');
+
+        const emailBindMetrics = await emailBindModal.evaluate((element) => {
+            const email = element.querySelector('[data-testid="email-bind-address-input"]');
+            const code = element.querySelector('[data-testid="email-bind-code-input"]');
+            const confirm = element.querySelector('[data-testid="email-bind-confirm-button"]');
+            return {
+                viewportWidth: window.innerWidth,
+                viewportHeight: window.innerHeight,
+                emailRight: email?.getBoundingClientRect().right ?? 0,
+                codeBottom: code?.getBoundingClientRect().bottom ?? 0,
+                confirmBottom: confirm?.getBoundingClientRect().bottom ?? 0,
+                inputFontSizes: [email, code]
+                    .filter(Boolean)
+                    .map((node) => Number.parseFloat(window.getComputedStyle(node as Element).fontSize || '0')),
+            };
+        });
+
+        expect(emailBindMetrics.emailRight).toBeLessThanOrEqual(emailBindMetrics.viewportWidth);
+        expect(emailBindMetrics.codeBottom).toBeLessThanOrEqual(emailBindMetrics.viewportHeight);
+        expect(emailBindMetrics.confirmBottom).toBeLessThanOrEqual(emailBindMetrics.viewportHeight);
+        expect(Math.min(...emailBindMetrics.inputFontSizes)).toBeGreaterThanOrEqual(16);
+        await page.screenshot({ path: EMAIL_BIND_MOBILE_SCREENSHOT_PATH });
     });
 
     test('修改昵称成功', async ({ page }) => {

@@ -1,0 +1,43 @@
+scene:
+  id: home_v2_main
+  artboard:
+    width: 896
+    height: 720
+    background:
+      assetRef: home_v2.book.cover
+    zones:
+      left_page:
+        x: 74
+        y: 92
+        width: 312
+        height: 512
+      right_page:
+        x: 510
+        y: 92
+        width: 312
+        height: 512
+      bookmark_slot:
+        x: 402
+        y: 88
+        width: 56
+        height: 420
+
+  root:
+    id: root
+    type: stack
+    direction: absolute
+    children:
+      - id: left_panel
+        type: panel
+        zoneRef: left_page
+        skin: home_v2.gold_panel
+        children:
+          - id: title
+            type: text
+            textKey: homeV2.featuredGames
+            style: home_v2.book_page_title
+
+      - id: details_panel
+        type: panel
+        zoneRef: right_page
+        skin: home_v2.gold_panel

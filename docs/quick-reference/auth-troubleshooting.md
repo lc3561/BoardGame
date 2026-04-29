@@ -150,4 +150,4 @@ const JWT_EXPIRES_IN = '90d'; // 改为 90 天
 ## 相关文档
 
 - [完整排查指南](../troubleshooting/token-expiration.md)
-- [诊断证据](../../evidence/token-expiration-diagnosis.md)
+- [诊断证据](../../evidence/_shared/token-expiration-diagnosis.md)

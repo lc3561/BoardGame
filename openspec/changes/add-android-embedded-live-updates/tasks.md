@@ -17,7 +17,7 @@
 - [x] 3.1 增加 Android OTA bundle 构建产物与 manifest 生成
 - [x] 3.2 增加 bundle 上传、发布、回滚脚本
 - [x] 3.3 增加渠道/灰度/紧急停用开关
-- [x] 3.4 增加 GitHub Actions OTA 自动发布链路，并为正式 channel 增加审批门禁
+- [x] 3.4 增加 GitHub Actions 自动发布链路：`push main` 直接发布 stable OTA + native，并在成功后自动 bump 下一 patch 版本
 
 ## 4. Product Rules & Cleanup
 

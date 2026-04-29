@@ -45,9 +45,9 @@
 - **移动端只改入口，不重算语义（强制）**：移动端适配允许把“如何触发”改成 `long press / armed / 二次点击 / 展开后点击`，但不允许顺手重写“现在是否可用”的判定。也就是说，移动端可以改 `交互路径`，不能改 `可用态语义`。
 - **禁止双份判定漂移（强制）**：如果桌面端与移动端分别维护一份 `canUseXxx`、`isSelectableXxx`、`showUsedXxx` 之类派生状态，只要其中一份不是直接来自统一校验源，就视为高风险实现。新增前置条件后，这类双份判定极易出现“实际不可用但仍发光/描边”的回归。
 - 推荐门控顺序：
-1. [mobileSupport.ts](/F:/gongzuo/webgame/BoardGame/src/games/mobileSupport.ts) 的 `1023px` 视口断点。
-2. manifest 驱动的 `mobileProfile / mobileLayoutPreset`。
-3. `(pointer: coarse)` 仅用于 hover 替代入口显隐，不可单独用来压缩 PC 尺寸。
+  1. `src/games/mobileSupport.ts` 的 `1023px` 视口断点。
+  2. manifest 驱动的 `mobileProfile / mobileLayoutPreset`。
+  3. `(pointer: coarse)` 仅用于 hover 替代入口显隐，不可单独用来压缩 PC 尺寸。
 
 ### 3. 平板策略（强制）
 
@@ -151,28 +151,12 @@ mobileLayoutPreset?: 'board-shell' | 'portrait-simple' | 'map-shell';
 shellTargets?: Array<'pwa' | 'app-webview' | 'mini-program-webview'>;
 ```
 
-字段含义：
-
-- `mobileProfile`
-  - `none`：暂不承诺手机可用。
-  - `landscape-adapted`：手机横屏适配。
-  - `portrait-adapted`：手机竖屏适配。
-  - `tablet-only`：手机降级，平板 / PC 优先。
-- `preferredOrientation`
-  - 用于横竖屏提示策略。
-- `mobileLayoutPreset`
-  - `board-shell`：复杂桌游的横屏外壳方案。
-  - `portrait-simple`：轻量游戏的竖屏方案。
-  - `map-shell`：地图区自己缩放拖拽，HUD 保持原始尺寸，不做整页缩放；移动端应支持触摸拖拽/双指缩放。
-- `shellTargets`
-  - 标记允许进入哪些分发容器。
-
 ## 当前实现
 
 ### 1. manifest 驱动
 
-- [mobileSupport.ts](/F:/gongzuo/webgame/BoardGame/src/games/mobileSupport.ts) 负责归一化默认值和运行时判断。
-- [games.config.tsx](/F:/gongzuo/webgame/BoardGame/src/config/games.config.tsx) 在注册表阶段把 manifest 补成显式字段。
+- `src/games/mobileSupport.ts` 负责归一化默认值和运行时判断。
+- `src/config/games.config.tsx` 在注册表阶段把 manifest 补成显式字段。
 - `scripts/game/generate_game_manifests.js` 会校验启用中的 manifest 是否显式声明必需字段。
 
 ### 2. 页面根节点数据属性
@@ -186,14 +170,11 @@ shellTargets?: Array<'pwa' | 'app-webview' | 'mini-program-webview'>;
 - `data-mobile-layout-preset`
 - `data-shell-targets`
 
-这些属性是移动壳、横竖屏提示和 CSS fallback 的统一消费入口。
-
 ### 3. 通用移动壳
 
 - `src/components/game/framework/MobileBoardShell.tsx`
 
 职责：
-
 - 承接安全区 `padding`
 - 作为顶部 rail、侧边 dock、底部 action rail 的统一壳层
 - 不重写游戏 `Board` 本体
@@ -203,18 +184,27 @@ shellTargets?: Array<'pwa' | 'app-webview' | 'mini-program-webview'>;
 - `src/components/common/MobileOrientationGuard.tsx`
 
 按 manifest 判断：
-
 - 横屏游戏在手机竖屏时提示旋转
 - 竖屏游戏在手机横屏时提示切回竖屏
 - `tablet-only` 游戏提示使用平板或 PC
 - `none` 游戏提示当前不推荐手机端
+
+### 4.1 App 壳方向控制是“双层链路”（强制）
+
+- Android / App WebView 下，页面方向控制不是只看前端 `MobileOrientationGuard`。
+- **原生 `MainActivity` 的 `setRequestedOrientation(...)` 是第一层，也是更高优先级**；前端 `MobileOrientationGuard` 只能作为补充与重试，不能替代原生声明。
+- 当前游戏页之所以能稳定横竖屏切换，是因为原生层会识别 `/play/:gameId`，再读取 `game-orientation-map.json` 先把 Activity 切到对应方向。
+- 因此，任何**非游戏页**如果也要求固定方向（例如首页 V2 要求横屏），都必须满足下列至少一条：
+  - 原生层能显式识别该路由并直接返回目标方向；
+  - 或者构建产物中提供可被原生层读取的页面方向元数据，再由 `MainActivity` 决定方向。
+- **禁止只在 H5 层加 `ScreenOrientation.lock(...)` 就宣称 App 壳已支持该页面横屏**；如果原生层仍把 Activity 默认成竖屏，这种实现不算完成。
+- 首页、启动页、教程页、活动页等根路由页面，如果不是 `/play/*`，默认都必须先检查原生层是否认识这条路由，再决定是否能宣称“已强制横屏”。
 
 ### 5. CSS fallback
 
 - `src/index.css`
 
 当前仍保留横屏缩放兜底，但只对同时满足以下条件的页面生效：
-
 - `mobileProfile="landscape-adapted"`
 - `mobileLayoutPreset="board-shell"`
 
@@ -236,39 +226,26 @@ shellTargets?: Array<'pwa' | 'app-webview' | 'mini-program-webview'>;
   - `landscape-adapted`
   - `board-shell`
 
-说明：
-
-- `dicethrone` 当前已经声明更多容器目标，这是仓库现状记录，不代表后续新游戏首轮接入也应照抄。
-- 对新的复杂桌游或新的首轮接入，仍默认从 `shellTargets = ['pwa']` 起步。
-
-## 新游戏接入要求
-
-新增游戏时必须做三件事：
-
-1. 在 `manifest.ts` 里显式声明 `mobileProfile`。
-2. 选择匹配的 `mobileLayoutPreset`。
-3. 再决定是否允许投放到 `app-webview` / `mini-program-webview`。
-
-不能再依赖：
-
-- “响应式会自动适配”
-- “先让浏览器缩放顶住”
-- “后面再猜这个游戏算不算支持手机”
-
 ## 验证要求
 
 - 桌面端仍是主要覆盖面；移动端适配不是把所有桌面测试重跑一遍。
 - 只要本次改动涉及移动布局、触控替代入口、侧栏折叠、移动轨道或桌面防回归，就必须做 PC 对比验收。
 - 只要本次改动涉及移动端 UI / 交互，就必须补 H5 移动视口 E2E。
 - 固定构图类界面的移动端主效果必须与同场景 PC 主态一致；这里的一致同时包括“不能比 PC 明显更小”和“不能比 PC 明显更大”，偏大偏小都不得收口。
+- **用户点名问题位点必须单独验收（强制）**：当用户明确指出某个局部（例如“派系预览歪了”）时，必须在证据里单独给该位点结论；禁止只用“整体没缩角 / 按钮可见 / 用例通过”替代局部位点结论。
+- **位点验收必须包含锚点关系（强制）**：涉及“歪了/偏了/没对齐”时，至少要写清该位点在 X/Y 两个方向相对谁对齐（例如“预览左边缘相对第一列卡牌左边缘”“右侧状态簇相对舞台右边缘”），不能只写“看起来差不多”。
+- **失败口径前置（强制）**：若用户点名位点仍有明显偏差，即使其他断言通过，也必须标记为“不达标”，不得先宣称完成再补修。
 - 只要本次改动触及共享交互组件、共享触控 hook、`coarse pointer` 分支或卡牌可用态样式，就必须额外核对桌面端：
-- 原本 `单击` 可达的主流程仍然是单击。
-- 原本“可用 / 已用 / 不可用”的描边、发光、徽记、标签层级仍然存在，且不会要求桌面端先选中、先展开或先进入 armed 状态。
-- 原本由领域校验拒绝的目标，在桌面端与移动端都不得继续显示为“可用态”；若 UI 仍高亮，则视为真值源分叉，不算“仅视觉问题”。
-- 若本次改动新增了移动端专用交互分支，必须明确核对：该分支是否只是改变触发方式，而没有复制一套独立的 `canUse / isSelectable / showUsed` 判定。
-- **测试方向必须与游戏声明一致（强制）**：移动端 E2E 的主验证视口必须跟随该游戏 manifest 的 `preferredOrientation`。`preferredOrientation: 'landscape'` 的游戏必须用手机横屏作为主验收视口；`preferredOrientation: 'portrait'` 的游戏必须用手机竖屏作为主验收视口。不要把“统一横屏”或“统一竖屏”当成通用规则。
+  - 原本 `单击` 可达的主流程仍然是单击。
+  - 原本“可用 / 已用 / 不可用”的描边、发光、徽记、标签层级仍然存在，且不会要求桌面端先选中、先展开或先进入 armed 状态。
+  - 原本由领域校验拒绝的目标，在桌面端与移动端都不得继续显示为“可用态”；若 UI 仍高亮，则视为真值源分叉，不算“仅视觉问题”。
+  - 若本次改动新增了移动端专用交互分支，必须明确核对：该分支是否只是改变触发方式，而没有复制一套独立的 `canUse / isSelectable / showUsed` 判定。
+- 只要本次改动触及共享 FAB / HUD 的卫星按钮集合（新增、删减、顺序调整、面板内容变长），必须补一条“同场景 PC + 手机横屏”对照验收：
+  - 两端都要从同一业务入口进入（不能用不同入口截图代替对比）。
+  - 必须同时验证按钮列与展开面板都在视口内，且不会把主操作按钮挤出可点击区域。
+  - 长列表/可滚动面板（如 action log、seat-swap 列表）必须显式使用 `mobilePopoverVerticalAnchor: 'column'`；短提示面板才允许使用按钮锚点。缺省锚点导致的移动端漂移视为高风险回归。
+- **测试方向必须与游戏声明一致（强制）**：移动端 E2E 的主验证视口必须跟随该游戏 manifest 的 `preferredOrientation`。
 - 优先复用同一条测试流程，通过参数化或切换 viewport 运行，而不是复制两份测试文件。
-- 每个支持移动的游戏通常补 1 到 3 条关键移动验收路径即可。
 
 ## 浏览器兼容门禁补充（强制）
 
@@ -277,11 +254,6 @@ shellTargets?: Array<'pwa' | 'app-webview' | 'mini-program-webview'>;
 - `matchMedia`、监听 API 差异、hover/click/touch 语义差异这类问题，优先补 fallback 或交互降级，不要直接升级成全站兼容门槛。
 - `ResizeObserver` 只有在**该游戏的核心游玩布局**确实依赖它、缺失后会导致棋盘/地图/主操作区不可用时，才允许进入兼容门禁。
 - 兼容门禁必须按具体 `gameId` 或具体页面判断，禁止把某个游戏或某个 dev 工具的依赖外扩成所有 `/play/*` 路由统一拦截。
-- 主验收视口之外，再按风险补 1 个同方向补充视口（例如平板横屏或更小手机竖屏）；若要验证错误方向提示，则单独补旋转提示用例，不得拿错误方向视口替代主验收。
-- 需要快速构造局面时，优先使用 TestHarness。
-- 运行 E2E 时，单文件/单用例优先使用 `npm run test:e2e:ci:file -- <测试文件名> "<用例名>"`。
-- 需要整文件复跑时，使用 `npm run test:e2e:ci -- <测试文件名>`。
-- 保留截图并写入 `evidence/`。
 
 ## 开发期截图补录旁路（非 E2E 替代）
 
@@ -310,7 +282,6 @@ node scripts/infra/capture-mobile-evidence.mjs --scenario smashup-tutorial-mobil
 ```
 
 当前预置场景与输出路径：
-
 - `smashup-tutorial-mobile-landscape`
   - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\smashup-tutorial.e2e\smashup-tutorial-mobile-landscape\tutorial-mobile-landscape.png`
 - `summonerwars-tutorial-phone-landscape`
@@ -338,72 +309,19 @@ node scripts/infra/capture-mobile-evidence.mjs --scenario smashup-tutorial-mobil
 - `smashup-4p-mobile-12-tablet-landscape`
   - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\smashup-4p-layout-test.e2e\移动端横屏应保持四人局布局可用，并支持手牌长按看牌\12-tablet-landscape-layout.png`
 
-实现方式：
-
-- 页面内由 `MobileEvidenceCaptureAgent` 自动等待场景就绪。
-- 就绪后用本地打包的 `html2canvas` 在页面内截取当前游戏页，并直接 `POST` 到同源开发端点 `/__capture/save`。
-- `/__capture/save` 由 `vite-plugins/ready-check.ts` 在 `BG_ENABLE_CAPTURE_SAVE=1` 时开放，只允许写入工作区内路径。
-- `scripts/infra/capture-mobile-evidence.mjs` 负责按场景组装 URL 与输出路径，底层复用 `scripts/infra/capture-mobile-evidence-browser.ps1` 拉起 Vite，并按可用性依次尝试 `chrome-headless-shell --single-process --no-zygote`、系统 Edge/Chrome 的 `cdp-window`、系统 Edge/Chrome 的 `direct-window`。
-- 若当前环境装有 Playwright 自带的 `chrome-headless-shell`，补图脚本会优先用它直接打开目标 URL，尽量绕开“GUI 窗口已起但根本没把页面请求打到本地 Vite”的假成功状态。
-- 如果某一启动方案在 8 秒内完全没有任何 capture phase，上述脚本会自动回退到下一条方案，避免单一路径卡死。
-- 补图模式会自动开启 `BG_CAPTURE_TRACE_REQUESTS=1`，Vite 日志会打印浏览器真实请求链，便于区分：
-  - 浏览器确实打开了页面，但页面脚本/场景失败。
-  - 浏览器根本没有请求本地页面，问题停在浏览器启动或导航层。
-
-限制说明：
-
-- 这条旁路只用于补录 PNG 证据，不替代 Playwright E2E 的断言链。
-- 最终“移动端交互已通过”结论仍必须回到允许 `child_process` 的终端或 CI，重跑正式 E2E。
-- 当前实现不再依赖外部 CDN 拉取 `html2canvas`；若补录仍失败，优先排查页面场景是否真正进入 `capture-ready`，以及 `/__capture/save` 是否收到上传。
-- 若失败日志里只看到 `PowerShell` 对 `/__capture/status` 的轮询，而完全没有任何浏览器对 `/play/...`、`/src/main.tsx`、`/@vite/client`、`/__capture/status` 的请求，说明浏览器压根没真正打到本地页面；此时应优先排查浏览器启动策略，而不是继续怀疑前端页面逻辑。
-
-## Android first 落地
-
-当前仓库采用 `Capacitor + Android WebView` 作为第一阶段原生壳方案：
-
-- Web 运行时保持不变，仍然是同一套 `React + Vite` 构建产物。
-- Android 壳只负责把 `dist/` 打包进原生容器，不单独维护第二套前端。
-- Android 构建使用 `vite build --mode android`，因此 App 专用后端地址必须放在 `.env.android` 或 `.env.android.local`。
-
-当前自动化脚本：
-
-- `npm run mobile:android:doctor`
-- `npm run mobile:android:init`
-- `npm run mobile:android:sync`
-- `npm run mobile:android:open`
-- `npm run mobile:android:build:debug`
-
-服务端若要放行原生壳请求，需在生产 `.env` 里增加：
-
-```env
-APP_WEB_ORIGINS=http://localhost,https://localhost,capacitor://localhost
-```
-
-这不会影响现有 Docker / Pages 主链路，只是在已有 `WEB_ORIGINS` 之外追加原生容器 origin。
-
-## 后续实施顺序
-
-1. 继续把 `board-shell` 框架能力补齐。
-2. 以 `dicethrone` 作为首个完整 pilot。
-3. 再把游戏层接入流程沉淀成独立 skill，供其他开发者复用。
-
-
 ## 2026-03 横向溢出防回归补充
 
 ### 1) 缩放表达式规范（强制）
 - 禁止：`transform: scale(calc(100vw / 1280))`。
-- 原因：`scale()` 需要无单位数字；上式会退化为无效值，浏览器可能按 `transform: none` 处理。
 - 正确：`transform: scale(calc(100vw / 1280px))`，或先定义变量再 `scale(var(--mobile-board-shell-scale))`。
 
 ### 2) board-shell 选择器命中规范（强制）
 - 默认使用后代选择器：`[data-game-page... ] .mobile-board-shell`。
 - 不要默认写直系子：`> .mobile-board-shell`。
-- 原因：不同页面层级（MatchRoom / LocalMatchRoom / TestMatchRoom）可能不一致，直系子容易漏命中。
 
 ### 3) 缩放壳层内高度规范（强制）
 - 在被缩放的壳层内，内部主容器优先使用 `h-full` 跟随外层 shell。
 - 禁止“外层 scale + 内层 `h-dvh` / `100dvh` 锁高”的组合。
-- 原因：会放大底部空白或导致交互区视觉错位。
 
 ### 4) 允许按 gameId 覆盖设计宽度
 - 通用默认设计宽度可为 `1280px`。
@@ -414,19 +332,16 @@ APP_WEB_ORIGINS=http://localhost,https://localhost,capacitor://localhost
 - 对 `mobileLayoutPreset="board-shell"` 的游戏，全屏设置面板、选人/选派系面板、结算面板等若本身存在明确 PC 布局，移动端主效果默认必须与 PC 保持同构。
 - 在该游戏的 `preferredOrientation` 方向下，优先采用**整面板等比缩放**，让移动端呈现 PC 布局的缩小版；不要先改成另一套单栏手机稿，再把主操作藏到滚动末端。
 - 如果页面本身已经位于 `board-shell` 统一缩放容器内，默认应直接复用外层这套缩放；**不要**在页面内部再额外套一层“缩放舞台 / stage scale / scale-to-fit 容器”二次缩放。
-- `board-shell` 内再次做内部缩放的典型后果是：主内容被二次缩小、四周出现大块无意义留白、底部工具条或玩家卡片脱离同一缩放链路，最终看起来不像桌面端，只像“被缩小后摆在中间的一张海报”。
+- `board-shell` 内再次做内部缩放的典型后果是：主内容被二次缩小、四周出现大块无意义留白、底部工具条或玩家卡片脱离同一缩放链路。
 - 最低验收标准不是“最终能滚到按钮”，而是“主方向下主要布局结构不变，主操作首屏可见，信息层级与 PC 一致”。
-- 移动端主效果必须先对照同场景 PC 主态图判断“像不像同一个界面”，再谈是否都在视口内。只要肉眼看起来比 PC 小一截、或比 PC 大一圈，即使功能没坏，也一律算未达到验收标准。
-- 固定构图类面板必须同时防“过小”和“过大”：不能缩成中间小海报，也不能放大成几乎铺满整屏的手机稿；这两种情况都属于与 PC 不一致。
 
 ### 5) 移动端 E2E 布局断言（强制）
-除功能断言外，至少补 3 条布局断言：
 1. `documentElement/body/#root` 满足 `scrollWidth <= innerWidth + 1`。
 2. `.mobile-board-shell` 的 left/right 边界落在视口内。
-3. 关键入口（如 Roll / Confirm / 放大入口）位于视口内可点击。
+3. 关键入口位于视口内可点击。
 
 ### 6) 结论证据要求
-- E2E 结论必须附“已人工核对”的截图完整工作区绝对路径，便于直接复制打开，禁止只给相对路径。
+- E2E 结论必须附“已人工核对”的截图完整工作区绝对路径。
 - 仅有日志或断言通过，不足以判定“移动端布局正常”。
 
 ## 基线分辨率补充

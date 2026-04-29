@@ -86,9 +86,35 @@ public/assets/
 - **必须优先复用统一资源工具**：运行时图片路径解析、语言回退、压缩路径选择、缓存与版本参数，统一走 `AssetLoader`、`OptimizedImage`、`CardPreview`、`getLocalizedImageUrls`、`getOptimizedImageUrls`、`buildLocalizedImageSet`。
 - **特殊渲染只能包裹统一链路，不能绕开统一链路**：例如 3D 骰子、Canvas 纹理、Sprite Atlas、CSS background-position 裁切，如果最终仍然要展示同一张运行时图片，那么只能在统一链路产出的 URL 或图片对象之上做渲染，不能自己重新决定资源候选、回退顺序或本地/远端判断。
 - **同模块已有正确实现时，禁止重发明**：如果同一游戏中已有图片显示稳定的实现（如 `HandArea`/`CardPreview`），其他图片组件必须先对照并沿用该用法；不能因为当前组件表现异常，就在旁边新增一套“只对这个组件生效”的 workaround。
-- **素材位置异常先修统一布局，不准用局部位移补素材**：当移动端/窄屏出现“棋盘、提示板、角色板、atlas 卡面整体右漂/左漂/不居中”时，先检查 `mobileLayoutPreset`、`board-shell`、runtime viewport、容器 bounds 与统一缩放链路；禁止在具体素材组件上追加 `translateX/translateY`、magic number `margin`、局部 `scale` 去“把素材摆正”。素材链路正确时，位置问题默认属于布局问题，不属于素材接线问题。
 - **修回归先查接线是否偏离统一链路**：当图片出现“之前正常、后来空白/错图/偶发失败”时，优先检查是否绕过了 `AssetLoader`、是否引入组件内特判、是否手动拼接了与统一规则不一致的路径；禁止直接继续堆特例。
 - **如确实需要补充共享能力，应下沉到公共层**：如果统一链路不能满足某类图片展示需求，应补到 `AssetLoader` 或通用媒体组件，而不是在单个游戏/单个组件里偷偷复制一份资源加载逻辑。
+
+### 精灵图/图集裁剪安全规则（强制）
+
+- **禁止使用 `background` 简写设置精灵图背景**：`background` 会重置 `background-size / background-position`，导致裁剪参数丢失而出现“图加载了但显示空白/错位”。  
+  ✅ 正确：`backgroundImage` + `backgroundSize` + `backgroundPosition`  
+  ❌ 错误：`background: linear-gradient(...);`（与裁剪参数共存）
+- **图集裁剪必须“先看图，再采样”**：不得仅依赖脚本猜测行列；必须先人工核对图片内容，再确定 `rows/cols/faceMap` 或裁剪坐标。
+- **所有图集定义必须写裁剪合同注释**：凡在 `ui/` 内定义 `*ATLAS` 且包含 `cols/rows`，必须添加 `// @atlas-contract ...`，写明图片名称、网格布局与采样依据。
+- **修改裁剪配置必须配套测试或契约校验**：至少有一条断言覆盖 `background-size / position` 的关键值，避免回归。
+
+#### ✅ 精灵图正确写法模板（强制参考）
+
+```ts
+const hasSprite = Boolean(spriteUrl);
+const backgroundImage = hasSprite
+  ? `url("${spriteUrl}")`
+  : 'linear-gradient(145deg, rgba(0,0,0,0.7), rgba(0,0,0,0.9))';
+
+style={{
+  backgroundImage,
+  backgroundSize: hasSprite ? '300% 300%' : undefined,
+  backgroundPosition: hasSprite ? '0% 50%' : undefined,
+  backgroundRepeat: hasSprite ? 'no-repeat' : undefined,
+}}
+```
+
+> **禁止**在同一元素同时使用 `background:` 简写与 `backgroundSize/backgroundPosition`。
 
 ### 路径规则（强制）
 
@@ -185,15 +211,26 @@ CARD_BG: 'dicethrone/images/Common/compressed/card-background'
 7. ❌ **禁止**直接写 `<img src="/assets/xxx.png" />`
 8. ❌ **禁止**硬编码 `compressed/` 路径
 
-## R2 / CDN 上传收口规则（强制）
+## R2 / CDN 上传与排查规则（强制）
 
 适用于任意游戏的图片、音频、atlas、裁图、图标、提示板切片等运行时资源。
+
+### 上传收口
 
 1. **录入或资源改动完成后，AI 必须主动上传**：只要本轮改动涉及运行时资源新增、替换、移动或裁图派生，就必须主动执行 manifest 重建、`assets:check` / `assets:upload` 或等价上传流程，不等待用户额外提醒。
 2. **没有远端回查不算完成**：上传后至少抽查 1 个主资源 URL 和 1-3 个代表性裁图 / 子资源 URL，确认远端返回 `200`。
 3. **本地存在不代表交付完成**：即使本地文件、manifest、代码引用都已齐全，只要默认资源基址仍指向 R2 / CDN，就必须把远端状态作为最终完成判据。
 4. **上传失败必须显式告知用户**：如果因为 `.env` / `.env.example` 缺失、权限不足、脚本报错、网络失败或用户明确要求暂不上传而没有完成上传，最终汇报必须明确写出“未上传资源列表 + 原因 + 当前运行态风险”，禁止省略。
 5. **该规则不分游戏**：`dicethrone`、`smashup`、`summonerwars` 以及后续新游戏都按同一口径执行。
+
+### 故障排查
+
+1. **先查对应任务 worktree，不查错工作区**：如果问题来自某个任务分支 / 独立 `git worktree`，必须先到该 worktree 下核对 `public/assets/`、`assets-manifest.json` 与相关代码引用，禁止只在当前根工作区下判断“文件是否存在”。
+2. **先核对运行时真实请求路径**：图片运行时会自动补 `i18n/<locale>/` 与 `compressed/`，排查 404 时必须以最终请求 URL 为准，而不是只看源码里的相对路径。
+3. **裁切图也必须满足 `compressed/` 约定**：凡是运行时通过 `OptimizedImage` / `CardPreview` / `getOptimizedImageUrls()` 加载的裁切图，实际可访问文件必须位于对应目录的 `compressed/` 子目录；仅有 `crops/foo.webp` 而没有 `crops/compressed/foo.webp`，视为资源不完整。
+4. **上传前先重建清单**：资源目录有新增/移动后，先执行 `npm run assets:manifest` 或定向执行 `node scripts/assets/generate_asset_manifests.js --root public/assets/i18n/zh-CN --id <gameId>`，再上传到 R2。
+5. **上传脚本环境变量位置**：`scripts/assets/upload-to-r2.js` 会优先读取仓库根目录 `.env`；如果不存在 `.env`，会自动回退读取 `.env.example`。排查“为什么本机能传/不能传”时，必须先确认当前 worktree 根目录这两个文件的实际情况。
+6. **出现“多叠一层整图/四角异常”先查叠层来源（通用规则）**：优先用 DevTools 选中异常区域，检查上层元素是否存在整图覆盖；查看 **计算后** `opacity/visibility/filter/transform` 是否被脚本改写；必要时用 `elementsFromPoint()` 或逐层禁用 DOM 来定位真正的上层来源。该步骤必须在调整裁剪/圆角/纹理之前完成。
 
 ---
 

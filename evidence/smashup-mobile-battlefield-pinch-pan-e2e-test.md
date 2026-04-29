@@ -48,6 +48,23 @@ npm run test:e2e:ci:file -- e2e/smashup-4p-layout-test.e2e.ts "移动端横屏�
 - 我实际看到：新增战场 pinch/pan 没有破坏既有手牌看大图能力。
 - 验收判断：**达到“通用战场缩放不回归已有单卡放大”的验收标准。**
 
+## 2026-04-08 补充复验：Chromium 真实多触点事件链路
+
+- 追加目标：确认这次修复不是只对合成 `TouchEvent` 生效，而是真正沿 `PointerEvent` 多指链路驱动战场缩放与后续单指平移。
+- 执行命令：
+
+```bash
+PW_E2E_SERVICE_REUSE=shared-single node scripts/infra/run-e2e-single.mjs ci e2e/smashup-4p-layout-test.e2e.ts "移动端横屏 Chromium 真实多触点 pinch/pan 事件链路应正常驱动战场缩放"
+```
+
+### 6. `04g-mobile-battlefield-real-touch-pinch-pan.png`
+
+- 我实际看到：战场三块基地与基地区卡牌在截图里已经明显放大，而顶部 HUD、右侧“结束回合”按钮、底部手牌仍保持原始尺寸和锚点，没有被整页一起缩放。
+- 我实际看到：缩放后的战场仍停留在中部战场带，没有出现“首帧就整体跳到很远的位置”或“只剩单指拖一点点”的视觉结果；这张图对应的是 Chromium CDP 真实多触点注入后的最终状态，不是旧的脚本合成 `TouchEvent`。
+- 我实际看到：同一条复验里读取到的事件探针包含 `pointerdown`、`pointermove` 与 `lostpointercapture`，且 `data-battlefield-zoom-scale` 在 pinch 后达到 `1.814`，说明当前浏览器环境确实沿 PointerEvent 路径进入了缩放状态。
+- 我实际看到：pinch 完成后继续单指 pan，`data-battlefield-translate-x` 仍能继续变化，说明“缩放后可继续拖拽战场”的链路没有被这次输入模式切换破坏。
+- 验收判断：**达到“真实多触点走 PointerEvent 链路时，战场可缩放且缩放后仍可继续 pan”的验收标准。**
+
 ## 无效 / 不作为主收口的截图
 
 ### `04c-mobile-end-turn-restored.png`
@@ -62,4 +79,5 @@ npm run test:e2e:ci:file -- e2e/smashup-4p-layout-test.e2e.ts "移动端横屏�
 - 默认态战场纵向锚点也已修正，不需要先放大才回到正常位置。
 - 从截图可见，缩放和平移都只作用于基地战场内容层，没有把手牌、顶部记分板、牌库、右侧“结束回合”按钮一起缩放或带偏。
 - 用户这轮指出的两个位点已被图片证明收口：`04d` 中基地放大后没有整体下沉，`04d/04e` 中顶部也没有再出现“像有透明东西挡住”的扩大片状遮挡。
+- 2026-04-08 的 Chromium 真实多触点补充复验进一步证明：现代浏览器环境下应优先走 `PointerEvent` 通道，而不是继续让 `touch` 与 `pointer` 双栈竞争同一组手势。
 - 现有手牌看大图能力仍正常，因此这次接入可以视为**安全加回真实战场拖拽放大**，且口径符合“已有整块棋盘/战场放大能力的游戏除外；`smashup` 可纳入框架接管，`dicethrone` 维持 `game-owned`”。

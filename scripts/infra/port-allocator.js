@@ -3,6 +3,7 @@ import { createServer } from 'node:net';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { E2E_MULTI_WORKER_BASE_PORTS } from './e2e-port-config.js';
+import { withWindowsHide } from './windows-hide.js';
 
 export const BASE_PORTS = {
   ...E2E_MULTI_WORKER_BASE_PORTS,
@@ -17,9 +18,15 @@ const SHARED_RUNTIME_DIR = 'boardgame-e2e';
 const PORT_RESERVATION_DIR = 'port-reservations';
 const PORT_RESERVATION_LOCK = 'port-reservations.lock';
 
+let windowsNetstatCache = null;
+
+function execHidden(command, options = {}) {
+  return execSync(command, withWindowsHide(options));
+}
+
 function runGit(command, cwd = process.cwd()) {
   try {
-    return execSync(command, {
+    return execHidden(command, {
       cwd,
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'ignore'],
@@ -34,10 +41,54 @@ function getWorktreeRoot(cwd = process.cwd()) {
   return raw ? path.resolve(cwd, raw) : path.resolve(cwd);
 }
 
+function isGitWorktreeCheckout(cwd = process.cwd()) {
+  const gitPath = path.join(getWorktreeRoot(cwd), '.git');
+  try {
+    return fs.statSync(gitPath).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function resolveGitCommonDirCandidate(candidate) {
+  if (!candidate) {
+    return '';
+  }
+
+  try {
+    const stats = fs.statSync(candidate);
+    if (stats.isDirectory()) {
+      return candidate;
+    }
+
+    if (!stats.isFile()) {
+      return candidate;
+    }
+
+    const gitPointer = fs.readFileSync(candidate, 'utf-8').trim();
+    const match = gitPointer.match(/^gitdir:\s*(.+)$/i);
+    if (!match?.[1]) {
+      return candidate;
+    }
+
+    const worktreeGitDir = path.resolve(path.dirname(candidate), match[1].trim());
+    const commonDirFile = path.join(worktreeGitDir, 'commondir');
+    if (fs.existsSync(commonDirFile)) {
+      const commonDirRelative = fs.readFileSync(commonDirFile, 'utf-8').trim();
+      return path.resolve(worktreeGitDir, commonDirRelative);
+    }
+
+    return worktreeGitDir;
+  } catch {
+    return candidate;
+  }
+}
+
 function getGitCommonDir(cwd = process.cwd()) {
   const worktreeRoot = getWorktreeRoot(cwd);
   const raw = runGit('git rev-parse --git-common-dir', cwd);
-  return raw ? path.resolve(worktreeRoot, raw) : path.join(worktreeRoot, '.git');
+  const candidate = raw ? path.resolve(worktreeRoot, raw) : path.join(worktreeRoot, '.git');
+  return resolveGitCommonDirCandidate(candidate);
 }
 
 function getRuntimeScope(scope = process.env.PW_RUNTIME_SCOPE) {
@@ -50,7 +101,27 @@ function getWorkerPortFilePath(workerId, scope = process.env.PW_RUNTIME_SCOPE) {
 }
 
 function getSharedReservationDir(cwd = process.cwd()) {
-  return path.join(getGitCommonDir(cwd), SHARED_RUNTIME_DIR, PORT_RESERVATION_DIR);
+  if (isGitWorktreeCheckout(cwd)) {
+    const worktreeFallback = path.join(getWorktreeRoot(cwd), '.tmp', SHARED_RUNTIME_DIR, PORT_RESERVATION_DIR);
+    fs.mkdirSync(worktreeFallback, { recursive: true });
+    return worktreeFallback;
+  }
+
+  const sharedRuntimeDir = (() => {
+    const commonDir = getGitCommonDir(cwd);
+    const sharedDir = path.join(commonDir, SHARED_RUNTIME_DIR);
+
+    try {
+      fs.mkdirSync(sharedDir, { recursive: true });
+      return sharedDir;
+    } catch {
+      const worktreeFallback = path.join(getWorktreeRoot(cwd), '.tmp', SHARED_RUNTIME_DIR);
+      fs.mkdirSync(worktreeFallback, { recursive: true });
+      return worktreeFallback;
+    }
+  })();
+
+  return path.join(sharedRuntimeDir, PORT_RESERVATION_DIR);
 }
 
 function getReservationLockPath(cwd = process.cwd()) {
@@ -62,11 +133,17 @@ function getReservationFilePath(workerId, scope = process.env.PW_RUNTIME_SCOPE, 
 }
 
 function getWindowsNetstatLines() {
+  if (windowsNetstatCache) {
+    return windowsNetstatCache;
+  }
+
   try {
-    const result = execSync('netstat -ano -p tcp', { encoding: 'utf-8' });
-    return result.split(/\r?\n/).filter(Boolean);
+    const result = execHidden('netstat -ano -p tcp', { encoding: 'utf-8' });
+    windowsNetstatCache = result.split(/\r?\n/).filter(Boolean);
+    return windowsNetstatCache;
   } catch {
-    return [];
+    windowsNetstatCache = [];
+    return windowsNetstatCache;
   }
 }
 
@@ -290,7 +367,7 @@ export function isPortInUse(port) {
       return parseWindowsPortPids(port).length > 0;
     }
 
-    const result = execSync(`lsof -ti:${port}`, { encoding: 'utf-8' });
+    const result = execHidden(`lsof -ti:${port}`, { encoding: 'utf-8' });
     return result.trim().length > 0;
   } catch {
     return false;
@@ -328,6 +405,15 @@ export async function allocateAvailablePorts(workerId, options = {}) {
     frontend: await findAvailablePort(preferred.frontend, { reservedPorts }),
     gameServer: await findAvailablePort(preferred.gameServer, { reservedPorts }),
     apiServer: await findAvailablePort(preferred.apiServer, { reservedPorts }),
+  };
+}
+
+export async function allocateAvailablePortSet(preferredPorts, options = {}) {
+  const reservedPorts = getReservedPortSet(process.cwd(), options);
+  return {
+    frontend: await findAvailablePort(Number(preferredPorts.frontend), { reservedPorts }),
+    gameServer: await findAvailablePort(Number(preferredPorts.gameServer), { reservedPorts }),
+    apiServer: await findAvailablePort(Number(preferredPorts.apiServer), { reservedPorts }),
   };
 }
 
@@ -436,7 +522,7 @@ export function getPortPids(port) {
       return parseWindowsPortPids(port);
     }
 
-    const result = execSync(`lsof -ti:${port}`, { encoding: 'utf-8' });
+    const result = execHidden(`lsof -ti:${port}`, { encoding: 'utf-8' });
     return result.trim().split('\n').filter(Boolean);
   } catch {
     return [];
@@ -446,9 +532,9 @@ export function getPortPids(port) {
 export function killProcess(pid) {
   try {
     if (process.platform === 'win32') {
-      execSync(`taskkill /F /T /PID ${pid}`, { stdio: 'ignore' });
+      execHidden(`taskkill /F /T /PID ${pid}`, { stdio: 'ignore' });
     } else {
-      execSync(`kill -9 ${pid}`, { stdio: 'ignore' });
+      execHidden(`kill -9 ${pid}`, { stdio: 'ignore' });
     }
 
     return true;

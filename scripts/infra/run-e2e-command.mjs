@@ -202,6 +202,19 @@ function createEnv(overrides = {}) {
     };
 }
 
+function mergeNodeOptions(preferredOption, existingValue = process.env.NODE_OPTIONS) {
+    const existing = String(existingValue ?? '').trim();
+    if (!existing) {
+        return preferredOption;
+    }
+
+    const filtered = existing
+        .split(/\s+/)
+        .filter(option => option && !option.startsWith('--max-old-space-size='));
+
+    return [...filtered, preferredOption].join(' ').trim();
+}
+
 function ensurePreflightCacheDir() {
     fs.mkdirSync(path.dirname(PREFLIGHT_CACHE_PATH), { recursive: true });
 }
@@ -287,7 +300,7 @@ function createModeEnv(mode) {
             });
         case 'ci':
             return createEnv({
-                NODE_OPTIONS: '--max-old-space-size=4096',
+                NODE_OPTIONS: mergeNodeOptions('--max-old-space-size=8192'),
                 PW_SERVER_WATCH: 'false',
             });
         case 'critical':
@@ -410,16 +423,6 @@ export async function runE2ECommand({ mode, extraArgs = [], envOverrides = {}, e
     modeEnv.PW_E2E_TARGET = explicitTargetPath || (isListMode ? '<list>' : '<all>');
     if (bootstrapMode === 'legacy-global-setup') {
         modeEnv.PW_ALLOW_LEGACY_GLOBAL_BOOTSTRAP = 'true';
-    }
-
-    if (
-        shouldUseManagedSingleRuntime
-        && !preferSharedSingleRun
-        && !modeEnv.PW_RUNTIME_SCOPE
-        && explicitTargetPath
-    ) {
-        modeEnv.PW_RUNTIME_SCOPE = deriveManagedRuntimeScope(mode, explicitTargetPath);
-        console.log(`♻️ 单文件 E2E 将复用稳定 runtime scope: ${modeEnv.PW_RUNTIME_SCOPE}`);
     }
 
     if (!modeEnv.PW_RUNTIME_SCOPE) {
@@ -555,7 +558,7 @@ export async function runE2ECommand({ mode, extraArgs = [], envOverrides = {}, e
         const playwrightArgs = ['test'];
 
         if (mode === 'critical') {
-            playwrightArgs.push('e2e/smashup.e2e.ts', 'e2e/tictactoe-rematch.e2e.ts');
+            playwrightArgs.push('e2e/smashup/smashup.e2e.ts', 'e2e/tictactoe/tictactoe-rematch.e2e.ts');
         }
 
         if (mode === 'parallel') {

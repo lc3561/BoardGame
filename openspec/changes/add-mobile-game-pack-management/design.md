@@ -25,7 +25,6 @@
   - `runtime`：通用大厅、路由、下载/更新器、引擎公共层
   - `module pack`：某个游戏的专属规则、UI、注册入口
   - `asset pack`：某个游戏的图片、音频、图集与资源清单
-- 同时允许存在一类跨游戏复用的 `shared asset pack`，首批用于 `common/audio`
 - 理由：
   - 避免所有游戏代码都随首包或 OTA 全量携带。
   - 允许只修通用层，而不强迫所有游戏模块同步重发。
@@ -41,17 +40,8 @@
 - 每个游戏至少有两个可独立版本化的包：
   - `module pack`
   - `asset pack`
-- 公共复用资源允许拆成独立 `shared pack`，由多个游戏共同依赖。
 - 允许某个游戏只更新代码包、只更新素材包，或同时更新两者。
 - 但进入游戏前必须检查兼容矩阵，防止“新代码吃旧图”或“旧代码读新素材结构”。
-
-### Decision: 公共音频使用单独 shared pack，游戏私有音频跟游戏 asset pack 走
-- `common/audio/**` 统一发布为单独的 `shared audio pack`
-- 游戏私有资源（图片、图集、游戏私有音频）继续打进该游戏自己的 `asset pack`
-- 理由：
-  - 公共音效跨游戏复用度高，重复打进每个游戏包会造成重复下载。
-  - 游戏私有音频和图片跟随游戏包走，更符合“装了这个游戏就拿到这个游戏自己的素材”的直觉。
-  - 图片链路继续允许本地优先，不影响线上网页和 E2E 的现有行为。
 
 ### Decision: 使用显式发布清单而非隐式推断
 - 移动端包管理必须依赖单一发布清单，例如：
@@ -61,7 +51,6 @@
   - `modulePack.minRuntimeVersion`
   - `assetPack.version`
   - `assetPack.minModuleVersion`
-  - `sharedAudioPack.version`
   - `checksum`
   - `size`
   - `downloadUrl`
@@ -97,7 +86,6 @@
 - 清单为单一真实来源，声明：
   - 当前 runtime 版本
   - 所有游戏可用模块包/素材包版本
-  - 公共音频包版本
   - 兼容约束
   - 下载地址与校验信息
 
@@ -106,18 +94,15 @@
   - `runtime/<version>/`
   - `games/<gameId>/module/<version>/`
   - `games/<gameId>/assets/<version>/`
-  - `shared/common-audio/<version>/`
 - 活跃版本切换必须是原子操作；切换失败时回退到上一个已验证版本。
 
 ### Load Order
 1. 壳启动并装载当前激活的 runtime。
 2. 用户打开某游戏详情页时，读取本地安装状态与远端最新发布状态。
 3. 用户点击左下角安装/更新后，先下载并校验所需包。
-   - 如果该游戏依赖公共音频包，则先确保 `shared audio pack` 已安装到兼容版本。
 4. 进入游戏前再次检查：
    - runtime 版本满足模块包需求
    - 模块包版本满足素材包需求
-   - 公共音频包版本满足该游戏 manifest 的要求
    - 本地校验记录完整
 5. 任一条件不满足则阻止进入，并给出明确更新/重试提示。
 

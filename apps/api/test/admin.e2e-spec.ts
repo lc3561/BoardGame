@@ -13,8 +13,6 @@ import { AuthModule } from '../src/modules/auth/auth.module';
 import { AuthService } from '../src/modules/auth/auth.service';
 import { AdminAuditLog, type AdminAuditLogDocument } from '../src/modules/auth/schemas/admin-audit-log.schema';
 import { AdminModule } from '../src/modules/admin/admin.module';
-import { createAdminTestLatencyMiddleware } from '../src/modules/admin/admin-test-latency.middleware';
-import { AdminTestLatencyService } from '../src/modules/admin/admin-test-latency.service';
 import { User, type UserDocument } from '../src/modules/auth/schemas/user.schema';
 import { Friend, type FriendDocument } from '../src/modules/friend/schemas/friend.schema';
 import { Message, type MessageDocument } from '../src/modules/message/schemas/message.schema';
@@ -142,9 +140,11 @@ describe('Admin Module (e2e)', () => {
     let ugcAssetModel: Model<UgcAssetDocument>;
     let cacheManager: Cache;
     let authService: AuthService;
-    let adminTestLatencyService: AdminTestLatencyService;
+    const originalGameServerProxyTarget = process.env.GAME_SERVER_PROXY_TARGET;
 
     beforeAll(async () => {
+        // e2e 仅验证当前测试库数据，避免被外部 game-server 实时房间污染断言。
+        process.env.GAME_SERVER_PROXY_TARGET = 'http://127.0.0.1:1';
         const externalMongoUri = process.env.MONGO_URI;
         mongo = externalMongoUri ? null : await MongoMemoryServer.create();
         const mongoUri = externalMongoUri ?? mongo?.getUri();
@@ -173,8 +173,6 @@ describe('Admin Module (e2e)', () => {
         ugcPackageModel = moduleRef.get<Model<UgcPackageDocument>>(getModelToken(UgcPackage.name));
         ugcAssetModel = moduleRef.get<Model<UgcAssetDocument>>(getModelToken(UgcAsset.name));
         cacheManager = moduleRef.get<Cache>(CACHE_MANAGER);
-        adminTestLatencyService = moduleRef.get<AdminTestLatencyService>(AdminTestLatencyService);
-        app.getHttpAdapter().getInstance().use('/admin', createAdminTestLatencyMiddleware(adminTestLatencyService));
         app.useGlobalPipes(
             new ValidationPipe({
                 whitelist: true,
@@ -205,7 +203,6 @@ describe('Admin Module (e2e)', () => {
                 await Promise.all(keys.map(key => cacheManager.del(key)));
             }
         }
-        adminTestLatencyService.reset();
     });
 
     afterAll(async () => {
@@ -214,6 +211,11 @@ describe('Admin Module (e2e)', () => {
         }
         if (mongo) {
             await mongo.stop();
+        }
+        if (originalGameServerProxyTarget === undefined) {
+            delete process.env.GAME_SERVER_PROXY_TARGET;
+        } else {
+            process.env.GAME_SERVER_PROXY_TARGET = originalGameServerProxyTarget;
         }
     });
 
@@ -226,7 +228,7 @@ describe('Admin Module (e2e)', () => {
         username: string;
         email: string;
         code: string;
-        role?: 'user' | 'admin';
+        role?: 'user' | 'developer' | 'admin';
     }) => {
         await authService.storeEmailCode(email, code);
         const registerRes = await request(app.getHttpServer())
@@ -314,53 +316,86 @@ describe('Admin Module (e2e)', () => {
         return record.matchID as string;
     };
 
-    it('非管理员访问 - forbidden', async () => {
+    it('游客与普通用户可访问公开概览与对局只读接口', async () => {
         const { userToken } = await seedUsers();
+        const matchID = await seedMatch();
+
+        await request(app.getHttpServer())
+            .get('/admin/stats')
+            .expect(200);
+
+        await request(app.getHttpServer())
+            .get('/admin/stats/trend?days=7')
+            .expect(200);
+
+        await request(app.getHttpServer())
+            .get('/admin/matches?limit=10')
+            .expect(200);
+
+        await request(app.getHttpServer())
+            .get(`/admin/matches/${matchID}`)
+            .expect(200);
+
         await request(app.getHttpServer())
             .get('/admin/stats')
             .set('Authorization', `Bearer ${userToken}`)
-            .expect(403);
+            .expect(200);
     });
 
-    it('允许在 test 环境配置后台测试延迟，并实际作用于其他 admin 接口', async () => {
+    it('developer 可访问概览统计，但不能访问管理员专属接口', async () => {
         const { adminToken } = await seedUsers();
+        const matchID = await seedMatch();
+        const developer = await registerUser({
+            username: 'dev-overview',
+            email: 'dev-overview@example.com',
+            code: '223344',
+            role: 'developer',
+        });
 
-        const updateRes = await request(app.getHttpServer())
-            .patch('/admin/test-latency')
-            .set('Authorization', `Bearer ${adminToken}`)
-            .send({ enabled: true, delayMs: 80 })
+        const statsRes = await request(app.getHttpServer())
+            .get('/admin/stats')
+            .set('Authorization', `Bearer ${developer.token}`)
             .expect(200);
 
-        expect(updateRes.body.available).toBe(true);
-        expect(updateRes.body.enabled).toBe(true);
-        expect(updateRes.body.delayMs).toBe(80);
-        expect(updateRes.body.scope).toBe('admin-api');
+        expect(statsRes.body.totalUsers).toBe(3);
+        expect(statsRes.body.todayUsers).toBe(3);
 
-        const startedAt = Date.now();
+        const trendRes = await request(app.getHttpServer())
+            .get('/admin/stats/trend?days=7')
+            .set('Authorization', `Bearer ${developer.token}`)
+            .expect(200);
+
+        expect(trendRes.body.days).toBe(7);
+        expect(Array.isArray(trendRes.body.dailyUsers)).toBe(true);
+
+        const matchesRes = await request(app.getHttpServer())
+            .get('/admin/matches?limit=10')
+            .set('Authorization', `Bearer ${developer.token}`)
+            .expect(200);
+
+        expect(matchesRes.body.total).toBe(1);
+
+        const matchDetailRes = await request(app.getHttpServer())
+            .get(`/admin/matches/${matchID}`)
+            .set('Authorization', `Bearer ${developer.token}`)
+            .expect(200);
+
+        expect(matchDetailRes.body.matchID).toBe(matchID);
+
+        await request(app.getHttpServer())
+            .get('/admin/users?limit=10')
+            .set('Authorization', `Bearer ${developer.token}`)
+            .expect(403);
+
+        await request(app.getHttpServer())
+            .delete(`/admin/matches/${matchID}`)
+            .set('Authorization', `Bearer ${developer.token}`)
+            .expect(403);
+
         await request(app.getHttpServer())
             .get('/admin/stats')
             .set('Authorization', `Bearer ${adminToken}`)
             .expect(200);
-        const elapsed = Date.now() - startedAt;
-
-        expect(elapsed).toBeGreaterThanOrEqual(60);
-
-        const stateRes = await request(app.getHttpServer())
-            .get('/admin/test-latency')
-            .set('Authorization', `Bearer ${adminToken}`)
-            .expect(200);
-
-        expect(stateRes.body.enabled).toBe(true);
-        expect(stateRes.body.delayMs).toBe(80);
-
-        const disableRes = await request(app.getHttpServer())
-            .patch('/admin/test-latency')
-            .set('Authorization', `Bearer ${adminToken}`)
-            .send({ enabled: false, delayMs: 0 })
-            .expect(200);
-
-        expect(disableRes.body.enabled).toBe(false);
-        expect(disableRes.body.delayMs).toBe(0);
     });
 
     it('管理员统计/用户/对局查询', async () => {

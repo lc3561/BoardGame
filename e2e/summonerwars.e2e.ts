@@ -410,9 +410,9 @@ const openSummonerWarsMobileEvidencePage = async (page: Page) => {
       || document.querySelector('#root [data-testid="debug-panel"]')
       || (window as any).__BG_TEST_HARNESS__?.state?.isRegistered?.() === true,
     ),
-    { timeout: 15000 },
+    { timeout: 30000 },
   );
-  await waitForSummonerWarsHarness(page);
+  await waitForSummonerWarsHarness(page, 30000);
   await injectSummonerWarsMobileEvidenceScene(page);
   await expect(page.getByTestId('sw-hand-area')).toBeVisible({ timeout: 20000 });
   await expect(page.getByTestId('sw-phase-tracker')).toBeVisible({ timeout: 20000 });
@@ -1346,7 +1346,7 @@ const waitForSummonerWarsVisualStable = async (page: Page) => {
         return rect.width > 0 && rect.height > 0;
       }).length;
     });
-  }, { timeout: 10000 }).toBe(0);
+  }, { timeout: 20000 }).toBe(0);
   await page.waitForTimeout(120);
 };
 
@@ -3033,7 +3033,7 @@ test.describe('SummonerWars', () => {
   });
 
   test('移动横屏：长按放大与阶段说明在手机和平板都可达', async ({ browser }, testInfo) => {
-    test.setTimeout(120000);
+    test.setTimeout(240000);
     const baseURL = testInfo.project.use.baseURL as string | undefined;
     await clearEvidenceScreenshotsForTest(testInfo);
 

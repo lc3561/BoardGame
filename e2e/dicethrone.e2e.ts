@@ -22,6 +22,128 @@ import {
 } from './helpers/dicethrone';
 
 test.describe('DiceThrone E2E', () => {
+    test('Tutorial landscape feedback keeps inputs visible in game HUD', async ({ browser }, testInfo) => {
+        test.setTimeout(180000);
+        const context = await browser.newContext({
+            viewport: { width: 852, height: 393 },
+            isMobile: true,
+            hasTouch: true,
+            baseURL: testInfo.project.use.baseURL as string | undefined,
+        });
+
+        try {
+            await setChineseLocale(context);
+            const page = await context.newPage();
+            await page.goto('/play/dicethrone/tutorial');
+
+            const waitForTutorialHud = async () => {
+                for (let attempt = 0; attempt < 4; attempt += 1) {
+                    const namespaceRetryButton = page.getByRole('button', { name: /^重试$/ });
+                    const rescueReloadButton = page.getByRole('button', { name: /刷新重试/i });
+                    const namespaceError = page.getByText('游戏文案加载失败');
+                    const rescueGate = page.getByTestId('game-page-rescue-gate');
+                    const rescueTitle = page.getByText('页面没有正常显示');
+
+                    const shouldRetryNamespace = await namespaceError.isVisible({ timeout: 2500 }).catch(() => false)
+                        || await namespaceRetryButton.isVisible({ timeout: 2500 }).catch(() => false);
+                    if (shouldRetryNamespace) {
+                        await namespaceRetryButton.click().catch(() => page.reload({ waitUntil: 'domcontentloaded' }));
+                        await page.waitForTimeout(1200);
+                        continue;
+                    }
+
+                    const shouldReloadRescueGate = await rescueGate.isVisible({ timeout: 1500 }).catch(() => false)
+                        || await rescueTitle.isVisible({ timeout: 1500 }).catch(() => false);
+                    if (shouldReloadRescueGate) {
+                        await rescueReloadButton.click().catch(() => page.reload({ waitUntil: 'domcontentloaded' }));
+                        await page.waitForTimeout(1200);
+                        continue;
+                    }
+
+                    try {
+                        await waitForTutorialBoardReady(page, 45000);
+                        const hudButton = page.locator('[data-fab-id="chat"]');
+                        await expect(hudButton).toBeVisible({ timeout: 15000 });
+                        return hudButton;
+                    } catch (error) {
+                        if (attempt === 3) {
+                            throw error;
+                        }
+                        await page.reload({ waitUntil: 'domcontentloaded' });
+                        await page.waitForTimeout(1200);
+                    }
+                }
+
+                throw new Error('教程页未能稳定进入可操作 HUD');
+            };
+
+            const hudMainButton = await waitForTutorialHud();
+            await hudMainButton.click();
+            await expect(page.locator('[data-fab-id="feedback"]')).toBeVisible({ timeout: 10000 });
+            await page.locator('[data-fab-id="feedback"]').click();
+
+            const feedbackModal = page.getByTestId('feedback-modal');
+            const feedbackTextarea = feedbackModal.getByPlaceholder(/描述/i);
+            const contactInput = feedbackModal.getByPlaceholder(/邮箱或 QQ/i);
+
+            await expect(feedbackModal).toBeVisible({ timeout: 10000 });
+            await expect(feedbackTextarea).toBeVisible();
+            await expect(contactInput).toBeVisible();
+
+            const metrics = await feedbackModal.evaluate((element) => {
+                const textarea = element.querySelector('textarea');
+                const contact = element.querySelector('input[type="text"]');
+                const submitButton = element.querySelector('button[type="submit"]');
+
+                return {
+                    modalRight: element.getBoundingClientRect().right,
+                    textareaBottom: textarea?.getBoundingClientRect().bottom ?? 0,
+                    contactBottom: contact?.getBoundingClientRect().bottom ?? 0,
+                    submitBottom: submitButton?.getBoundingClientRect().bottom ?? 0,
+                    viewportWidth: window.innerWidth,
+                    viewportHeight: window.innerHeight,
+                    textareaFontSize: textarea ? Number.parseFloat(window.getComputedStyle(textarea).fontSize || '0') : 0,
+                    contactFontSize: contact ? Number.parseFloat(window.getComputedStyle(contact).fontSize || '0') : 0,
+                };
+            });
+
+            expect(metrics.modalRight, '横屏反馈弹窗右边界不应超出视口').toBeLessThanOrEqual(metrics.viewportWidth);
+            expect(metrics.textareaBottom, '横屏反馈描述输入区应完整留在视口内').toBeLessThanOrEqual(metrics.viewportHeight);
+            expect(metrics.contactBottom, '横屏反馈联系方式输入区应完整留在视口内').toBeLessThanOrEqual(metrics.viewportHeight);
+            expect(metrics.submitBottom, '横屏反馈提交按钮应完整留在视口内').toBeLessThanOrEqual(metrics.viewportHeight);
+            expect(metrics.textareaFontSize, '横屏反馈描述输入区至少应保持 16px').toBeGreaterThanOrEqual(16);
+            expect(metrics.contactFontSize, '横屏反馈联系方式输入区至少应保持 16px').toBeGreaterThanOrEqual(16);
+
+            await page.evaluate(() => {
+                const root = document.documentElement;
+                root.style.setProperty('--runtime-viewport-height', '245px');
+                root.style.setProperty('--keyboard-inset-height', '148px');
+                root.dataset.keyboardVisible = 'true';
+            });
+
+            const mobileProxy = page.getByTestId('mobile-text-entry-proxy').last();
+            const mobileProxyTextarea = page.getByTestId('mobile-text-entry-proxy-textarea').last();
+            const mobileProxyInput = page.getByTestId('mobile-text-entry-proxy-input').last();
+
+            await feedbackTextarea.click();
+            await expect(mobileProxy).toBeVisible();
+            await mobileProxyTextarea.fill('游戏内横屏反馈输入可见性校验');
+
+            await contactInput.click();
+            await expect(mobileProxy).toBeVisible();
+            await mobileProxyInput.fill('tester@example.com');
+            await expect(feedbackTextarea).toHaveValue('游戏内横屏反馈输入可见性校验');
+            await expect(contactInput).toHaveValue('tester@example.com');
+
+            await page.screenshot({
+                path: 'test-results/evidence-screenshots/dicethrone-feedback-modal-landscape.png',
+                fullPage: false,
+            });
+        } finally {
+            await context.close().catch(() => {});
+        }
+    });
+
     test('Online match shows starting hand cards after character selection', async ({ browser }, testInfo) => {
         test.setTimeout(120000);
         const baseURL = testInfo.project.use.baseURL as string | undefined;

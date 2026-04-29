@@ -9,27 +9,47 @@ import request from 'supertest';
 import type { Model } from 'mongoose';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { AuthModule } from '../src/modules/auth/auth.module';
 import { AuthService } from '../src/modules/auth/auth.service';
 import { FeedbackModule } from '../src/modules/feedback/feedback.module';
 import { Feedback, type FeedbackDocument } from '../src/modules/feedback/feedback.schema';
+import {
+    WATCHDOG_AGGREGATION_WINDOW_MS,
+    WATCHDOG_CLOSED_ARCHIVE_RETENTION_MS,
+} from '../src/modules/feedback/feedback.service';
 import { User, type UserDocument } from '../src/modules/auth/schemas/user.schema';
 import { GlobalHttpExceptionFilter } from '../src/shared/filters/http-exception.filter';
 
 describe('Feedback Module (e2e)', () => {
+    const INTERNAL_FEEDBACK_TOKEN = 'test-internal-feedback-token';
     let mongo: MongoMemoryServer | null;
     let app: import('@nestjs/common').INestApplication;
     let userModel: Model<UserDocument>;
     let feedbackModel: Model<FeedbackDocument>;
     let cacheManager: Cache;
     let authService: AuthService;
+    let previousInternalFeedbackToken: string | undefined;
+    let feedbackMongoUri: string;
 
     beforeAll(async () => {
+        previousInternalFeedbackToken = process.env.INTERNAL_FEEDBACK_TOKEN;
+        process.env.INTERNAL_FEEDBACK_TOKEN = INTERNAL_FEEDBACK_TOKEN;
         const externalMongoUri = process.env.MONGO_URI;
         mongo = externalMongoUri ? null : await MongoMemoryServer.create();
         const mongoUri = externalMongoUri ?? mongo?.getUri();
         if (!mongoUri) {
             throw new Error('缺少 MongoDB 连接地址，请配置 MONGO_URI 或启用内存 MongoDB');
+        }
+        if (externalMongoUri) {
+            const parsed = new URL(mongoUri);
+            parsed.pathname = '/boardgame_test_feedback';
+            feedbackMongoUri = parsed.toString();
+        } else {
+            feedbackMongoUri = mongoUri;
         }
 
         const moduleRef = await Test.createTestingModule({
@@ -70,6 +90,11 @@ describe('Feedback Module (e2e)', () => {
         }
         if (mongo) {
             await mongo.stop();
+        }
+        if (previousInternalFeedbackToken === undefined) {
+            delete process.env.INTERNAL_FEEDBACK_TOKEN;
+        } else {
+            process.env.INTERNAL_FEEDBACK_TOKEN = previousInternalFeedbackToken;
         }
     });
 
@@ -142,6 +167,1237 @@ describe('Feedback Module (e2e)', () => {
         expect(res.body.userId).toBeUndefined();
     });
 
+    it('未登录可以匿名读取反馈列表（只读）', async () => {
+        await request(app.getHttpServer())
+            .post('/feedback')
+            .send({
+                content: '匿名可读列表样本',
+                type: 'bug',
+                severity: 'low',
+                gameName: 'tictactoe',
+            })
+            .expect(201);
+
+        const listRes = await request(app.getHttpServer())
+            .get('/admin/feedback?limit=20')
+            .expect(200);
+
+        expect(listRes.body.items).toHaveLength(1);
+        expect(listRes.body.items[0].content).toBe('匿名可读列表样本');
+        expect(listRes.body.items[0].canManage).toBe(false);
+    });
+
+    it('internal feedback 需要 token 且可创建系统反馈', async () => {
+        const payload = {
+            content: 'system feedback',
+            source: 'online-ai-watchdog',
+            type: 'bug',
+            severity: 'high',
+            status: 'resolved',
+        };
+
+        await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .send(payload)
+            .expect(401);
+
+        await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .set('X-Internal-Feedback-Token', 'wrong-token')
+            .send(payload)
+            .expect(403);
+
+        const okRes = await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+            .send(payload)
+            .expect(201);
+
+        expect(okRes.body.reporterType).toBe('system');
+        expect(okRes.body.source).toBe('online-ai-watchdog');
+        expect(okRes.body.status).toBe('resolved');
+    });
+
+    it('online-ai-watchdog 相同根因的系统反馈应聚合到同一条记录并累计次数', async () => {
+        const payloadA = {
+            content: '[system][online-ai-watchdog] force-end-turn-success active-turn:follow-up-advance:steps=1',
+            source: 'online-ai-watchdog',
+            type: 'bug',
+            severity: 'medium',
+            status: 'resolved',
+            autoReportKind: 'force-end-turn-success',
+            incidentKey: 'tracker-a',
+            gameName: 'dicethrone',
+            clientContext: {
+                gameId: 'dicethrone',
+                route: 'server-watchdog',
+                mode: 'online',
+            },
+            errorContext: {
+                source: 'online-ai-watchdog',
+                name: 'force-end-turn-success',
+                message: 'active-turn:follow-up-advance:steps=1',
+            },
+        };
+        const payloadB = {
+            ...payloadA,
+            content: '[system][online-ai-watchdog] force-end-turn-success active-turn:follow-up-advance:steps=3',
+            incidentKey: 'tracker-b',
+            errorContext: {
+                ...payloadA.errorContext,
+                message: 'active-turn:follow-up-advance:steps=3',
+            },
+        };
+
+        const first = await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+            .send(payloadA)
+            .expect(201);
+
+        const second = await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+            .send(payloadB)
+            .expect(201);
+
+        expect(second.body._id).toBe(first.body._id);
+        expect(second.body.incidentKey).toContain('system-feedback:online-ai-watchdog:dicethrone:server-watchdog:online:force-end-turn:active-turn:follow-up-advance');
+        expect(second.body.latestIncidentKey).toBe('tracker-b');
+        expect(second.body.occurrenceCount).toBe(2);
+        expect(second.body.status).toBe('resolved');
+
+        const docs = await feedbackModel.find({ source: 'online-ai-watchdog' }).lean();
+        expect(docs).toHaveLength(1);
+        expect(docs[0].occurrenceCount).toBe(2);
+        expect(docs[0].latestIncidentKey).toBe('tracker-b');
+    });
+
+    it('online-ai-watchdog 并发同 key 上报时 occurrenceCount 应精确累加且仅保留一个 canonical', async () => {
+        const concurrentCount = 8;
+        const payload = {
+            content: '[system][online-ai-watchdog] force-end-turn-success active-turn:follow-up-advance:steps=1',
+            source: 'online-ai-watchdog',
+            type: 'bug',
+            severity: 'medium',
+            status: 'resolved',
+            autoReportKind: 'force-end-turn-success',
+            gameName: 'dicethrone',
+            clientContext: {
+                gameId: 'dicethrone',
+                route: 'server-watchdog',
+                mode: 'online',
+            },
+            errorContext: {
+                source: 'online-ai-watchdog',
+                name: 'force-end-turn-success',
+                message: 'active-turn:follow-up-advance:steps=1',
+            },
+        };
+
+        const responses = await Promise.all(
+            Array.from({ length: concurrentCount }, (_, index) =>
+                request(app.getHttpServer())
+                    .post('/internal/feedback/system')
+                    .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+                    .send({
+                        ...payload,
+                        incidentKey: `concurrent-${index + 1}`,
+                    })
+                    .expect(201)
+            ),
+        );
+
+        const canonicalIds = new Set(responses.map((res) => String(res.body._id)));
+        expect(canonicalIds.size).toBe(1);
+
+        const docs = await feedbackModel.find({ source: 'online-ai-watchdog' }).lean();
+        expect(docs).toHaveLength(1);
+        expect(docs[0].occurrenceCount).toBe(concurrentCount);
+        expect(String(docs[0].aggregationActiveKey || '')).toContain(
+            'system-feedback:online-ai-watchdog:dicethrone:server-watchdog:online:force-end-turn:active-turn:follow-up-advance',
+        );
+        expect(String(docs[0].latestIncidentKey || '')).toContain('concurrent-');
+    });
+
+    it('online-ai-watchdog legal-action-recovered 同动作不同卡面细节应聚合到同一条记录', async () => {
+        const payloadA = {
+            content: '[system][online-ai-watchdog] legal-action-recovered active-turn:legal-action:discard-for-magic:discard-for-magic:necro-hellfire-blade-0-1-21',
+            source: 'online-ai-watchdog',
+            type: 'bug',
+            severity: 'medium',
+            status: 'resolved',
+            autoReportKind: 'legal-action-recovered',
+            incidentKey: 'legal-a',
+            gameName: 'summonerwars',
+            clientContext: {
+                gameId: 'summonerwars',
+                route: 'server-watchdog',
+                mode: 'online',
+            },
+            errorContext: {
+                source: 'online-ai-watchdog',
+                name: 'legal-action-recovered',
+                message: 'active-turn:legal-action:discard-for-magic:discard-for-magic:necro-hellfire-blade-0-1-21',
+            },
+        };
+        const payloadB = {
+            ...payloadA,
+            content: '[system][online-ai-watchdog] legal-action-recovered active-turn:legal-action:discard-for-magic:discard-for-magic:necro-annihilate-1-1-24',
+            incidentKey: 'legal-b',
+            errorContext: {
+                ...payloadA.errorContext,
+                message: 'active-turn:legal-action:discard-for-magic:discard-for-magic:necro-annihilate-1-1-24',
+            },
+        };
+
+        const first = await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+            .send(payloadA)
+            .expect(201);
+
+        const second = await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+            .send(payloadB)
+            .expect(201);
+
+        expect(second.body._id).toBe(first.body._id);
+        expect(second.body.incidentKey).toContain('system-feedback:online-ai-watchdog:summonerwars:server-watchdog:online:legal-action-recovered:active-turn:legal-action:discard-for-magic');
+        expect(second.body.latestIncidentKey).toBe('legal-b');
+        expect(second.body.occurrenceCount).toBe(2);
+
+        const docs = await feedbackModel.find({ source: 'online-ai-watchdog' }).lean();
+        expect(docs).toHaveLength(1);
+        expect(docs[0].occurrenceCount).toBe(2);
+    });
+
+    it('online-ai-watchdog legal-action-recovered 在同动作下也应按 responseWindow.sourceId 分桶', async () => {
+        const payloadA = {
+            content: '[system][online-ai-watchdog] legal-action-recovered response-window:legal-action:response-pass:response-pass:window-a',
+            source: 'online-ai-watchdog',
+            type: 'bug',
+            severity: 'medium',
+            status: 'resolved',
+            autoReportKind: 'legal-action-recovered',
+            incidentKey: 'legal-window-a',
+            gameName: 'dicethrone',
+            clientContext: {
+                gameId: 'dicethrone',
+                route: 'server-watchdog',
+                mode: 'online',
+            },
+            errorContext: {
+                source: 'online-ai-watchdog',
+                name: 'legal-action-recovered',
+                message: 'response-window:legal-action:response-pass:response-pass:window-a',
+            },
+            stateSnapshot: JSON.stringify({
+                phase: 'defensiveRoll',
+                reason: 'response-window',
+                responseWindow: {
+                    windowType: 'afterAttackResolved',
+                    sourceId: 'attack-1',
+                    responderQueue: ['1'],
+                    currentResponderIndex: 0,
+                },
+            }),
+        };
+        const payloadB = {
+            ...payloadA,
+            content: '[system][online-ai-watchdog] legal-action-recovered response-window:legal-action:response-pass:response-pass:window-b',
+            incidentKey: 'legal-window-b',
+            errorContext: {
+                ...payloadA.errorContext,
+                message: 'response-window:legal-action:response-pass:response-pass:window-b',
+            },
+            stateSnapshot: JSON.stringify({
+                phase: 'defensiveRoll',
+                reason: 'response-window',
+                responseWindow: {
+                    windowType: 'afterAttackResolved',
+                    sourceId: 'attack-2',
+                    responderQueue: ['1'],
+                    currentResponderIndex: 0,
+                },
+            }),
+        };
+
+        const first = await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+            .send(payloadA)
+            .expect(201);
+
+        const second = await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+            .send(payloadB)
+            .expect(201);
+
+        expect(second.body._id).not.toBe(first.body._id);
+
+        const docs = await feedbackModel.find({ source: 'online-ai-watchdog' }).sort({ createdAt: 1 }).lean();
+        expect(docs).toHaveLength(2);
+        expect(String(docs[0].aggregationKey || '')).toContain('attack-1');
+        expect(String(docs[1].aggregationKey || '')).toContain('attack-2');
+    });
+
+    it('online-ai-watchdog force-end-turn-failed 应按交互 sourceId 分桶，避免不同卡死交互混桶', async () => {
+        const payloadA = {
+            content: '[system][online-ai-watchdog] force-end-turn-failed visible-interaction:recover-interaction:blocker_persisted',
+            source: 'online-ai-watchdog',
+            type: 'bug',
+            severity: 'high',
+            autoReportKind: 'force-end-turn-failed',
+            incidentKey: 'force-failed-a',
+            gameName: 'smashup',
+            clientContext: {
+                gameId: 'smashup',
+                route: 'server-watchdog',
+                mode: 'online',
+            },
+            errorContext: {
+                source: 'online-ai-watchdog',
+                name: 'force-end-turn-failed',
+                message: 'visible-interaction:recover-interaction:blocker_persisted',
+            },
+            stateSnapshot: JSON.stringify({
+                phase: 'scoreBases',
+                reason: 'visible-interaction',
+                interaction: {
+                    seat: {
+                        kind: 'simple-choice',
+                        sourceId: 'pirate_first_mate_choose_base',
+                    },
+                },
+            }),
+        };
+        const payloadB = {
+            ...payloadA,
+            incidentKey: 'force-failed-b',
+            stateSnapshot: JSON.stringify({
+                phase: 'scoreBases',
+                reason: 'visible-interaction',
+                interaction: {
+                    seat: {
+                        kind: 'simple-choice',
+                        sourceId: 'smashup_reaction_choose',
+                    },
+                },
+            }),
+        };
+
+        const first = await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+            .send(payloadA)
+            .expect(201);
+
+        const second = await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+            .send(payloadB)
+            .expect(201);
+
+        expect(second.body._id).not.toBe(first.body._id);
+
+        const docs = await feedbackModel.find({ source: 'online-ai-watchdog' }).sort({ createdAt: 1 }).lean();
+        expect(docs).toHaveLength(2);
+        expect(String(docs[0].aggregationKey || '')).toContain('pirate_first_mate_choose_base');
+        expect(String(docs[1].aggregationKey || '')).toContain('smashup_reaction_choose');
+    });
+
+    it('online-ai-watchdog 已打开的失败聚合项，不应被后续一次成功恢复自动改成 resolved', async () => {
+        const failed = {
+            content: '[system][online-ai-watchdog] force-end-turn-failed active-turn:follow-up-advance:command_failed',
+            source: 'online-ai-watchdog',
+            type: 'bug',
+            severity: 'high',
+            autoReportKind: 'force-end-turn-failed',
+            incidentKey: 'failure-tracker',
+            gameName: 'smashup',
+            clientContext: {
+                gameId: 'smashup',
+                route: 'server-watchdog',
+                mode: 'online',
+            },
+            errorContext: {
+                source: 'online-ai-watchdog',
+                name: 'force-end-turn-failed',
+                message: 'active-turn:follow-up-advance:command_failed',
+            },
+        };
+        const recovered = {
+            ...failed,
+            content: '[system][online-ai-watchdog] force-end-turn-success active-turn:follow-up-advance:steps=1',
+            severity: 'medium',
+            status: 'resolved',
+            autoReportKind: 'force-end-turn-success',
+            incidentKey: 'failure-tracker-2',
+            errorContext: {
+                ...failed.errorContext,
+                name: 'force-end-turn-success',
+                message: 'active-turn:follow-up-advance:steps=1',
+            },
+        };
+
+        const first = await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+            .send(failed)
+            .expect(201);
+
+        const second = await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+            .send(recovered)
+            .expect(201);
+
+        expect(second.body._id).toBe(first.body._id);
+        expect(second.body.status).toBe('open');
+        expect(second.body.occurrenceCount).toBe(2);
+    });
+
+    it('online-ai-watchdog 超出去重窗口后应新建新的 canonical 记录', async () => {
+        const payload = {
+            content: '[system][online-ai-watchdog] force-end-turn-success active-turn:follow-up-advance:steps=1',
+            source: 'online-ai-watchdog',
+            type: 'bug',
+            severity: 'medium',
+            status: 'resolved',
+            autoReportKind: 'force-end-turn-success',
+            incidentKey: 'window-tracker-a',
+            gameName: 'dicethrone',
+            clientContext: {
+                gameId: 'dicethrone',
+                route: 'server-watchdog',
+                mode: 'online',
+            },
+            errorContext: {
+                source: 'online-ai-watchdog',
+                name: 'force-end-turn-success',
+                message: 'active-turn:follow-up-advance:steps=1',
+            },
+        };
+
+        const first = await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+            .send(payload)
+            .expect(201);
+
+        const staleOccurredAt = new Date(Date.now() - WATCHDOG_AGGREGATION_WINDOW_MS - 1000);
+        await feedbackModel.findByIdAndUpdate(first.body._id, {
+            firstOccurredAt: staleOccurredAt,
+            lastOccurredAt: staleOccurredAt,
+        });
+
+        const second = await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+            .send({
+                ...payload,
+                content: '[system][online-ai-watchdog] force-end-turn-success active-turn:follow-up-advance:steps=2',
+                incidentKey: 'window-tracker-b',
+                errorContext: {
+                    ...payload.errorContext,
+                    message: 'active-turn:follow-up-advance:steps=2',
+                },
+            })
+            .expect(201);
+
+        expect(second.body._id).not.toBe(first.body._id);
+        expect(second.body.occurrenceCount).toBe(1);
+        expect(second.body.latestIncidentKey).toBe('window-tracker-b');
+
+        const docs = await feedbackModel.find({ source: 'online-ai-watchdog' }).sort({ createdAt: 1 }).lean();
+        expect(docs).toHaveLength(2);
+        expect(docs[0]._id.toString()).toBe(first.body._id);
+        expect(docs[1]._id.toString()).toBe(second.body._id);
+        expect(docs[0].status).toBe('closed');
+        expect(docs[0].aggregationActiveKey).toBeUndefined();
+        expect(docs[1].status).toBe('resolved');
+        expect(docs[1].aggregationActiveKey).toContain('system-feedback:online-ai-watchdog:dicethrone');
+    });
+
+    it('online-ai-watchdog 已 closed 的归档项命中同 key 时应新开 canonical 记录', async () => {
+        const payload = {
+            content: '[system][online-ai-watchdog] force-end-turn-failed active-turn:follow-up-advance:command_failed',
+            source: 'online-ai-watchdog',
+            type: 'bug',
+            severity: 'high',
+            autoReportKind: 'force-end-turn-failed',
+            incidentKey: 'closed-tracker-a',
+            gameName: 'smashup',
+            clientContext: {
+                gameId: 'smashup',
+                route: 'server-watchdog',
+                mode: 'online',
+            },
+            errorContext: {
+                source: 'online-ai-watchdog',
+                name: 'force-end-turn-failed',
+                message: 'active-turn:follow-up-advance:command_failed',
+            },
+        };
+
+        const first = await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+            .send(payload)
+            .expect(201);
+
+        await feedbackModel.findByIdAndUpdate(first.body._id, { status: 'closed' });
+
+        const second = await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+            .send({
+                ...payload,
+                incidentKey: 'closed-tracker-b',
+            })
+            .expect(201);
+
+        expect(second.body._id).not.toBe(first.body._id);
+        expect(second.body.status).toBe('open');
+        expect(second.body.occurrenceCount).toBe(1);
+        expect(second.body.latestIncidentKey).toBe('closed-tracker-b');
+
+        const docs = await feedbackModel.find({ source: 'online-ai-watchdog' }).sort({ createdAt: 1 }).lean();
+        expect(docs).toHaveLength(2);
+        expect(docs[0].status).toBe('closed');
+        expect(docs[1].status).toBe('open');
+    });
+
+    it('online-ai-watchdog 超过保留期的 closed 聚合归档应在新上报时自动清理，避免数据库累积', async () => {
+        const payload = {
+            content: '[system][online-ai-watchdog] force-end-turn-success active-turn:follow-up-advance:steps=1',
+            source: 'online-ai-watchdog',
+            type: 'bug',
+            severity: 'medium',
+            status: 'resolved',
+            autoReportKind: 'force-end-turn-success',
+            incidentKey: 'archive-retention-a',
+            gameName: 'dicethrone',
+            clientContext: {
+                gameId: 'dicethrone',
+                route: 'server-watchdog',
+                mode: 'online',
+            },
+            errorContext: {
+                source: 'online-ai-watchdog',
+                name: 'force-end-turn-success',
+                message: 'active-turn:follow-up-advance:steps=1',
+            },
+        };
+
+        const first = await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+            .send(payload)
+            .expect(201);
+
+        const staleOccurredAt = new Date(Date.now() - WATCHDOG_CLOSED_ARCHIVE_RETENTION_MS - 60_000);
+        await feedbackModel.updateOne(
+            { _id: first.body._id },
+            {
+                $set: {
+                    status: 'closed',
+                    firstOccurredAt: staleOccurredAt,
+                    lastOccurredAt: staleOccurredAt,
+                },
+                $unset: { aggregationActiveKey: '' },
+            },
+        );
+
+        const second = await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+            .send({
+                ...payload,
+                incidentKey: 'archive-retention-b',
+            })
+            .expect(201);
+
+        const docs = await feedbackModel.find({ source: 'online-ai-watchdog' }).sort({ createdAt: 1 }).lean();
+        expect(docs).toHaveLength(1);
+        expect(docs[0]._id.toString()).toBe(second.body._id);
+        expect(docs[0].status).toBe('resolved');
+        expect(docs[0].latestIncidentKey).toBe('archive-retention-b');
+    });
+
+    it('online-ai-watchdog 未超过保留期的 closed 聚合归档不应被提前清理', async () => {
+        const payload = {
+            content: '[system][online-ai-watchdog] force-end-turn-success active-turn:follow-up-advance:steps=1',
+            source: 'online-ai-watchdog',
+            type: 'bug',
+            severity: 'medium',
+            status: 'resolved',
+            autoReportKind: 'force-end-turn-success',
+            incidentKey: 'archive-fresh-a',
+            gameName: 'dicethrone',
+            clientContext: {
+                gameId: 'dicethrone',
+                route: 'server-watchdog',
+                mode: 'online',
+            },
+            errorContext: {
+                source: 'online-ai-watchdog',
+                name: 'force-end-turn-success',
+                message: 'active-turn:follow-up-advance:steps=1',
+            },
+        };
+
+        const first = await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+            .send(payload)
+            .expect(201);
+
+        const freshOccurredAt = new Date(Date.now() - WATCHDOG_CLOSED_ARCHIVE_RETENTION_MS + 60_000);
+        await feedbackModel.updateOne(
+            { _id: first.body._id },
+            {
+                $set: {
+                    status: 'closed',
+                    firstOccurredAt: freshOccurredAt,
+                    lastOccurredAt: freshOccurredAt,
+                },
+                $unset: { aggregationActiveKey: '' },
+            },
+        );
+
+        await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+            .send({
+                ...payload,
+                incidentKey: 'archive-fresh-b',
+            })
+            .expect(201);
+
+        const docs = await feedbackModel.find({ source: 'online-ai-watchdog' }).sort({ createdAt: 1 }).lean();
+        expect(docs).toHaveLength(2);
+        const retainedClosed = docs.find((doc) => String(doc._id) === String(first.body._id));
+        expect(retainedClosed?.status).toBe('closed');
+    });
+
+    it('online-ai-watchdog clientContext.gameId 为空白时应回退到 gameName 作为聚合 gameId', async () => {
+        const payloadA = {
+            content: '[system][online-ai-watchdog] force-end-turn-success active-turn:follow-up-advance:steps=1',
+            source: 'online-ai-watchdog',
+            type: 'bug',
+            severity: 'medium',
+            status: 'resolved',
+            autoReportKind: 'force-end-turn-success',
+            incidentKey: 'blank-gameid-a',
+            gameName: 'summonerwars',
+            clientContext: {
+                gameId: '   ',
+                route: 'server-watchdog',
+                mode: 'online',
+            },
+            errorContext: {
+                source: 'online-ai-watchdog',
+                name: 'force-end-turn-success',
+                message: 'active-turn:follow-up-advance:steps=1',
+            },
+        };
+
+        const first = await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+            .send(payloadA)
+            .expect(201);
+
+        const second = await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+            .send({
+                ...payloadA,
+                incidentKey: 'blank-gameid-b',
+            })
+            .expect(201);
+
+        expect(second.body._id).toBe(first.body._id);
+        expect(String(second.body.incidentKey || '')).toContain(':summonerwars:');
+        expect(second.body.gameId).toBe('summonerwars');
+    });
+
+    it('online-ai-watchdog unsatisfiable-interaction-auto-skipped 应按交互 sourceId 分桶，避免不同强制跳过根因混桶', async () => {
+        const basePayload = {
+            content: '[system][online-ai-watchdog] unsatisfiable-interaction-auto-skipped all-options-disabled',
+            source: 'online-ai-watchdog',
+            type: 'bug',
+            severity: 'medium',
+            status: 'resolved',
+            autoReportKind: 'unsatisfiable-interaction-auto-skipped',
+            gameName: 'smashup',
+            clientContext: {
+                gameId: 'smashup',
+                route: 'server-watchdog',
+                mode: 'online',
+            },
+            errorContext: {
+                source: 'online-ai-watchdog',
+                name: 'unsatisfiable-interaction-auto-skipped',
+                message: 'all-options-disabled',
+            },
+        };
+
+        const first = await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+            .send({
+                ...basePayload,
+                incidentKey: 'unsat-a',
+                stateSnapshot: JSON.stringify({
+                    phase: 'playCards',
+                    commandType: 'SYS_INTERACTION_RESPOND',
+                    interaction: {
+                        seat: {
+                            id: 'interaction-a',
+                            kind: 'simple-choice',
+                            sourceId: 'card-alpha',
+                        },
+                    },
+                }),
+            })
+            .expect(201);
+
+        const second = await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+            .send({
+                ...basePayload,
+                incidentKey: 'unsat-b',
+                stateSnapshot: JSON.stringify({
+                    phase: 'playCards',
+                    commandType: 'SYS_INTERACTION_RESPOND',
+                    interaction: {
+                        seat: {
+                            id: 'interaction-b',
+                            kind: 'simple-choice',
+                            sourceId: 'card-beta',
+                        },
+                    },
+                }),
+            })
+            .expect(201);
+
+        expect(second.body._id).not.toBe(first.body._id);
+
+        const docs = await feedbackModel.find({
+            source: 'online-ai-watchdog',
+            autoReportKind: 'unsatisfiable-interaction-auto-skipped',
+        }).sort({ createdAt: 1 }).lean();
+        expect(docs).toHaveLength(2);
+        expect(String(docs[0].incidentKey || '')).toContain('card-alpha');
+        expect(String(docs[1].incidentKey || '')).toContain('card-beta');
+    });
+
+    it('watchdog 聚合项被管理员 reopen 后应恢复 activeKey 并继续复用同一 canonical', async () => {
+        const { adminToken } = await seedUsers();
+        const payload = {
+            content: '[system][online-ai-watchdog] force-end-turn-success active-turn:follow-up-advance:steps=1',
+            source: 'online-ai-watchdog',
+            type: 'bug',
+            severity: 'high',
+            status: 'resolved',
+            autoReportKind: 'force-end-turn-success',
+            incidentKey: 'reopen-tracker-a',
+            gameName: 'dicethrone',
+            clientContext: {
+                gameId: 'dicethrone',
+                route: 'server-watchdog',
+                mode: 'online',
+            },
+            errorContext: {
+                source: 'online-ai-watchdog',
+                name: 'force-end-turn-success',
+                message: 'active-turn:follow-up-advance:steps=1',
+            },
+        };
+
+        const first = await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+            .send(payload)
+            .expect(201);
+
+        const closed = await request(app.getHttpServer())
+            .patch(`/admin/feedback/${first.body._id}/status`)
+            .set('Authorization', `Bearer ${adminToken}`)
+            .send({ status: 'closed' })
+            .expect(200);
+        expect(closed.body.status).toBe('closed');
+
+        const closedDoc = await feedbackModel.findById(first.body._id).lean();
+        expect(closedDoc?.aggregationActiveKey).toBeUndefined();
+
+        const reopened = await request(app.getHttpServer())
+            .patch(`/admin/feedback/${first.body._id}/status`)
+            .set('Authorization', `Bearer ${adminToken}`)
+            .send({ status: 'resolved' })
+            .expect(200);
+        expect(reopened.body.status).toBe('resolved');
+        expect(reopened.body.aggregationActiveKey).toBe(first.body.incidentKey);
+
+        const second = await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+            .send({
+                ...payload,
+                incidentKey: 'reopen-tracker-b',
+            })
+            .expect(201);
+
+        expect(second.body._id).toBe(first.body._id);
+        expect(second.body.occurrenceCount).toBe(2);
+        expect(second.body.latestIncidentKey).toBe('reopen-tracker-b');
+    });
+
+    it('watchdog 旧窗口归档项在已有活跃 canonical 时不允许 reopen', async () => {
+        const { adminToken } = await seedUsers();
+        const payload = {
+            content: '[system][online-ai-watchdog] force-end-turn-success active-turn:follow-up-advance:steps=1',
+            source: 'online-ai-watchdog',
+            type: 'bug',
+            severity: 'high',
+            status: 'resolved',
+            autoReportKind: 'force-end-turn-success',
+            incidentKey: 'reopen-conflict-a',
+            gameName: 'dicethrone',
+            clientContext: {
+                gameId: 'dicethrone',
+                route: 'server-watchdog',
+                mode: 'online',
+            },
+            errorContext: {
+                source: 'online-ai-watchdog',
+                name: 'force-end-turn-success',
+                message: 'active-turn:follow-up-advance:steps=1',
+            },
+        };
+
+        const first = await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+            .send(payload)
+            .expect(201);
+
+        const staleOccurredAt = new Date(Date.now() - WATCHDOG_AGGREGATION_WINDOW_MS - 1000);
+        await feedbackModel.findByIdAndUpdate(first.body._id, {
+            firstOccurredAt: staleOccurredAt,
+            lastOccurredAt: staleOccurredAt,
+        });
+
+        const second = await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+            .send({
+                ...payload,
+                incidentKey: 'reopen-conflict-b',
+            })
+            .expect(201);
+
+        expect(second.body._id).not.toBe(first.body._id);
+
+        await request(app.getHttpServer())
+            .patch(`/admin/feedback/${first.body._id}/status`)
+            .set('Authorization', `Bearer ${adminToken}`)
+            .send({ status: 'resolved' })
+            .expect(409);
+
+        const docs = await feedbackModel.find({ source: 'online-ai-watchdog' }).sort({ createdAt: 1 }).lean();
+        expect(docs).toHaveLength(2);
+        expect(docs[0]._id.toString()).toBe(first.body._id);
+        expect(docs[0].status).toBe('closed');
+        expect(docs[1]._id.toString()).toBe(second.body._id);
+        expect(['open', 'resolved']).toContain(docs[1].status);
+    });
+
+    it('watchdog 两条同聚合键归档项并发 reopen 时应返回 200+409 且不出现 500', async () => {
+        const { adminToken } = await seedUsers();
+        const payload = {
+            content: '[system][online-ai-watchdog] force-end-turn-success active-turn:follow-up-advance:steps=1',
+            source: 'online-ai-watchdog',
+            type: 'bug',
+            severity: 'high',
+            status: 'resolved',
+            autoReportKind: 'force-end-turn-success',
+            incidentKey: 'reopen-race-a',
+            gameName: 'dicethrone',
+            clientContext: {
+                gameId: 'dicethrone',
+                route: 'server-watchdog',
+                mode: 'online',
+            },
+            errorContext: {
+                source: 'online-ai-watchdog',
+                name: 'force-end-turn-success',
+                message: 'active-turn:follow-up-advance:steps=1',
+            },
+        };
+
+        const first = await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+            .send(payload)
+            .expect(201);
+
+        const staleOccurredAt = new Date(Date.now() - WATCHDOG_AGGREGATION_WINDOW_MS - 1000);
+        await feedbackModel.findByIdAndUpdate(first.body._id, {
+            firstOccurredAt: staleOccurredAt,
+            lastOccurredAt: staleOccurredAt,
+        });
+
+        const second = await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+            .send({
+                ...payload,
+                incidentKey: 'reopen-race-b',
+            })
+            .expect(201);
+        expect(second.body._id).not.toBe(first.body._id);
+
+        await request(app.getHttpServer())
+            .patch(`/admin/feedback/${first.body._id}/status`)
+            .set('Authorization', `Bearer ${adminToken}`)
+            .send({ status: 'closed' })
+            .expect(200);
+        await request(app.getHttpServer())
+            .patch(`/admin/feedback/${second.body._id}/status`)
+            .set('Authorization', `Bearer ${adminToken}`)
+            .send({ status: 'closed' })
+            .expect(200);
+
+        const [reopenA, reopenB] = await Promise.all([
+            request(app.getHttpServer())
+                .patch(`/admin/feedback/${first.body._id}/status`)
+                .set('Authorization', `Bearer ${adminToken}`)
+                .send({ status: 'resolved' }),
+            request(app.getHttpServer())
+                .patch(`/admin/feedback/${second.body._id}/status`)
+                .set('Authorization', `Bearer ${adminToken}`)
+                .send({ status: 'resolved' }),
+        ]);
+        const statuses = [reopenA.status, reopenB.status].sort((a, b) => a - b);
+        expect(statuses).toEqual([200, 409]);
+        const conflictResponse = [reopenA, reopenB].find((res) => res.status === 409);
+        expect(conflictResponse?.status).toBe(409);
+
+        const docs = await feedbackModel.find({ source: 'online-ai-watchdog' }).sort({ createdAt: 1 }).lean();
+        expect(docs).toHaveLength(2);
+        const activeDocs = docs.filter((doc) => ['open', 'in_progress', 'resolved'].includes(doc.status));
+        expect(activeDocs).toHaveLength(1);
+        expect(Boolean(activeDocs[0].aggregationActiveKey)).toBe(true);
+    });
+
+    it('watchdog 去重脚本在旧窗口 active + 最新窗口 closed canonical 时应保留一个 active canonical', async () => {
+        const scriptPath = path.resolve(process.cwd(), 'scripts/db/close-watchdog-resolved-dedupe.mjs');
+        const staleOccurredAt = new Date(Date.now() - WATCHDOG_AGGREGATION_WINDOW_MS - 1000);
+        const latestOccurredAt = new Date();
+
+        const oldActive = await feedbackModel.create({
+            content: '[system][online-ai-watchdog] force-end-turn-success active-turn:follow-up-advance:steps=1',
+            source: 'online-ai-watchdog',
+            reporterType: 'system',
+            type: 'bug',
+            severity: 'high',
+            status: 'open',
+            autoReportKind: 'force-end-turn-success',
+            incidentKey: 'legacy-active-incident',
+            aggregationKey: 'system-feedback:online-ai-watchdog:dicethrone:server-watchdog:online:force-end-turn:active-turn:follow-up-advance',
+            aggregationActiveKey: 'system-feedback:online-ai-watchdog:dicethrone:server-watchdog:online:force-end-turn:active-turn:follow-up-advance',
+            gameId: 'dicethrone',
+            clientContext: {
+                gameId: 'dicethrone',
+                route: 'server-watchdog',
+                mode: 'online',
+            },
+            errorContext: {
+                source: 'online-ai-watchdog',
+                name: 'force-end-turn-success',
+                message: 'active-turn:follow-up-advance:steps=1',
+            },
+            firstOccurredAt: staleOccurredAt,
+            lastOccurredAt: staleOccurredAt,
+            latestIncidentKey: 'legacy-active-incident',
+            occurrenceCount: 3,
+        });
+
+        const latestClosed = await feedbackModel.create({
+            content: '[system][online-ai-watchdog] force-end-turn-success active-turn:follow-up-advance:steps=1',
+            source: 'online-ai-watchdog',
+            reporterType: 'system',
+            type: 'bug',
+            severity: 'medium',
+            status: 'closed',
+            autoReportKind: 'force-end-turn-success',
+            incidentKey: 'latest-closed-incident',
+            gameId: 'dicethrone',
+            clientContext: {
+                gameId: 'dicethrone',
+                route: 'server-watchdog',
+                mode: 'online',
+            },
+            errorContext: {
+                source: 'online-ai-watchdog',
+                name: 'force-end-turn-success',
+                message: 'active-turn:follow-up-advance:steps=1',
+            },
+            firstOccurredAt: latestOccurredAt,
+            lastOccurredAt: latestOccurredAt,
+            latestIncidentKey: 'latest-closed-incident',
+            occurrenceCount: 1,
+        });
+
+        const beforeScriptRows = await feedbackModel
+            .find({ source: 'online-ai-watchdog' })
+            .sort({ createdAt: 1 })
+            .lean();
+        expect(beforeScriptRows).toHaveLength(2);
+        const preOld = beforeScriptRows.find((doc) => doc._id.toString() === String(oldActive._id));
+        const preLatest = beforeScriptRows.find((doc) => doc._id.toString() === String(latestClosed._id));
+        const preOldTime = preOld?.lastOccurredAt ? new Date(preOld.lastOccurredAt).getTime() : Number.NaN;
+        const preLatestTime = preLatest?.lastOccurredAt ? new Date(preLatest.lastOccurredAt).getTime() : Number.NaN;
+        expect(Number.isFinite(preOldTime)).toBe(true);
+        expect(Number.isFinite(preLatestTime)).toBe(true);
+        expect(preLatestTime - preOldTime).toBeGreaterThan(WATCHDOG_AGGREGATION_WINDOW_MS);
+
+        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'watchdog-closeout-'));
+        const boardPath = path.join(tempDir, 'status-board.json');
+        const outputPath = path.join(tempDir, 'report.json');
+        await fs.writeFile(
+            boardPath,
+            JSON.stringify(
+                {
+                    version: 1,
+                    updatedAt: new Date().toISOString(),
+                    items: [
+                        {
+                            feedbackId: String(oldActive._id),
+                            status: 'open',
+                            lastFetchedStatus: 'open',
+                            notes: '',
+                        },
+                        {
+                            feedbackId: String(latestClosed._id),
+                            status: 'closed',
+                            lastFetchedStatus: 'closed',
+                            notes: '',
+                        },
+                    ],
+                },
+                null,
+                2,
+            ),
+            'utf8',
+        );
+
+        try {
+            execFileSync(
+                process.execPath,
+                [scriptPath, '--apply', `--board=${boardPath}`, `--output=${outputPath}`],
+                {
+                    cwd: process.cwd(),
+                    env: {
+                        ...process.env,
+                        MONGO_URI: feedbackMongoUri,
+                    },
+                    stdio: 'pipe',
+                },
+            );
+        } finally {
+            await fs.rm(tempDir, { recursive: true, force: true });
+        }
+
+        const docs = await feedbackModel
+            .find({ source: 'online-ai-watchdog' })
+            .sort({ createdAt: 1 })
+            .lean();
+        expect(docs).toHaveLength(2);
+        const refreshedOld = docs.find((doc) => doc._id.toString() === String(oldActive._id));
+        const refreshedLatest = docs.find((doc) => doc._id.toString() === String(latestClosed._id));
+        expect(refreshedOld?.status).toBe('closed');
+        expect(refreshedOld?.aggregationActiveKey).toBeUndefined();
+        expect(refreshedLatest?.status).toBe('resolved');
+        expect(String(refreshedLatest?.aggregationActiveKey || '')).toContain(
+            'system-feedback:online-ai-watchdog:dicethrone:server-watchdog:online:force-end-turn:active-turn:follow-up-advance',
+        );
+    });
+
+    it('watchdog 去重脚本应按 clientContext.gameId/gameName 区分桶并跳过缺失 game identity 的 legacy 行', async () => {
+        const scriptPath = path.resolve(process.cwd(), 'scripts/db/close-watchdog-resolved-dedupe.mjs');
+        const now = new Date();
+
+        const feedbackByClientGameA = await feedbackModel.create({
+            content: '[system][online-ai-watchdog] force-end-turn-success active-turn:follow-up-advance:steps=1',
+            source: 'online-ai-watchdog',
+            reporterType: 'system',
+            type: 'bug',
+            severity: 'medium',
+            status: 'resolved',
+            autoReportKind: 'force-end-turn-success',
+            incidentKey: 'legacy-client-game-a',
+            gameId: '   ',
+            clientContext: {
+                gameId: 'dicethrone',
+                route: 'server-watchdog',
+                mode: 'online',
+            },
+            errorContext: {
+                source: 'online-ai-watchdog',
+                name: 'force-end-turn-success',
+                message: 'active-turn:follow-up-advance:steps=1',
+            },
+            firstOccurredAt: now,
+            lastOccurredAt: now,
+            latestIncidentKey: 'legacy-client-game-a',
+            occurrenceCount: 1,
+        });
+
+        const feedbackByClientGameB = await feedbackModel.create({
+            content: '[system][online-ai-watchdog] force-end-turn-success active-turn:follow-up-advance:steps=1',
+            source: 'online-ai-watchdog',
+            reporterType: 'system',
+            type: 'bug',
+            severity: 'medium',
+            status: 'resolved',
+            autoReportKind: 'force-end-turn-success',
+            incidentKey: 'legacy-client-game-b',
+            clientContext: {
+                gameId: 'smashup',
+                route: 'server-watchdog',
+                mode: 'online',
+            },
+            errorContext: {
+                source: 'online-ai-watchdog',
+                name: 'force-end-turn-success',
+                message: 'active-turn:follow-up-advance:steps=1',
+            },
+            firstOccurredAt: now,
+            lastOccurredAt: now,
+            latestIncidentKey: 'legacy-client-game-b',
+            occurrenceCount: 1,
+        });
+
+        const feedbackByGameName = await feedbackModel.create({
+            content: '[system][online-ai-watchdog] force-end-turn-success active-turn:follow-up-advance:steps=1',
+            source: 'online-ai-watchdog',
+            reporterType: 'system',
+            type: 'bug',
+            severity: 'medium',
+            status: 'resolved',
+            autoReportKind: 'force-end-turn-success',
+            incidentKey: 'legacy-game-name-only',
+            gameId: '',
+            gameName: 'summonerwars',
+            clientContext: {
+                gameId: '   ',
+                route: 'server-watchdog',
+                mode: 'online',
+            },
+            errorContext: {
+                source: 'online-ai-watchdog',
+                name: 'force-end-turn-success',
+                message: 'active-turn:follow-up-advance:steps=1',
+            },
+            firstOccurredAt: now,
+            lastOccurredAt: now,
+            latestIncidentKey: 'legacy-game-name-only',
+            occurrenceCount: 1,
+        });
+
+        const feedbackMissingGameIdentity = await feedbackModel.create({
+            content: '[system][online-ai-watchdog] force-end-turn-success active-turn:follow-up-advance:steps=1',
+            source: 'online-ai-watchdog',
+            reporterType: 'system',
+            type: 'bug',
+            severity: 'medium',
+            status: 'resolved',
+            autoReportKind: 'force-end-turn-success',
+            incidentKey: 'legacy-missing-game-id',
+            clientContext: {
+                route: 'server-watchdog',
+                mode: 'online',
+            },
+            errorContext: {
+                source: 'online-ai-watchdog',
+                name: 'force-end-turn-success',
+                message: 'active-turn:follow-up-advance:steps=1',
+            },
+            firstOccurredAt: now,
+            lastOccurredAt: now,
+            latestIncidentKey: 'legacy-missing-game-id',
+            occurrenceCount: 1,
+        });
+
+        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'watchdog-closeout-'));
+        const boardPath = path.join(tempDir, 'status-board.json');
+        const outputPath = path.join(tempDir, 'report.json');
+        await fs.writeFile(
+            boardPath,
+            JSON.stringify(
+                {
+                    version: 1,
+                    updatedAt: new Date().toISOString(),
+                    items: [
+                        { feedbackId: String(feedbackByClientGameA._id), status: 'resolved', lastFetchedStatus: 'resolved', notes: '' },
+                        { feedbackId: String(feedbackByClientGameB._id), status: 'resolved', lastFetchedStatus: 'resolved', notes: '' },
+                        { feedbackId: String(feedbackByGameName._id), status: 'resolved', lastFetchedStatus: 'resolved', notes: '' },
+                        { feedbackId: String(feedbackMissingGameIdentity._id), status: 'resolved', lastFetchedStatus: 'resolved', notes: '' },
+                    ],
+                },
+                null,
+                2,
+            ),
+            'utf8',
+        );
+
+        try {
+            execFileSync(
+                process.execPath,
+                [scriptPath, '--apply', `--board=${boardPath}`, `--output=${outputPath}`],
+                {
+                    cwd: process.cwd(),
+                    env: {
+                        ...process.env,
+                        MONGO_URI: feedbackMongoUri,
+                    },
+                    stdio: 'pipe',
+                },
+            );
+
+            const report = JSON.parse(await fs.readFile(outputPath, 'utf8')) as {
+                totalClusterCount?: number;
+                skippedMissingGameIdentityCount?: number;
+                skippedMissingGameIdentityFeedbackIds?: string[];
+            };
+            expect(report.totalClusterCount).toBe(3);
+            expect(report.skippedMissingGameIdentityCount).toBe(1);
+            expect(report.skippedMissingGameIdentityFeedbackIds).toContain(String(feedbackMissingGameIdentity._id));
+        } finally {
+            await fs.rm(tempDir, { recursive: true, force: true });
+        }
+
+        const rows = await feedbackModel.find({ source: 'online-ai-watchdog' }).lean();
+        const rowA = rows.find((row) => row._id.toString() === String(feedbackByClientGameA._id));
+        const rowB = rows.find((row) => row._id.toString() === String(feedbackByClientGameB._id));
+        const rowByName = rows.find((row) => row._id.toString() === String(feedbackByGameName._id));
+        const rowMissing = rows.find((row) => row._id.toString() === String(feedbackMissingGameIdentity._id));
+
+        expect(rowA?.status).toBe('resolved');
+        expect(rowB?.status).toBe('resolved');
+        expect(rowByName?.status).toBe('resolved');
+        expect(rowMissing?.status).toBe('resolved');
+        expect(rowMissing?.aggregationActiveKey).toBeUndefined();
+    });
+
     it('登录用户反馈会绑定 userId 且管理员可更新状态', async () => {
         const { adminToken, userToken, userId } = await seedUsers();
 
@@ -178,7 +1434,67 @@ describe('Feedback Module (e2e)', () => {
         expect(updateRes.body.status).toBe('resolved');
     });
 
-    it('developer 可以查看反馈并更新状态', async () => {
+    it('普通用户可查看全部反馈且仅能修改自己的反馈（并优先显示自己的）', async () => {
+        const { userToken } = await seedUsers();
+        const { token: otherUserToken } = await registerUser({
+            username: 'player-feedback-2',
+            email: 'player-feedback-2@example.com',
+            code: '778899',
+        });
+
+        const ownFeedbackRes = await request(app.getHttpServer())
+            .post('/feedback')
+            .set('Authorization', `Bearer ${userToken}`)
+            .send({
+                content: 'user own feedback',
+                type: 'bug',
+                severity: 'medium',
+                gameName: 'smashup',
+                clientContext: { gameId: 'smashup' },
+            })
+            .expect(201);
+
+        const otherFeedbackRes = await request(app.getHttpServer())
+            .post('/feedback')
+            .set('Authorization', `Bearer ${otherUserToken}`)
+            .send({
+                content: 'other user feedback',
+                type: 'bug',
+                severity: 'medium',
+                gameName: 'tictactoe',
+                clientContext: { gameId: 'tictactoe' },
+            })
+            .expect(201);
+
+        await feedbackModel.findByIdAndUpdate(ownFeedbackRes.body._id, { createdAt: new Date('2026-03-14T10:00:00.000Z') });
+        await feedbackModel.findByIdAndUpdate(otherFeedbackRes.body._id, { createdAt: new Date('2026-03-14T11:00:00.000Z') });
+
+        const listRes = await request(app.getHttpServer())
+            .get('/admin/feedback?limit=20')
+            .set('Authorization', `Bearer ${userToken}`)
+            .expect(200);
+
+        expect(listRes.body.items).toHaveLength(2);
+        expect(listRes.body.items[0]._id).toBe(ownFeedbackRes.body._id);
+        const ownRow = listRes.body.items.find((item: { _id: string }) => item._id === ownFeedbackRes.body._id);
+        const otherRow = listRes.body.items.find((item: { _id: string }) => item._id === otherFeedbackRes.body._id);
+        expect(ownRow?.canManage).toBe(true);
+        expect(otherRow?.canManage).toBe(false);
+
+        await request(app.getHttpServer())
+            .patch(`/admin/feedback/${ownFeedbackRes.body._id as string}/status`)
+            .set('Authorization', `Bearer ${userToken}`)
+            .send({ status: 'resolved' })
+            .expect(200);
+
+        await request(app.getHttpServer())
+            .patch(`/admin/feedback/${otherFeedbackRes.body._id as string}/status`)
+            .set('Authorization', `Bearer ${userToken}`)
+            .send({ status: 'resolved' })
+            .expect(404);
+    });
+
+    it('developer 可查看全部反馈并更新负责游戏的反馈', async () => {
         const { adminToken, developerToken, userToken } = await seedUsers();
 
         const ownFeedbackRes = await request(app.getHttpServer())
@@ -219,8 +1535,14 @@ describe('Feedback Module (e2e)', () => {
             .set('Authorization', `Bearer ${developerToken}`)
             .expect(200);
 
-        expect(listRes.body.items).toHaveLength(1);
-        expect(listRes.body.items[0]._id).toBe(ownFeedbackId);
+        expect(listRes.body.items).toHaveLength(2);
+        const visibleIds = listRes.body.items.map((item: { _id: string }) => item._id);
+        expect(visibleIds).toContain(ownFeedbackId);
+        expect(visibleIds).toContain(otherFeedbackId);
+        const ownRow = listRes.body.items.find((item: { _id: string }) => item._id === ownFeedbackId);
+        const otherRow = listRes.body.items.find((item: { _id: string }) => item._id === otherFeedbackId);
+        expect(ownRow?.canManage).toBe(true);
+        expect(otherRow?.canManage).toBe(false);
 
         const updateRes = await request(app.getHttpServer())
             .patch(`/admin/feedback/${ownFeedbackId}/status`)
@@ -311,6 +1633,44 @@ describe('Feedback Module (e2e)', () => {
         expect(listRes.body.items[0].errorContext?.name).toBe('TypeError');
     });
 
+    it('admin 列表支持 reporterType/source 过滤并兼容 legacy watchdog', async () => {
+        const { adminToken } = await seedUsers();
+
+        await request(app.getHttpServer())
+            .post('/internal/feedback/system')
+            .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+            .send({
+                content: 'system watchdog',
+                source: 'online-ai-watchdog',
+                type: 'bug',
+                severity: 'high',
+            })
+            .expect(201);
+
+        await feedbackModel.collection.insertOne({
+            content: '[system][online-ai-watchdog] legacy',
+            type: 'bug',
+            severity: 'high',
+            contactInfo: 'system:online-ai-watchdog',
+            errorContext: {
+                source: 'online-ai-watchdog',
+                name: 'unsatisfiable-interaction-auto-skipped',
+            },
+            createdAt: new Date(),
+            updatedAt: new Date(),
+        });
+
+        const listRes = await request(app.getHttpServer())
+            .get('/admin/feedback?reporterType=system&source=online-ai-watchdog&limit=20')
+            .set('Authorization', `Bearer ${adminToken}`)
+            .expect(200);
+
+        expect(listRes.body.items).toHaveLength(2);
+        const legacyItem = listRes.body.items.find((item: { content: string }) => item.content.includes('legacy'));
+        expect(legacyItem?.reporterType).toBe('system');
+        expect(legacyItem?.source).toBe('online-ai-watchdog');
+    });
+
     it('admin 列表支持按时间正序排序', async () => {
         const { adminToken, userToken } = await seedUsers();
 
@@ -349,53 +1709,6 @@ describe('Feedback Module (e2e)', () => {
         expect(listRes.body.items).toHaveLength(2);
         expect(listRes.body.items[0].content).toBe('older feedback');
         expect(listRes.body.items[1].content).toBe('newer feedback');
-    });
-
-    it('开放接口支持匿名读取反馈列表、详情并修改状态', async () => {
-        const createRes = await request(app.getHttpServer())
-            .post('/feedback')
-            .send({
-                content: '公开接口反馈',
-                type: 'bug',
-                severity: 'high',
-                gameName: 'smashup',
-                actionLog: '[13:00] public open endpoint',
-                clientContext: {
-                    gameId: 'smashup',
-                    route: '/play/smashup/match/public-open',
-                },
-            })
-            .expect(201);
-
-        const feedbackId = createRes.body._id as string;
-
-        const listRes = await request(app.getHttpServer())
-            .get('/feedback/open?status=open&limit=20')
-            .expect(200);
-
-        expect(listRes.body.total).toBe(1);
-        expect(listRes.body.items).toHaveLength(1);
-        expect(listRes.body.items[0]._id).toBe(feedbackId);
-        expect(listRes.body.items[0].clientContext?.gameId).toBe('smashup');
-
-        const detailRes = await request(app.getHttpServer())
-            .get(`/feedback/open/${feedbackId}`)
-            .expect(200);
-
-        expect(detailRes.body._id).toBe(feedbackId);
-        expect(detailRes.body.content).toBe('公开接口反馈');
-        expect(detailRes.body.status).toBe('open');
-
-        const updateRes = await request(app.getHttpServer())
-            .patch(`/feedback/open/${feedbackId}/status`)
-            .send({ status: 'resolved' })
-            .expect(200);
-
-        expect(updateRes.body._id).toBe(feedbackId);
-        expect(updateRes.body.status).toBe('resolved');
-
-        const updated = await feedbackModel.findById(feedbackId).lean();
-        expect(updated?.status).toBe('resolved');
     });
 
     it('bug 类型不附带 actionLog 或 stateSnapshot 也允许提交', async () => {

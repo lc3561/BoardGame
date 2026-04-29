@@ -322,4 +322,105 @@ test.describe('SmashUp - 核心流程与交互稳定性', () => {
 
         await game.screenshot('active-base-ability-badge-centered', testInfo);
     });
+
+    test('适者生存应先进入选基地流程；若目标基地最低力量平局，则继续进入平局选择', async ({ page, game }, testInfo) => {
+        test.setTimeout(90000);
+
+        await game.openTestGame('smashup', {
+            numPlayers: 2,
+            skipInitialization: true,
+        });
+
+        await game.setupScene({
+            gameId: 'smashup',
+            player0: {
+                hand: [
+                    { uid: 'p0-sotf', defId: 'dino_survival_of_the_fittest_pod', type: 'action' },
+                ],
+                factions: ['dinosaurs_pod', 'innsmouth_pod'],
+                minionsPlayed: 0,
+                minionLimit: 1,
+                actionsPlayed: 0,
+                actionLimit: 1,
+            },
+            player1: {
+                factions: ['robots', 'wizards'],
+                minionsPlayed: 0,
+                minionLimit: 1,
+                actionsPlayed: 0,
+                actionLimit: 1,
+            },
+            bases: [
+                {
+                    defId: 'base_innsmouth_base',
+                    minions: [
+                        { uid: 'b0-strong', defId: 'dino_king_rex_pod', owner: '0', controller: '0', power: 7 },
+                        { uid: 'b0-weak', defId: 'innsmouth_the_locals_pod', owner: '0', controller: '0', power: 2 },
+                        { uid: 'b0-enemy', defId: 'wizard_enchantress', owner: '1', controller: '1', power: 2 },
+                    ],
+                },
+                {
+                    defId: 'base_wizard_academy',
+                    minions: [
+                        { uid: 'b1-weak', defId: 'robot_microbot_guard', owner: '1', controller: '1', power: 1 },
+                        { uid: 'b1-mid-a', defId: 'innsmouth_the_locals_pod', owner: '0', controller: '0', power: 2 },
+                        { uid: 'b1-mid-b', defId: 'innsmouth_the_locals_pod', owner: '0', controller: '0', power: 2 },
+                    ],
+                },
+                {
+                    defId: 'base_the_factory',
+                    minions: [
+                        { uid: 'b2-only', defId: 'robot_microbot_alpha', owner: '1', controller: '1', power: 1 },
+                    ],
+                },
+            ],
+            currentPlayer: '0',
+            phase: 'playCards',
+        });
+
+        await game.waitForPhase('playCards');
+        await game.waitForCurrentPlayer('0');
+
+        const handCard = page.locator('[data-card-uid="p0-sotf"]');
+        const base0 = page.locator('[data-base-index="0"]');
+        const base1 = page.locator('[data-base-index="1"]');
+
+        await expect(handCard).toBeVisible();
+        await expect(base0).toBeVisible();
+        await expect(base1).toBeVisible();
+
+        await handCard.click();
+        await page.waitForTimeout(300);
+
+        await expect(handCard, '点卡后应进入选基地态，不能直接弹“场上没有符合条件的目标”').toBeVisible();
+        await expect(page.getByText('场上没有符合条件的目标')).toHaveCount(0);
+        await game.screenshot('sotf-after-card-click-awaiting-base', testInfo);
+
+        await base0.click();
+
+        await expect.poll(async () => {
+            const state = await game.getState();
+            return {
+                inHand: state.core.players['0'].hand.some((card: any) => card.uid === 'p0-sotf'),
+                base1WeakAlive: state.core.bases[1].minions.some((minion: any) => minion.uid === 'b1-weak'),
+                base2OnlyAlive: state.core.bases[2].minions.some((minion: any) => minion.uid === 'b2-only'),
+                interactionSourceId: state.sys.interaction?.current?.data?.sourceId ?? null,
+                tieBreakOptions: (state.sys.interaction?.current?.data?.options ?? []).map((option: any) => option?.value?.minionUid ?? null),
+            };
+        }, { timeout: 5000 }).toEqual({
+            inHand: false,
+            base1WeakAlive: false,
+            base2OnlyAlive: true,
+            interactionSourceId: 'dino_survival_tiebreak',
+            tieBreakOptions: expect.arrayContaining(['b0-weak', 'b0-enemy']),
+        });
+
+        await expect(page.getByText('场上没有符合条件的目标')).toHaveCount(0);
+        await expect(page.getByText('选择要消灭的最低力量随从')).toBeVisible();
+        await game.screenshot('sotf-after-base-selection-awaiting-tiebreak', testInfo);
+
+        await expect(page.locator('[data-minion-uid="b0-weak"]')).toBeVisible();
+        await expect(page.locator('[data-minion-uid="b0-enemy"]')).toBeVisible();
+        await game.screenshot('sotf-tiebreak-candidates-visible', testInfo);
+    });
 });

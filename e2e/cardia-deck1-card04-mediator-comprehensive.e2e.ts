@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 import { 
     setupCardiaTestScenario,
     readCoreState,
@@ -325,3 +325,129 @@ test.describe('Cardia 一号牌组 - 调停者（综合测试）', () => {
         }
     });
 });
+
+    test('边界场景：虚空法师移除持续标记', async ({ browser }) => {
+        const setup = await setupCardiaTestScenario(browser, {
+            player1: {
+                hand: ['deck_i_card_04', 'deck_i_card_03'], // 调停者（影响力4）、外科医生（影响力3）
+                deck: ['deck_i_card_01'],
+            },
+            player2: {
+                hand: ['deck_i_card_10', 'deck_i_card_02'], // 傀儡师（影响力10）、虚空法师（影响力2）
+                deck: ['deck_i_card_08'],
+            },
+            phase: 'play',
+        });
+        
+        try {
+            console.log('\n=== 第一回合：调停者强制平局 ===');
+            
+            // P1 打出调停者（影响力4）
+            console.log('P1 打出调停者（影响力4）');
+            await playCard(setup.player1Page, 0);
+            
+            // P2 打出傀儡师（影响力10）
+            console.log('P2 打出傀儡师（影响力10）');
+            await playCard(setup.player2Page, 0);
+            
+            // 等待进入能力阶段
+            await waitForPhase(setup.player1Page, 'ability');
+            
+            // 激活调停者能力
+            const abilityButton = setup.player1Page.locator('[data-testid="cardia-activate-ability-btn"]');
+            await abilityButton.waitFor({ state: 'visible', timeout: 5000 });
+            console.log('激活调停者能力');
+            await abilityButton.click();
+            await setup.player1Page.waitForTimeout(1000);
+            
+            // 等待回合结束
+            await waitForPhase(setup.player1Page, 'play', 10000);
+            
+            // 验证：持续标记已放置
+            const afterRound1 = await readCoreState(setup.player1Page);
+            type OngoingAbility = {
+                abilityId: string;
+                cardId: string;
+                effectType: string;
+            };
+            const ongoingAbilitiesAfterRound1 = afterRound1.ongoingAbilities as OngoingAbility[];
+            const mediatorOngoing = ongoingAbilitiesAfterRound1.find(
+                (a) => a.abilityId === 'ability_i_mediator'
+            );
+            expect(mediatorOngoing).toBeDefined();
+            console.log('✅ 调停者持续标记已放置');
+            
+            console.log('\n=== 第二回合：虚空法师移除持续标记 ===');
+            
+            // P1 打出外科医生（影响力3）
+            console.log('P1 打出外科医生（影响力3）');
+            await playCard(setup.player1Page, 0);
+            
+            // P2 打出虚空法师（影响力2）
+            console.log('P2 打出虚空法师（影响力2）');
+            await playCard(setup.player2Page, 0);
+            
+            // 等待进入能力阶段（P2失败，3 > 2）
+            await waitForPhase(setup.player2Page, 'ability');
+            
+            // P2 激活虚空法师能力
+            const p2AbilityButton = setup.player2Page.locator('[data-testid="cardia-activate-ability-btn"]');
+            await p2AbilityButton.waitFor({ state: 'visible', timeout: 5000 });
+            console.log('P2 激活虚空法师能力');
+            await p2AbilityButton.click();
+            await setup.player2Page.waitForTimeout(1000);
+            
+            // 等待卡牌选择弹窗出现
+            const modal = setup.player2Page.locator('[data-testid="card-selection-modal"]');
+            await modal.waitFor({ state: 'visible', timeout: 5000 });
+            console.log('✅ 卡牌选择弹窗已显示');
+            
+            // 选择调停者卡牌（P1 的第一张场上卡牌）
+            const allButtons = modal.locator('button');
+            const count = await allButtons.count();
+            
+            let cardButtonIndex = -1;
+            for (let i = 0; i < count; i++) {
+                const text = await allButtons.nth(i).textContent();
+                const isEnabled = await allButtons.nth(i).isEnabled();
+                if (text && !text.match(/确认|Confirm|取消|Cancel/) && isEnabled) {
+                    cardButtonIndex = i;
+                    break;
+                }
+            }
+            
+            if (cardButtonIndex >= 0) {
+                await allButtons.nth(cardButtonIndex).click();
+                await setup.player2Page.waitForTimeout(500);
+                console.log('✅ 已选择调停者卡牌');
+            } else {
+                throw new Error('未找到可用的卡牌按钮');
+            }
+            
+            // 点击确认按钮
+            const confirmButton = modal.locator('button').filter({ hasText: /Confirm|确认/ });
+            await confirmButton.first().click({ timeout: 5000 });
+            console.log('✅ 已确认选择');
+            
+            // 等待弹窗关闭
+            await modal.waitFor({ state: 'hidden', timeout: 5000 });
+            
+            // 等待回合结束
+            await waitForPhase(setup.player1Page, 'play', 10000);
+            
+            // 验证：持续标记已被移除
+            const afterRound2 = await readCoreState(setup.player1Page);
+            const ongoingAbilitiesAfterRound2 = afterRound2.ongoingAbilities as OngoingAbility[];
+            const mediatorOngoingAfterRound2 = ongoingAbilitiesAfterRound2.find(
+                (a) => a.abilityId === 'ability_i_mediator'
+            );
+            expect(mediatorOngoingAfterRound2).toBeUndefined();
+            console.log('✅ 调停者持续标记已被虚空法师移除');
+            
+            console.log('✅ 所有断言通过');
+            
+        } finally {
+            await setup.player1Context.close();
+            await setup.player2Context.close();
+        }
+    });

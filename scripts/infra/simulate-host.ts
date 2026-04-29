@@ -2,7 +2,7 @@
 // import fetch from 'node-fetch'; // Use native fetch
 
 const BASE_URL = 'http://localhost:8000/games/TicTacToe';
-const FRONTEND_PORT = Number(process.env.VITE_DEV_PORT) || 4173;
+const FRONTEND_PORT = Number(process.env.VITE_DEV_PORT) || 4273;
 
 async function runTest() {
     console.log('🤖 [HostBot] 开始测试流程...');

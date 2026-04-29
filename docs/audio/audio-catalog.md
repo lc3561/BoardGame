@@ -1,7 +1,7 @@
 # 音效语义目录
 
 > 自动生成。`node scripts/audio/generate_audio_catalog.js`
-> 10298 条 → 597 组
+> 11641 条 → 612 组
 
 ## 查找流程
 
@@ -14,23 +14,25 @@
 
 | 分类 | 组 | 条 | 说明 |
 |------|----|----|------|
-| ambient | 10 | 455 | 环境（生存/制作/拾取/家具） |
-| bgm | 13 | 350 | BGM（空灵/奇幻/放克/休闲） |
+| ambient | 11 | 643 | 环境（生存/制作/拾取/家具） |
+| bgm | 21 | 430 | BGM（空灵/奇幻/放克/休闲） |
 | card | 10 | 111 | 卡牌（翻/洗/抽/放/魔法牌） |
 | coins | 8 | 33 | 金币（掉落/奖励/收集） |
-| combat | 52 | 1104 | 战斗（剑/斧/拳/弓/盾/爆炸） |
+| combat | 54 | 1490 | 战斗（剑/斧/拳/弓/盾/爆炸） |
 | cyberpunk | 19 | 357 | 赛博朋克（科幻UI/武器） |
-| dark_fantasy_studio | 64 | 2961 | ⚠️ **低质量系列**：整体音质偏低，除非语义高度匹配（zombie_voices/ghostly/smashed/riser_impact/steam）否则不考虑使用 |
+| dark_fantasy_studio | 64 | 2961 |  |
 | dice | 6 | 29 | 骰子（投掷/碰撞/滚动） |
 | fantasy | 80 | 530 | 奇幻（弓箭/盾/治疗/火焰） |
+| foley | 1 | 197 |  |
 | magic | 159 | 1737 | 魔法（施法/元素/光暗/召唤） |
 | misc | 1 | 3 | 杂项 |
 | monster | 69 | 896 | 怪物（咆哮/攻击/死亡） |
 | puzzle | 27 | 148 | 休闲（提示/成功/失败/弹出） |
+| retro | 1 | 165 |  |
 | status | 21 | 352 | 状态（buff/debuff/治疗/中毒） |
 | steampunk | 6 | 194 | 蒸汽朋克（齿轮/蒸汽） |
 | stinger | 8 | 22 | 过场（胜利/失败） |
-| system | 8 | 174 | 系统（移动/通知/庆祝） |
+| system | 10 | 501 | 系统（移动/通知/庆祝） |
 | token | 8 | 35 | Token（放置/拾取） |
 | ui | 28 | 807 | UI（点击/弹窗/通知/信号） |
 
@@ -47,6 +49,7 @@
 | items | 61 | `ambient.*items` | axe, axe_hit_stone, axe_hit_wood, axe_whoo... |
 | pick_up_items | 23 | `ambient.*pick_up_items` | pick_up_can, pick_up_cloth, pick_up_matchb... |
 | pick_up_materials | 65 | `ambient.*pick_up_materials` | pick_up_dry_wood_stick, pick_up_meat, pick... |
+| water_sound_fx_pack_vol | 188 | `ambient.*water_sound_fx_pack_vol` | ambiences, bath_tap, big_rock, big_splash,... |
 | weapons | 27 | `ambient.*weapons` | attack_metal_spear, attack_wood_spear, bow... |
 
 ## bgm
@@ -54,17 +57,25 @@
 | 语义 | # | grep | 子关键词 |
 |------|---|------|----------|
 | bubblegum_rt | 5 | `bgm.*bubblegum_rt` | casual_bubblegum, casual_bubblegum_cut, ca... |
+| chiptune_music_pack_vol | 10 | `bgm.*chiptune_music_pack_vol` | building_blocks_rt, chiptune_vol8_building... |
 | dance_class_rt | 5 | `bgm.*dance_class_rt` | casual_dance_class, casual_dance_class_cut... |
+| electronic_music_pack_vol | 10 | `bgm.*electronic_music_pack_vol` | ask_me_rt, boogie_bob_rt, daisy_wonderland... |
+| epic_music_pack_vol | 10 | `bgm.*epic_music_pack_vol` | are_you_there_rt, before_mankind_rt, compa... |
 | ethereal | 50 | `bgm.*ethereal` | cloud_cathedral_rt, enigmatic_badger_rt, e... |
 | fantasy | 200 | `bgm.*fantasy` | a_witch_rt, above_rt, black_doves_rt, cabi... |
 | field_day_rt | 5 | `bgm.*field_day_rt` | casual_field_day, casual_field_day_cut, ca... |
 | funk | 50 | `bgm.*funk` | big_shot_rt, dream_machine_rt, funk_big_sh... |
+| heroes_music_pack_vol | 10 | `bgm.*heroes_music_pack_vol` | a_new_dawn_rt, alpha_rt, dauntless_rt, day... |
+| horror_music_pack_vol | 10 | `bgm.*horror_music_pack_vol` | creepy_dolls_rt, fire_lighters_rt, fleetin... |
+| japanese_music_pack_vol | 10 | `bgm.*japanese_music_pack_vol` | an_oath_rt, edge_of_honor_rt, end_of_the_w... |
 | lizards_rt | 5 | `bgm.*lizards_rt` | casual_lizards, casual_lizards_cut, casual... |
 | observatory_rt | 5 | `bgm.*observatory_rt` | casual_observatory, casual_observatory_cut... |
+| pirate_music_pack_vol | 10 | `bgm.*pirate_music_pack_vol` | a_pirate_wedding_rt, bar_dance_rt, bottom_... |
 | pony_ride_rt | 5 | `bgm.*pony_ride_rt` | casual_pony_ride, casual_pony_ride_cut, ca... |
 | shopping_rt | 5 | `bgm.*shopping_rt` | casual_shopping, casual_shopping_cut, casu... |
 | sunset_rt | 5 | `bgm.*sunset_rt` | casual_sunset, casual_sunset_cut, casual_s... |
 | tiki_party_rt | 5 | `bgm.*tiki_party_rt` | casual_tiki_party, casual_tiki_party_cut, ... |
+| villains_music_pack_vol | 10 | `bgm.*villains_music_pack_vol` | dark_lord_rt, dark_manifesto_rt, double_ag... |
 | workshop_rt | 5 | `bgm.*workshop_rt` | casual_workshop, casual_workshop_cut, casu... |
 
 ## card
@@ -107,8 +118,10 @@
 | break_bone | 48 | `combat.*break_bone` | gorebone_break_bone |
 | cloth_whoosh | 23 | `combat.*cloth_whoosh` | whsh_cloth_whoosh |
 | distortion_break_bone | 9 | `combat.*distortion_break_bone` | gorebone_distortion_break_bone |
+| explosives_sound_fx_pack | 164 | `combat.*explosives_sound_fx_pack` | air_bomb, armageddon_strike, artillery_str... |
 | grab_body_cloth | 20 | `combat.*grab_body_cloth` | fghtgrab_grab_body_clothes |
 | gun | 27 | `combat.*gun` | reload, sfx_gun_generic_a_shoot, sfx_gun_g... |
+| guns_sound_fx_pack | 222 | `combat.*guns_sound_fx_pack` | 12ga_pump_shotgun, 12ga_pump_shotgun_dry_t... |
 | heavy_axe | 96 | `combat.*heavy_axe` | equip_heavy_axe, goreblood_lethal_blood, g... |
 | katana | 193 | `combat.*katana` | double_katana_whoosh, dsgnwhsh_double_kata... |
 | kick_punch | 6 | `combat.*kick_punch` | sfx_fight_kick_swoosh, sfx_fight_punch_swoosh |
@@ -340,6 +353,12 @@
 | wind_arrow_whoosh | 1 | `fantasy.*wind_arrow_whoosh` |  |
 | wind_bow_buff | 1 | `fantasy.*wind_bow_buff` |  |
 | wind_sword_whoosh | 3 | `fantasy.*wind_sword_whoosh` |  |
+
+## foley
+
+| 语义 | # | grep | 子关键词 |
+|------|---|------|----------|
+| analogue_gear_sound_fx_pack_vol | 197 | `foley.*analogue_gear_sound_fx_pack_vol` | audio_devices, cables_plugging, cables_unp... |
 
 ## magic
 
@@ -617,6 +636,12 @@
 | tiny_whoosh | 3 | `puzzle.*tiny_whoosh` |  |
 | treasure_chest | 7 | `puzzle.*treasure_chest` |  |
 
+## retro
+
+| 语义 | # | grep | 子关键词 |
+|------|---|------|----------|
+| retro_gaming_sound_fx_pack_vol | 165 | `retro.*retro_gaming_sound_fx_pack_vol` | 16_bit, acid_spit, bad_button, boxing, buz... |
+
 ## status
 
 | 语义 | # | grep | 子关键词 |
@@ -675,8 +700,10 @@
 | ambiences | 6 | `system.*ambiences` | lava_level, spooky_ambience, water_level |
 | buttons | 26 | `system.*buttons` | activations, bouncy_select, clicks, cowbel... |
 | celebrate | 20 | `system.*celebrate` | applause, bomb, firework, magical_confetti... |
+| computers_machinery_sound_fx_pac... | 177 | `system.*computers_machinery_sound_fx_pack_vol` | 3d_printing, acid_sparkles, automatic_cros... |
 | interactions | 43 | `system.*interactions` | bow, casual_enemy_damage, casual_glass, ca... |
 | misc | 23 | `system.*misc` | futuristic_siren, gatcha_even_speed, gatch... |
+| success_and_failure_sound_fx_pac... | 150 | `system.*success_and_failure_sound_fx_pack_vol` | access_denied, ambiguous, ambiguous_thunk_... |
 | text | 4 | `system.*text` | text_sprawl_high_and_simple, text_sprawl_l... |
 | vocalizations | 20 | `system.*vocalizations` | ah_ha, ahhh, chuckle, curiosities, evil_la... |
 

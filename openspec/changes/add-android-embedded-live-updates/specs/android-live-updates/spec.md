@@ -50,20 +50,21 @@
 
 ### Requirement: OTA 发布流水线必须支持自动化与正式门禁
 
-系统 SHALL 提供自动化 OTA 发布流水线，并区分非生产自动发布与正式 channel 的受保护发布。
+系统 SHALL 提供自动化 Android 发布流水线，使主线 push 可以直接产出正式版本，同时保留按 channel 手动发布 OTA 的能力。
 
-#### Scenario: main 自动发布到非生产 channel
-- **GIVEN** 仓库已配置 OTA 自动发布工作流
+#### Scenario: main push 自动发布正式版本
+- **GIVEN** 仓库已配置 Android 自动发布工作流
 - **AND** 开发者向 `main` 分支合入会影响 Android H5 bundle 的改动
-- **WHEN** GitHub Actions 自动执行 OTA 发布
-- **THEN** 系统 MUST 仅发布到非生产 channel
-- **AND** 不得默认直接覆盖 `stable` 等正式 channel 的 `latest.json`
+- **WHEN** GitHub Actions 自动执行 Android 发版
+- **THEN** 系统 MUST 发布 `stable` OTA 与 `stable` native update
+- **AND** 发布成功后 MUST 自动把仓库版本号 bump 到下一个 patch 版本
+- **AND** 版本回写提交 MUST 带显式跳过标记，避免触发无限发版循环
 
-#### Scenario: stable 发布必须手动批准
+#### Scenario: 手动 OTA 仍可独立选择 channel
 - **GIVEN** 发布者要把 Android OTA 发布到 `stable`
 - **WHEN** 发布者触发正式 OTA 工作流
 - **THEN** 系统 MUST 要求显式指定正式 channel
-- **AND** MUST 经过 GitHub Environment 或等价审批门禁后才能执行
+- **AND** MUST 支持 `stable` / `gray` / `edge` 等 channel 的单独预演或发布
 
 ### Requirement: 强制 OTA 必须提供阻塞式更新反馈
 

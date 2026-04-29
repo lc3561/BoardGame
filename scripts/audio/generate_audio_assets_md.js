@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 
 const DEFAULT_SOURCE_DIR = path.resolve('D:/gongzuo/web/BordGame/BordGameAsset/SoundEffect/_source_zips');
-const DEFAULT_TARGET_FILE = path.resolve('docs/audio/common-audio-assets.md');
+const DEFAULT_TARGET_FILE = path.resolve('D:/gongzuo/web/BordGame/public/audio_assets.md');
 const DEFAULT_EXTS = ['.wav', '.mp3', '.ogg', '.flac'];
 
 function parseArgs(argv) {

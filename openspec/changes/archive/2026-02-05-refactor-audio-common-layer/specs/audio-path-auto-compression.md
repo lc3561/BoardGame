@@ -333,7 +333,7 @@ export function getOptimizedAudioUrl(src: string, basePath?: string): string {
 
 ## 参考资料
 
-- [图片路径修复证据](../../../evidence/image-path-fix.md)
+- [图片路径修复证据](../../../evidence/dicethrone/image-path-fix.md)
 - [AssetLoader 实现](../../../src/core/AssetLoader.ts)
 - [AudioManager 实现](../../../src/lib/audio/AudioManager.ts)
 - [AGENTS.md 资源规范](../../../AGENTS.md#图片资源与使用规范)

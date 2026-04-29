@@ -51,7 +51,10 @@ import { SAMURAI_CARDS } from './factions/samurai';
 import { SAMURAI_POD_CARDS } from './factions/samurai_pod';
 import { VIKINGS_CARDS } from './factions/vikings';
 import { VIKINGS_POD_CARDS } from './factions/vikings_pod';
-import i18n from '../../../lib/i18n';
+import { MERMAIDS_CARDS } from './factions/mermaids';
+import { SKELETONS_CARDS } from './factions/skeletons';
+import { WORLD_CHAMPS_CARDS } from './factions/world_champs';
+import { FAIRIES_CARDS } from './factions/fairies';
 
 // ============================================================================
 // 注册表
@@ -173,6 +176,10 @@ registerCards(SAMURAI_CARDS);
 registerCards(SAMURAI_POD_CARDS);
 registerCards(VIKINGS_CARDS);
 registerCards(VIKINGS_POD_CARDS);
+registerCards(MERMAIDS_CARDS);
+registerCards(SKELETONS_CARDS);
+registerCards(WORLD_CHAMPS_CARDS);
+registerCards(FAIRIES_CARDS);
 // POD 版本阵营（最新英文 POD 版本）
 registerCards(NINJA_POD_CARDS);
 registerCards(TITAN_CARD_DEFS);
@@ -443,7 +450,7 @@ export const BASE_CARDS_PRETTY_PRETTY: BaseCardDef[] = [
     {
         id: 'base_enchanted_glade',
         name: '迷人峡谷',
-        nameEn: 'Enchanted Glade',
+        nameEn: 'Enchanted Glen',
         breakpoint: 20,
         vpAwards: [4, 2, 1],
         faction: 'fairies',
@@ -452,7 +459,7 @@ export const BASE_CARDS_PRETTY_PRETTY: BaseCardDef[] = [
     {
         id: 'base_fairy_ring',
         name: '仙灵圈',
-        nameEn: 'Fairy Ring',
+        nameEn: 'Fairy Circle',
         breakpoint: 26,
         vpAwards: [4, 3, 2],
         faction: 'fairies',
@@ -769,6 +776,67 @@ export const BASE_CARDS_MONSTER_SMASH: BaseCardDef[] = [
     },
 ];
 registerBases(BASE_CARDS_MONSTER_SMASH);
+
+// ============================================================================
+// 扩展基地 (10th Anniversary - wangling_base)
+// ============================================================================
+export const BASE_CARDS_10TH_ANNIVERSARY: BaseCardDef[] = [
+    {
+        id: 'base_mermaid_pool',
+        name: '人鱼水池',
+        nameEn: 'Mermaid Pool',
+        breakpoint: 23,
+        vpAwards: [4, 2, 1],
+        faction: SMASHUP_FACTION_IDS.MERMAIDS,
+        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.BASE6, index: 1 },
+    },
+    {
+        id: 'base_mermaid_reef',
+        name: '人鱼暗礁',
+        nameEn: 'Mermaid Reef',
+        breakpoint: 17,
+        vpAwards: [3, 1, 1],
+        faction: SMASHUP_FACTION_IDS.MERMAIDS,
+        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.BASE6, index: 0 },
+    },
+    {
+        id: 'base_boneyard',
+        name: '埋骨地',
+        nameEn: 'Boneyard',
+        breakpoint: 22,
+        vpAwards: [4, 2, 1],
+        faction: SMASHUP_FACTION_IDS.SKELETONS,
+        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.BASE6, index: 2 },
+    },
+    {
+        id: 'base_ossuary',
+        name: '藏骨堂',
+        nameEn: 'Ossuary',
+        breakpoint: 20,
+        vpAwards: [3, 2, 1],
+        faction: SMASHUP_FACTION_IDS.SKELETONS,
+        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.BASE6, index: 3 },
+    },
+    {
+        id: 'base_arena',
+        name: '竞技场',
+        nameEn: 'Arena',
+        breakpoint: 23,
+        vpAwards: [4, 3, 1],
+        faction: SMASHUP_FACTION_IDS.WORLD_CHAMPS,
+        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.BASE6, index: 4 },
+    },
+    {
+        id: 'base_hall_of_fame',
+        name: '名人堂',
+        nameEn: 'Hall of Fame',
+        breakpoint: 20,
+        vpAwards: [4, 2, 1],
+        faction: SMASHUP_FACTION_IDS.WORLD_CHAMPS,
+        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.BASE6, index: 5 },
+    },
+];
+registerBases(BASE_CARDS_10TH_ANNIVERSARY);
 registerPodBaseSkeletons();
 
 /**
@@ -1060,13 +1128,13 @@ const POD_BASE_OVERRIDES_EXTENDED: BaseCardDef[] = [
 
     // Miskatonic University POD
     buildPodBaseOverrideFromRegistry('base_miskatonic_university_base_pod', {
-        nameEn: 'Arkham University',
+        nameEn: 'Miskatonic University',
         breakpoint: 24,
         vpAwards: [4, 3, 2],
         faction: SMASHUP_FACTION_IDS.MISKATONIC_UNIVERSITY_POD,
     }),
     buildPodBaseOverrideFromRegistry('base_the_asylum_pod', {
-        nameEn: 'Asylum',
+        nameEn: 'The Asylum',
         breakpoint: 16,
         vpAwards: [3, 1, 1],
         faction: SMASHUP_FACTION_IDS.MISKATONIC_UNIVERSITY_POD,
@@ -1267,7 +1335,7 @@ function getBaseDefIdsForFactionsLegacy(factionIds: string[]): string[] {
 
 
 /** 查找卡牌定义 */
-/** 鏍规嵁鎵€閫夋淳绯昏幏鍙栧熀鍦板畾涔?ID锛堝悓鍙樹綋琛ュ厖锛欿OD 鍙ˉ POD锛屽熀纭€鍙ˉ鍩虹锛?*/
+/** 根据所选派系获取基地定义 ID（同变体补充：POD 只补 POD，基础只补基础） */
 export function getBaseDefIdsForFactions(factionIds: string[]): string[] {
     const selectedFactionIds = [...new Set(factionIds)];
     const selectedOriginalFactions = new Set(
@@ -1318,6 +1386,10 @@ export function getCardDef(defId: string): CardDef | undefined {
     return _cardRegistry.get(defId);
 }
 
+export function getCardDefsByFaction(factionId: string): CardDef[] {
+    return Array.from(_cardRegistry.values()).filter((def) => def.faction === factionId);
+}
+
 /** 查找随从卡定义 */
 export function getMinionDef(defId: string): MinionCardDef | undefined {
     const def = _cardRegistry.get(defId);
@@ -1350,17 +1422,13 @@ export function getBaseDef(defId: string): BaseCardDef | undefined {
     return _baseRegistry.get(defId);
 }
 
-function resolveLocaleValue(t: (key: string) => string, keys: string[]): string | undefined {
-    for (const key of keys) {
-        void i18n.exists(key, { ns: 'game-smashup' });
-        const resolved = t(key);
-        if (resolved && resolved !== key) return resolved;
-    }
-    return undefined;
-}
-
 function getPodFallbackKeyId(defId: string): string | undefined {
     return defId.endsWith('_pod') ? defId.replace(/_pod$/, '') : undefined;
+}
+
+function translateRuntimeKey(t: (key: string) => string, key: string): string {
+    const runtimeKey = { value: key };
+    return t(runtimeKey.value);
 }
 
 /**
@@ -1373,26 +1441,24 @@ function getPodFallbackKeyId(defId: string): string | undefined {
 export function resolveCardName(def: CardDef | BaseCardDef | undefined, t: (key: string) => string): string {
     if (!def) return '';
     // 1) 优先尝试完整 ID（POD 版应优先命中 cards.xxx_pod.name）
-    const primaryKey = `cards.${def.id}.name`;
-    void i18n.exists(primaryKey, { ns: 'game-smashup' });
-    const resolvedPrimary = t(primaryKey);
-    if (resolvedPrimary && resolvedPrimary !== primaryKey) return resolvedPrimary;
+    const resolvedPrimary = t(`cards.${def.id}.name`);
+    if (resolvedPrimary && resolvedPrimary !== `cards.${def.id}.name`) return resolvedPrimary;
 
     // 2) 若未命中且是 POD 版，回退到基础版本 cards.xxx.name
     const fallbackLocaleKeyId = getPodFallbackKeyId(def.id);
     if (fallbackLocaleKeyId) {
-        const fallbackKey = `cards.${fallbackLocaleKeyId}.name`;
-        void i18n.exists(fallbackKey, { ns: 'game-smashup' });
-        const resolvedFallback = t(fallbackKey);
-        if (resolvedFallback && resolvedFallback !== fallbackKey) return resolvedFallback;
+        const resolvedFallback = t(`cards.${fallbackLocaleKeyId}.name`);
+        if (resolvedFallback && resolvedFallback !== `cards.${fallbackLocaleKeyId}.name`) return resolvedFallback;
     }
 
     // 3) 若 def.name 已是 i18n key，则继续尝试；否则用 cards.<baseId>.name
     const baseId = def.id.replace(/_pod$/, '');
-    const key = def.name.startsWith('cards.') ? def.name : `cards.${baseId}.name`;
-    void i18n.exists(key, { ns: 'game-smashup' });
-    const resolved = t(key);
-    return (resolved && resolved !== key) ? resolved : def.name;
+    if (def.name.startsWith('cards.')) {
+        const resolved = translateRuntimeKey(t, def.name);
+        return (resolved && resolved !== def.name) ? resolved : def.name;
+    }
+    const resolved = t(`cards.${baseId}.name`);
+    return (resolved && resolved !== `cards.${baseId}.name`) ? resolved : def.name;
 }
 
 /**
@@ -1404,36 +1470,30 @@ export function resolveCardName(def: CardDef | BaseCardDef | undefined, t: (key:
  */
 export function resolveCardText(def: CardDef | BaseCardDef | undefined, t: (key: string) => string): string {
     if (!def) return '';
-    const textField = ('type' in def && (def.type === 'action' || def.type === 'titan')) ? 'effectText' : 'abilityText';
-    const localeKeys = [`cards.${def.id}.${textField}`];
     const fallbackLocaleKeyId = getPodFallbackKeyId(def.id);
-    if (fallbackLocaleKeyId) {
-        localeKeys.push(`cards.${fallbackLocaleKeyId}.${textField}`);
+    const usesEffectText = 'type' in def && (def.type === 'action' || def.type === 'titan');
+
+    if (usesEffectText) {
+        const resolvedPrimary = t(`cards.${def.id}.effectText`);
+        if (resolvedPrimary && resolvedPrimary !== `cards.${def.id}.effectText`) return resolvedPrimary;
+
+        if (fallbackLocaleKeyId) {
+            const resolvedFallback = t(`cards.${fallbackLocaleKeyId}.effectText`);
+            if (resolvedFallback && resolvedFallback !== `cards.${fallbackLocaleKeyId}.effectText`) return resolvedFallback;
+        }
+    } else {
+        const resolvedPrimary = t(`cards.${def.id}.abilityText`);
+        if (resolvedPrimary && resolvedPrimary !== `cards.${def.id}.abilityText`) return resolvedPrimary;
+
+        if (fallbackLocaleKeyId) {
+            const resolvedFallback = t(`cards.${fallbackLocaleKeyId}.abilityText`);
+            if (resolvedFallback && resolvedFallback !== `cards.${fallbackLocaleKeyId}.abilityText`) return resolvedFallback;
+        }
     }
-
-    const localeValue = resolveLocaleValue(t, localeKeys);
-    if (localeValue) return localeValue;
-    // 随从用 abilityText，行动卡用 effectText，基地用 abilityText
-    const field = ('type' in def && (def.type === 'action' || def.type === 'titan')) ? 'effectText' : 'abilityText';
-
-    // 1. 优先尝试完整 ID (如果是 POD 版，这将匹配 cards.xxx_pod.xxxText)
-    const podKey = `cards.${def.id}.${field}`;
-    void i18n.exists(podKey, { ns: 'game-smashup' });
-    const resolvedPod = t(podKey);
-    if (resolvedPod && resolvedPod !== podKey) return resolvedPod;
-
-    // 2. 如果未命中，且 ID 含有 _pod，尝试去掉后缀的基础版本
-    const keyId = def.id.replace(/_pod$/, '');
-    const key = `cards.${keyId}.${field}`;
-    void i18n.exists(key, { ns: 'game-smashup' });
-    const resolved = t(key);
-
-    // 如果找到了翻译，返回翻译
-    if (resolved && resolved !== key) return resolved;
 
     // 未命中则查找原始对象中的属性 fallback
     // @ts-ignore
-    const fallbackAttr = def[field];
+    const fallbackAttr = def[usesEffectText ? 'effectText' : 'abilityText'];
     return typeof fallbackAttr === 'string' ? fallbackAttr : '';
 }
 

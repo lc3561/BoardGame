@@ -1,10 +1,13 @@
 package top.easyboardgame.app;
 
 import android.content.pm.ActivityInfo;
+import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Log;
 import android.view.Window;
+import android.view.WindowManager;
 import android.webkit.WebView;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -22,14 +25,21 @@ import java.util.List;
 import java.util.Map;
 import org.json.JSONException;
 import org.json.JSONObject;
+import top.easyboardgame.app.AppUpdatePlugin;
+import top.easyboardgame.app.GamePackagePlugin;
 
 public class MainActivity extends BridgeActivity {
 
     private static final String ORIENTATION_MAP_ASSET = "game-orientation-map.json";
+    private static final String ANDROID_BUILD_META_ASSET = "public/android-build-meta.json";
+    private static final String TAG = "MainActivity";
     private static final long URL_POLL_INTERVAL_MS = 400L;
     private static final String PLAY_SEGMENT = "play";
     private static final String ORIENTATION_LANDSCAPE = "landscape";
     private static final String ORIENTATION_PORTRAIT = "portrait";
+    private static final String CAPGO_NEXT_VERSION_PREF = "nextVersion";
+    private static final String CAPGO_FALLBACK_VERSION_PREF = "pastVersion";
+    private static final String CAPGO_BUILTIN_BUNDLE_ID = "builtin";
     private static final String APP_HIDDEN_EVENT_SCRIPT =
         "(function(){try{" +
         "window.dispatchEvent(new CustomEvent('bg-shell-app-hidden'));" +
@@ -55,15 +65,22 @@ public class MainActivity extends BridgeActivity {
     };
 
     private int lastRequestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
-    private boolean lastIsGamePage = false;
+    private boolean lastNeedsImmersiveWindow = false;
     private boolean orientationPolling = false;
+    private boolean homeV2DraftEnabledByBuild = false;
+    private boolean forceBuiltinBundleByBuild = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         WebView.setWebContentsDebuggingEnabled(true);
         gameOrientations.putAll(loadOrientationMap());
-        registerPlugin(AppUpdatePlugin.class);
+        homeV2DraftEnabledByBuild = loadHomeV2DraftFlag();
+        forceBuiltinBundleByBuild = loadForceBuiltinBundleFlag();
+        if (forceBuiltinBundleByBuild) {
+            forceBuiltinCapgoBundleSelection();
+        }
         registerPlugin(GamePackagePlugin.class);
+        registerPlugin(AppUpdatePlugin.class);
         bridgeBuilder.addWebViewListener(
             new WebViewListener() {
                 @Override
@@ -110,7 +127,7 @@ public class MainActivity extends BridgeActivity {
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus) {
-            applyWindowMode(lastIsGamePage);
+            applyWindowMode(lastNeedsImmersiveWindow);
         }
     }
 
@@ -140,22 +157,32 @@ public class MainActivity extends BridgeActivity {
 
     private void syncOrientation(String url) {
         final boolean isGamePage = extractGameId(url) != null;
+        final boolean isHomeV2Page = isHomeV2Route(url);
+        final boolean needsImmersiveWindow = isGamePage || isHomeV2Page;
         final int requestedOrientation = resolveRequestedOrientation(url);
-        if (requestedOrientation == lastRequestedOrientation && isGamePage == lastIsGamePage) {
+        if (requestedOrientation == lastRequestedOrientation && needsImmersiveWindow == lastNeedsImmersiveWindow) {
             return;
         }
         lastRequestedOrientation = requestedOrientation;
-        lastIsGamePage = isGamePage;
+        lastNeedsImmersiveWindow = needsImmersiveWindow;
         runOnUiThread(() -> {
             setRequestedOrientation(requestedOrientation);
-            applyWindowMode(isGamePage);
+            applyWindowMode(needsImmersiveWindow);
         });
     }
 
     private int resolveRequestedOrientation(String url) {
+        if (isHomeV2Route(url)) {
+            return ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE;
+        }
+
+        if (isHomeEntryRoute(url)) {
+            return ActivityInfo.SCREEN_ORIENTATION_PORTRAIT;
+        }
+
         String gameId = extractGameId(url);
         if (gameId == null) {
-            return ActivityInfo.SCREEN_ORIENTATION_PORTRAIT;
+            return ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
         }
 
         String orientation = gameOrientations.getOrDefault(gameId, ORIENTATION_PORTRAIT);
@@ -163,6 +190,42 @@ public class MainActivity extends BridgeActivity {
             return ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE;
         }
         return ActivityInfo.SCREEN_ORIENTATION_PORTRAIT;
+    }
+
+    private boolean isHomeV2Route(String url) {
+        if (url == null || url.isEmpty()) {
+            return false;
+        }
+
+        android.net.Uri uri = android.net.Uri.parse(url);
+        if (!isHomeEntryRoute(uri)) {
+            return false;
+        }
+
+        String explicitFlag = uri.getQueryParameter("homeV2Draft");
+        if ("1".equals(explicitFlag)) {
+            return true;
+        }
+
+        return homeV2DraftEnabledByBuild;
+    }
+
+    private boolean isHomeEntryRoute(String url) {
+        if (url == null || url.isEmpty()) {
+            return false;
+        }
+
+        return isHomeEntryRoute(android.net.Uri.parse(url));
+    }
+
+    private boolean isHomeEntryRoute(android.net.Uri uri) {
+        if (uri == null) {
+            return false;
+        }
+
+        List<String> segments = uri.getPathSegments();
+        boolean isRootPath = segments.isEmpty() || (segments.size() == 1 && "index.html".equals(segments.get(0)));
+        return isRootPath;
     }
 
     private String extractGameId(String url) {
@@ -196,6 +259,43 @@ public class MainActivity extends BridgeActivity {
         return map;
     }
 
+    private boolean loadHomeV2DraftFlag() {
+        try (InputStream inputStream = getAssets().open(ANDROID_BUILD_META_ASSET)) {
+            String raw = readAll(inputStream);
+            JSONObject json = new JSONObject(raw);
+            return json.optBoolean("homeV2DraftEnabled", false);
+        } catch (IOException | JSONException ignored) {
+            return false;
+        }
+    }
+
+    private boolean loadForceBuiltinBundleFlag() {
+        try (InputStream inputStream = getAssets().open(ANDROID_BUILD_META_ASSET)) {
+            String raw = readAll(inputStream);
+            JSONObject json = new JSONObject(raw);
+            return json.optBoolean("forceBuiltinBundle", false);
+        } catch (IOException | JSONException ignored) {
+            return false;
+        }
+    }
+
+    private void forceBuiltinCapgoBundleSelection() {
+        try {
+            SharedPreferences prefs = getSharedPreferences(
+                com.getcapacitor.plugin.WebView.WEBVIEW_PREFS_NAME,
+                MODE_PRIVATE
+            );
+            prefs.edit()
+                .putString(com.getcapacitor.plugin.WebView.CAP_SERVER_PATH, "public")
+                .putString(CAPGO_FALLBACK_VERSION_PREF, CAPGO_BUILTIN_BUNDLE_ID)
+                .remove(CAPGO_NEXT_VERSION_PREF)
+                .apply();
+            Log.i(TAG, "forceBuiltinCapgoBundleSelection applied");
+        } catch (Exception error) {
+            Log.w(TAG, "forceBuiltinCapgoBundleSelection failed", error);
+        }
+    }
+
     private String readAll(InputStream inputStream) throws IOException {
         StringBuilder builder = new StringBuilder();
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
@@ -219,6 +319,12 @@ public class MainActivity extends BridgeActivity {
         }
 
         WindowCompat.setDecorFitsSystemWindows(window, !isGamePage);
+        window.setSoftInputMode(
+            WindowManager.LayoutParams.SOFT_INPUT_STATE_UNSPECIFIED
+                | (isGamePage
+                    ? WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
+                    : WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        );
         if (isGamePage) {
             // 游戏页必须进入真正的沉浸式全屏。
             // 之前只隐藏了 status bar，底部 navigation/gesture bar 仍会占用 inset，

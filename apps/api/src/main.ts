@@ -27,6 +27,7 @@ type TestMongoServerHandle = {
 
 const LOCAL_TEST_MONGO_URI = 'mongodb://127.0.0.1:27017';
 const TEST_MONGO_PROBE_TIMEOUT_MS = 1500;
+const TEST_MONGO_START_RETRIES = 3;
 
 let testMongoServer: TestMongoServerHandle | null = null;
 
@@ -35,11 +36,42 @@ const shouldPrepareTestMongo = () => process.env.NODE_ENV === 'test';
 const configureMongoMemoryServerEnv = () => {
     process.env.MONGOMS_PREFER_GLOBAL_PATH ??= 'true';
     process.env.MONGOMS_DOWNLOAD_DIR ??= path.join(os.homedir(), '.cache', 'mongodb-binaries');
-    process.env.MONGOMS_EXP_NET0LISTEN ??= 'true';
+    process.env.MONGOMS_EXP_NET0LISTEN ??= 'false';
 
     if (process.env.TEST_MONGOD_PATH && !process.env.MONGOMS_SYSTEM_BINARY) {
         process.env.MONGOMS_SYSTEM_BINARY = process.env.TEST_MONGOD_PATH;
     }
+};
+
+const delay = async (ms: number) => {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+};
+
+const createLoopbackMongoMemoryServer = async (): Promise<TestMongoServerHandle> => {
+    configureMongoMemoryServerEnv();
+    const { MongoMemoryServer } = await import('mongodb-memory-server');
+
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= TEST_MONGO_START_RETRIES; attempt += 1) {
+        try {
+            return await MongoMemoryServer.create({
+                instance: {
+                    ip: '127.0.0.1',
+                    port: 0,
+                },
+            });
+        } catch (error) {
+            lastError = error;
+            const code = error instanceof Error && 'code' in error ? String(error.code) : '';
+            const isRetryable = code === 'EACCES' || code === 'EADDRINUSE' || code === 'EBUSY' || code === 'ETXTBSY';
+            if (!isRetryable || attempt === TEST_MONGO_START_RETRIES) {
+                throw error;
+            }
+            await delay(attempt * 1000);
+        }
+    }
+
+    throw lastError instanceof Error ? lastError : new Error('创建 MongoMemoryServer 失败');
 };
 
 const resolvePreferredTestMongoUri = async (): Promise<{ mongo: TestMongoServerHandle | null; mongoUri: string }> => {
@@ -65,9 +97,7 @@ const resolvePreferredTestMongoUri = async (): Promise<{ mongo: TestMongoServerH
         }
     }
 
-    configureMongoMemoryServerEnv();
-    const { MongoMemoryServer } = await import('mongodb-memory-server');
-    const mongo = await MongoMemoryServer.create();
+    const mongo = await createLoopbackMongoMemoryServer();
     return { mongo, mongoUri: mongo.getUri() };
 };
 
@@ -129,15 +159,18 @@ async function bootstrap() {
         : ['http://localhost', 'https://localhost', 'capacitor://localhost'];
     const allowedOrigins = new Set([...webOrigins, ...appWebOrigins]);
     const isDev = !process.env.WEB_ORIGINS;
+    const isAllowedRequestOrigin = (origin?: string) => {
+        if (!origin) return true;
+        if (isDev && (origin.includes('localhost') || origin.includes('127.0.0.1'))) {
+            return true;
+        }
+        return allowedOrigins.has(origin);
+    };
 
     const app = await NestFactory.create(AppModule, {
         cors: {
             origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-                if (!origin) return callback(null, true);
-                if (isDev && (origin.includes('localhost') || origin.includes('127.0.0.1'))) {
-                    return callback(null, true);
-                }
-                if (allowedOrigins.has(origin)) {
+                if (isAllowedRequestOrigin(origin)) {
                     return callback(null, true);
                 }
                 callback(new Error(`CORS: origin ${origin} not allowed`));
@@ -158,6 +191,29 @@ async function bootstrap() {
         process.env.GAME_SERVER_PROXY_TARGET
         || process.env.GAME_SERVER_URL
         || 'http://127.0.0.1:18000';
+
+    expressApp.use((req, res, next) => {
+        const requestOrigin = req.headers.origin;
+        if (isAllowedRequestOrigin(requestOrigin)) {
+            if (requestOrigin) {
+                res.setHeader('Access-Control-Allow-Origin', requestOrigin);
+                res.setHeader('Vary', 'Origin');
+            }
+            res.setHeader('Access-Control-Allow-Credentials', 'true');
+        }
+        res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+        res.setHeader(
+            'Access-Control-Allow-Headers',
+            req.headers['access-control-request-headers'] || 'Content-Type, Authorization',
+        );
+
+        if (req.method === 'OPTIONS') {
+            res.status(204).end();
+            return;
+        }
+
+        next();
+    });
 
     const gameProxy = createProxyMiddleware({
         target: gameServerTarget,

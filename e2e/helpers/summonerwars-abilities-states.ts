@@ -7,6 +7,7 @@
 
 import { createDeckByFactionId } from '../../src/games/summonerwars/config/factions';
 import { BOARD_COLS, BOARD_ROWS, HAND_SIZE } from '../../src/games/summonerwars/domain/helpers';
+import { generateInstanceId, resetInstanceCounter } from '../../src/games/summonerwars/domain/utils';
 import { cloneState } from './summonerwars';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 动态 JSON 状态结构
@@ -18,6 +19,7 @@ type CoreState = any;
 
 /** 根据阵营 ID 初始化完整的 SW 核心状态（棋盘 + 玩家） */
 export const initializeSummonerWarsCore = (coreState: CoreState, factions: Record<string, string>) => {
+  resetInstanceCounter();
   const next = cloneState(coreState);
   const board = Array.from({ length: BOARD_ROWS }, () =>
     Array.from({ length: BOARD_COLS }, () => ({})),
@@ -40,6 +42,7 @@ export const initializeSummonerWarsCore = (coreState: CoreState, factions: Recor
     player.summonerId = summonerCard.id;
     const summonerPos = toArrayCoord(deckData.summonerPosition);
     board[summonerPos.row][summonerPos.col].unit = {
+      instanceId: generateInstanceId(summonerCard.id),
       cardId: summonerCard.id,
       card: summonerCard,
       owner: pid,
@@ -64,6 +67,7 @@ export const initializeSummonerWarsCore = (coreState: CoreState, factions: Recor
       const unitCard = { ...startUnit.unit, id: `${startUnit.unit.id}-${pid}` };
       const unitPos = toArrayCoord(startUnit.position);
       board[unitPos.row][unitPos.col].unit = {
+        instanceId: generateInstanceId(unitCard.id),
         cardId: unitCard.id,
         card: unitCard,
         owner: pid,
@@ -126,30 +130,34 @@ const placeUnit = (board: CoreState[][], pos: { row: number; col: number }, unit
 };
 
 /** 创建单位数据 */
-const makeUnit = (overrides: Record<string, CoreState>) => ({
-  cardId: overrides.cardId ?? `test-${Date.now()}`,
-  card: {
-    id: overrides.cardId ?? 'test-unit',
-    name: overrides.name ?? '测试单位',
-    cardType: 'unit',
-    faction: overrides.faction ?? '堕落王国',
-    cost: overrides.cost ?? 1,
-    life: overrides.life ?? 2,
-    strength: overrides.strength ?? 1,
-    attackType: overrides.attackType ?? 'melee',
-    unitClass: overrides.unitClass ?? 'common',
-    abilities: overrides.abilities ?? [],
-    spriteIndex: overrides.spriteIndex ?? 0,
-    spriteAtlas: overrides.spriteAtlas ?? 'cards',
-  },
-  owner: overrides.owner ?? '0',
-  position: overrides.position ?? { row: 0, col: 0 },
-  damage: overrides.damage ?? 0,
-  boosts: overrides.boosts ?? 0,
-  charges: overrides.charges ?? 0,
-  hasMoved: overrides.hasMoved ?? false,
-  hasAttacked: overrides.hasAttacked ?? false,
-});
+const makeUnit = (overrides: Record<string, CoreState>) => {
+  const resolvedCardId = overrides.cardId ?? `test-${Date.now()}`;
+  return {
+    instanceId: overrides.instanceId ?? generateInstanceId(resolvedCardId),
+    cardId: resolvedCardId,
+    card: {
+      id: resolvedCardId,
+      name: overrides.name ?? '测试单位',
+      cardType: 'unit',
+      faction: overrides.faction ?? '堕落王国',
+      cost: overrides.cost ?? 1,
+      life: overrides.life ?? 2,
+      strength: overrides.strength ?? 1,
+      attackType: overrides.attackType ?? 'melee',
+      unitClass: overrides.unitClass ?? 'common',
+      abilities: overrides.abilities ?? [],
+      spriteIndex: overrides.spriteIndex ?? 0,
+      spriteAtlas: overrides.spriteAtlas ?? 'cards',
+    },
+    owner: overrides.owner ?? '0',
+    position: overrides.position ?? { row: 0, col: 0 },
+    damage: overrides.damage ?? 0,
+    boosts: overrides.boosts ?? 0,
+    charges: overrides.charges ?? 0,
+    hasMoved: overrides.hasMoved ?? false,
+    hasAttacked: overrides.hasAttacked ?? false,
+  };
+};
 
 /** 创建手牌单位卡 */
 const makeHandUnitCard = (id: string, name: string, overrides?: Record<string, CoreState>) => ({

@@ -43,11 +43,27 @@ const readCliFlag = (flagName: string): string | undefined => {
   return undefined
 }
 
+const debugAndroidAppIdSegments = new Set(['debug', 'dev', 'test', 'qa'])
+
+const isNonReleaseAndroidAppId = (appId: string) => (
+  appId
+    .split('.')
+    .some((segment) => debugAndroidAppIdSegments.has(segment.trim().toLowerCase()))
+)
+
 const createAndroidBuildMetaPlugin = (mode: string, backendUrl: string) => ({
   name: 'android-build-meta',
   apply: 'build' as const,
   generateBundle() {
     if (mode !== 'android') return
+
+    const appId = process.env.VITE_CAPACITOR_APP_ID?.trim() || process.env.CAPACITOR_APP_ID?.trim() || ''
+    const appName = process.env.CAPACITOR_APP_NAME?.trim() || ''
+    const forceBuiltinBundle = /^(1|true|yes|on)$/i.test(
+      process.env.VITE_ANDROID_FORCE_BUILTIN_BUNDLE?.trim()
+        || process.env.ANDROID_FORCE_BUILTIN_BUNDLE?.trim()
+        || '',
+    )
 
     this.emitFile({
       type: 'asset',
@@ -57,6 +73,10 @@ const createAndroidBuildMetaPlugin = (mode: string, backendUrl: string) => ({
           mode,
           backendUrl,
           builtAt: new Date().toISOString(),
+          appId,
+          appName,
+          shellType: appId && !isNonReleaseAndroidAppId(appId) ? 'release' : 'non-release',
+          forceBuiltinBundle,
         },
         null,
         2,
@@ -125,7 +145,7 @@ export default defineConfig(({ mode }) => {
   const cliHost = readCliFlag('host')
   const devPort = Number.isFinite(cliPort) && cliPort > 0
     ? cliPort
-    : Number(env.VITE_DEV_PORT) || 4173
+    : Number(env.VITE_DEV_PORT) || 4273
   const serverHost = cliHost || '0.0.0.0'
   const hmrHost = cliHost && cliHost !== '0.0.0.0' ? cliHost : 'localhost'
   const gameServerPort = Number(env.GAME_SERVER_PORT) || 18000
@@ -182,6 +202,9 @@ export default defineConfig(({ mode }) => {
     ],
     esbuild: forceInlineVite ? false : undefined,
     build: {
+      // Vite 默认会为产物计算 gzip/brotli 体积，在 Windows + 大 bundle 场景下可能触发 zlib “insufficient memory”。
+      // 这只影响日志展示，不影响产物本身；为稳定本地/门禁构建，这里禁用压缩体积报告。
+      reportCompressedSize: false,
       // 生产构建向下兼容到 Chrome 88+ 这档现代浏览器，确保旧一点的 WebView 也能正常进入并游玩。
       target: LEGACY_GAMEPLAY_BUILD_TARGETS,
       cssTarget: LEGACY_GAMEPLAY_BUILD_TARGETS,
@@ -344,6 +367,10 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
         },
         '/layout': {
+          target: `http://127.0.0.1:${apiServerPort}`,
+          changeOrigin: true,
+        },
+        '/devtools/ai-repo-workbench': {
           target: `http://127.0.0.1:${apiServerPort}`,
           changeOrigin: true,
         },

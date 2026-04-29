@@ -17,6 +17,15 @@ function resolvePort(value, fallback) {
   return Number.isFinite(port) && port > 0 ? port : fallback;
 }
 
+function normalizeScopeSegment(scope) {
+  const normalized = String(scope ?? 'default').trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+  return normalized || 'default';
+}
+
+function getScopedBundleRoot(runtimeScope) {
+  return path.join('temp', 'dev-bundles', 'e2e-single', normalizeScopeSegment(runtimeScope));
+}
+
 function createRuntimeLogWriter(logFile, logger) {
   if (!logFile) {
     return {
@@ -120,6 +129,7 @@ export async function startSingleWorkerRuntime(options = {}) {
     useTsLoaderRuntime,
     useTsxRuntime,
   } = context;
+  const scopedBundleRoot = getScopedBundleRoot(runtimeScope);
 
   await assertChildProcessSupport('single worker E2E 启动', {
     probeEsbuild: !(usePrebuiltRuntime || useTsLoaderRuntime),
@@ -207,7 +217,7 @@ export async function startSingleWorkerRuntime(options = {}) {
         : spawnBundleRunner({
           label: 'e2e-game-single',
           entry: 'server.ts',
-          outfile: path.join('temp', 'dev-bundles', 'e2e-single', 'game', 'server.mjs'),
+          outfile: path.join(scopedBundleRoot, 'game', 'server.mjs'),
           tsconfig: 'tsconfig.server.json',
           watch: bundleWatchEnabled,
           env: gameServerEnv,
@@ -241,7 +251,7 @@ export async function startSingleWorkerRuntime(options = {}) {
         : spawnBundleRunner({
           label: 'e2e-api-single',
           entry: 'apps/api/src/main.ts',
-          outfile: path.join('temp', 'dev-bundles', 'e2e-single', 'api', 'main.mjs'),
+          outfile: path.join(scopedBundleRoot, 'api', 'main.mjs'),
           tsconfig: 'apps/api/tsconfig.json',
           watch: bundleWatchEnabled,
           env: apiServerEnv,

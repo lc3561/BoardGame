@@ -2,21 +2,37 @@ import { createHash } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { ESLint } from 'eslint';
 import { acquireGlobalHeavyBudget } from './global-heavy-budget.mjs';
 import { acquireTaskGuard } from './heavy-task-guard.mjs';
+import { runAssetPipelineGuard } from './asset-pipeline-guard.mjs';
+import { runDicethroneDiceAtlasGuard } from './dicethrone-dice-atlas-guard.mjs';
+import { runAtlasContractGuard } from './atlas-contract-guard.mjs';
 
 const repoRoot = process.cwd();
 const modeInput = (process.argv[2] || process.env.QUALITY_GATE_MODE || 'local').trim().toLowerCase();
-const mode = modeInput === 'prepush' ? 'pre-push' : modeInput;
+const mode = modeInput === 'prepush'
+  ? 'pre-push'
+  : (modeInput === 'precommit' ? 'pre-commit' : modeInput);
 const isPrePushMode = mode === 'pre-push';
+const isPreCommitMode = mode === 'pre-commit';
+const skipLintInQualityGate = process.env.QUALITY_GATE_SKIP_LINT === '1';
+const isDryRun = process.env.QUALITY_GATE_DRY_RUN === '1';
+const targetHeadRef = (process.env.QUALITY_GATE_HEAD || 'HEAD').trim() || 'HEAD';
 const CACHE_SCHEMA_VERSION = 2;
 
 // pre-push changed test runs touch a large cross-section of suites and can emit
 // huge log payloads. `threads` has been unstable on Windows here because worker
 // result serialization can fail with DataCloneError / OOM before assertions do.
 // `forks` is slower but materially more reliable for the local gate.
-const GAME_VITEST_ARGS = ['--config', 'vitest.config.core.ts', '--pool', 'forks', '--no-file-parallelism', '--maxWorkers', '1'];
-const FAST_VITEST_ARGS = ['--pool', 'forks', '--no-file-parallelism', '--maxWorkers', '1'];
+// 允许通过 QUALITY_GATE_VITEST_POOL / VITEST_POOL 覆盖默认 pool（仅支持 forks / threads）。
+const vitestPoolOverrideRaw = (process.env.QUALITY_GATE_VITEST_POOL || process.env.VITEST_POOL || '').trim().toLowerCase();
+const vitestPoolOverride = vitestPoolOverrideRaw === 'threads' || vitestPoolOverrideRaw === 'forks'
+  ? vitestPoolOverrideRaw
+  : '';
+const vitestPool = vitestPoolOverride || 'forks';
+const GAME_VITEST_ARGS = ['--config', 'vitest.config.core.ts', '--pool', vitestPool, '--no-file-parallelism', '--maxWorkers', '1'];
+const FAST_VITEST_ARGS = ['--pool', vitestPool, '--no-file-parallelism', '--maxWorkers', '1'];
 const KNOWN_GAME_IDS = new Set(['smashup', 'dicethrone', 'summonerwars', 'tictactoe', 'cardia']);
 const PRE_PUSH_CORE_TARGET_GROUPS = [
   {
@@ -29,6 +45,17 @@ const PRE_PUSH_CORE_TARGET_GROUPS = [
     reason: '核心源码改动，回归 components/pages 完整测试集',
     targets: ['src/components', 'src/pages'],
   },
+];
+const PRE_PUSH_GAME_SMOKE_TARGETS = {
+  smashup: ['src/games/smashup/__tests__/smashup.smoke.test.ts'],
+  dicethrone: ['src/games/dicethrone/__tests__/flow.test.ts'],
+  summonerwars: ['src/games/summonerwars/__tests__/flow.test.ts'],
+  tictactoe: ['src/games/tictactoe/__tests__/flow.test.ts'],
+  cardia: ['src/games/cardia/__tests__/smoke.test.ts'],
+};
+const ESLINT_WARNING_DELTA_IGNORE_PATTERNS = [
+  /^e2e\//,
+  /(^|\/)__tests__\//,
 ];
 const VITEST_SAFE_ENTRY = ['scripts/infra/vitest-cli-safe.mjs'];
 const VITEST_SHARDED_TARGETS = new Map([
@@ -92,6 +119,9 @@ const PRE_PUSH_CACHE_FILE = path.join(CACHE_DIR, 'pre-push.json');
 const COMMAND_CACHE_FILE = path.join(CACHE_DIR, 'command-results.json');
 const QUALITY_GATE_TYPECHECK_BUILD_INFO = path.join('temp', 'quality-gate-cache', 'typecheck.tsbuildinfo');
 const STABLE_VITEST_NODE_OPTIONS = '--max-old-space-size=8192';
+const STABLE_ESLINT_NODE_OPTIONS = '--max-old-space-size=4096';
+const ESLINT_CHUNK_LIMIT = 2;
+const CORE_VITEST_TARGETS = ['src/core', 'src/components', 'src/hooks', 'src/lib', 'src/shared', 'src/engine', 'src/pages'];
 
 function runGit(args, options = {}) {
   try {
@@ -111,6 +141,88 @@ function readGitFile(ref, file) {
   return runGit(['show', `${ref}:${file}`], { allowFailure: true });
 }
 
+function getMergeCommitParents(commit) {
+  const parents = runGit(['show', '-s', '--format=%P', commit], { allowFailure: true })
+    .split(/\s+/)
+    .filter(Boolean);
+  return parents.length === 2 ? parents : null;
+}
+
+function getIntersectingChangedFiles(parentA, parentB, commit) {
+  const changedA = new Set(
+    runGit(['diff', '--name-only', parentA, commit], { allowFailure: true })
+      .split(/\r?\n/)
+      .map((value) => value.trim())
+      .filter(Boolean),
+  );
+  const changedB = new Set(
+    runGit(['diff', '--name-only', parentB, commit], { allowFailure: true })
+      .split(/\r?\n/)
+      .map((value) => value.trim())
+      .filter(Boolean),
+  );
+  return [...changedA].filter((file) => changedB.has(file)).sort();
+}
+
+function getMergeCommitsInRange(baseRef, headRef) {
+  if (!baseRef || !headRef) return [];
+  const range = `${baseRef}..${headRef}`;
+  const output = runGit(['rev-list', '--merges', range], { allowFailure: true });
+  if (!output) return [];
+  return output.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
+}
+
+function hasMergeConflictEvidence(commit) {
+  const changedFiles = runGit(['show', '--pretty=format:', '--name-only', '--no-renames', commit], { allowFailure: true })
+    .split(/\r?\n/)
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return changedFiles.some((file) => file.startsWith('evidence/merge-conflict-') && file.endsWith('.md'));
+}
+
+function runMergeAuditStrict(commit) {
+  const result = spawnSync(process.execPath, ['scripts/verify/merge-conflict-audit.mjs', commit, '--fail-on-single-side'], {
+    cwd: repoRoot,
+    stdio: 'inherit',
+    shell: false,
+  });
+  if (result.error) {
+    console.error(`[changed-quality-gate] merge:audit 启动失败: ${result.error.message}`);
+    process.exit(1);
+  }
+  if (result.status !== 0) {
+    process.exit(result.status ?? 1);
+  }
+}
+
+function runMergeConflictGuards({ baseRef, headRef }) {
+  if (isPreCommitMode) return;
+  const mergeCommits = getMergeCommitsInRange(baseRef, headRef);
+  if (mergeCommits.length === 0) return;
+
+  console.log('\n[changed-quality-gate] Merge conflict guard');
+  console.log(`[changed-quality-gate] merge commits: ${mergeCommits.length}`);
+
+  for (const commit of mergeCommits) {
+    console.log(`[changed-quality-gate] 审计 merge commit: ${commit}`);
+    runMergeAuditStrict(commit);
+
+    const parents = getMergeCommitParents(commit);
+    if (!parents) continue;
+    const intersecting = getIntersectingChangedFiles(parents[0], parents[1], commit);
+    if (intersecting.length === 0) {
+      console.log('[changed-quality-gate] 未检测到双方同时改动文件，跳过冲突汇报强制。');
+      continue;
+    }
+
+    if (!hasMergeConflictEvidence(commit)) {
+      console.error(`[changed-quality-gate] merge commit ${commit} 缺少 evidence/merge-conflict-*.md 冲突汇报。`);
+      console.error('[changed-quality-gate] 请补充冲突汇报文档并重新提交。');
+      process.exit(1);
+    }
+  }
+}
+
 function normalizeFile(file) {
   return file.replace(/\\/g, '/').replace(/^\.?\//, '');
 }
@@ -121,6 +233,18 @@ function hasAny(files, predicate) {
 
 function dedupeValues(values) {
   return [...new Set(values)];
+}
+
+function chunkValues(values, size) {
+  const chunks = [];
+  for (let index = 0; index < values.length; index += size) {
+    chunks.push(values.slice(index, index + size));
+  }
+  return chunks;
+}
+
+function fileExistsInWorkspace(file) {
+  return existsSync(path.resolve(repoRoot, file));
 }
 
 function splitFilesForCommand(baseArgs, files, maxCommandLength = 7000) {
@@ -166,6 +290,35 @@ function isRunnableVitestTestFile(file) {
   return !/(\.property\.test\.|audit.*\.test\.|Audit.*\.test\.|debug.*\.test\.|Debug.*\.test\.)/.test(file);
 }
 
+function ensurePassWithNoTests(vitestArgs) {
+  return vitestArgs.includes('--passWithNoTests')
+    ? vitestArgs
+    : [...vitestArgs, '--passWithNoTests'];
+}
+
+function resolveRunnableVitestWorkspaceTarget(file) {
+  const normalized = normalizeFile(file);
+  const candidates = normalized.startsWith('e2e/src/')
+    ? [normalized.slice('e2e/'.length), normalized]
+    : [normalized];
+
+  for (const candidate of candidates) {
+    if (candidate.startsWith('e2e/src/')) continue;
+    if (!isRunnableVitestTestFile(candidate)) continue;
+    if (fileExistsInWorkspace(candidate)) return candidate;
+  }
+
+  return null;
+}
+
+function collectRunnableVitestWorkspaceTargets(files) {
+  return dedupeValues(
+    files
+      .map((file) => resolveRunnableVitestWorkspaceTarget(file))
+      .filter(Boolean),
+  );
+}
+
 function isDocOnly(file) {
   return file.endsWith('.md') || file.startsWith('evidence/');
 }
@@ -175,6 +328,10 @@ function isLintTarget(file) {
     && !file.startsWith('temp/')
     && !file.startsWith('dist/')
     && !file.startsWith('test-results/');
+}
+
+function isLintWarningDeltaIgnored(file) {
+  return ESLINT_WARNING_DELTA_IGNORE_PATTERNS.some((pattern) => pattern.test(file));
 }
 
 function isEncodingTarget(file) {
@@ -259,13 +416,105 @@ function resolveBaseRef() {
   throw new Error('[changed-quality-gate] 无法解析对比基线');
 }
 
+function resolveTargetHeadRef() {
+  const resolved = runGit(['rev-parse', '--verify', targetHeadRef], { allowFailure: true });
+  if (resolved) return resolved;
+  throw new Error(`[changed-quality-gate] 无法解析目标提交: ${targetHeadRef}`);
+}
+
 function resolveChangeContext() {
+  if (isPreCommitMode) {
+    const headSha = runGit(['rev-parse', '--verify', 'HEAD'], { allowFailure: true }) || 'HEAD';
+    const output = runGit(['diff', '--name-status', '--find-renames', '--diff-filter=ACMR', '--cached'], { allowFailure: true });
+    const { files, baselinePathByFile } = parseDiffNameStatus(output);
+    return {
+      baseRef: 'HEAD',
+      mergeBase: 'HEAD',
+      headSha,
+      targetHeadRef: headSha,
+      aheadCount: 0,
+      effectiveBaseRef: 'HEAD',
+      effectiveScopeLabel: 'INDEX',
+      files,
+      baselinePathByFile,
+    };
+  }
+
+  const resolvedTargetHead = resolveTargetHeadRef();
   const baseRef = resolveBaseRef();
-  const mergeBase = runGit(['merge-base', 'HEAD', baseRef], { allowFailure: true }) || baseRef;
-  const headSha = runGit(['rev-parse', 'HEAD']);
-  const output = runGit(['diff', '--name-only', '--diff-filter=ACMR', `${baseRef}...HEAD`], { allowFailure: true });
-  const files = output.split(/\r?\n/).map(normalizeFile).filter(Boolean);
-  return { baseRef, mergeBase, headSha, files };
+  const mergeBase = runGit(['merge-base', resolvedTargetHead, baseRef], { allowFailure: true }) || baseRef;
+  const headSha = resolvedTargetHead;
+  const aheadCountRaw = runGit(['rev-list', '--count', `${baseRef}..${resolvedTargetHead}`], { allowFailure: true });
+  const aheadCount = Number.parseInt(aheadCountRaw, 10);
+  const previousHead = isPrePushMode && Number.isFinite(aheadCount) && aheadCount > 1
+    ? runGit(['rev-parse', `${resolvedTargetHead}^`], { allowFailure: true })
+    : '';
+  const effectiveBaseRef = previousHead || baseRef;
+  const effectiveScopeLabel = `${effectiveBaseRef}...${resolvedTargetHead}`;
+  const output = runGit(['diff', '--name-status', '--find-renames', '--diff-filter=ACMR', effectiveScopeLabel], { allowFailure: true });
+  const { files, baselinePathByFile } = parseDiffNameStatus(output);
+
+  return {
+    baseRef,
+    mergeBase,
+    headSha,
+    targetHeadRef: resolvedTargetHead,
+    aheadCount: Number.isFinite(aheadCount) ? aheadCount : 0,
+    effectiveBaseRef,
+    effectiveScopeLabel,
+    files,
+    baselinePathByFile,
+  };
+}
+
+function parseDiffNameStatus(output) {
+  const files = [];
+  const baselinePathByFile = {};
+
+  for (const rawLine of output.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    const parts = line.split('\t');
+    const status = parts[0] ?? '';
+    if ((status.startsWith('R') || status.startsWith('C')) && parts.length >= 3) {
+      const previousPath = normalizeFile(parts[1]);
+      const nextPath = normalizeFile(parts[2]);
+      if (!nextPath) continue;
+      files.push(nextPath);
+      if (previousPath) {
+        baselinePathByFile[nextPath] = previousPath;
+      }
+      continue;
+    }
+
+    const nextPath = normalizeFile(parts[1] ?? '');
+    if (!nextPath) continue;
+    files.push(nextPath);
+    if (!status.startsWith('A')) {
+      baselinePathByFile[nextPath] = nextPath;
+    }
+  }
+
+  return {
+    files: dedupeValues(files),
+    baselinePathByFile,
+  };
+}
+
+function resolvePrePushLintContext() {
+  if (!isPrePushMode) {
+    return {
+      files: [],
+      baselinePathByFile: {},
+      scopeLabel: '',
+    };
+  }
+  return {
+    files,
+    baselinePathByFile,
+    scopeLabel: effectiveScopeLabel,
+  };
 }
 
 function buildPackageJsonTypecheckFingerprint(content) {
@@ -314,21 +563,6 @@ function affectsBuild(file) {
     || file.startsWith('scripts/audio/');
 }
 
-function affectsDiceThroneStyleContract(file) {
-  return file === 'src/index.css'
-    || file === 'vite.config.ts'
-    || file === 'postcss.config.js'
-    || file === 'postcss-tailwind-legacy-structure.js'
-    || file === 'postcss-tailwind-legacy-colors.js'
-    || file === 'postcss-tailwind-legacy-translate.js'
-    || file === 'package.json'
-    || file === 'playwright.config.ts'
-    || file.startsWith('src/games/dicethrone/ui/')
-    || file === 'src/components/game/framework/presets.tsx'
-    || file === 'scripts/verify/dicethrone-style-contract.mjs'
-    || file === 'e2e/dicethrone-simple-start.e2e.ts';
-}
-
 function affectsI18n(file) {
   return file.startsWith('src/')
     || file.startsWith('apps/api/')
@@ -352,7 +586,7 @@ function affectsCoreArea(file) {
 }
 
 function isGameFile(file) {
-  return file.startsWith('src/games/');
+  return file.startsWith('src/games/') || file.startsWith('e2e/src/games/');
 }
 
 function isGameSourceFile(file) {
@@ -384,7 +618,7 @@ function collectGameIds(files, { sourceOnly = false } = {}) {
   const ids = new Set();
   for (const file of files) {
     if (sourceOnly && !isGameSourceFile(file)) continue;
-    const match = file.match(/^src\/games\/([^/]+)\//);
+    const match = file.match(/^(?:src|e2e\/src)\/games\/([^/]+)\//);
     if (match && KNOWN_GAME_IDS.has(match[1])) ids.add(match[1]);
   }
   return [...ids];
@@ -425,10 +659,28 @@ function resolveScopedVitestTarget(file, targets, coverage) {
   return targets.find((target) => coverage.coveredScopes.has(target) && (file.startsWith(`${target}/`) || file === target)) || null;
 }
 
+function collectTestsForDirectoryTarget(target, coverage) {
+  const normalizedTarget = normalizeFile(target);
+  const directTestDir = `${normalizedTarget}/__tests__/`;
+
+  const directTests = coverage.testFiles.filter((file) => {
+    const normalizedFile = normalizeFile(file);
+    if (!isRunnableVitestTestFile(normalizedFile)) return false;
+    if (normalizedFile.startsWith(directTestDir)) return true;
+    return path.posix.dirname(normalizedFile) === normalizedTarget;
+  });
+
+  if (directTests.length > 0) {
+    return directTests;
+  }
+
+  return coverage.testFiles.filter((file) => isRunnableVitestTestFile(file) && (file === normalizedTarget || file.startsWith(`${normalizedTarget}/`)));
+}
+
 function expandVitestTargetsToTestFiles(targets, coverage) {
   return dedupeValues(targets.flatMap((target) => {
     if (isTestFile(target)) return isRunnableVitestTestFile(target) ? [target] : [];
-    return coverage.testFiles.filter((file) => isRunnableVitestTestFile(file) && (file === target || file.startsWith(`${target}/`)));
+    return collectTestsForDirectoryTarget(target, coverage);
   }));
 }
 
@@ -440,17 +692,64 @@ function collectScopedVitestTargets(files, targets) {
       .map((file) => resolveScopedVitestTarget(file, targets, coverage))
       .filter(Boolean),
   );
-  return expandVitestTargetsToTestFiles(scopedTargets, coverage);
+  return expandVitestTargetsToTestFiles(scopedTargets, coverage).filter(fileExistsInWorkspace);
+}
+
+function toWorkspaceScopeFile(file) {
+  const normalized = normalizeFile(file);
+  if (normalized.startsWith('e2e/src/')) {
+    const workspacePath = normalized.slice('e2e/'.length);
+    if (fileExistsInWorkspace(workspacePath)) {
+      return workspacePath;
+    }
+  }
+  return normalized;
+}
+
+function createScopedGameTestCommands(files, vitestArgs) {
+  const workspaceScopeFiles = dedupeValues(files.map((file) => toWorkspaceScopeFile(file)));
+  const gameIds = collectGameIds(workspaceScopeFiles);
+  const commands = [];
+
+  for (const gameId of gameIds) {
+    const gameTarget = `src/games/${gameId}`;
+    const scopedTargets = collectScopedVitestTargets(workspaceScopeFiles, [gameTarget]);
+    if (scopedTargets.length === 0) {
+      commands.push({
+        label: `${gameId} tests`,
+        reason: `${gameId} 目录有改动，但未解析到更细测试范围，回退到该游戏测试集`,
+        command: process.execPath,
+        args: [...VITEST_SAFE_ENTRY, 'run', gameTarget, ...vitestArgs],
+      });
+      continue;
+    }
+
+    scopedTargets.forEach((target, index) => {
+      const label = scopedTargets.length === 1 ? `${gameId} tests` : `${gameId} tests (${index + 1}/${scopedTargets.length})`;
+      commands.push(...createVitestCommands({
+        label,
+        reason: `${gameId} 目录有改动，按最近受影响测试范围增量执行`,
+        target,
+        vitestArgs,
+      }));
+    });
+  }
+
+  return commands;
 }
 
 function createVitestCommands({ label, reason, target, vitestArgs }) {
   const shards = VITEST_SHARDED_TARGETS.get(target);
+  // Vitest 会在 “No test files found” 时以 exit code 1 退出。
+  // 我们的增量门禁会按目录拆分执行（例如 src/shared），而该目录可能没有独立测试文件；
+  // 这不应阻塞提交/门禁，因此统一开启 passWithNoTests。
+  const safeVitestArgs = ensurePassWithNoTests(vitestArgs);
   if (!shards || shards.length === 0) {
     return [{
       label,
       reason,
       command: process.execPath,
-      args: [...VITEST_SAFE_ENTRY, 'run', target, ...vitestArgs],
+      args: [...VITEST_SAFE_ENTRY, 'run', target, ...safeVitestArgs],
     }];
   }
 
@@ -458,20 +757,32 @@ function createVitestCommands({ label, reason, target, vitestArgs }) {
     label: `${label} - ${shard.label} (${index + 1}/${shards.length})`,
     reason: `${reason}；${shard.reason}（限定到 ${target} / ${shard.label}）`,
     command: process.execPath,
-    args: [...VITEST_SAFE_ENTRY, 'run', target, ...vitestArgs, '-t', shard.testNamePattern],
+    args: [...VITEST_SAFE_ENTRY, 'run', target, ...safeVitestArgs, '-t', shard.testNamePattern],
   }));
 }
 
 function collectCommands(files, baseRef, affectsTypecheck) {
   const commands = [];
-  const lintFiles = files.filter(isLintTarget);
+  const workspaceScopeFiles = dedupeValues(files.map((file) => toWorkspaceScopeFile(file)));
+  const lintCandidateFiles = isPrePushMode
+    ? prePushLintFiles.filter(isLintTarget)
+    : files.filter(isLintTarget);
+  const lintWarningDeltaFiles = isPrePushMode
+    ? lintCandidateFiles.filter((file) => !isLintWarningDeltaIgnored(file))
+    : lintCandidateFiles;
+  const lintFiles = lintCandidateFiles.filter(fileExistsInWorkspace);
   const coreSourceChanged = hasAny(
-    files,
+    workspaceScopeFiles,
     isPrePushMode ? affectsPrePushGlobalVitest : isCoreSourceFile,
   );
-  const coreTestFiles = files.filter(isNonGameTestFile);
-  const gameSourceIds = collectGameIds(files, { sourceOnly: true });
-  const gameTestFiles = files.filter((file) => isGameFile(file) && isTestFile(file));
+  const coreTestFiles = collectRunnableVitestWorkspaceTargets(
+    workspaceScopeFiles.filter((file) => isNonGameTestFile(file)),
+  );
+  const touchedGameIds = collectGameIds(workspaceScopeFiles);
+  const gameSourceIds = collectGameIds(workspaceScopeFiles, { sourceOnly: true });
+  const gameTestFiles = collectRunnableVitestWorkspaceTargets(
+    workspaceScopeFiles.filter((file) => isGameFile(file) && isTestFile(file)),
+  );
 
   if (hasAny(files, affectsTypecheck)) {
     commands.push({
@@ -482,9 +793,23 @@ function collectCommands(files, baseRef, affectsTypecheck) {
     });
   }
 
-  if (lintFiles.length > 0) {
+  if (skipLintInQualityGate && !isPrePushMode && lintFiles.length > 0) {
+    console.log('[changed-quality-gate] QUALITY_GATE_SKIP_LINT=1：pre-commit 的 ESLint 已由 lint-staged 执行，这里跳过重复 lint。');
+  } else if (isPrePushMode && lintWarningDeltaFiles.length > 0) {
+    commands.push({
+      label: 'ESLint warning delta',
+      reason: 'pre-push 模式下仅阻止新增 warning，同时继续阻止当前 errors（忽略 e2e 与 __tests__ 的 warning 计数）',
+      command: 'internal:eslint-warning-delta',
+      args: lintWarningDeltaFiles,
+    });
+  } else if (isPrePushMode && lintCandidateFiles.length > 0 && lintWarningDeltaFiles.length === 0) {
+    console.log('[changed-quality-gate] pre-push lint warning 计数：所有 lint 目标均被忽略（e2e 或 __tests__），跳过 warning delta。');
+  } else if (lintFiles.length > 0) {
     const eslintBaseArgs = ['eslint', '--max-warnings', '999'];
-    const lintChunks = splitFilesForCommand(eslintBaseArgs, lintFiles);
+    // Windows 下 eslint 一次性 lint 过多文件时容易 OOM（尤其是同时包含 src + e2e 的大批次）。
+    // 这里在“命令行长度切分”的基础上，再按固定数量切分，降低单次 eslint 负载。
+    const lintChunks = splitFilesForCommand(eslintBaseArgs, lintFiles, 6000)
+      .flatMap((chunk) => chunkValues(chunk, ESLINT_CHUNK_LIMIT));
     lintChunks.forEach((chunk, index) => {
       commands.push({
         label: lintChunks.length === 1 ? 'ESLint' : `ESLint (${index + 1}/${lintChunks.length})`,
@@ -497,23 +822,22 @@ function collectCommands(files, baseRef, affectsTypecheck) {
     });
   }
 
-  if (hasAny(files, affectsBuild) && !isPrePushMode) {
+  if (hasAny(files, affectsBuild) && isPrePushMode) {
+    const buildArgs = ['run', 'build'];
+    // 本地 pre-push 门禁需要确保能成功构建并捕获编译/打包错误，
+    // 不需要强制跑 esbuild minify（它在 Windows + 大 bundle 时更容易触发内存峰值导致 gate 失败）。
+    // CI 会兜底 full build（含 minify），因此这里默认在 pre-push 下关闭 minify 来提高稳定性。
+    if (isPrePushMode) {
+      buildArgs.push('--', '--minify', 'false');
+    }
     commands.push({
       label: 'Build',
-      reason: 'local 模式下存在前端/构建输入改动',
+      reason: 'pre-push 模式下存在前端/构建输入改动',
       command: 'npm',
-      args: ['run', 'build'],
+      args: buildArgs,
     });
-    if (hasAny(files, affectsDiceThroneStyleContract)) {
-      commands.push({
-        label: 'DiceThrone style contract',
-        reason: '涉及 DiceThrone HUD / Tailwind 兼容链改动，需验证构建产物关键样式合同',
-        command: 'npm',
-        args: ['run', 'verify:dicethrone:style-contract'],
-      });
-    }
-  } else if (hasAny(files, affectsBuild) && isPrePushMode) {
-    console.log('[changed-quality-gate] pre-push 模式：跳过 build，交给 CI 全量构建兜底。');
+  } else if (hasAny(files, affectsBuild) && isPreCommitMode) {
+    console.log('[changed-quality-gate] pre-commit 模式：跳过 build，改由 pre-push 增量构建门禁兜底。');
   }
 
   if (hasAny(files, affectsI18n)) {
@@ -535,12 +859,24 @@ function collectCommands(files, baseRef, affectsTypecheck) {
   }
 
   if (hasAny(files, (file) => file.startsWith('src/server/') || file.startsWith('src/api/'))) {
-    commands.push({
-      label: 'Server tests',
-      reason: '服务端目录有改动',
-      command: 'npm',
-      args: ['run', 'test:server'],
-    });
+    if (isPrePushMode) {
+      const serverTargets = ['src/server', 'src/api'];
+      serverTargets.forEach((target, index) => {
+        commands.push({
+          label: serverTargets.length === 1 ? 'Server tests' : `Server tests (${index + 1}/${serverTargets.length})`,
+          reason: '服务端目录有改动，pre-push 拆分执行以降低 Vitest OOM 风险',
+          command: process.execPath,
+          args: [...VITEST_SAFE_ENTRY, 'run', target, '--configLoader', 'native', ...FAST_VITEST_ARGS],
+        });
+      });
+    } else {
+      commands.push({
+        label: 'Server tests',
+        reason: '服务端目录有改动',
+        command: 'npm',
+        args: ['run', 'test:server'],
+      });
+    }
   }
 
   if (hasAny(files, (file) => file.startsWith('src/ugc/'))) {
@@ -570,34 +906,11 @@ function collectCommands(files, baseRef, affectsTypecheck) {
           });
         });
 
-      const targetGameIds = gameSourceIds.length > 0
-        ? gameSourceIds
-        : [...KNOWN_GAME_IDS];
-
-      targetGameIds.forEach((gameId) => {
-        commands.push({
-          label: `${gameId} tests`,
-          reason: gameSourceIds.length > 0
-            ? `${gameId} 源码改动，单独跑该游戏完整测试集`
-            : '核心源码改动，需要逐游戏回归完整测试集',
-          command: process.execPath,
-          args: [...VITEST_SAFE_ENTRY, 'run', `src/games/${gameId}`, ...GAME_VITEST_ARGS],
-        });
-      });
-    } else {
-      if (coreTestFiles.length > 0) {
-        commands.push({
-          label: 'Changed core test files',
-          reason: '仅改动核心测试文件，按文件精确运行',
-          command: process.execPath,
-          args: [...VITEST_SAFE_ENTRY, 'run', ...dedupeValues(coreTestFiles), ...FAST_VITEST_ARGS],
-        });
-      }
       if (gameSourceIds.length > 0) {
         gameSourceIds.forEach((gameId) => {
           commands.push({
             label: `${gameId} tests`,
-            reason: `${gameId} 源码改动，跑该游戏完整测试集`,
+            reason: `${gameId} 源码改动，单独跑该游戏完整测试集`,
             command: process.execPath,
             args: [...VITEST_SAFE_ENTRY, 'run', `src/games/${gameId}`, ...GAME_VITEST_ARGS],
           });
@@ -605,35 +918,79 @@ function collectCommands(files, baseRef, affectsTypecheck) {
       } else if (gameTestFiles.length > 0) {
         commands.push({
           label: 'Changed game test files',
+          reason: '核心源码改动且仅改到游戏测试文件，优先按测试文件精确运行',
+          command: process.execPath,
+          args: [...VITEST_SAFE_ENTRY, 'run', ...gameTestFiles, ...ensurePassWithNoTests(GAME_VITEST_ARGS)],
+        });
+      } else {
+        const fallbackGameIds = touchedGameIds.length > 0 ? touchedGameIds : [...KNOWN_GAME_IDS];
+        fallbackGameIds.forEach((gameId) => {
+          const smokeTargets = PRE_PUSH_GAME_SMOKE_TARGETS[gameId] ?? [];
+          if (smokeTargets.length > 0) {
+            commands.push({
+              label: `${gameId} smoke`,
+              reason: '核心源码改动，使用每个游戏的代表性 smoke/flow 测试做跨游戏兜底',
+              command: process.execPath,
+              args: [...VITEST_SAFE_ENTRY, 'run', ...smokeTargets, ...ensurePassWithNoTests(GAME_VITEST_ARGS)],
+            });
+            return;
+          }
+
+          commands.push({
+            label: `${gameId} tests`,
+            reason: '核心源码改动，缺少代表性 smoke/flow 测试，回退到该游戏完整测试集',
+            command: process.execPath,
+            args: [...VITEST_SAFE_ENTRY, 'run', `src/games/${gameId}`, ...GAME_VITEST_ARGS],
+          });
+        });
+      }
+    } else {
+      if (coreTestFiles.length > 0) {
+        commands.push({
+          label: 'Changed core test files',
+          reason: '仅改动核心测试文件，按文件精确运行',
+          command: process.execPath,
+          args: [...VITEST_SAFE_ENTRY, 'run', ...coreTestFiles, ...ensurePassWithNoTests(FAST_VITEST_ARGS)],
+        });
+      }
+      if (gameSourceIds.length > 0) {
+        if (isLatestCommitScopeMode) {
+          console.log('[changed-quality-gate] pre-push 最新提交范围模式：游戏源码改动不再默认回归整游戏全量测试，避免历史红灯阻塞当前增量；请依赖本轮显式改动测试或 CI 全量回归。');
+        } else {
+          gameSourceIds.forEach((gameId) => {
+            commands.push({
+              label: `${gameId} tests`,
+              reason: `${gameId} 源码改动，跑该游戏完整测试集`,
+              command: process.execPath,
+              args: [...VITEST_SAFE_ENTRY, 'run', `src/games/${gameId}`, ...GAME_VITEST_ARGS],
+            });
+          });
+        }
+      } else if (gameTestFiles.length > 0) {
+        commands.push({
+          label: 'Changed game test files',
           reason: '仅改动游戏测试文件，按文件精确运行',
           command: process.execPath,
-          args: [...VITEST_SAFE_ENTRY, 'run', ...dedupeValues(gameTestFiles), ...GAME_VITEST_ARGS],
+          args: [...VITEST_SAFE_ENTRY, 'run', ...gameTestFiles, ...ensurePassWithNoTests(GAME_VITEST_ARGS)],
         });
       }
     }
   } else {
-    if (hasAny(files, affectsCoreArea)) {
-      commands.push({
-        label: 'Core tests',
-        reason: '核心框架/引擎区域改动',
-        command: 'npm',
-        args: ['run', 'test:core'],
+    if (hasAny(workspaceScopeFiles, affectsCoreArea)) {
+      const scopedCoreTargets = collectScopedVitestTargets(workspaceScopeFiles, CORE_VITEST_TARGETS);
+      scopedCoreTargets.forEach((target, index) => {
+        const label = scopedCoreTargets.length === 1 ? 'Core tests' : `Core tests (${index + 1}/${scopedCoreTargets.length})`;
+        commands.push(...createVitestCommands({
+          label,
+          reason: '核心框架/引擎区域改动，按最近受影响测试范围增量执行',
+          target,
+          vitestArgs: FAST_VITEST_ARGS,
+        }));
       });
-      commands.push({
-        label: 'Games core tests',
-        reason: '核心框架改动可能影响所有游戏',
-        command: process.execPath,
-        args: [...VITEST_SAFE_ENTRY, 'run', 'src/games', ...GAME_VITEST_ARGS],
-      });
+
+      commands.push(...createScopedGameTestCommands(workspaceScopeFiles, GAME_VITEST_ARGS));
     } else {
-      for (const gameId of collectGameIds(files)) {
-        commands.push({
-          label: `${gameId} tests`,
-          reason: `${gameId} 目录有改动`,
-          command: process.execPath,
-          args: [...VITEST_SAFE_ENTRY, 'run', `src/games/${gameId}`, ...GAME_VITEST_ARGS],
-        });
-      }
+      commands.push(...createScopedGameTestCommands(workspaceScopeFiles, GAME_VITEST_ARGS));
     }
   }
 
@@ -726,6 +1083,13 @@ function createVitestEnv() {
   };
 }
 
+function createEslintEnv() {
+  return {
+    ...process.env,
+    NODE_OPTIONS: mergeNodeOptions(STABLE_ESLINT_NODE_OPTIONS),
+  };
+}
+
 function shouldUseStableVitestEnv(command, args) {
   if (command.includes('vitest-cli-safe') || args.includes('scripts/infra/vitest-cli-safe.mjs')) {
     return true;
@@ -737,6 +1101,48 @@ function shouldUseStableVitestEnv(command, args) {
     && args[1].startsWith('test');
 }
 
+function shouldUseStableEslintEnv(command, args) {
+  return command.trim().toLowerCase() === 'npx'
+    && args[0] === 'eslint';
+}
+
+function isVitestCliSafeCommand(command, args) {
+  return command.includes('vitest-cli-safe') || args.includes('scripts/infra/vitest-cli-safe.mjs');
+}
+
+function cleanupWindowsVitestResidue() {
+  if (process.platform !== 'win32') return;
+
+  const repoRootForPowerShell = repoRoot.replace(/'/g, "''");
+  const powerShellScript = [
+    `$repo = [System.IO.Path]::GetFullPath('${repoRootForPowerShell}')`,
+    `$targets = Get-CimInstance Win32_Process | Where-Object {`,
+    `  ($_.Name -eq 'node.exe' -and ($_.CommandLine -match 'scripts[/\\\\]infra[/\\\\]vitest-cli-safe\\.mjs' -or $_.CommandLine -match 'node_modules[/\\\\]vitest[/\\\\]dist[/\\\\]workers[/\\\\]forks\\.js')) -or`,
+    `  ($_.Name -eq 'esbuild.exe' -and $_.ExecutablePath -like ($repo + '*'))`,
+    `}`,
+    `$ids = @($targets | Select-Object -ExpandProperty ProcessId -Unique)`,
+    `if ($ids.Count -gt 0) { Stop-Process -Id $ids -Force -ErrorAction SilentlyContinue }`,
+    `Write-Output $ids.Count`,
+  ].join('; ');
+
+  const result = spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', powerShellScript], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    shell: false,
+  });
+
+  if (result.error) {
+    console.warn(`[changed-quality-gate] 清理残留 vitest/esbuild 进程失败: ${result.error.message}`);
+    return;
+  }
+
+  const cleanedCount = Number.parseInt((result.stdout ?? '').trim(), 10);
+  if (Number.isFinite(cleanedCount) && cleanedCount > 0) {
+    console.log(`[changed-quality-gate] 已清理 ${cleanedCount} 个残留 vitest/esbuild 进程。`);
+  }
+}
+
 function shouldDirectSpawnOnWindows(command) {
   if (process.platform !== 'win32') return true;
   const normalized = command.trim().toLowerCase();
@@ -745,29 +1151,170 @@ function shouldDirectSpawnOnWindows(command) {
     || normalized.endsWith('.com');
 }
 
-function runCommand({ label, reason, command, args }) {
+function summarizeEslintResults(results) {
+  return results.reduce((summary, result) => {
+    summary.warningCount += result.warningCount ?? 0;
+    summary.errorCount += result.errorCount ?? 0;
+    summary.fatalErrorCount += result.fatalErrorCount ?? 0;
+    return summary;
+  }, {
+    warningCount: 0,
+    errorCount: 0,
+    fatalErrorCount: 0,
+  });
+}
+
+async function summarizeCurrentLint(filesToCheck) {
+  const summary = {
+    warningCount: 0,
+    errorCount: 0,
+    fatalErrorCount: 0,
+  };
+  const chunks = chunkValues(filesToCheck, 40);
+
+  for (const chunk of chunks) {
+    const eslint = new ESLint({
+      cwd: repoRoot,
+    });
+    const results = await eslint.lintFiles(chunk);
+    const chunkSummary = summarizeEslintResults(results);
+    summary.warningCount += chunkSummary.warningCount;
+    summary.errorCount += chunkSummary.errorCount;
+    summary.fatalErrorCount += chunkSummary.fatalErrorCount;
+    if (chunkSummary.errorCount > 0 || chunkSummary.fatalErrorCount > 0) {
+      const formatter = await eslint.loadFormatter('stylish');
+      const output = formatter.format(results).trim();
+      if (output) {
+        console.error(output);
+      }
+      process.exit(1);
+    }
+  }
+
+  return summary;
+}
+
+async function summarizeBaselineLint(filesToCheck, baselineFileMap) {
+  const summary = {
+    warningCount: 0,
+    errorCount: 0,
+    fatalErrorCount: 0,
+  };
+  const eslint = new ESLint({
+    cwd: repoRoot,
+  });
+  const queue = filesToCheck
+    .map((file) => ({
+      file,
+      baselineFile: baselineFileMap[file] ?? '',
+    }))
+    .filter((item) => item.baselineFile);
+
+  const concurrency = 12;
+  for (let index = 0; index < queue.length; index += concurrency) {
+    const slice = queue.slice(index, index + concurrency);
+    const batchResults = await Promise.all(slice.map(async ({ baselineFile }) => {
+      const baselineText = readGitFile(mergeBase, baselineFile);
+      if (baselineText === '') {
+        return [];
+      }
+      return eslint.lintText(baselineText, {
+        filePath: path.resolve(repoRoot, baselineFile),
+      });
+    }));
+    const batchSummary = summarizeEslintResults(batchResults.flat());
+    summary.warningCount += batchSummary.warningCount;
+    summary.errorCount += batchSummary.errorCount;
+    summary.fatalErrorCount += batchSummary.fatalErrorCount;
+  }
+
+  return summary;
+}
+
+async function runEslintWarningDeltaCommand({ label, reason, args }) {
+  console.log(`\n[changed-quality-gate] ${label}`);
+  console.log(`[changed-quality-gate] 原因: ${reason}`);
+  console.log(`[changed-quality-gate] lint 文件数: ${args.length}`);
+  console.log(`[changed-quality-gate] lint 对比范围: ${prePushLintScopeLabel}`);
+
+  const startAt = Date.now();
+  const currentFiles = args.filter(fileExistsInWorkspace);
+  const currentSummary = currentFiles.length > 0
+    ? await summarizeCurrentLint(currentFiles)
+    : { warningCount: 0, errorCount: 0, fatalErrorCount: 0 };
+  const baselineSummary = await summarizeBaselineLint(args, prePushLintBaselinePathByFile);
+
+  console.log(`[changed-quality-gate] ESLint warning baseline: ${baselineSummary.warningCount}`);
+  console.log(`[changed-quality-gate] ESLint warning current: ${currentSummary.warningCount}`);
+
+  if (currentSummary.warningCount > baselineSummary.warningCount) {
+    const eslint = new ESLint({
+      cwd: repoRoot,
+    });
+    const formatter = await eslint.loadFormatter('stylish');
+    const currentResults = await eslint.lintFiles(currentFiles);
+    const output = formatter.format(currentResults).trim();
+    if (output) {
+      console.error(output);
+    }
+    console.error(
+      `[changed-quality-gate] 新增 ESLint warning：${currentSummary.warningCount - baselineSummary.warningCount} `
+      + `(baseline=${baselineSummary.warningCount}, current=${currentSummary.warningCount})`,
+    );
+    process.exit(1);
+  }
+
+  console.log(
+    `[changed-quality-gate] ESLint warning 未新增（baseline=${baselineSummary.warningCount}, current=${currentSummary.warningCount}）。`,
+  );
+  return Date.now() - startAt;
+}
+
+async function runCommand({ label, reason, command, args }) {
+  if (command === 'internal:eslint-warning-delta') {
+    return runEslintWarningDeltaCommand({ label, reason, args });
+  }
+
   console.log(`\n[changed-quality-gate] ${label}`);
   console.log(`[changed-quality-gate] 原因: ${reason}`);
   console.log(`[changed-quality-gate] 命令: ${commandToLine(command, args)}`);
 
   const startAt = Date.now();
+  const shouldCleanupVitestResidue = isVitestCliSafeCommand(command, args);
+  if (shouldCleanupVitestResidue) {
+    cleanupWindowsVitestResidue();
+  }
+
   const env = shouldUseStableVitestEnv(command, args)
     ? createVitestEnv()
-    : process.env;
-  const result = shouldDirectSpawnOnWindows(command)
-    ? spawnSync(command, args, {
-        cwd: repoRoot,
-        stdio: 'inherit',
-        shell: false,
-        env,
-      })
-    : spawnSync(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', commandToLine(command, args)], {
-        cwd: repoRoot,
-        stdio: 'inherit',
-        shell: false,
-        env,
-      });
+    : (shouldUseStableEslintEnv(command, args) ? createEslintEnv() : process.env);
+  const runSpawn = () => (
+    shouldDirectSpawnOnWindows(command)
+      ? spawnSync(command, args, {
+          cwd: repoRoot,
+          stdio: 'inherit',
+          shell: false,
+          env,
+        })
+      : spawnSync(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', commandToLine(command, args)], {
+          cwd: repoRoot,
+          stdio: 'inherit',
+          shell: false,
+          env,
+        })
+  );
+
+  let result = runSpawn();
+  if (shouldCleanupVitestResidue && result.status !== 0) {
+    cleanupWindowsVitestResidue();
+    console.warn('[changed-quality-gate] Vitest 命令失败，执行一次清理后重试。');
+    result = runSpawn();
+  }
   const durationMs = Date.now() - startAt;
+
+  if (shouldCleanupVitestResidue) {
+    cleanupWindowsVitestResidue();
+  }
 
   if (result.error) {
     console.error(`[changed-quality-gate] 命令启动失败: ${result.error.message}`);
@@ -803,12 +1350,39 @@ function shouldUsePrePushCache() {
   return isPrePushMode && process.env.QUALITY_GATE_NO_CACHE !== '1';
 }
 
-const { baseRef, mergeBase, headSha, files } = resolveChangeContext();
-const affectsTypecheck = createTypecheckPredicate(baseRef, headSha);
+const {
+  baseRef,
+  mergeBase,
+  headSha,
+  targetHeadRef: resolvedTargetHead,
+  aheadCount,
+  effectiveBaseRef,
+  effectiveScopeLabel,
+  files,
+  baselinePathByFile,
+} = resolveChangeContext();
+const {
+  files: prePushLintFiles,
+  baselinePathByFile: prePushLintBaselinePathByFile,
+  scopeLabel: prePushLintScopeLabel,
+} = resolvePrePushLintContext();
+const isLatestCommitScopeMode = isPrePushMode && effectiveBaseRef !== baseRef;
+const affectsTypecheck = createTypecheckPredicate(effectiveBaseRef, headSha);
 console.log(`[changed-quality-gate] 模式: ${mode}`);
 console.log(`[changed-quality-gate] 基线: ${baseRef}`);
 console.log(`[changed-quality-gate] merge-base: ${mergeBase}`);
+console.log(`[changed-quality-gate] 目标提交: ${resolvedTargetHead}`);
 console.log(`[changed-quality-gate] head: ${headSha}`);
+if (isPrePushMode && aheadCount > 1 && effectiveBaseRef !== baseRef) {
+  console.log(`[changed-quality-gate] pre-push 检测到当前分支领先 ${aheadCount} 个提交，当前仅校验最新提交范围: ${effectiveScopeLabel}`);
+} else {
+  console.log(`[changed-quality-gate] 当前校验范围: ${effectiveScopeLabel}`);
+}
+
+runMergeConflictGuards({
+  baseRef: effectiveBaseRef,
+  headRef: resolvedTargetHead,
+});
 
 if (files.length === 0) {
   console.log('[changed-quality-gate] 未检测到已提交改动，跳过。');
@@ -845,10 +1419,23 @@ try {
   try {
   mkdirSync(CACHE_DIR, { recursive: true });
   runEncodingGuard(files);
+  runAssetPipelineGuard(files);
+  runAtlasContractGuard(files, { repoRoot });
+  runDicethroneDiceAtlasGuard(files, { repoRoot, mode });
 
   const commands = collectCommands(files, baseRef, affectsTypecheck);
   if (commands.length === 0) {
     console.log('[changed-quality-gate] 当前改动仅涉及文档/证据，跳过代码校验。');
+    process.exit(0);
+  }
+
+  if (isDryRun) {
+    console.log('\n[changed-quality-gate] DRY RUN：以下命令会被执行');
+    commands.forEach((command, index) => {
+      console.log(`${index + 1}. ${command.label}`);
+      console.log(`   reason: ${command.reason}`);
+      console.log(`   command: ${commandToLine(command.command, command.args)}`);
+    });
     process.exit(0);
   }
 
@@ -892,7 +1479,7 @@ try {
       continue;
     }
 
-    const durationMs = runCommand(command);
+    const durationMs = await runCommand(command);
     durations.push({ label: command.label, durationMs });
     if (shouldUsePrePushCache()) {
       commandCache.entries[commandCacheKey] = {

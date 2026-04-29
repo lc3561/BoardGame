@@ -1675,6 +1675,7 @@ function playerView(state: SmashUpCore, playerId: PlayerId): Partial<SmashUpCore
 
 function isGameOver(state: SmashUpCore): GameOverResult | undefined {
     if (state.gameResult) return state.gameResult;
+    if (state.turnPhase && state.turnPhase !== 'draw' && state.turnPhase !== 'endTurn') return undefined;
 
     if (isSmashUpTwoVsTwoMode(state)) {
         const rawTeamTotals = getSmashUpRawTeamVpTotals(state);
@@ -1710,6 +1711,39 @@ function isGameOver(state: SmashUpCore): GameOverResult | undefined {
         return undefined;
     }
 
+    if (isSmashUpTwoVsTwoMode(state)) {
+        const rawTeamTotals = getSmashUpRawTeamVpTotals(state);
+        const candidateTeams = Object.entries(rawTeamTotals)
+            .filter(([, total]) => total >= TEAM_VP_TO_WIN_2V2)
+            .map(([teamId]) => teamId as import('./types').SmashUpTeamId);
+        if (candidateTeams.length === 0) {
+            return undefined;
+        }
+
+        const scores = getScores(state);
+        const teamScores = getSmashUpTeamScores(state, scores);
+
+        if (candidateTeams.length === 1) {
+            const winners = getSmashUpTeamMembers(state, candidateTeams[0]);
+            return {
+                winner: winners[0],
+                winners,
+                scores,
+            };
+        }
+
+        const sortedTeams = [...candidateTeams].sort((left, right) => teamScores[right] - teamScores[left]);
+        if (teamScores[sortedTeams[0]] > teamScores[sortedTeams[1]]) {
+            const winners = getSmashUpTeamMembers(state, sortedTeams[0]);
+            return {
+                winner: winners[0],
+                winners,
+                scores,
+            };
+        }
+
+        return undefined;
+    }
     const winners = state.turnOrder.filter(pid => state.players[pid]?.vp >= VP_TO_WIN);
     if (winners.length === 0) return undefined;
 

@@ -27,9 +27,7 @@ const allowedValueArgs = new Set([
     'channel',
     'version',
     'native-version',
-    'target-native-version',
-    'min-native-version',
-    'max-native-version',
+    'expected-base-version',
     'force-update-title',
     'force-update-message',
     'notes',
@@ -37,7 +35,6 @@ const allowedValueArgs = new Set([
 const allowedBooleanArgs = new Set([
     'force-update',
     'no-force-update',
-    'allow-legacy-shells',
     'dry-run',
     'skip-latest',
     'help',
@@ -46,27 +43,21 @@ const helpText = `
 Android OTA 发布脚本
 
 默认策略：
-- stable 默认收紧到当前原生版本：若未显式传兼容参数，会自动写入 minNativeVersion=<nativeVersion>
-- stable 默认也会开启 forceUpdate，让旧壳直接进入原生 App 升级链路
-- 如确需放行旧壳，必须显式传 --allow-legacy-shells
-- 非 stable channel 仍保持显式传参才生成原生版本门禁
+- OTA 默认面向所有已安装版本，不按原生版本做 target/min/max 门禁
+- 如需让客户端拿到更新后立即切换 bundle，可显式传 --force-update
+- 若误传任何 target/min/max 原生版本兼容参数，脚本会直接失败，防止再次发出“只给某个原生版本”的错误 OTA
 
 常见用法：
 - node scripts/mobile/publish-android-ota.mjs --channel stable
 - node scripts/mobile/publish-android-ota.mjs --channel edge --dry-run
-- node scripts/mobile/publish-android-ota.mjs --channel stable --target-native-version 0.5.1
-- node scripts/mobile/publish-android-ota.mjs --channel stable --min-native-version 0.5.0 --max-native-version 0.5.2
-- node scripts/mobile/publish-android-ota.mjs --channel stable --allow-legacy-shells --no-force-update
+- node scripts/mobile/publish-android-ota.mjs --channel stable --force-update
 
 参数：
 - --channel <name>
 - --version <bundleVersion>
 - --native-version <version>
-- --target-native-version <version[,version]>
-- --min-native-version <version>
-- --max-native-version <version>
+- --expected-base-version <package.json.version>
 - --force-update / --no-force-update
-- --allow-legacy-shells
 - --force-update-title <text>
 - --force-update-message <text>
 - --notes <text>
@@ -134,16 +125,21 @@ if (hasFlag('help') || args.includes('-h')) {
 
 const channel = readArgValue('channel', process.env.VITE_ANDROID_OTA_CHANNEL?.trim() || 'stable');
 const nativeVersion = readArgValue('native-version', packageJson.version);
-const explicitTargetNativeVersion = readArgValue('target-native-version', '');
-const explicitMinNativeVersion = readArgValue('min-native-version', '');
-const maxNativeVersion = readArgValue('max-native-version', '');
+const expectedBaseVersion = readArgValue('expected-base-version', '').trim();
 const explicitBundleVersion = readArgValue('version', '');
 const notes = readArgValue('notes', 'Android embedded OTA bundle');
-const allowLegacyShells = hasFlag('allow-legacy-shells');
-const stableChannel = channel === 'stable';
-const minNativeVersion = stableChannel && !allowLegacyShells && !explicitTargetNativeVersion && !explicitMinNativeVersion
-    ? nativeVersion
-    : explicitMinNativeVersion;
+const forbiddenCompatibilityArgs = [
+    'target-native-version',
+    'min-native-version',
+    'max-native-version',
+    'allow-legacy-shells',
+].filter((name) => hasFlag(name) || readArgValue(name, '') !== '');
+if (forbiddenCompatibilityArgs.length > 0) {
+    throw new Error(
+        `已禁止按原生版本做 OTA 门禁：${forbiddenCompatibilityArgs.map((name) => `--${name}`).join(', ')}。`
+        + ' 当前项目规则是“所有版本都必须更新”，OTA manifest 不得再写 targetNativeVersion/minNativeVersion/maxNativeVersion。',
+    );
+}
 const {
     forceUpdate,
     forceUpdateTitle,
@@ -153,24 +149,59 @@ const {
     noForceUpdateFlag: hasFlag('no-force-update'),
     forceUpdateTitle: readArgValue('force-update-title', ''),
     forceUpdateMessage: readArgValue('force-update-message', ''),
-    defaultForceUpdate: stableChannel && !allowLegacyShells,
+    defaultForceUpdate: false,
 });
 const dryRun = hasFlag('dry-run');
 const skipLatest = hasFlag('skip-latest');
 const distDir = path.join(rootDir, 'dist');
 const androidBuildMetaPath = path.join(distDir, 'android-build-meta.json');
-const builtAt = new Date().toISOString().replace(/[:.]/g, '-');
+const buildInstant = new Date();
+const builtAt = buildInstant.toISOString().replace(/[:.]/g, '-');
 const bundleVersion = explicitBundleVersion || `${packageJson.version}-ota-${builtAt}`;
 const manifestPrefix = `official/app-updates/android/${channel}`;
+const humanDateTimeFormatter = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+});
+const formatHumanTime = (value) => {
+    if (!value) return '(unknown)';
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    return `${humanDateTimeFormatter.format(date)}（北京时间）`;
+};
+const bundleVersionHumanTime = formatHumanTime(buildInstant);
 const bundleKey = `${manifestPrefix}/bundles/${bundleVersion}.zip`;
 const versionManifestKey = `${manifestPrefix}/manifests/${bundleVersion}.json`;
 const latestManifestKey = `${manifestPrefix}/latest.json`;
 const assetsBaseUrl = (process.env.VITE_ASSETS_BASE_URL?.trim() || 'https://assets.easyboardgame.top/official').replace(/\/+$/, '');
 const bundleUrl = `${assetsBaseUrl}/app-updates/android/${channel}/bundles/${encodeURIComponent(bundleVersion)}.zip`;
 const validChannelPattern = /^[a-z0-9][a-z0-9._-]*$/i;
+const releaseAndroidAppId = 'top.easyboardgame.app';
+const debugAndroidAppIdSegments = new Set(['debug', 'dev', 'test', 'qa']);
+
+const isNonReleaseAndroidAppId = (appId) => appId
+    .split('.')
+    .some((segment) => debugAndroidAppIdSegments.has(segment.trim().toLowerCase()));
 
 if (!validChannelPattern.test(channel)) {
     throw new Error(`非法 channel: ${channel}。仅允许字母、数字、点、下划线、短横线。`);
+}
+
+if (!expectedBaseVersion) {
+    throw new Error('Android OTA 发布已禁止隐式版本：必须显式传 --expected-base-version，并与 package.json.version 完全一致。');
+}
+
+if (expectedBaseVersion !== packageJson.version) {
+    throw new Error(
+        `Android OTA 基线版本不匹配：期望 ${expectedBaseVersion}，实际 package.json.version=${packageJson.version}。`
+        + ' 请先 bump 到正确版本，或改用正确 ref / 正确显式版本后再发布。',
+    );
 }
 
 if (!existsSync(distDir)) {
@@ -186,6 +217,15 @@ if (androidBuildMeta.mode !== 'android') {
 }
 if (typeof androidBuildMeta.backendUrl !== 'string' || !/^https?:\/\//i.test(androidBuildMeta.backendUrl.trim())) {
     throw new Error('dist/android-build-meta.json 缺少合法 backendUrl。请先执行 `npm run mobile:android:sync`。');
+}
+if (typeof androidBuildMeta.appId !== 'string' || !androidBuildMeta.appId.trim()) {
+    throw new Error('dist/android-build-meta.json 缺少 appId。已阻止 OTA 发布，请先使用最新 Android 发布链路重新构建。');
+}
+if (androidBuildMeta.appId.trim() !== releaseAndroidAppId) {
+    throw new Error(`dist/android-build-meta.json 的 appId 非正式包：期望 ${releaseAndroidAppId}，实际 ${String(androidBuildMeta.appId || '')}`);
+}
+if (isNonReleaseAndroidAppId(androidBuildMeta.appId.trim())) {
+    throw new Error(`dist/android-build-meta.json 检测到测试壳 appId=${androidBuildMeta.appId.trim()}，已阻止 OTA 发布。`);
 }
 
 if (!dryRun) {
@@ -267,36 +307,20 @@ if (zipBuffer.length > MAX_ANDROID_OTA_ZIP_BYTES) {
     );
 }
 const checksum = createHash('sha256').update(zipBuffer).digest('hex');
-const normalizedTargetNativeVersion = explicitTargetNativeVersion
-    ? explicitTargetNativeVersion
-        .split(',')
-        .map((value) => value.trim())
-        .filter(Boolean)
-    : [];
-// stable 默认要求旧壳先升到当前原生版本，避免继续吃到新 OTA。
-// 如确需放行旧壳，必须显式传 --allow-legacy-shells，或手动指定 target/min/max。
-const resolvedTargetNativeVersion = normalizedTargetNativeVersion;
+const publishedAt = new Date();
 const manifest = {
     version: bundleVersion,
     url: bundleUrl,
     checksum,
     channel,
-    ...(resolvedTargetNativeVersion.length > 0
-        ? {
-            targetNativeVersion: resolvedTargetNativeVersion.length === 1
-                ? resolvedTargetNativeVersion[0]
-                : resolvedTargetNativeVersion,
-        }
-        : {}),
-    ...(minNativeVersion ? { minNativeVersion } : {}),
-    ...(maxNativeVersion ? { maxNativeVersion } : {}),
     ...(forceUpdate ? { forceUpdate: true } : {}),
     ...(forceUpdateTitle ? { forceUpdateTitle } : {}),
     ...(forceUpdateMessage ? { forceUpdateMessage } : {}),
-    publishedAt: new Date().toISOString(),
+    publishedAt: publishedAt.toISOString(),
     size: zipBuffer.length,
     notes,
 };
+const publishedAtHumanTime = formatHumanTime(publishedAt);
 
 const uploadObject = async (key, body, contentType, cacheControl) => {
     await s3Client.send(new PutObjectCommand({
@@ -320,11 +344,11 @@ const distStats = statSync(path.join(distDir, 'index.html'));
 console.log(dryRun ? 'OTA bundle 预演完成（未上传）' : 'OTA bundle 已发布');
 console.log(`channel=${channel}`);
 console.log(`bundleVersion=${bundleVersion}`);
+console.log(`bundleVersionHumanTime=${bundleVersionHumanTime}`);
 console.log(`nativeVersion=${nativeVersion}`);
 console.log(`mode=${dryRun ? 'dry-run' : 'publish'}`);
 console.log(`forceUpdate=${forceUpdate ? 'true' : 'false'}`);
-console.log(`allowLegacyShells=${allowLegacyShells ? 'true' : 'false'}`);
-console.log(`effectiveMinNativeVersion=${minNativeVersion || '(none)'}`);
+console.log('nativeCompatibilityMode=disabled');
 console.log(`skipLatest=${skipLatest ? 'true' : 'false'}`);
 console.log(`zipBytes=${zipBuffer.length}`);
 console.log(`otaIncludedFiles=${otaCollectionStats.includedFiles}`);
@@ -338,4 +362,5 @@ console.log(`bundleKey=${bundleKey}`);
 console.log(`latestManifestKey=${latestManifestKey}`);
 console.log(`bundleUrl=${bundleUrl}`);
 console.log(`checksum=${checksum}`);
+console.log(`publishedAtHumanTime=${publishedAtHumanTime}`);
 console.log(`manifest=${JSON.stringify(manifest)}`);

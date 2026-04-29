@@ -1,23 +1,6 @@
 name: Android OTA Publish
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'src/**'
-      - 'public/**'
-      - 'index.html'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'vite.config.ts'
-      - 'postcss.config.js'
-      - 'postcss-tailwind-*.js'
-      - 'tsconfig*.json'
-      - 'scripts/game/**'
-      - 'scripts/audio/generate-slim-registry.mjs'
-      - 'scripts/mobile/**'
-      - '.github/workflows/android-ota-publish.yml'
   workflow_dispatch:
     inputs:
       channel:
@@ -33,6 +16,10 @@ on:
         description: '要发布的 git ref（分支、tag 或 commit SHA，留空默认当前触发 ref）'
         required: false
         type: string
+      expected_base_version:
+        description: '本次发布的目标基础版本（必填，例如 0.5.33）；必须与 package.json.version 完全一致'
+        required: true
+        type: string
       dry_run:
         description: '仅预演，不上传'
         required: true
@@ -44,9 +31,9 @@ on:
         default: false
         type: boolean
       force_update:
-        description: '是否强制 OTA（默认开启，下载完成后立即切换）'
+        description: '是否强制 OTA（默认关闭；如需下载完成后立即切换请显式开启）'
         required: true
-        default: true
+        default: false
         type: boolean
       force_update_title:
         description: '强更页标题（可选）'
@@ -56,24 +43,12 @@ on:
         description: '强更页正文（可选）'
         required: false
         type: string
-      target_native_version:
-        description: '精确兼容的原生版本列表，逗号分隔（可选）'
-        required: false
-        type: string
-      min_native_version:
-        description: '最小兼容原生版本（可选）'
-        required: false
-        type: string
-      max_native_version:
-        description: '最大兼容原生版本（可选）'
-        required: false
-        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && format('manual-{0}', inputs.channel) || format('push-{0}', github.ref_name) }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && format('manual-{0}', inputs.channel) || github.run_id }}
   cancel-in-progress: true
 
 jobs:
@@ -94,22 +69,11 @@ jobs:
             force_update="${{ inputs.force_update }}"
             force_update_title="${{ inputs.force_update_title }}"
             force_update_message="${{ inputs.force_update_message }}"
-            target_native_version="${{ inputs.target_native_version }}"
-            min_native_version="${{ inputs.min_native_version }}"
-            max_native_version="${{ inputs.max_native_version }}"
+            expected_base_version="${{ inputs.expected_base_version }}"
             source_mode="manual"
           else
-            channel="${{ vars.ANDROID_OTA_AUTO_CHANNEL || 'edge' }}"
-            target_ref="${GITHUB_SHA}"
-            dry_run="false"
-            skip_latest="false"
-            force_update="true"
-            force_update_title=""
-            force_update_message=""
-            target_native_version=""
-            min_native_version=""
-            max_native_version=""
-            source_mode="auto"
+            echo "::error::自动 OTA 已禁用隐式版本；请使用 workflow_dispatch 并显式提供 expected_base_version。"
+            exit 1
           fi
 
           if [[ -z "${target_ref}" ]]; then
@@ -119,14 +83,12 @@ jobs:
           {
             echo "channel=${channel}"
             echo "target_ref=${target_ref}"
+            echo "expected_base_version=${expected_base_version}"
             echo "dry_run=${dry_run}"
             echo "skip_latest=${skip_latest}"
             echo "force_update=${force_update}"
             echo "force_update_title=${force_update_title}"
             echo "force_update_message=${force_update_message}"
-            echo "target_native_version=${target_native_version}"
-            echo "min_native_version=${min_native_version}"
-            echo "max_native_version=${max_native_version}"
             echo "source_mode=${source_mode}"
           } >> "${GITHUB_OUTPUT}"
 
@@ -183,13 +145,27 @@ jobs:
         run: |
           short_sha="$(git rev-parse --short=7 HEAD)"
           current_ref="$(git rev-parse HEAD)"
+          package_version="$(node -p "require('./package.json').version")"
+          built_at="$(date -u +%Y-%m-%dT%H-%M-%S-%3NZ)"
           manifest_url="${{ vars.VITE_ASSETS_BASE_URL || 'https://assets.easyboardgame.top/official' }}/app-updates/android/${{ steps.params.outputs.channel }}/latest.json"
-          bundle_version="gha-${{ steps.params.outputs.channel }}-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}-${short_sha}"
+
+          if [[ -z "${{ steps.params.outputs.expected_base_version }}" ]]; then
+            echo "::error::禁止隐式版本发布：expected_base_version 不能为空。"
+            exit 1
+          fi
+
+          if [[ "${package_version}" != "${{ steps.params.outputs.expected_base_version }}" ]]; then
+            echo "::error::Android OTA 基线版本不匹配：expected_base_version=${{ steps.params.outputs.expected_base_version }}，package.json.version=${package_version}"
+            exit 1
+          fi
+
+          bundle_version="${package_version}-ota-${built_at}"
           notes="GitHub Actions ${{ steps.params.outputs.source_mode }} OTA publish ${current_ref}@${short_sha}"
 
           {
             echo "short_sha=${short_sha}"
             echo "current_ref=${current_ref}"
+            echo "package_version=${package_version}"
             echo "manifest_url=${manifest_url}"
             echo "bundle_version=${bundle_version}"
             echo "notes=${notes}"
@@ -214,7 +190,7 @@ jobs:
           VITE_BACKEND_URL=${{ vars.VITE_BACKEND_URL || vars.ANDROID_VITE_BACKEND_URL || secrets.VITE_BACKEND_URL || secrets.ANDROID_VITE_BACKEND_URL }}
           VITE_ASSETS_BASE_URL=${{ vars.VITE_ASSETS_BASE_URL || 'https://assets.easyboardgame.top/official' }}
           CAPACITOR_APP_ID=${{ vars.CAPACITOR_APP_ID || 'top.easyboardgame.app' }}
-          CAPACITOR_APP_NAME=${{ vars.CAPACITOR_APP_NAME || 'EasyBoardGame' }}
+          CAPACITOR_APP_NAME=${{ vars.CAPACITOR_APP_NAME || '易桌游' }}
           ANDROID_WEBVIEW_MODE=embedded
           VITE_ANDROID_OTA_ENABLED=true
           VITE_ANDROID_OTA_MANIFEST_URL=${{ steps.bundle.outputs.manifest_url }}
@@ -238,6 +214,7 @@ jobs:
           args=(
             --channel "${{ steps.params.outputs.channel }}"
             --version "${{ steps.bundle.outputs.bundle_version }}"
+            --expected-base-version "${{ steps.params.outputs.expected_base_version }}"
             --notes "${{ steps.bundle.outputs.notes }}"
           )
 
@@ -263,18 +240,6 @@ jobs:
             args+=(--force-update-message "${{ steps.params.outputs.force_update_message }}")
           fi
 
-          if [[ -n "${{ steps.params.outputs.target_native_version }}" ]]; then
-            args+=(--target-native-version "${{ steps.params.outputs.target_native_version }}")
-          fi
-
-          if [[ -n "${{ steps.params.outputs.min_native_version }}" ]]; then
-            args+=(--min-native-version "${{ steps.params.outputs.min_native_version }}")
-          fi
-
-          if [[ -n "${{ steps.params.outputs.max_native_version }}" ]]; then
-            args+=(--max-native-version "${{ steps.params.outputs.max_native_version }}")
-          fi
-
           npm run mobile:android:ota:publish -- "${args[@]}"
 
       - name: Write workflow summary
@@ -289,13 +254,12 @@ jobs:
             echo "| Channel | ${{ steps.params.outputs.channel }} |"
             echo "| 结果 | ${{ steps.prereq.outputs.ready == 'true' && '已执行' || '已跳过' }} |"
             echo "| Git Ref | ${{ steps.bundle.outputs.current_ref || steps.params.outputs.target_ref }} |"
+            echo "| Expected Base Version | ${{ steps.params.outputs.expected_base_version || '未提供' }} |"
             echo "| Bundle Version | ${{ steps.bundle.outputs.bundle_version || '未生成' }} |"
             echo "| Dry Run | ${{ steps.params.outputs.dry_run }} |"
             echo "| Skip Latest | ${{ steps.params.outputs.skip_latest }} |"
             echo "| Force Update | ${{ steps.params.outputs.force_update || 'false' }} |"
-            echo "| Target Native Version | ${{ steps.params.outputs.target_native_version || '未指定' }} |"
-            echo "| Min Native Version | ${{ steps.params.outputs.min_native_version || '未指定' }} |"
-            echo "| Max Native Version | ${{ steps.params.outputs.max_native_version || '未指定' }} |"
+            echo "| Native Compatibility Gate | disabled（所有版本都必须更新） |"
             echo "| Manifest URL | ${{ steps.bundle.outputs.manifest_url || '未生成' }} |"
             echo "| 缺失配置 | ${{ steps.prereq.outputs.missing || '无' }} |"
           } >> "${GITHUB_STEP_SUMMARY}"

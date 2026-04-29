@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, Query, Req, Res, UseGuards, applyDecorators } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { CurrentUser } from '../../shared/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../shared/guards/jwt-auth.guard';
@@ -19,8 +19,6 @@ import { Roles } from './guards/roles.decorator';
 import { AdminTestLatencyService } from './admin-test-latency.service';
 import { AdminService } from './admin.service';
 
-@UseGuards(JwtAuthGuard, AdminGuard)
-@Roles('admin')
 @Controller('admin')
 export class AdminController {
     constructor(
@@ -29,12 +27,21 @@ export class AdminController {
         @Inject(AdminUserRoleService) private readonly adminUserRoleService: AdminUserRoleService,
     ) {}
 
+    private static AdminOnly() {
+        return applyDecorators(
+            UseGuards(JwtAuthGuard, AdminGuard),
+            Roles('admin'),
+        );
+    }
+
     @Get('test-latency')
+    @AdminController.AdminOnly()
     getTestLatency(@Res() res: Response) {
         return res.json(this.adminTestLatencyService.getState());
     }
 
     @Patch('test-latency')
+    @AdminController.AdminOnly()
     updateTestLatency(@Body() body: UpdateAdminTestLatencyDto, @Res() res: Response) {
         const state = this.adminTestLatencyService.update(body);
         return res.json(state);
@@ -53,36 +60,42 @@ export class AdminController {
     }
 
     @Get('stats/retention')
+    @AdminController.AdminOnly()
     async getRetention(@Res() res: Response) {
         const data = await this.adminService.getRetention();
         return res.json(data);
     }
 
     @Get('stats/activity-tiers')
+    @AdminController.AdminOnly()
     async getActivityTiers(@Res() res: Response) {
         const data = await this.adminService.getUserActivityTiers();
         return res.json(data);
     }
 
     @Get('users')
+    @AdminController.AdminOnly()
     async getUsers(@Query() query: QueryUsersDto, @Res() res: Response) {
         const result = await this.adminService.getUsers(query);
         return res.json(result);
     }
 
     @Get('rooms')
+    @AdminController.AdminOnly()
     async getRooms(@Query() query: QueryRoomsDto, @Res() res: Response) {
         const result = await this.adminService.getRooms(query);
         return res.json(result);
     }
 
     @Get('ugc/packages')
+    @AdminController.AdminOnly()
     async getUgcPackages(@Query() query: QueryUgcPackagesDto, @Res() res: Response) {
         const result = await this.adminService.getUgcPackages(query);
         return res.json(result);
     }
 
     @Post('ugc/packages/:packageId/unpublish')
+    @AdminController.AdminOnly()
     async unpublishUgcPackage(
         @Param('packageId') packageId: string,
         @Req() req: Request,
@@ -97,6 +110,7 @@ export class AdminController {
     }
 
     @Delete('ugc/packages/:packageId')
+    @AdminController.AdminOnly()
     async deleteUgcPackage(
         @Param('packageId') packageId: string,
         @Req() req: Request,
@@ -111,6 +125,7 @@ export class AdminController {
     }
 
     @Delete('rooms/:id')
+    @AdminController.AdminOnly()
     async destroyRoom(@Param('id') matchId: string, @Req() req: Request, @Res() res: Response) {
         const { t } = createRequestI18n(req);
         const ok = await this.adminService.destroyRoom(matchId);
@@ -121,18 +136,21 @@ export class AdminController {
     }
 
     @Post('rooms/bulk-delete')
+    @AdminController.AdminOnly()
     async bulkDestroyRooms(@Body() body: BulkIdsDto, @Res() res: Response) {
         const result = await this.adminService.bulkDestroyRooms(body.ids || []);
         return res.status(200).json(result);
     }
 
     @Post('rooms/bulk-delete-by-filter')
+    @AdminController.AdminOnly()
     async bulkDestroyRoomsByFilter(@Body() body: RoomFilterDto, @Res() res: Response) {
         const result = await this.adminService.bulkDestroyRoomsByFilter(body);
         return res.status(200).json(result);
     }
 
     @Get('users/:id')
+    @AdminController.AdminOnly()
     async getUserDetail(@Param('id') userId: string, @Req() req: Request, @Res() res: Response) {
         const { t } = createRequestI18n(req);
         const result = await this.adminService.getUserDetail(userId);
@@ -143,6 +161,7 @@ export class AdminController {
     }
 
     @Patch('users/:id/role')
+    @AdminController.AdminOnly()
     async updateUserRole(
         @Param('id') userId: string,
         @Body() body: UpdateUserRoleDto,
@@ -183,6 +202,7 @@ export class AdminController {
     }
 
     @Post('users/:id/ban')
+    @AdminController.AdminOnly()
     async banUser(
         @Param('id') userId: string,
         @Body() body: BanUserDto,
@@ -209,6 +229,7 @@ export class AdminController {
     }
 
     @Post('users/:id/unban')
+    @AdminController.AdminOnly()
     async unbanUser(@Param('id') userId: string, @Req() req: Request, @Res() res: Response) {
         const { t } = createRequestI18n(req);
         const result = await this.adminService.unbanUser(userId);
@@ -219,6 +240,7 @@ export class AdminController {
     }
 
     @Delete('users/:id')
+    @AdminController.AdminOnly()
     async deleteUser(@Param('id') userId: string, @Req() req: Request, @Res() res: Response) {
         const { t } = createRequestI18n(req);
         const result = await this.adminService.deleteUser(userId);
@@ -234,6 +256,7 @@ export class AdminController {
     }
 
     @Post('users/bulk-delete')
+    @AdminController.AdminOnly()
     async bulkDeleteUsers(@Body() body: BulkIdsDto, @Res() res: Response) {
         const result = await this.adminService.bulkDeleteUsers(body.ids || []);
         return res.status(200).json(result);
@@ -256,6 +279,7 @@ export class AdminController {
     }
 
     @Delete('matches/:id')
+    @AdminController.AdminOnly()
     async deleteMatch(@Param('id') matchId: string, @Req() req: Request, @Res() res: Response) {
         const { t } = createRequestI18n(req);
         const ok = await this.adminService.deleteMatch(matchId);
@@ -266,6 +290,7 @@ export class AdminController {
     }
 
     @Post('matches/bulk-delete')
+    @AdminController.AdminOnly()
     async bulkDeleteMatches(@Body() body: BulkIdsDto, @Res() res: Response) {
         const result = await this.adminService.bulkDeleteMatches(body.ids || []);
         return res.status(200).json(result);

@@ -9,12 +9,33 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DEV_SERVER_PORTS, E2E_SINGLE_WORKER_PORTS } from './e2e-port-config.js';
 import { assertChildProcessSupport } from './assert-child-process-support.mjs';
+import { withWindowsHide } from './windows-hide.js';
+
+let windowsNetstatCache = null;
+
+function execHidden(command, options = {}) {
+  return execSync(command, withWindowsHide(options));
+}
+
+function getWindowsNetstatLines() {
+  if (windowsNetstatCache) {
+    return windowsNetstatCache;
+  }
+
+  try {
+    const result = execHidden('netstat -ano -p tcp', { encoding: 'utf-8' });
+    windowsNetstatCache = result.trim().split(/\r?\n/).filter(Boolean);
+    return windowsNetstatCache;
+  } catch {
+    windowsNetstatCache = [];
+    return windowsNetstatCache;
+  }
+}
 
 const checkPort = (port) => {
   try {
     if (process.platform === 'win32') {
-      const result = execSync(`netstat -ano | findstr :${port}`, { encoding: 'utf-8' });
-      const lines = result.trim().split(/\r?\n/);
+      const lines = getWindowsNetstatLines();
 
       return lines.some((rawLine) => {
         const line = rawLine.trim();
@@ -30,7 +51,7 @@ const checkPort = (port) => {
         return localAddress?.endsWith(`:${port}`) && state === 'LISTENING' && Number.isFinite(pid) && pid > 0;
       });
     }
-    const result = execSync(`lsof -nP -iTCP:${port} -sTCP:LISTEN -t`, { encoding: 'utf-8' });
+    const result = execHidden(`lsof -nP -iTCP:${port} -sTCP:LISTEN -t`, { encoding: 'utf-8' });
     return result.trim().length > 0;
   } catch {
     return false;

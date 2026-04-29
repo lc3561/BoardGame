@@ -5,11 +5,10 @@
 - [x] 1.4 修改 `game-details-content`，定义移动端详情页左下角安装/更新操作区与状态语义
 
 ## 2. Runtime & Packaging
-- [x] 2.1 设计运行时发布清单格式与生成流程
+- [ ] 2.1 设计运行时发布清单格式与生成流程
 - [ ] 2.2 设计本地包目录布局、校验记录与激活版本切换机制
 - [ ] 2.3 设计运行时加载器如何在进入游戏前解析并挂载指定 `module pack`
-- [x] 2.4 设计素材包解析与 `AssetLoader` 的本地包优先策略
-- [x] 2.5 设计并实现 `shared audio pack` 发布、安装、版本校验与本地音频 override
+- [ ] 2.4 设计素材包解析与 `AssetLoader` 的本地包优先策略
 
 ## 3. UI & UX
 - [ ] 3.1 定义移动端详情页左下角安装/更新区的视觉层级、状态和文案
@@ -19,4 +18,3 @@
 
 ## 4. Validation
 - [x] 4.1 运行 `openspec validate add-mobile-game-pack-management --strict --no-interactive`
-- [x] 4.2 覆盖公共音频包与游戏包协同时的本地路径/安装链路验证

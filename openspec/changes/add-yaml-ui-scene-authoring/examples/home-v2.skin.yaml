@@ -1,0 +1,26 @@
+skins:
+  home_v2.gold_panel:
+    kind: nineSlice
+    assetRef: home_v2.skin.gold_panel
+    image:
+      width: 128
+      height: 128
+    slice:
+      top: 24
+      right: 24
+      bottom: 24
+      left: 24
+    contentPadding:
+      top: 20
+      right: 24
+      bottom: 20
+      left: 24
+    scaleMode: stretch
+
+  home_v2.book_page_title:
+    kind: textStyle
+    fontToken: display.book
+    fontSize: 36
+    lineHeight: 1.2
+    color: "#5a4128"
+    letterSpacing: 0.02em

@@ -33,6 +33,11 @@
     "exitActiveMatch": {
       "title": "Leave Current Match",
       "description": "You are in a match. Leave it and join the new room?"
+    },
+    "forceReplaceOwnerRoom": {
+      "title": "Replace Existing Room",
+      "description": "An active room (#{{id}}) already exists for you. Continuing will delete that room before creating a new one.",
+      "confirm": "Replace and Create"
     }
   },
   "actions": {
@@ -49,6 +54,7 @@
     "playAi": "Play AI",
     "tutorial": "Tutorial",
     "createRoom": "Create Room",
+    "backToDirectory": "Back to Directory",
     "confirm": "Confirm",
     "cancel": "Cancel"
   },
@@ -58,16 +64,12 @@
   "button": {
     "processing": "Processing..."
   },
-  "tutorial": {
-    "steps": {
-      "setup": "Preparing room"
-    }
-  },
   "activeMatch": {
     "notice": "You are currently in a match",
     "return": "Return to match (#{{id}})"
   },
   "rooms": {
+    "title": "Game Rooms",
     "loading": "Loading rooms...",
     "empty": "No active rooms",
     "matchTitle": "Match #{{id}}",
@@ -130,11 +132,10 @@
     "assetPack": "Asset Pack",
     "packIdUnknown": "Pack ID pending",
     "sizeUnknown": "Pending manifest",
-    "packageSyncing": "Syncing",
-    "packageUnpublished": "Package not published",
     "runtimeUnsupported": "This runtime does not support downloading game packages yet. Please retry inside the Android app.",
     "failedTitle": "Download Failed",
     "failedHint": "Downloading, verifying, or activating the game package failed. Please try again later.",
+    "notificationSettingsAction": "Open notification settings",
     "retryAction": "Retry",
     "cancelAction": "Cancel Download",
     "pending": "Mobile package management for this game is still being wired in. The entry point and status shell are now reserved.",
@@ -155,7 +156,11 @@
       "downloadHint": "Downloading the files required for this game.",
       "verifyTitle": "Verifying",
       "verifyHint": "Verifying the downloaded content and activating local resources."
-    }
+    },
+    "packageUnpublished": "Package unpublished",
+    "packageSyncing": "Syncing",
+    "packageSyncFailed": "Sync failed",
+    "packageSyncCompleted": "Sync complete"
   },
   "player": {
     "guest": "Guest{{id}}"
@@ -175,6 +180,7 @@
       "errorTitle": "Update failed",
       "errorDescription": "Downloading or switching to the new version failed. Please retry.",
       "bundleVersion": "Target bundle version",
+      "currentAppVersion": "Current app version",
       "requiredAppVersion": "Required app version",
       "progressLabel": "Download progress",
       "progressPercent": "{{percent}}%",
@@ -183,36 +189,33 @@
     }
   },
   "nativeUpdate": {
-    "gate": {
-      "eyebrow": "Install New App",
-      "checkingTitle": "Preparing installer",
-      "checkingDescription": "Checking and preparing the new app package. Please wait.",
-      "downloadingTitle": "Downloading installer",
-      "downloadingDescription": "Downloading the new app package. The system installer will open automatically when ready.",
-      "verifyingTitle": "Verifying package",
-      "verifyingDescription": "The app package has been downloaded. Verifying integrity now.",
-      "permissionTitle": "Install permission required",
-      "permissionDescription": "Allow this app to install unknown apps first, then return and continue installation.",
-      "installingTitle": "Opening system installer",
-      "installingDescription": "The system installer is ready. Follow the system prompt to complete the update.",
-      "errorTitle": "App update failed",
-      "errorDescription": "Downloading the app package or starting the installer failed. Please retry.",
-      "targetVersion": "Target app version",
-      "progressLabel": "Download progress",
-      "progressPercent": "{{percent}}%",
-      "progressPending": "Preparing",
-      "openSettingsAction": "Open settings",
-      "continueInstallAction": "Continue install",
-      "retryAction": "Retry download"
+    "title": {
+      "checking": "Checking for updates",
+      "downloading": "Downloading update",
+      "verifying": "Verifying update",
+      "permission": "Permission required",
+      "installing": "Installing update",
+      "error": "Update failed",
+      "default": "Updating app"
     },
-    "toast": {
-      "disabled": "Native app update is not enabled in the current Android shell build.",
-      "upToDate": "This app is already up to date.",
-      "available": "A newer app version {{version}} is available and ready to install.",
-      "installerOpened": "The system installer has opened. Follow the prompt to finish the update.",
-      "openSettingsFailed": "Failed to open the install permission page. Please try again.",
-      "missingPreparedUpdate": "No downloaded update package is ready to continue. Please download it again."
-    }
+    "description": {
+      "checking": "Checking and preparing the new version. Please wait.",
+      "downloading": "Downloading the update package. Installation will start after it completes.",
+      "verifying": "Verifying the downloaded update. Please wait.",
+      "permission": "Allow installing apps from unknown sources to continue.",
+      "installing": "Launching the system installer. Please wait.",
+      "error": "Download or verification failed. Please retry.",
+      "default": "Preparing the update. Please wait."
+    },
+    "eyebrow": "App update",
+    "bundleVersion": "Target version",
+    "progressLabel": "Download progress",
+    "progressPercent": "{{percent}}%",
+    "progressPending": "Preparing",
+    "progressHint": "Fetching download progress. Please wait.",
+    "openSettings": "Open install settings",
+    "continueInstall": "Continue install",
+    "retryAction": "Check again"
   },
   "gameDetails": {
     "description": "Classic strategy play. Connect three symbols to win."
@@ -263,10 +266,29 @@
       "description": "Interactive node-edge diagram showing the platform's layered architecture and module dependencies.",
       "players": "Solo Tool"
     },
+    "airepoworkbench": {
+      "title": "AI Repo Workbench",
+      "description": "A repo-centric AI workbench centered on RepoSession, WorkflowRun, DecisionRequest, and ArtifactBundle.",
+      "players": "Solo Tool"
+    },
     "summonerwars": {
       "title": "Summoner Wars",
       "description": "A tactical card game where you command a faction of warriors on a battlefield grid. Summon units, cast spells, and destroy the enemy Summoner to win.",
       "players": "2 Players"
+    },
+    "splendor": {
+      "title": "Splendor",
+      "description": "Playable base-rules implementation of Splendor with core rules, main board UI, and tutorial support.",
+      "players": "2-4 Players",
+      "setup": {
+        "startingPlayerId": {
+          "label": "Diamond holder",
+          "player1": "Player 1",
+          "player2": "Player 2",
+          "player3": "Player 3",
+          "player4": "Player 4"
+        }
+      }
     },
     "ugc": {
       "players": "2 Players"
@@ -297,12 +319,14 @@
     "tutorialTitle": "Learning {{game}}",
     "matchTitle": "Playing {{game}}",
     "loadingResources": "Loading match resources...",
+    "preparingMatch": "Preparing match...",
     "creatingRoom": "Creating room and entering match...",
     "namespaceLoadFailed": "Failed to load game translations",
     "namespaceLoadFailedDesc": "The current game's i18n resources could not be loaded. Please retry, and send feedback if the problem persists.",
     "clientLoadFailed": "Failed to load game client",
     "clientLoadFailedDesc": "The current game's client code or resources could not be loaded. Please retry, and send feedback if the problem persists.",
     "joiningRoom": "Joining room...",
+    "connectingRoom": "Connecting room...",
     "loadingProgress": {
       "step": "{{current}}/{{total}}",
       "preparingRoom": "Preparing room...",
@@ -400,6 +424,7 @@
     "roomFull": "Room is full",
     "ownerClaimFailed": "Unable to reconnect: guest identity may be lost or credentials expired after server restart. Please retry with the original browser or create a new room.",
     "roomCreatedButClaimFailed": "Room was created but failed to claim seat. Please go back to the lobby and try again.",
+    "roomCreatedButEnterFailed": "Room was created, but automatic entry failed. Please go back to the lobby and enter it again.",
     "aiSeatClaimFailed": "Some AI seats failed to initialize. You have entered the room, but please verify the seat state.",
     "joinRoomFailed": "Failed to join room",
     "actionFailed": "Action failed, please try again later.",
@@ -501,5 +526,10 @@
     "playerJoinedTitle": "Player Joined",
     "playerJoinedBody": "{{username}} joined the room",
     "playerJoinedBodyAnonymous": "A player joined the room"
+  },
+  "tutorial": {
+    "steps": {
+      "setup": "Preparing tutorial scenario..."
+    }
   }
 }

@@ -7,6 +7,7 @@
     "character_not_selected": "No character selected",
     "character_selection_not_initialized": "Character selection not initialized",
     "command_failed": "Command failed",
+    "not_connected": "Connection is not ready yet. Please try again.",
     "internal_error": "Server error, action auto-recovered",
     "pipeline_error": "Command execution error, please try again"
   },
@@ -86,6 +87,7 @@
       "settings": "Settings",
       "audio": "Audio",
       "chat": "Chat",
+      "seatSwap": "Seat Swap",
       "actionLog": "Action Log",
       "info": "Info",
       "room": "Room",
@@ -171,6 +173,29 @@
     "toggle": {
       "collapse": "Collapse menu",
       "expand": "Expand menu - draggable"
+    },
+    "seatSwap": {
+      "hint": "Seat swaps mainly affect turn order. Tap a target seat to request a swap.",
+      "waiting": "Waiting for {{player}} to approve the seat swap.",
+      "incoming": "{{player}} requested to swap seats with you.",
+      "pendingOther": "{{requester}} is waiting for {{target}} to respond to a seat swap request.",
+      "approve": "Approve Swap",
+      "reject": "Reject Swap",
+      "cancel": "Cancel Swap Request",
+      "aiBadge": "AI",
+      "seatNumber": "Seat {{seat}}"
+    },
+    "ai": {
+      "forceEndPhase": "Force end AI phase",
+      "forceEndPhaseHint": "Use when the AI is stuck to advance the current phase.",
+      "forceEndPhaseConfirm": "Confirm force end",
+      "forceEndPhaseUnavailable": "No AI phase can be force-ended right now.",
+      "forceEndPhaseNotReady": "AI control not ready yet. Please try again.",
+      "forceEndPhaseSeatOffline": "AI seat is offline. Unable to execute.",
+      "forceEndPhaseSubmitting": "Submitting force end request…",
+      "forceEndPhaseSuccess": "AI turn was force-ended.",
+      "forceEndPhaseTitle": "AI force end turn",
+      "forceEndPhaseFailed": "AI force end failed ({{reason}})"
     },
     "smashup": {
       "title": "Smash Up",

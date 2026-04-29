@@ -9,6 +9,9 @@ const FACTION_WIKI_NAMES = {
   ninjas: 'Ninjas',
   pirates: 'Pirates',
   robots: 'Robots',
+  skeletons: 'Skeletons',
+  mermaids: 'Mermaids',
+  world_champs: 'World_Champs',
   samurai: 'Samurai',
   tricksters: 'Tricksters',
   vikings: 'Vikings',
@@ -29,19 +32,24 @@ const FACTION_WIKI_NAMES = {
   frankenstein: 'Mad_Scientists'
 };
 
-// 使用 https 模块抓取页面
+// 使用 MediaWiki API 抓取页面（避免 Cloudflare JS 挑战）
 function fetchWikiPage(factionName) {
   return new Promise((resolve, reject) => {
-    const url = `https://smashup.fandom.com/wiki/${factionName}`;
+    const url = `https://smashup.fandom.com/api.php?action=parse&page=${encodeURIComponent(factionName)}&prop=wikitext&format=json`;
     const options = {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'text/html',
+        'Accept': 'application/json',
         'Connection': 'keep-alive'
       }
     };
 
     https.get(url, options, (res) => {
+      if (res.statusCode && res.statusCode >= 400) {
+        reject(new Error(`HTTP ${res.statusCode}`));
+        res.resume();
+        return;
+      }
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => resolve(data));
@@ -49,59 +57,72 @@ function fetchWikiPage(factionName) {
   });
 }
 
-// 解析 Wiki HTML
-function parseWikiCards(html) {
-  const cards = [];
-  
-  function parseSection(sectionName, type) {
-    // 查找章节（更宽松的匹配）
-    const sectionRegex = new RegExp(`<h3[^>]*>.*?${sectionName}.*?</h3>([\\s\\S]*?)(?=<h3|<h2|<figure|$)`, 'i');
-    const sectionMatch = html.match(sectionRegex);
-    
-    if (!sectionMatch) return;
-    
-    const sectionHtml = sectionMatch[1];
-    
-    // 匹配所有段落
-    const paragraphs = sectionHtml.match(/<p>.*?<\/p>/gis) || [];
-    
-    for (const p of paragraphs) {
-      // 提取数量
-      const countMatch = p.match(/(\d+)x/);
-      if (!countMatch) continue;
-      
-      // 提取名称
-      const nameMatch = p.match(/<b>([^<]+)<\/b>/);
-      if (!nameMatch) continue;
-      
-      // 提取 power
-      const powerMatch = p.match(/power\s+(\d+)/i);
-      
-      // 提取描述（去除 HTML 标签）
-      const descMatch = p.match(/<\/b><\/span>\s*-\s*(.+?)<\/p>/s);
-      let description = '';
-      if (descMatch) {
-        description = descMatch[1]
-          .replace(/<[^>]+>/g, '')
-          .replace(/&[^;]+;/g, ' ')
-          .replace(/\s+/g, ' ')
-          .trim();
-      }
-      
-      cards.push({
-        name: nameMatch[1].trim(),
-        count: parseInt(countMatch[1]),
-        type: type,
-        power: powerMatch ? parseInt(powerMatch[1]) : undefined,
-        description: description
-      });
-    }
+// 解析 Wiki Wikitext
+function parseWikiCards(raw) {
+  const json = JSON.parse(raw);
+  const wikitext = json?.parse?.wikitext?.['*'];
+  if (!wikitext) {
+    return [];
   }
-  
-  parseSection('Minions', 'minion');
-  parseSection('Actions', 'action');
-  parseSection('Fusions', 'fusion');
-  
+
+  const cards = [];
+
+  let currentType = null;
+
+  const lines = wikitext.split(/\r?\n/);
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    const plainHeading = line.replace(/<[^>]+>/g, '');
+    if (/^={3,}\s*Minions\s*={3,}$/i.test(plainHeading)) {
+      currentType = 'minion';
+      continue;
+    }
+    if (/^={3,}\s*Actions\s*={3,}$/i.test(plainHeading)) {
+      currentType = 'action';
+      continue;
+    }
+    if (/^={3,}\s*Fusions?\s*={3,}$/i.test(plainHeading)) {
+      currentType = 'fusion';
+      continue;
+    }
+    if (/^={2,}.*={2,}$/.test(plainHeading)) {
+      currentType = null;
+      continue;
+    }
+
+    if (!currentType) continue;
+    if (line.includes('<s>') || line.includes('</s>')) continue;
+
+    const cleanedLine = line.replace(/^(\*+\s*)?/, '');
+    const cardMatch = cleanedLine.match(/^(\d+)x\s+.*?'''([^']+)'''(?:<[^>]+>)*\s*-\s*(.+)$/);
+    if (!cardMatch) continue;
+
+    const count = parseInt(cardMatch[1], 10);
+    const name = cardMatch[2].trim();
+    let rest = cardMatch[3];
+
+    const powerMatch = rest.match(/power\s+(\d+)/i);
+    const power = powerMatch ? parseInt(powerMatch[1], 10) : undefined;
+
+    rest = rest
+      .replace(/<sup>.*$/i, '')
+      .replace(/''\([^)]*\)''/g, '')
+      .replace(/''/g, '')
+      .replace(/<[^>]+>/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    cards.push({
+      name,
+      count,
+      type: currentType,
+      power,
+      description: rest
+    });
+  }
+
   return cards;
 }
 
@@ -110,20 +131,28 @@ async function fetchFactionCards(factionId) {
   const wikiName = FACTION_WIKI_NAMES[factionId];
   
   console.log(`正在抓取 ${factionId} (${wikiName})...`);
-  
-  try {
-    const html = await fetchWikiPage(wikiName);
-    const cards = parseWikiCards(html);
-    
-    const totalCount = cards.reduce((sum, c) => sum + c.count, 0);
-    console.log(`✅ 找到 ${cards.length} 种卡牌，共 ${totalCount} 张`);
-    
-    return cards;
-    
-  } catch (error) {
-    console.error(`❌ 抓取失败: ${error.message}`);
-    return [];
+
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const html = await fetchWikiPage(wikiName);
+      const cards = parseWikiCards(html);
+      if (!cards || cards.length === 0) {
+        throw new Error('解析后卡牌数为 0');
+      }
+
+      const totalCount = cards.reduce((sum, c) => sum + c.count, 0);
+      console.log(`✅ 找到 ${cards.length} 种卡牌，共 ${totalCount} 张`);
+      return cards;
+    } catch (error) {
+      const suffix = attempt < maxAttempts ? `（第 ${attempt}/${maxAttempts} 次，准备重试）` : `（第 ${attempt}/${maxAttempts} 次）`;
+      console.error(`❌ 抓取失败: ${error?.message || String(error)} ${suffix}`);
+      if (attempt < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+      }
+    }
   }
+  return [];
 }
 
 // 主函数
@@ -143,10 +172,14 @@ async function main() {
   console.log(`开始从 Wiki 抓取卡牌信息（包含效果描述），目标派系：${factionIds.join(', ')}\n`);
   
   const allFactions = {};
+  const emptyFactions = [];
   
   for (const factionId of factionIds) {
     const cards = await fetchFactionCards(factionId);
     allFactions[factionId] = cards;
+    if (!cards || cards.length === 0) {
+      emptyFactions.push(factionId);
+    }
     
     // 避免请求过快
     await new Promise(resolve => setTimeout(resolve, 1500));
@@ -206,6 +239,11 @@ async function main() {
   for (const [factionId, cards] of Object.entries(allFactions)) {
     const totalCount = cards.reduce((sum, c) => sum + c.count, 0);
     console.log(`${factionId}: ${cards.length} 种卡牌，共 ${totalCount} 张`);
+  }
+
+  if (emptyFactions.length > 0) {
+    console.error(`\n❌ 以下派系抓取结果为空，请检查 Wiki 页面映射或解析逻辑：${emptyFactions.join(', ')}`);
+    process.exit(2);
   }
 }
 

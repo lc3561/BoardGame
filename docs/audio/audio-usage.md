@@ -7,17 +7,16 @@
 ## 音频资源架构（强制）
 
 **三层架构**：
-1. **全量注册表**（`src/assets/audio/registry.json`，由 `public/assets/common/audio/registry.json` 同步而来）：音频 key 与相对物理路径的完整真相源。`/dev/audio` 会动态加载这份全量表。
-2. **运行时精简注册表**（`src/assets/audio/registry-slim.json`）：从全量表中过滤出“当前代码实际引用”的条目，游戏运行时默认加载这份 slim 表，避免把 10000+ 条音频元数据都打进主链路。
-3. **游戏配置 / FX 系统**（`src/games/<gameId>/audio.config.ts`、`src/games/<gameId>/ui/fxSetup.ts`）：只引用 registry key，不声明音频路径。
+1. **通用注册表**（`src/assets/audio/registry.json`，构建时从 `public/assets/common/audio/` 生成）：所有音效资源的唯一来源，包含 key 和物理路径映射。代码中通过静态 import 加载，Vite 会自动打包。
+2. **游戏配置**（`src/games/<gameId>/audio.config.ts`）：定义事件音效的映射规则（`feedbackResolver`），使用通用注册表中的 key。
+3. **FX 系统**（`src/games/<gameId>/ui/fxSetup.ts`）：直接使用通用注册表中的 key 定义 `FeedbackPack`，不依赖游戏配置常量。
 
 **核心原则**：
-- **禁止重复定义**：音效 key 只在注册表中定义一次，游戏层和 FX 层直接引用 key 字符串，不再定义常量。
+- **禁止重复定义**：音效 key 只在通用注册表中定义一次，游戏层和 FX 层直接引用 key 字符串，不再定义常量。
 - **禁止**在游戏层定义音频资源（`audio.config.ts` 不得声明 `basePath/sounds`）。
 - **禁止**在 `src/games/<gameId>/` 下放音频文件或自建音频目录。
 - **禁止**使用旧短 key（如 `click` / `dice_roll` / `card_draw`）。
 - **必须**使用 registry 的完整 key（如 `ui.general....uiclick_dialog_choice_01_krst_none`）。
-- **必须区分“注册表 JSON”与“音频二进制资源”**：前者随前端构建打包；后者运行时通过 `VITE_ASSETS_BASE_URL` / 默认官方资源域名加载，生产通常落在 R2/CDN。
 
 ## 1. 目录与来源（强制）
 - **唯一音频资源目录**：`public/assets/common/audio/`
@@ -47,34 +46,14 @@ AUDIO_OGG_BITRATE=96k npm run compress:audio -- public/assets/common/audio
 node scripts/audio/generate_common_audio_registry.js
 ```
 
-- 产出：`public/assets/common/audio/registry.json`（生成后需同步到 `src/assets/audio/registry.json`）
+- 产出：`public/assets/common/audio/registry.json`（生成后需复制到 `src/assets/audio/registry.json`）
 - **注意**：生成脚本会优先使用 `compressed/` 变体；若同 key 同时存在原始与压缩版本，将自动保留压缩版本并跳过原始文件。
 - **部署说明**：
-  - `/dev/audio`：动态加载 `src/assets/audio/registry.json` 全量表，便于检索和试听
-  - 游戏运行时：默认加载 `src/assets/audio/registry-slim.json`
-  - 音频文件本身不从 JSON 内联，而是运行时按 `VITE_ASSETS_BASE_URL` / 默认官方资源域名加载；生产通常是 R2/CDN，开发可走本地 `/assets`
+  - 开发环境：代码从 `src/assets/audio/registry.json` 静态 import，修改后刷新即可生效
+  - 生产环境：Vite 构建时自动打包 JSON 到产物中
+  - 音频文件本身仍从 CDN 加载（通过 `VITE_ASSETS_BASE_URL` 配置）
 
-### 2.3 生成运行时 slim registry（强制）
-使用脚本：`scripts/audio/generate-slim-registry.mjs`
-
-```bash
-node scripts/audio/generate-slim-registry.mjs
-```
-
-- 产出：`src/assets/audio/registry-slim.json`
-- 规则：扫描 `src/**/*.ts(x)` 中实际引用的音频 key，再从全量表中过滤对应条目
-- 适用场景：只要新增了代码引用的音频 key，就必须重新生成 slim registry，否则 `/dev/audio` 能看到、运行时仍可能拿不到
-
-### 2.4 验证 slim registry（推荐）
-使用脚本：`scripts/audio/verify-slim-registry.mjs`
-
-```bash
-node scripts/audio/verify-slim-registry.mjs
-```
-
-- 作用：校验“代码中引用的 key 都在 slim registry 中”，并检查 slim 与全量表是否一致
-
-### 2.5 生成音频清单文档
+### 2.3 生成音频清单文档
 使用脚本：`scripts/audio/generate_audio_assets_md.js`
 
 ```bash
@@ -83,13 +62,11 @@ node scripts/audio/generate_audio_assets_md.js
 
 - 产出：`docs/audio/common-audio-assets.md`
 
-### 2.6 生成 AI 精简 registry（强烈推荐）
+### 2.4 生成 AI 精简 registry（强烈推荐）
 用于减少 AI 查找音效时的 token 消耗（不影响运行时）。
 
 > 说明：AI 在挑选/替换音效时**优先**使用精简 registry（`registry.ai*.json`）+ 语义目录（`audio-catalog.md`）定位候选 key。
 > 仅当目录/精简库不足以定位时，再回退到全量 `public/assets/common/audio/registry.json`。
-> **脚本产物优先（强制）**：凡是用户要“音效表 / 实际使用列表 / 当前用了哪些 key / 导出清单”，必须优先复用现有脚本产物或现有标准文件（如 `registry.ai*.json`、`registry-slim.json`、`common-audio-assets.md`），禁止跳过脚本直接手写一份平行清单。
-> **禁止平行手写表（强制）**：如果仓库里已经存在满足诉求的标准产物，就不得再新增 `evidence/*.md`、临时 Markdown 表、对话内长表来替代标准产物。若当前确实缺少某个游戏专用脚本，必须先明确说明“现有标准产物只有哪些、缺什么”，再决定是复用最近的标准产物还是补脚本；不能先手写一份凑数。
 
 **全量精简版（全仓库通用）**
 ```bash
@@ -100,12 +77,12 @@ node scripts/audio/generate_ai_audio_registry.js
 
 **DiceThrone 专用精简版（仅扫描该游戏源码）**
 ```bash
-node scripts/audio/generate_ai_audio_registry_dicethrone.js
+node scripts/games/dicethrone/audio/generate_ai_audio_registry_dicethrone.js
 ```
-- 产出：`docs/audio/registry.ai.dicethrone.json`
+- 产出：`docs/games/dicethrone/audio/registry.ai.dicethrone.json`
 - 内容：仅包含 `src/games/dicethrone` 中实际使用的 key
 
-### 2.7 AI 查找/筛选音效（推荐流程）
+### 2.5 AI 查找/筛选音效（推荐流程）
 **目标**：在挑选音效时，用最小 token 成本定位合适 key。
 
 **首选方法：语义目录（强制执行，除非明确说明不需要）**
@@ -120,7 +97,6 @@ node scripts/audio/generate_ai_audio_registry_dicethrone.js
 > 1) `docs/audio/audio-catalog.md`（语义目录）
 > 2) `docs/audio/registry.ai.json` 或 `docs/audio/registry.ai.<gameId>.json`（精简 registry，如存在）
 > 仅当以上信息不足以定位 key，才允许回退到全量 `public/assets/common/audio/registry.json`。
-> 对于“按某个游戏导出实际使用 key”这类需求，也必须先检查是否已有对应 `registry.ai.<gameId>.json` 或其他脚本产物；没有时先说清现状，不得默认新造手写表。
 
 **生成/更新目录：**
 ```bash
@@ -129,7 +105,7 @@ node scripts/audio/generate_audio_catalog.js
 
 **备选方法（精简 registry）：**
 - `docs/audio/registry.ai.json`（全量精简，仅保留 key/type/category）
-- `docs/audio/registry.ai.dicethrone.json`（DiceThrone 专用，最小）
+- `docs/games/dicethrone/audio/registry.ai.dicethrone.json`（DiceThrone 专用，最小）
 
 **AI 查询示例（grep_search）：**
 ```json
@@ -149,7 +125,7 @@ node scripts/audio/generate_audio_catalog.js
 }
 ```
 
-### 2.8 音效预览（/dev/audio）
+### 2.6 音效预览（/dev/audio）
 用于在浏览器内快速试听、复制 key、检查分类与翻译。
 
 **入口**：访问 `/dev/audio`。
@@ -161,14 +137,13 @@ node scripts/audio/generate_audio_catalog.js
 - 点击名称复制 key，点击播放按钮试听
 
 **注意事项**：
-- 预览依赖 `src/assets/audio/registry.json` 全量表；新增音效后需先重新生成并同步全量 registry。
+- 预览依赖 `public/assets/common/audio/registry.json`，新增音效后需先重新生成 registry。
 - 友好中文名来自 `public/assets/common/audio/phrase-mappings.zh-CN.json`，如翻译更新需同步生成并刷新页面。
 
 ## 3. 代码使用规范（强制）
 ### 3.1 使用 registry key
 - **必须**使用 `registry.json` 中的唯一 key。
 - **禁止**写 `compressed/` 路径，`getOptimizedAudioUrl()` 会自动处理。
-- **必须保证远端/本地资源路径上存在 `compressed/` 实际产物**。运行时 URL 会自动插入 `compressed/`，所以“registry 里有 key”不等于“音频一定能播”。
 
 示例：
 ```ts
@@ -181,10 +156,6 @@ return 'ui.general.khron_studio_rpg_interface_essentials_inventory_dialog_ucs_sy
 - **UI 点击音**：仅用于纯 UI 操作（面板/Tab 切换），通过 `GameButton`。
 - **操作拒绝音**：用户尝试不合法操作时（非自己回合、条件不满足等），通过 `playDeniedSound()` 播放（key: `puzzle.18.negative_pop_01`）。
 - **单一来源原则**：同一动作只能由"事件音"、"按钮音"或"拒绝音"其中之一触发，禁止重复。
-- **行为语义优先于素材类别**：只要玩家感知到的核心动作是“对象状态发生规则性变化”，就必须优先选择表达该变化的 key，不能因为载体是卡牌、棋子或 token，就默认落到 `card.handling.*` 或 `card.fx.*`。
-- **抽象 handling 音只用于普通搬运**：`card.handling.*`、`card.fx.*` 仅用于不改变对象规则身份、可见性、访问权限、状态边界的普通搬运操作，例如公开区域中的打出、抽取、弃置、洗切、置顶、置底、公开信息之间转移。
-- **复合语义事件取主语义**：如果一个事件同时包含“状态变化 + 位置变化”，优先表达前者；位置变化只是在没有更强语义时才主导选音。
-- **通用判定标准**：凡是涉及隐藏信息变为公开、公开信息转为受限、对象从不可交互变为可交互、对象从锁定态变为释放态、对象获得或失去特殊规则身份、对象跨越特殊区域边界等事件，都不得默认映射为抽象 handling 音，除非经过单独审查并有文档说明没有更贴切的语义音。
 
 示例：
 ```ts
@@ -209,14 +180,13 @@ contextualPreloadKeys: (context) => {
 AudioManager.preloadKeys(['ui.general.menu_click_01']);
 ```
 
-### 3.4 阵营/牌组卡牌音效选择策略（适用于存在阵营、牌组或职业分桶的游戏）
-- **通用音效池是兜底，不是默认偷懒方案**：每个阵营/牌组可以在 `audio.config.ts` 中配置通用音效池（单位池 + 行动池），但它只负责承接“没有更强语义”的普通卡牌。
-- **基础池默认压缩到 1-2 条**：除非该类卡牌高频出现且确实需要更多近似变体防重复，否则通用音效池应优先控制在 1-2 条；不要为了“看起来丰富”默认塞成 3 条以上。
-- **卡牌语义明显时必须单独找匹配音**：只要卡牌名称、描述、演出意图已经明显指向某种动作或状态变化，就必须优先为该卡配置更贴切的 `soundKey`，不能继续复用基础池。
+### 3.4 派系/阵营卡牌音效选择策略（SmashUp 适用）
+- **通用音效池优先**：每个派系在 `audio.config.ts` 中配置通用音效池（随从池 + 行动池），所有卡牌默认使用通用音效池随机播放。
+- **专属 soundKey 仅用于语义明显更匹配的卡牌**：只有当卡牌名称/描述的语义与某个音效高度匹配，且该音效比通用音效池更合适时，才在卡牌数据中配置 `soundKey`。
 - **判断标准**：
   - ✅ 配置 soundKey：卡牌名称/描述直接对应某种声音（如"咀嚼"→撕咬音效，"魔法"→魔法音效）
   - ❌ 不配置 soundKey：卡牌描述是游戏机制（如"放置力量指示物"、"抽卡"、"弃牌"），没有比通用音效更匹配的
-- **目标**：减少音效文件加载量，保持阵营风格统一，只在真正有意义的地方做差异化。
+- **目标**：减少音效文件加载量，保持派系风格统一，只在真正有意义的地方做差异化。
 - **优先级**：`resolveFactionSound()` 先检查卡牌 `soundKey`，没有则 fallback 到通用音效池。
 
 ### 3.5 骰子游戏通用音效选择策略
@@ -277,12 +247,9 @@ AudioManager.preloadKeys(['ui.general.menu_click_01']);
 - [ ] 音频文件仅存在于 `public/assets/common/audio/`
 - [ ] 已执行 `compress:audio`
 - [ ] 已重新生成 `registry.json`
-- [ ] 已同步 `src/assets/audio/registry.json`
-- [ ] 已重新生成 `registry-slim.json`
 - [ ] 已更新 `common-audio-assets.md`
 - [ ] 代码中不出现 `compressed/`
 - [ ] 游戏层 `audio.config.ts` 不含 `basePath/sounds`
 - [ ] 音频播放代码不在 `ctx.resume()` 后同步检查 context 状态
 - [ ] BGM 播放不用 `isContextSuspended()` 拦截
-- [ ] 生产若走 R2/CDN，已确认对应 `compressed/` 音频文件和 registry 同步上传
 

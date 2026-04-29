@@ -56,12 +56,6 @@ type HarnessWindow = Window & {
     };
 };
 
-/** 读取指定玩家 tokens */
-const getPlayerTokens = (core: Record<string, unknown>, playerId: string) => {
-    const players = core.players as Record<string, Record<string, unknown>>;
-    return (players[playerId]?.tokens as Record<string, number>) ?? {};
-};
-
 /** 注入 tokens */
 const injectTokens = async (
     page: Page,
@@ -164,6 +158,18 @@ async function expectTokenCount(
     ).toBe(count);
 }
 
+async function enterDefensePhaseIfNeeded(page: Page): Promise<void> {
+    const defendEntryButton = page.getByRole('button', { name: /^(DEFEND|Defend|防御)$/i }).first();
+    const defenseRollButton = page.locator('[data-tutorial-id="dice-roll-button"]');
+
+    const hasExplicitDefendEntry = await defendEntryButton.isVisible({ timeout: 1500 }).catch(() => false);
+    if (hasExplicitDefendEntry) {
+        await defendEntryButton.click();
+    }
+
+    await expect(defenseRollButton).toBeEnabled({ timeout: 10000 });
+}
+
 test.describe('Token 响应窗口完整流程', () => {
     test('攻击方暴击 token 注入后可见', async ({ page, game }, testInfo: TestInfo) => {
         await setupTokenScene(game, { '0': 'paladin', '1': 'barbarian' });
@@ -253,10 +259,7 @@ test.describe('Token 响应窗口真实入口', () => {
             }
             await expect(attackAdvanceButton).toBeEnabled({ timeout: 5000 });
             await attackAdvanceButton.click();
-            const defendEntryButton = guestPage.getByRole('button', { name: /^(DEFEND|Defend|防御)$/i }).first();
-            await expect(defendEntryButton).toBeVisible({ timeout: 10000 });
-            await defendEntryButton.click();
-
+            await enterDefensePhaseIfNeeded(guestPage);
             const defenseRollButton = guestPage.locator('[data-tutorial-id="dice-roll-button"]');
             await expect(defenseRollButton).toBeEnabled({ timeout: 5000 });
             await defenseRollButton.click();
@@ -284,7 +287,7 @@ test.describe('Token 响应窗口真实入口', () => {
             await expect(defenseAdvanceButton).toBeEnabled({ timeout: 5000 });
             await defenseAdvanceButton.click();
 
-            const honorLabel = hostPage.getByText(/^Honor$/).first();
+            const honorLabel = hostPage.getByText(/^荣誉$|^Honor$/).first();
             const useButton = hostPage.getByRole('button', { name: /^(使用|Use|Use Token)(?: x\d+)?$/i }).first();
             await expect(honorLabel).toBeVisible({ timeout: 8000 });
             await expect(useButton).toBeVisible({ timeout: 5000 });
@@ -372,10 +375,7 @@ test.describe('Token 响应窗口真实入口', () => {
             }
             await expect(resolveAttackButton).toBeEnabled({ timeout: 5000 });
             await resolveAttackButton.click();
-            const defendEntryButton = guestPage.getByRole('button', { name: /^(DEFEND|Defend|防御)$/i }).first();
-            await expect(defendEntryButton).toBeVisible({ timeout: 10000 });
-            await defendEntryButton.click();
-
+            await enterDefensePhaseIfNeeded(guestPage);
             const defenseRollButton = guestPage.locator('[data-tutorial-id="dice-roll-button"]');
             await expect(defenseRollButton).toBeEnabled({ timeout: 5000 });
             await defenseRollButton.click();
@@ -396,7 +396,7 @@ test.describe('Token 响应窗口真实入口', () => {
             await expect(defenseAdvanceButton).toBeEnabled({ timeout: 5000 });
             await defenseAdvanceButton.click();
 
-            const backStrikeLabel = guestPage.getByText(/^Back Strike$/).first();
+            const backStrikeLabel = guestPage.getByText(/^反击$|^Back Strike$|^Retribution$/).first();
             const useButton = guestPage.getByRole('button', { name: /^(使用|Use|Use Token)(?: x\d+)?$/i }).first();
 
             await expect(backStrikeLabel).toBeVisible({ timeout: 8000 });

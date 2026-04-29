@@ -15,7 +15,9 @@ import { dirname } from 'node:path';
 import type { Page, TestInfo } from '@playwright/test';
 import { getCardDef as getSmashUpCardDef, getBaseDef } from '../../src/games/smashup/data/cards';
 import { CHARACTER_DATA_MAP, initHeroState } from '../../src/games/dicethrone/domain/characters';
+import { RESOURCE_IDS } from '../../src/games/dicethrone/domain/resources';
 import type { AbilityCard, SelectableCharacterId } from '../../src/games/dicethrone/types';
+import { createEmptyTokens } from '../../src/games/splendor/domain/rules';
 import { clearEvidenceScreenshotsForTest, getEvidenceScreenshotPath, sanitizeEvidencePathSegment } from './evidenceScreenshots';
 
 type SceneQueryValue = string | number | boolean | null | undefined;
@@ -110,6 +112,14 @@ interface DiceThronePlayerConfig {
     tokens?: Record<string, number>;
 }
 
+interface SplendorPlayerConfig {
+    tokens?: Record<string, number>;
+    reservedCardIds?: string[];
+    purchasedCardIds?: string[];
+    nobleIds?: string[];
+    points?: number;
+}
+
 /**
  * 场景配置（通用）
  */
@@ -117,9 +127,9 @@ interface SceneConfig {
     /** 游戏 ID */
     gameId: string;
     /** 玩家 0 配置 */
-    player0?: PlayerSceneConfig | DiceThronePlayerConfig;
+    player0?: PlayerSceneConfig | DiceThronePlayerConfig | SplendorPlayerConfig;
     /** 玩家 1 配置 */
-    player1?: PlayerSceneConfig | DiceThronePlayerConfig;
+    player1?: PlayerSceneConfig | DiceThronePlayerConfig | SplendorPlayerConfig;
     /** 当前回合玩家 */
     currentPlayer?: string;
     /** 回合阶段 */
@@ -215,6 +225,23 @@ function normalizeDiceThroneCardEntry(
     return createFallbackDiceThroneCard(entry);
 }
 
+function normalizeDiceThroneResources(resources: Record<string, number> | undefined): Record<string, number> | undefined {
+    if (!resources) return resources;
+
+    const normalizedEntries = Object.entries(resources).map(([key, value]) => {
+        switch (key) {
+            case 'CP':
+                return [RESOURCE_IDS.CP, value] as const;
+            case 'HP':
+                return [RESOURCE_IDS.HP, value] as const;
+            default:
+                return [key, value] as const;
+        }
+    });
+
+    return Object.fromEntries(normalizedEntries);
+}
+
 function normalizeDiceThronePlayerConfig(
     playerConfig: DiceThronePlayerConfig | undefined,
     playerId: '0' | '1',
@@ -227,6 +254,7 @@ function normalizeDiceThronePlayerConfig(
 
     return {
         ...playerConfig,
+        resources: normalizeDiceThroneResources(playerConfig.resources),
         hand: playerConfig.hand?.map((entry) => normalizeDiceThroneCardEntry(entry, cardCatalog)),
         deck: playerConfig.deck?.map((entry) => normalizeDiceThroneCardEntry(entry, cardCatalog)),
         discard: playerConfig.discard?.map((entry) => normalizeDiceThroneCardEntry(entry, cardCatalog)),
@@ -260,7 +288,8 @@ export class GameTestContext {
         }
 
         return error.message.includes('waitForFunction: Timeout')
-            || error.message.includes('page.goto: Timeout');
+            || error.message.includes('page.goto: Timeout')
+            || error.message.includes('game-load-failed');
     }
 
     private async gotoWithRetry(url: string, timeout: number): Promise<void> {
@@ -313,6 +342,14 @@ export class GameTestContext {
         );
     }
 
+    private async detectGameLoadError(timeout = 800): Promise<string | null> {
+        const errorScreen = this.page.locator('[data-bg-friendly-screen="true"]');
+        const isVisible = await errorScreen.isVisible({ timeout }).catch(() => false);
+        if (!isVisible) return null;
+        const text = await errorScreen.innerText().catch(() => '游戏加载失败');
+        return text.replace(/\s+/g, ' ').trim();
+    }
+
     /**
      * 打开启用 TestHarness 的测试游戏页，并等待状态注入能力就绪。
      *
@@ -362,6 +399,11 @@ export class GameTestContext {
                     () => (window as any).__BG_TEST_HARNESS__?.state?.isRegistered?.() === true,
                     { timeout: attemptTimeout, polling: 200 },
                 );
+                await this.page.waitForTimeout(200);
+                const loadError = await this.detectGameLoadError(600);
+                if (loadError) {
+                    throw new Error(`game-load-failed: ${loadError}`);
+                }
                 return;
             } catch (error) {
                 lastError = error;
@@ -519,6 +561,8 @@ export class GameTestContext {
                     '1': buildPrebuiltPlayer('1', config.player1 as DiceThronePlayerConfig | undefined),
                 },
             };
+        } else if (config.gameId === 'splendor') {
+            preparedConfig = config;
         } else {
             preparedConfig = config;
         }
@@ -659,6 +703,77 @@ export class GameTestContext {
                 }
 
                 // 应用状态
+                await harness.state.set(patch);
+            } else if (cfg.gameId === 'splendor') {
+                const buildSplendorPlayerState = (playerConfig: SplendorPlayerConfig | undefined, playerId: string) => {
+                    const existingPlayer = state.core.players?.[playerId] ?? {
+                        id: playerId,
+                        tokens: createEmptyTokens(),
+                        reservedCardIds: [],
+                        purchasedCardIds: [],
+                        nobleIds: [],
+                        points: 0,
+                    };
+                    const nextPlayer = {
+                        ...existingPlayer,
+                        ...(playerConfig ?? {}),
+                        tokens: {
+                            ...(existingPlayer.tokens ?? createEmptyTokens()),
+                            ...(playerConfig?.tokens ?? {}),
+                        },
+                        reservedCardIds: playerConfig?.reservedCardIds ?? existingPlayer.reservedCardIds ?? [],
+                        purchasedCardIds: playerConfig?.purchasedCardIds ?? existingPlayer.purchasedCardIds ?? [],
+                        nobleIds: playerConfig?.nobleIds ?? existingPlayer.nobleIds ?? [],
+                    };
+                    nextPlayer.points = playerConfig?.points ?? existingPlayer.points ?? 0;
+                    return nextPlayer;
+                };
+
+                const patch: any = {
+                    ...state,
+                    core: {
+                        ...state.core,
+                        players: {
+                            ...state.core.players,
+                        },
+                    },
+                    sys: {
+                        ...(state.sys ?? {}),
+                    },
+                };
+
+                if (cfg.player0) {
+                    patch.core.players['0'] = buildSplendorPlayerState(cfg.player0, '0');
+                }
+                if (cfg.player1) {
+                    patch.core.players['1'] = buildSplendorPlayerState(cfg.player1, '1');
+                }
+
+                if (cfg.currentPlayer !== undefined) {
+                    patch.core.currentPlayer = cfg.currentPlayer;
+                }
+
+                if (cfg.extra?.core) {
+                    patch.core = {
+                        ...patch.core,
+                        ...cfg.extra.core,
+                    };
+                }
+
+                if (cfg.extra?.sys) {
+                    patch.sys = {
+                        ...patch.sys,
+                        ...cfg.extra.sys,
+                    };
+                }
+
+                if (cfg.sys) {
+                    patch.sys = {
+                        ...patch.sys,
+                        ...cfg.sys,
+                    };
+                }
+
                 await harness.state.set(patch);
             } else {
                 const now = Date.now();
@@ -865,6 +980,28 @@ export class GameTestContext {
                         phase: cfg.phase,
                     };
 
+                    if (cfg.gameId === 'smashup') {
+                        patch.core = {
+                            ...patch.core,
+                            triggerQueue: undefined,
+                            beforeScoringTriggeredBases: undefined,
+                            whenScoringTriggeredBases: undefined,
+                            afterScoringTriggeredBases: undefined,
+                            pendingAfterScoringSpecials: undefined,
+                            activeDuel: undefined,
+                        };
+                        patch.sys = {
+                            ...patch.sys,
+                            flowHalted: false,
+                            scoredBaseIndices: undefined,
+                            smashupScoring: undefined,
+                            smashupReactionSession: undefined,
+                            smashupReactionStack: undefined,
+                            _waitForPostScoringReduce: undefined,
+                            _waitForStartTurnInteractionReduce: undefined,
+                        };
+                    }
+
                     // 从派系选择直接注入到其他阶段时，必须清理残留的交互/响应窗口。
                     // 否则 factionSelect 初始态留下的 system state 仍可能阻塞 ADVANCE_PHASE，
                     // 导致 UI 看起来在 playCards，但点击“结束回合”没有任何效果。
@@ -1039,8 +1176,35 @@ export class GameTestContext {
 
         // 4. 如果需要选择目标随从，点击随从
         if (options?.targetMinionUid) {
-            await this.page.click(`[data-minion-uid="${options.targetMinionUid}"]`);
-            await this.page.waitForTimeout(300);
+            if (options.targetBaseIndex === undefined && await isCardStillInHand()) {
+                await this.page.click(`[data-card-uid="${cardUid}"]`);
+                await this.page.waitForTimeout(300);
+            }
+
+            const interactionOption = await this.page.evaluate((targetMinionUid) => {
+                const harness = (window as any).__BG_TEST_HARNESS__;
+                const state = harness?.state?.get?.();
+                const current = state?.sys?.interaction?.current;
+                const options = current?.data?.options ?? [];
+                const matched = options.find((option: any) => option?.value?.minionUid === targetMinionUid);
+                return matched?.id ?? null;
+            }, options.targetMinionUid);
+
+            if (interactionOption) {
+                await this.selectOption(interactionOption);
+            } else {
+                await this.page.click(`[data-minion-uid="${options.targetMinionUid}"]`);
+                await this.page.waitForTimeout(300);
+            }
+        }
+
+        // 5. 无目标卡牌在新版 SmashUp UI 中默认是“首击选中，次击确认打出”。
+        // 兼容该交互：若首击后卡牌仍在手牌里，则补一次点击完成打出。
+        if (options?.targetBaseIndex === undefined && !options?.targetMinionUid) {
+            if (await isCardStillInHand()) {
+                await this.page.click(`[data-card-uid="${cardUid}"]`);
+                await this.page.waitForTimeout(300);
+            }
         }
     }
 
@@ -1140,6 +1304,33 @@ export class GameTestContext {
      */
     async selectOption(optionId: string): Promise<void> {
         await this.dismissRevealOverlayIfPresent();
+        const optionMeta = await this.page.evaluate((id) => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const state = harness?.state?.get?.();
+            const interaction = state?.sys?.interaction?.current;
+            const options = interaction?.data?.options ?? [];
+            const option = options.find((entry: any) => entry.id === id);
+            return {
+                interactionPlayerId: interaction?.playerId ?? null,
+                existsInCurrentInteraction: !!option,
+                label: typeof option?.label === 'string' ? option.label : null,
+                value: option?.value ?? null,
+            };
+        }, optionId);
+
+        if (optionMeta?.existsInCurrentInteraction && optionMeta?.interactionPlayerId) {
+            await this.page.evaluate(({ id, playerId }) => {
+                const harness = (window as any).__BG_TEST_HARNESS__;
+                harness.command.dispatch({
+                    type: 'SYS_INTERACTION_RESPOND',
+                    playerId,
+                    payload: { optionId: id },
+                });
+            }, { id: optionId, playerId: optionMeta.interactionPlayerId });
+            await this.page.waitForTimeout(300);
+            return;
+        }
+
         const cardLikeOption = this.page.locator(`[data-option-id="${optionId}"]`).first();
         try {
             await cardLikeOption.waitFor({ state: 'visible', timeout: 2000 });
@@ -1149,17 +1340,6 @@ export class GameTestContext {
         } catch {
             // 卡牌选项不可见，继续尝试其他方式
         }
-
-        const optionMeta = await this.page.evaluate((id) => {
-            const harness = (window as any).__BG_TEST_HARNESS__;
-            const state = harness?.state?.get?.();
-            const options = state?.sys?.interaction?.current?.data?.options ?? [];
-            const option = options.find((entry: any) => entry.id === id);
-            return {
-                label: typeof option?.label === 'string' ? option.label : null,
-                value: option?.value ?? null,
-            };
-        }, optionId);
 
         const optionLabel = optionMeta?.label;
         if (optionLabel) {

@@ -1,6 +1,6 @@
 # E2E 测试示例：雷霆万钧技能（可视化）
 
-> **文件位置**：`e2e/dicethrone-thunder-strike.e2e.ts`  
+> **文件位置**：`e2e/dicethrone/dicethrone-thunder-strike.e2e.ts`
 > **测试框架**：Playwright  
 > **测试对象**：DiceThrone 游戏中武僧的"雷霆万钧"技能
 
@@ -322,7 +322,7 @@ npm run dev
 **解决**：
 ```typescript
 const context = await browser.newContext({
-  viewport: { width: 1920, height: 1080 }  // 提高分辨率
+  viewport: DESKTOP_REFERENCE_VIEWPORT  // 使用项目默认 PC 参考分辨率：1920x1080
 });
 ```
 
