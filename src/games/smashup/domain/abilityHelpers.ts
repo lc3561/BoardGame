@@ -990,7 +990,7 @@ export function fireMinionPlayedTriggers(params: {
     if (queued) events.push(queued);
 
     // 4. 消费 pendingMinionPlayEffects 队列（如 crack_of_dusk / its_alive 的打出后+1指示物）
-    const player = core.players[playerId];
+    const player = triggerCore.players[playerId];
     if (player?.pendingMinionPlayEffects && player.pendingMinionPlayEffects.length > 0) {
         const effect = player.pendingMinionPlayEffects[0];
         if (effect.effect === 'addPowerCounter') {

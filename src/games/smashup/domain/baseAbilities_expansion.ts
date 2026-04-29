@@ -230,7 +230,7 @@ export function registerExpansionBaseAbilities(): void {
 
         // Infiltrate：只让拥有者自己忽略（不影响其他玩家）
         const ignoredByOwner = base?.ongoingActions?.some(o =>
-            o.ownerId === ownerId && o.defId === 'ninja_infiltrate',
+            o.ownerId === ownerId && o.defId.startsWith('ninja_infiltrate'),
         ) ?? false;
         if (ignoredByOwner) return { events: [] };
 
@@ -655,7 +655,7 @@ export function registerExpansionBaseAbilities(): void {
         const eggBase = ctx.state.bases[eggIndex];
         // Infiltrate：该随从控制者若选择忽略，则其随从不再受保护
         const ignored = eggBase.ongoingActions?.some(o =>
-            o.ownerId === ctx.targetMinion.controller && o.defId === 'ninja_infiltrate',
+            o.ownerId === ctx.targetMinion.controller && o.defId.startsWith('ninja_infiltrate'),
         ) ?? false;
         if (ignored) return false;
         // 仅“+1 power counters”（力量指示物）提供保护

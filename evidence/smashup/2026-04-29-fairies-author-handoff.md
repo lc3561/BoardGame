@@ -49,42 +49,42 @@
 
 ### Fairies Card Atlas
 
-- [`pretty_pretty.png`](/D:/GA/BoardGame-upstream-main-20260428/public/assets/i18n/zh-CN/smashup/cards/pretty_pretty.png)
-- [`pretty_pretty.webp`](/D:/GA/BoardGame-upstream-main-20260428/public/assets/i18n/zh-CN/smashup/cards/compressed/pretty_pretty.webp)
+- [`pretty_pretty.png`](../../public/assets/i18n/zh-CN/smashup/cards/pretty_pretty.png)
+- [`pretty_pretty.webp`](../../public/assets/i18n/zh-CN/smashup/cards/compressed/pretty_pretty.webp)
 
 ### Fairies Base Atlas
 
-- [`base3.png`](/D:/GA/BoardGame-upstream-main-20260428/public/assets/i18n/zh-CN/smashup/base/base3.png)
-- [`base3.webp`](/D:/GA/BoardGame-upstream-main-20260428/public/assets/i18n/zh-CN/smashup/base/compressed/base3.webp)
+- [`base3.png`](../../public/assets/i18n/zh-CN/smashup/base/base3.png)
+- [`base3.webp`](../../public/assets/i18n/zh-CN/smashup/base/compressed/base3.webp)
 
 ### Fairies Titan Atlas
 
-- [`taitan1.png`](/D:/GA/BoardGame-upstream-main-20260428/public/assets/i18n/zh-CN/smashup/taitan/taitan1.png)
-- [`taitan1.webp`](/D:/GA/BoardGame-upstream-main-20260428/public/assets/i18n/zh-CN/smashup/taitan/compressed/taitan1.webp)
+- [`taitan1.png`](../../public/assets/i18n/zh-CN/smashup/taitan/taitan1.png)
+- [`taitan1.webp`](../../public/assets/i18n/zh-CN/smashup/taitan/compressed/taitan1.webp)
 
 ## Code Touchpoints
 
 ### Core Fairies / Titan Wiring
 
-- [`fairies.ts`](/D:/GA/BoardGame-upstream-main-20260428/src/games/smashup/abilities/fairies.ts)
-- [`titans.ts`](/D:/GA/BoardGame-upstream-main-20260428/src/games/smashup/abilities/titans.ts)
-- [`abilityHelpers.ts`](/D:/GA/BoardGame-upstream-main-20260428/src/games/smashup/domain/abilityHelpers.ts)
-- [`baseAbilities_expansion.ts`](/D:/GA/BoardGame-upstream-main-20260428/src/games/smashup/domain/baseAbilities_expansion.ts)
-- [`index.ts`](/D:/GA/BoardGame-upstream-main-20260428/src/games/smashup/domain/index.ts)
-- [`titans.ts`](/D:/GA/BoardGame-upstream-main-20260428/src/games/smashup/data/titans.ts)
+- [`fairies.ts`](../../src/games/smashup/abilities/fairies.ts)
+- [`titans.ts`](../../src/games/smashup/abilities/titans.ts)
+- [`abilityHelpers.ts`](../../src/games/smashup/domain/abilityHelpers.ts)
+- [`baseAbilities_expansion.ts`](../../src/games/smashup/domain/baseAbilities_expansion.ts)
+- [`index.ts`](../../src/games/smashup/domain/index.ts)
+- [`titans.ts`](../../src/games/smashup/data/titans.ts)
 
 ### Locale
 
-- [`game-smashup.json` en](/D:/GA/BoardGame-upstream-main-20260428/public/locales/en/game-smashup.json)
-- [`game-smashup.json` zh-CN](/D:/GA/BoardGame-upstream-main-20260428/public/locales/zh-CN/game-smashup.json)
+- [`game-smashup.json` en](../../public/locales/en/game-smashup.json)
+- [`game-smashup.json` zh-CN](../../public/locales/zh-CN/game-smashup.json)
 
 ### Verification
 
-- [`commandsValidation.test.ts`](/D:/GA/BoardGame-upstream-main-20260428/src/games/smashup/__tests__/commandsValidation.test.ts)
-- [`criticalImageResolver.test.ts`](/D:/GA/BoardGame-upstream-main-20260428/src/games/smashup/__tests__/criticalImageResolver.test.ts)
-- [`factionSelection.test.ts`](/D:/GA/BoardGame-upstream-main-20260428/src/games/smashup/__tests__/factionSelection.test.ts)
-- [`newFactionAbilities.test.ts`](/D:/GA/BoardGame-upstream-main-20260428/src/games/smashup/__tests__/newFactionAbilities.test.ts)
-- [`smashup.smoke.test.ts`](/D:/GA/BoardGame-upstream-main-20260428/src/games/smashup/__tests__/smashup.smoke.test.ts)
+- [`commandsValidation.test.ts`](../../src/games/smashup/__tests__/commandsValidation.test.ts)
+- [`criticalImageResolver.test.ts`](../../src/games/smashup/__tests__/criticalImageResolver.test.ts)
+- [`factionSelection.test.ts`](../../src/games/smashup/__tests__/factionSelection.test.ts)
+- [`newFactionAbilities.test.ts`](../../src/games/smashup/__tests__/newFactionAbilities.test.ts)
+- [`smashup.smoke.test.ts`](../../src/games/smashup/__tests__/smashup.smoke.test.ts)
 
 ## What Was Implemented
 

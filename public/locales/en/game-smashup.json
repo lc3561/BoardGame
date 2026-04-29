@@ -1471,10 +1471,10 @@
       "name": "Factory 436-1337",
       "abilityText": "When this base scores, the winner gains 1 VP for every 5 power they have here."
     },
-    "base_ninja_dojo_pod": {
-      "name": "Ninja Dojo",
-      "abilityText": "(18, VP 2-3-2) 无特殊能力。"
-    },
+      "base_ninja_dojo_pod": {
+        "name": "Ninja Dojo",
+        "abilityText": "(18, VP 2-3-2) No special ability."
+      },
     "base_temple_of_goju_pod": {
       "name": "Temple of Goju",
       "abilityText": "After each time a minion is destroyed here, place it on the bottom of its owner's deck."
@@ -2790,30 +2790,30 @@
       "name": "Mall Crawl",
       "effectText": "Search your deck for any number of cards of the same name and put them into your discard pile. Shuffle your deck."
     },
-    "miskatonic_book_of_iter_the_unseen_pod": {
-      "name": "Book of Iters",
-      "effectText": "从你的手牌和弃牌堆返回至多两张疯狂卡到疯狂卡牌堆。"
-    },
-    "miskatonic_thing_on_the_doorstep_pod": {
-      "name": "Thing on the Doorstep",
-      "effectText": "特殊：在一个基地计分前，消灭一个在那里拥有最高战斗力的随从。"
-    },
-    "miskatonic_lost_knowledge_pod": {
-      "name": "Lost Knowledge",
-      "effectText": "打出到基地上。天赋：抽一张疯狂卡，你可以额外打出一个随从到这。"
-    },
-    "miskatonic_mandatory_reading_pod": {
-      "name": "Mandatory Reading",
-      "effectText": "特殊：在一个基地计分前，选择这里的一个随从。抽最多3张疯狂卡。每抽取一张疯狂卡，这个随从直到回合结束获得+2战斗力。"
-    },
-    "miskatonic_psychological_profiling_pod": {
-      "name": "Psychological Profiling",
-      "effectText": "抽一张疯狂卡。你的每个随从获得+1战斗力直到回合结束。本回合你可以打出一个额外的战术。"
-    },
-    "vampire_summon_wolves_pod": {
-      "name": "Summon Wolves",
-      "effectText": "打出到基地上。持续：在你的回合开始时，在本卡上放置一个+1战斗力指示物。如果你有随从在这，指示物会被加进你的总战斗力中。"
-    },
+      "miskatonic_book_of_iter_the_unseen_pod": {
+        "name": "Book of Iters",
+        "effectText": "Return up to two Madness cards from your hand and discard pile to the Madness deck."
+      },
+      "miskatonic_thing_on_the_doorstep_pod": {
+        "name": "Thing on the Doorstep",
+        "effectText": "Special: Before a base scores, destroy one minion there with the highest power."
+      },
+      "miskatonic_lost_knowledge_pod": {
+        "name": "Lost Knowledge",
+        "effectText": "Play on a base. Talent: Draw a Madness card. You may play an extra minion here."
+      },
+      "miskatonic_mandatory_reading_pod": {
+        "name": "Mandatory Reading",
+        "effectText": "Special: Before a base scores, choose a minion here. Draw up to 3 Madness cards. For each Madness card drawn, that minion gains +2 power until end of turn."
+      },
+      "miskatonic_psychological_profiling_pod": {
+        "name": "Psychological Profiling",
+        "effectText": "Draw a Madness card. Each of your minions gains +1 power until end of turn. You may play an extra action this turn."
+      },
+      "vampire_summon_wolves_pod": {
+        "name": "Summon Wolves",
+        "effectText": "Play on a base. Ongoing: At the start of your turn, place a +1 power counter on this card. If you have a minion here, this card's power counts toward your total power here."
+      },
     "base_miskatonic_university_base_pod": {
       "name": "Miskatonic University",
       "abilityText": "Once per turn, after you play a minion here, you may draw two Madness cards or discard a Madness card from your hand to play an extra action."
@@ -2822,30 +2822,30 @@
       "name": "The Asylum",
       "abilityText": "After you play a minion here, you may put a card from your hand back in the box to place a +1 power counter on a minion."
     },
-    "base_the_grey_opal_pod": {
-      "name": "The Grey Opal",
-      "abilityText": "(17, VP 3-1-1) 在本基地计分后，除了获胜者外的所有玩家可以将这里的一个随从移动到另一个基地。"
-    },
-    "base_tortuga_pod": {
-      "name": "Tortuga",
-      "abilityText": "(21, VP 4-3-2) 在本基地计分并被取代后，亚军可以将另一个基地上的一个随从移动到新替换的基地上。"
-    },
-    "base_factory_436_1337_pod": {
-      "name": "Factory 436-1337",
-      "abilityText": "(25, VP 2-2-1) 当该基地计分时，获胜者每拥有5点战斗力则获得1点VP。"
-    },
-    "base_the_central_brain_pod": {
-      "name": "The Central Brain",
-      "abilityText": "(19, VP 4-2-1) 这里的每个随从获得+1战斗力。"
-    },
-    "base_inventors_salon_pod": {
-      "name": "Inventor's Salon",
-      "abilityText": "(22, VP 4-2-1) 在该基地计分后，获胜者可以从弃牌堆拿回一张战术。"
-    },
-    "base_the_workshop_pod": {
-      "name": "The Workshop",
-      "abilityText": "(20, VP 4-2-1) 每当有一名玩家将战术打出到该基地时，该玩家可以额外打出一个战术。"
-    },
+      "base_the_grey_opal_pod": {
+        "name": "The Grey Opal",
+        "abilityText": "(17, VP 3-1-1) After this base scores, all players except the winner may move one of their minions here to another base."
+      },
+      "base_tortuga_pod": {
+        "name": "Tortuga",
+        "abilityText": "(21, VP 4-3-2) After this base scores and is replaced, the runner-up may move one minion from another base to the replacement base."
+      },
+      "base_factory_436_1337_pod": {
+        "name": "Factory 436-1337",
+        "abilityText": "(25, VP 2-2-1) When this base scores, the winner gains 1 VP for every 5 power they have here."
+      },
+      "base_the_central_brain_pod": {
+        "name": "The Central Brain",
+        "abilityText": "(19, VP 4-2-1) Each minion here gains +1 power."
+      },
+      "base_inventors_salon_pod": {
+        "name": "Inventor's Salon",
+        "abilityText": "(22, VP 4-2-1) After this base scores, the winner may return an action from their discard pile to their hand."
+      },
+      "base_the_workshop_pod": {
+        "name": "The Workshop",
+        "abilityText": "(20, VP 4-2-1) Whenever a player plays an action on this base, that player may play an extra action."
+      },
     "base_the_homeworld_pod": {
       "name": "The Homeworld",
       "abilityText": "After each time a minion is played here, its owner may play an extra minion of power 2 or less."
@@ -2901,10 +2901,10 @@
       "name": "Enchanted Glade",
       "abilityText": "After you play an action on a minion here, draw a card."
     },
-    "base_fairy_ring_pod": {
-      "name": "Fairy Ring",
-      "abilityText": "The first time you play a minion here on each turn, you may play an extra minion here or an extra action."
-    },
+      "base_fairy_ring_pod": {
+        "name": "Fairy Circle",
+        "abilityText": "The first time you play a minion here on each turn, you may play an extra minion here or an extra action."
+      },
     "base_beautiful_castle_pod": {
       "name": "Beautiful Castle",
       "abilityText": "Minions here of power 5 or more are unaffected by other players' cards."

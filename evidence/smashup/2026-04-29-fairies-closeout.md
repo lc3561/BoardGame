@@ -10,11 +10,11 @@
 
 ## Truth Sources
 
-- Intake / source contract: [2026-04-28-fairies-intake-contract.md](/D:/GA/BoardGame-upstream-main-20260428/evidence/smashup/2026-04-28-fairies-intake-contract.md)
+- Intake / source contract: [2026-04-28-fairies-intake-contract.md](./2026-04-28-fairies-intake-contract.md)
 - 英文名称与原版效果主对照：`https://smashup.fandom.com/wiki/Fairies`
 - POD 官方 wiki：`https://smashup-rulebook.alderac.com/wiki/Fairies`
   - 本轮仅作 compare-only，不作为 original Fairies 主真相源
-- Titan atlas：`httpssteamusercontentaakamaihdnetugc17873602896357179238C94C46F97554D53D42E3FEFAEC5EA120A22109B.png`
+- Titan atlas：[`taitan1.png`](../../public/assets/i18n/zh-CN/smashup/taitan/taitan1.png)
   - 本地图集来源由用户提供，用于 `Spirit of the Forest / 丛林之灵` 预览链路与运行时资源
 
 ## Delivered

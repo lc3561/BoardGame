@@ -8,6 +8,7 @@ import {
     addPermanentPower,
     buildActionMinionTargetOptions,
     buildBaseTargetOptions,
+    buildMinionTargetOptions,
     buildStandardDrawEvents,
     buildValidatedReturnEvents,
     buildAbilityFeedback,
@@ -30,7 +31,7 @@ type MinionChoice = {
     minionUid?: string;
     baseIndex?: number;
     defId?: string;
-    choice?: 'return_minion';
+    choice?: 'return_minion' | 'target_other';
 };
 
 type ButtonChoice = {
@@ -197,26 +198,9 @@ function queueGlymmerPrompt(ctx: AbilityContext): AbilityResult {
     const current = findMinionOnBases(ctx.state, ctx.cardUid);
     if (!current) return { events: [] };
 
-    const minionOptions = [];
-    for (let baseIndex = 0; baseIndex < ctx.state.bases.length; baseIndex++) {
-        const base = ctx.state.bases[baseIndex];
-        const baseName = getBaseDef(base.defId)?.name ?? `基地 ${baseIndex + 1}`;
-        for (const minion of base.minions) {
-            if (minion.uid === ctx.cardUid) continue;
-            const minionName = getCardDef(minion.defId)?.name ?? minion.defId;
-            minionOptions.push({
-                id: `minion-${minion.uid}`,
-                label: `${minionName} @ ${baseName}`,
-                value: { choice: 'target_other', minionUid: minion.uid, baseIndex, defId: minion.defId },
-                _source: 'field' as const,
-                displayMode: 'card' as const,
-            });
-        }
-    }
-
     const options = [
         { id: 'self', label: '本随从直到你的下回合开始时 +1 力量', value: { choice: 'self_bonus' }, displayMode: 'button' as const },
-        ...minionOptions,
+        ...buildGlymmerTargetOptions(ctx.state, ctx.cardUid, ctx.playerId),
     ];
 
     const interaction = createSimpleChoice(
@@ -240,6 +224,37 @@ function queueGlymmerPrompt(ctx: AbilityContext): AbilityResult {
             },
         }),
     };
+}
+
+function buildGlymmerTargetOptions(state: SmashUpCore, sourceCardUid: string, sourcePlayerId: PlayerId) {
+    const candidates: Array<{ uid: string; defId: string; baseIndex: number; label: string }> = [];
+    for (let baseIndex = 0; baseIndex < state.bases.length; baseIndex++) {
+        const base = state.bases[baseIndex];
+        const baseName = getBaseDef(base.defId)?.name ?? `基地 ${baseIndex + 1}`;
+        for (const minion of base.minions) {
+            if (minion.uid === sourceCardUid) continue;
+            const minionName = getCardDef(minion.defId)?.name ?? minion.defId;
+            candidates.push({
+                uid: minion.uid,
+                defId: minion.defId,
+                baseIndex,
+                label: `${minionName} @ ${baseName}`,
+            });
+        }
+    }
+
+    return buildMinionTargetOptions(candidates, {
+        state,
+        sourcePlayerId,
+        effectType: 'affect',
+    }).map(option => ({
+        ...option,
+        value: {
+            choice: 'target_other' as const,
+            ...option.value,
+        },
+        displayMode: 'card' as const,
+    }));
 }
 
 function buildTitaniaReturnOptions(state: SmashUpCore) {
@@ -569,11 +584,10 @@ function fairiesLadybugProtectionChecker(ctx: ProtectionCheckContext): boolean {
 }
 
 function fairiesMagicWardRestrictionChecker(ctx: RestrictionCheckContext): boolean {
-    const ward = ctx.state.bases[ctx.baseIndex]?.ongoingActions.find(action =>
-        action.defId === 'fairies_magic_ward' || action.defId === 'fairies_magic_ward_pod',
-    );
-    if (!ward) return false;
-    return ward.ownerId !== ctx.playerId;
+    return ctx.state.bases[ctx.baseIndex]?.ongoingActions.some(action =>
+        (action.defId === 'fairies_magic_ward' || action.defId === 'fairies_magic_ward_pod')
+        && action.ownerId !== ctx.playerId,
+    ) ?? false;
 }
 
 const handleFairiesTitania: InteractionHandler = (state, playerId, value, _data, _random, timestamp) => {
@@ -675,6 +689,10 @@ const handleFairiesGlymmer: InteractionHandler = (state, playerId, value, _data,
     }
 
     if (!selected.minionUid || selected.baseIndex === undefined) return { state, events: [] };
+    const isStillValidTarget = buildGlymmerTargetOptions(state.core, continuation.sourceCardUid, playerId).some(
+        option => option.value.minionUid === selected.minionUid && option.value.baseIndex === selected.baseIndex,
+    );
+    if (!isStillValidTarget) return { state, events: [] };
     const target = state.core.bases[selected.baseIndex]?.minions.find(minion => minion.uid === selected.minionUid);
     if (!target) return { state, events: [] };
     return {
