@@ -6,7 +6,9 @@
  * 在 registerBaseInteractionHandlers() 末尾调用 registerExpansionBaseInteractionHandlers()。
  */
 
+import type { MatchState } from '../../../engine/types';
 import type {
+    SmashUpCore,
     SmashUpEvent,
     MinionDestroyedEvent,
     MinionPlayedEvent,
@@ -15,16 +17,23 @@ import type {
 import { SU_EVENTS, MADNESS_CARD_DEF_ID } from './types';
 import { getEffectivePower } from './ongoingModifiers';
 import {
+    grantContextualExtraAction,
+    grantContextualExtraMinion,
     grantExtraMinion,
     grantExtraAction,
-    drawMadnessCards,
-    findMinionOnBases,
+    addTempPower,
+    returnMadnessCard,
     recoverCardsFromDiscard,
     buildValidatedMoveEvents,
     buildValidatedDestroyEvents,
     buildValidatedCardToDeckBottomEvents,
     buildStandardDrawEvents,
+    drawMadnessCards,
+    findMinionOnBases,
+    getAvailableSpiritOfTheForestOrTitan,
+    markSpiritOfTheForestOrUsed,
 } from './abilityHelpers';
+import { buildBuryCardEvents } from './bury';
 import { createSimpleChoice, queueInteraction, type PromptOption } from '../../../engine/systems/InteractionSystem';
 import { registerInteractionHandler } from './abilityInteractionHandlers';
 import { registerBaseAbility, registerExtended as registerExtendedBase } from './baseAbilities';
@@ -32,15 +41,22 @@ import { registerProtection, registerTrigger } from './ongoingEffects';
 import type { ProtectionCheckContext } from './ongoingEffects';
 import { getCardDef, getMinionDef, getBaseDef } from '../data/cards';
 import { getPlayerLabel } from './utils';
-
-type DeferredInteractionContext = { _deferredPostScoringEvents?: SmashUpEvent[] };
+import {
+    appendPendingPostScoringActions,
+    getDeferredPostScoringEvents as readDeferredPostScoringEvents,
+    getDeferredReplacementBaseDefId,
+    mergeDeferredPostScoringCompatibility,
+} from './scoringSession';
 
 function getContinuationContext<T>(interactionData: Record<string, unknown> | undefined): T | undefined {
     return interactionData?.continuationContext as T | undefined;
 }
 
-function getDeferredPostScoringEvents(interactionData: Record<string, unknown> | undefined): SmashUpEvent[] | undefined {
-    return getContinuationContext<DeferredInteractionContext>(interactionData)?._deferredPostScoringEvents;
+function getDeferredPostScoringEvents(
+    state: MatchState<SmashUpCore>,
+    interactionData: Record<string, unknown> | undefined,
+): SmashUpEvent[] | undefined {
+    return readDeferredPostScoringEvents(state, interactionData) as SmashUpEvent[] | undefined;
 }
 
 // ============================================================================
@@ -49,6 +65,129 @@ function getDeferredPostScoringEvents(interactionData: Record<string, unknown> |
 
 /** 注册扩展包基地能力*/
 export function registerExpansionBaseAbilities(): void {
+    // ── 人鱼水池（Mermaid Pool）─────────────────────────────────
+    registerBaseAbility('base_mermaid_pool', 'onTurnStart', (ctx) => {
+        const base = ctx.state.bases[ctx.baseIndex];
+        if (!base || !ctx.matchState) return { events: [] };
+        const hasOwnMinionHere = base.minions.some(minion => minion.controller === ctx.playerId);
+        if (!hasOwnMinionHere) return { events: [] };
+
+        const candidates: Array<{ minionUid: string; minionDefId: string; fromBaseIndex: number; label: string }> = [];
+        ctx.state.bases.forEach((candidateBase, baseIndex) => {
+            if (baseIndex === ctx.baseIndex) return;
+            const baseName = getBaseDef(candidateBase.defId)?.name ?? `基地 ${baseIndex + 1}`;
+            candidateBase.minions
+                .filter(minion => minion.controller !== ctx.playerId)
+                .forEach((minion) => {
+                    const minionName = getCardDef(minion.defId)?.name ?? minion.defId;
+                    candidates.push({
+                        minionUid: minion.uid,
+                        minionDefId: minion.defId,
+                        fromBaseIndex: baseIndex,
+                        label: `${minionName} @ ${baseName}`,
+                    });
+                });
+        });
+        if (candidates.length === 0) return { events: [] };
+
+        const options: PromptOption<Record<string, unknown>>[] = [
+            { id: 'skip', label: '跳过', value: { skip: true }, displayMode: 'button' as const },
+            ...candidates.map((candidate, index) => ({
+                id: `minion-${index}`,
+                label: candidate.label,
+                value: candidate,
+                _source: 'field' as const,
+                displayMode: 'card' as const,
+            })),
+        ];
+        const interaction = createSimpleChoice(
+            `base_mermaid_pool_${ctx.now}`,
+            ctx.playerId,
+            '人鱼水池：你可以移动另一位玩家的一个仆从到这里',
+            options,
+            { sourceId: 'base_mermaid_pool', targetType: 'minion' },
+        );
+        return {
+            events: [],
+            matchState: queueInteraction(ctx.matchState, {
+                ...interaction,
+                data: { ...interaction.data, continuationContext: { targetBaseIndex: ctx.baseIndex } },
+            }),
+        };
+    });
+
+    // ── 藏骨堂（Ossuary）──────────────────────────────────────
+    registerBaseAbility('base_ossuary', 'onTurnStart', (ctx) => {
+        const player = ctx.state.players[ctx.playerId];
+        if (!player || !ctx.matchState) return { events: [] };
+        const discardMinions = player.discard.filter(card => {
+            if (card.type !== 'minion') return false;
+            const def = getCardDef(card.defId);
+            return !!def && def.type === 'minion' && def.power <= 3;
+        });
+        if (discardMinions.length === 0) return { events: [] };
+
+        const options: PromptOption<Record<string, unknown>>[] = [
+            { id: 'skip', label: '跳过', value: { skip: true }, displayMode: 'button' as const },
+            ...discardMinions.map((card, index) => ({
+                id: `discard-${index}`,
+                label: getCardDef(card.defId)?.name ?? card.defId,
+                value: { cardUid: card.uid, defId: card.defId },
+                _source: 'discard' as const,
+                displayMode: 'card' as const,
+            })),
+        ];
+        const interaction = createSimpleChoice(
+            `base_ossuary_${ctx.now}`,
+            ctx.playerId,
+            '藏骨堂：你可以从弃牌堆埋葬一个力量 3 或更少的仆从到这里',
+            options,
+            { sourceId: 'base_ossuary', targetType: 'discard' },
+        );
+        return {
+            events: [],
+            matchState: queueInteraction(ctx.matchState, {
+                ...interaction,
+                data: { ...interaction.data, continuationContext: { targetBaseIndex: ctx.baseIndex } },
+            }),
+        };
+    });
+
+    // ── 竞技场（Arena）───────────────────────────────────────────
+    // 第一次在此基地打出随从后，可选：额外打行动 或 抽一张牌
+    registerBaseAbility('base_arena', 'onMinionPlayed', (ctx) => {
+        const player = ctx.state.players[ctx.playerId];
+        if (!player || !ctx.matchState) return { events: [] };
+        const playedAtBase = player.minionsPlayedPerBase?.[ctx.baseIndex] ?? 0;
+        if (playedAtBase !== 1) return { events: [] };
+
+        const options: PromptOption<Record<string, unknown>>[] = [
+            { id: 'extra-action', label: '额外打出行动', value: { choice: 'extra_action' }, displayMode: 'button' as const },
+            { id: 'draw-card', label: '抽一张牌', value: { choice: 'draw_card' }, displayMode: 'button' as const },
+            { id: 'skip', label: '跳过', value: { skip: true }, displayMode: 'button' as const },
+        ];
+        const interaction = createSimpleChoice(
+            `base_arena_${ctx.playerId}_${ctx.now}`,
+            ctx.playerId,
+            '竞技场：选择额外打行动或抽牌',
+            options,
+            { sourceId: 'base_arena', targetType: 'button' },
+        );
+        return { events: [], matchState: queueInteraction(ctx.matchState, interaction) };
+    });
+
+    // ── 名人堂（Hall of Fame）───────────────────────────────────
+    // 第一次在此基地打出的随从获得回合内 +2 力量
+    registerBaseAbility('base_hall_of_fame', 'onMinionPlayed', (ctx) => {
+        if (!ctx.minionUid) return { events: [] };
+        const player = ctx.state.players[ctx.playerId];
+        if (!player) return { events: [] };
+        const playedAtBase = player.minionsPlayedPerBase?.[ctx.baseIndex] ?? 0;
+        if (playedAtBase !== 1) return { events: [] };
+        return {
+            events: [addTempPower(ctx.minionUid, ctx.baseIndex, 2, 'base_hall_of_fame', ctx.now)],
+        };
+    });
 
     // ── 疯人院（The Asylum）──────────────────────────────────────
     // "在一个玩家打出一个随从到这后，该玩家可以将一张手牌移出游戏（放入盒子），在你的一个随从上放置一个+1力量指示物"
@@ -91,7 +230,7 @@ export function registerExpansionBaseAbilities(): void {
 
         // Infiltrate：只让拥有者自己忽略（不影响其他玩家）
         const ignoredByOwner = base?.ongoingActions?.some(o =>
-            o.ownerId === ownerId && o.defId.startsWith('ninja_infiltrate'),
+            o.ownerId === ownerId && o.defId === 'ninja_infiltrate',
         ) ?? false;
         if (ignoredByOwner) return { events: [] };
 
@@ -186,13 +325,10 @@ export function registerExpansionBaseAbilities(): void {
         // 直接授予1个同名随从额度，限定到此基地
         return {
             events: [
-                grantExtraMinion(
-                    ctx.playerId,
-                    'base_plateau_of_leng',
-                    ctx.now,
-                    ctx.baseIndex, // 限定到此基地
-                    { sameNameOnly: true, sameNameDefId: ctx.minionDefId }, // 同名约束
-                ),
+                grantContextualExtraMinion(ctx, 'base_plateau_of_leng', ctx.baseIndex, {
+                    sameNameOnly: true,
+                    sameNameDefId: ctx.minionDefId,
+                }),
             ],
         };
     });
@@ -244,15 +380,12 @@ export function registerExpansionBaseAbilities(): void {
 
     // ── 神秘花园（Secret Garden）──────────────────────────────
     // "在你的回合，你可以额外打出一个力量为2或以下的随从到这里）?
-    // 力量的 限制通过 BaseCardDef.restrictions ?extraPlayMinionPowerMax 数据驱动实现（同母星模式）
+    // 这是整回合持续许可，不是回合开始立刻结算的一次性额外打出。
+    // 因此这里固定授予本回合可暂存的基地限定额度，避免被 startTurn 误判为 immediate prompt。
+    // 力量限制通过 BaseCardDef.restrictions.extraPlayMinionPowerMax 数据驱动实现。
     registerBaseAbility('base_secret_garden', 'onTurnStart', (ctx) => {
         return {
-            events: [grantExtraMinion(
-                ctx.playerId,
-                '神秘花园：额外打出力量≤2的随从',
-                ctx.now,
-                ctx.baseIndex,
-            )],
+            events: [grantExtraMinion(ctx.playerId, '神秘花园：额外打出力量≤2的随从', ctx.now, ctx.baseIndex, { playTiming: 'banked' })],
         };
     });
 
@@ -286,7 +419,7 @@ export function registerExpansionBaseAbilities(): void {
         const interaction = createSimpleChoice(
             `base_inventors_salon_${ctx.now}`, winnerId,
             '发明家沙龙：从弃牌堆选择一张行动卡放入手牌', options,
-            { sourceId: 'base_inventors_salon', targetType: 'generic', autoRefresh: 'discard', responseValidationMode: 'live' },
+            { sourceId: 'base_inventors_salon', targetType: 'generic' },
         );
         return { events: [], matchState: queueInteraction(ctx.matchState, interaction) };
     });
@@ -346,23 +479,37 @@ export function registerExpansionBaseAbilities(): void {
         return { events: buildStandardDrawEvents(ctx.state, ctx.playerId, 1, ctx.random, ctx.now) };
     });
 
-    // ── 仙灵之环（Fairy Ring）──────────────────────────────────
-    // "在一个玩家首次打出一个随从到这后，该玩家可以额外打出一个随从和一张行动卡牌"
+    // ── 仙灵之环（Fairy Circle）────────────────────────────────
+    // "在一个玩家首次打出一个随从到这后，该玩家可以额外打出一个随从到这里，或额外打出一张行动卡。"
     // 通过 minionsPlayedPerBase 追踪每回合每基地打出次数，reduce 已执行，首次打出时值为 1
     registerBaseAbility('base_fairy_ring', 'onMinionPlayed', (ctx) => {
         const player = ctx.state.players[ctx.playerId];
-        if (!player) return { events: [] };
+        if (!player || !ctx.matchState) return { events: [] };
 
         // 每回合只有第一次打出随从到此基地才触发
         // reduce 已执行，minionsPlayedPerBase 包含刚打出的随从，首次打出时值为 1
         const playedAtBase = player.minionsPlayedPerBase?.[ctx.baseIndex] ?? 0;
         if (playedAtBase !== 1) return { events: [] };
 
+        const options: PromptOption<Record<string, unknown>>[] = [
+            { id: 'extra-minion', label: '额外打出一个随从到这里', value: { choice: 'extra_minion' }, displayMode: 'button' as const },
+            { id: 'extra-action', label: '额外打出一张行动卡', value: { choice: 'extra_action' }, displayMode: 'button' as const },
+            { id: 'skip', label: '跳过', value: { skip: true }, displayMode: 'button' as const },
+        ];
+        const interaction = createSimpleChoice(
+            `base_fairy_ring_${ctx.playerId}_${ctx.now}`,
+            ctx.playerId,
+            '精灵之环：选择额外打出一个随从到这里，或额外打出一张行动卡',
+            options,
+            { sourceId: 'base_fairy_ring', targetType: 'button' },
+        );
+
         return {
-            events: [
-                grantExtraMinion(ctx.playerId, '仙灵之环：首次打出随从后额外随从机会', ctx.now, ctx.baseIndex),
-                grantExtraAction(ctx.playerId, '仙灵之环：首次打出随从后额外行动机会', ctx.now),
-            ],
+            events: [],
+            matchState: queueInteraction(ctx.matchState, {
+                ...interaction,
+                data: { ...interaction.data, continuationContext: { baseIndex: ctx.baseIndex } },
+            }),
         };
     });
 
@@ -508,7 +655,7 @@ export function registerExpansionBaseAbilities(): void {
         const eggBase = ctx.state.bases[eggIndex];
         // Infiltrate：该随从控制者若选择忽略，则其随从不再受保护
         const ignored = eggBase.ongoingActions?.some(o =>
-            o.ownerId === ctx.targetMinion.controller && o.defId.startsWith('ninja_infiltrate'),
+            o.ownerId === ctx.targetMinion.controller && o.defId === 'ninja_infiltrate',
         ) ?? false;
         if (ignored) return false;
         // 仅“+1 power counters”（力量指示物）提供保护
@@ -651,6 +798,127 @@ export function registerExpansionBaseAbilities(): void {
 
 /** 注册扩展包基地能力的交互解决处理函数 */
 export function registerExpansionBaseInteractionHandlers(): void {
+    registerInteractionHandler('base_mermaid_pool', (state, _playerId, value, iData, _random, timestamp) => {
+        const selected = value as {
+            skip?: boolean;
+            minionUid?: string;
+            minionDefId?: string;
+            fromBaseIndex?: number;
+        };
+        if (selected.skip) return { state, events: [] };
+        const ctx = getContinuationContext<{ targetBaseIndex: number }>(iData);
+        if (!ctx || !selected.minionUid || !selected.minionDefId || selected.fromBaseIndex === undefined) {
+            return { state, events: [] };
+        }
+        return {
+            state,
+            events: buildValidatedMoveEvents(state, {
+                minionUid: selected.minionUid,
+                minionDefId: selected.minionDefId,
+                fromBaseIndex: selected.fromBaseIndex,
+                toBaseIndex: ctx.targetBaseIndex,
+                reason: 'base_mermaid_pool',
+                now: timestamp,
+            }),
+        };
+    });
+
+    registerInteractionHandler('base_ossuary', (state, playerId, value, iData, random, timestamp) => {
+        const selected = value as { skip?: boolean; cardUid?: string; defId?: string };
+        if (selected.skip) return { state, events: [] };
+        const ctx = getContinuationContext<{ targetBaseIndex: number }>(iData);
+        if (!ctx || !selected.cardUid || !selected.defId) return { state, events: [] };
+        return {
+            state,
+            events: buildBuryCardEvents({
+                core: state.core,
+                matchState: state,
+                playerId,
+                cardUid: selected.cardUid,
+                defId: selected.defId,
+                baseIndex: ctx.targetBaseIndex,
+                trueOwnerId: playerId,
+                buriedFrom: 'discard',
+                reason: 'base_ossuary',
+                random,
+                now: timestamp,
+            }),
+        };
+    });
+
+    registerInteractionHandler('base_arena', (state, playerId, value, _iData, random, timestamp) => {
+        const selected = value as { skip?: boolean; choice?: 'extra_action' | 'draw_card' };
+        if (selected.skip) return { state, events: [] };
+
+        if (selected.choice === 'extra_action') {
+            return {
+                state,
+                events: [grantContextualExtraAction(
+                    { playerId, now: timestamp },
+                    'base_arena',
+                )],
+            };
+        }
+
+        if (selected.choice === 'draw_card') {
+            return {
+                state,
+                events: buildStandardDrawEvents(state.core, playerId, 1, random, timestamp),
+            };
+        }
+
+        return { state, events: [] };
+    });
+
+    registerInteractionHandler('base_fairy_ring', (state, playerId, value, iData, _random, timestamp) => {
+        const selected = value as { skip?: boolean; choice?: 'extra_minion' | 'extra_action' };
+        const continuation = getContinuationContext<{ baseIndex: number }>(iData);
+        if (selected.skip) return { state, events: [] };
+        const spirit = getAvailableSpiritOfTheForestOrTitan(state.core, playerId);
+
+        if (spirit) {
+            if (!continuation) return { state, events: [] };
+            return {
+                state,
+                events: [
+                    grantContextualExtraMinion(
+                        { playerId, now: timestamp, matchState: state },
+                        'base_fairy_ring',
+                        continuation.baseIndex,
+                    ),
+                    grantContextualExtraAction(
+                        { playerId, now: timestamp, matchState: state },
+                        'base_fairy_ring',
+                    ),
+                    markSpiritOfTheForestOrUsed(spirit.uid, state.core.turnNumber, timestamp),
+                ],
+            };
+        }
+
+        if (selected.choice === 'extra_minion') {
+            if (!continuation) return { state, events: [] };
+            return {
+                state,
+                events: [grantContextualExtraMinion(
+                    { playerId, now: timestamp, matchState: state },
+                    'base_fairy_ring',
+                    continuation.baseIndex,
+                )],
+            };
+        }
+
+        if (selected.choice === 'extra_action') {
+            return {
+                state,
+                events: [grantContextualExtraAction(
+                    { playerId, now: timestamp, matchState: state },
+                    'base_fairy_ring',
+                )],
+            };
+        }
+
+        return { state, events: [] };
+    });
 
     // 疯人院：先选手牌，再选择一个自己的随从放置 +1 力量指示物
     registerInteractionHandler('base_the_asylum', (state, playerId, value, _iData, _random, timestamp) => {
@@ -850,12 +1118,12 @@ export function registerExpansionBaseInteractionHandlers(): void {
         );
         if (!cardInDeck) return { state, events: [] };
         const power = selected.power ?? (getMinionDef(selected.defId!)?.power ?? 0);
-        const deferredEvents = (getDeferredPostScoringEvents(iData) ?? []) as Array<{
+        const deferredEvents = (getDeferredPostScoringEvents(state, iData) ?? []) as Array<{
             type: string;
             payload?: { newBaseDefId?: string };
             timestamp: number;
         }>;
-        const replacementBaseDefId = deferredEvents.find(event => event.type === SU_EVENTS.BASE_REPLACED)?.payload?.newBaseDefId
+        const replacementBaseDefId = getDeferredReplacementBaseDefId(state, iData)
             ?? state.core.bases[ctx.baseIndex]?.defId;
         if (!replacementBaseDefId) return { state, events: [] };
         if (deferredEvents.length > 0) {
@@ -868,17 +1136,15 @@ export function registerExpansionBaseInteractionHandlers(): void {
                 targetBaseDefId: replacementBaseDefId,
                 power,
             };
+            const compatibility = mergeDeferredPostScoringCompatibility(state, iData, timestamp, {
+                primaryOrder: 'before',
+                extraPendingActions: [pendingAction],
+            });
+            if (compatibility) {
+                return compatibility;
+            }
             return {
-                state: {
-                    ...state,
-                    core: {
-                        ...state.core,
-                        pendingPostScoringActions: [
-                            ...(state.core.pendingPostScoringActions ?? []),
-                            pendingAction,
-                        ],
-                    },
-                },
+                state: appendPendingPostScoringActions(state, [pendingAction]),
                 events: [],
             };
         }

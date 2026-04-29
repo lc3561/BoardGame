@@ -3,6 +3,24 @@ import { SMASHUP_ATLAS_IDS, SMASHUP_FACTION_IDS } from '../domain/ids';
 
 export const TITAN_CARD_DEFS: TitanCardDef[] = [
     {
+        id: 'dinosaurs_fort_titanosaurus',
+        type: 'titan',
+        name: 'Fort Titanosaurus',
+        faction: SMASHUP_FACTION_IDS.DINOSAURS,
+        abilityTags: ['special', 'ongoing'],
+        summonMode: 'explicit',
+        previewRef: { type: 'atlas', atlasId: 'tts_atlas_8789f47742', index: 0 },
+    },
+    {
+        id: 'ninjas_invisible_ninja',
+        type: 'titan',
+        name: 'Invisible Ninja',
+        faction: SMASHUP_FACTION_IDS.NINJAS,
+        abilityTags: ['special', 'ongoing'],
+        summonMode: 'explicit',
+        previewRef: { type: 'atlas', atlasId: 'tts_atlas_8789f47742', index: 1 },
+    },
+    {
         id: 'bear_cavalry_major_ursa',
         type: 'titan',
         name: '大熊座',
@@ -20,6 +38,15 @@ export const TITAN_CARD_DEFS: TitanCardDef[] = [
         abilityTags: ['special', 'ongoing', 'talent'],
         summonMode: 'explicit',
         previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.TITANS, index: 4 },
+    },
+    {
+        id: 'fairies_spirit_of_the_forest',
+        type: 'titan',
+        name: '丛林之灵',
+        faction: SMASHUP_FACTION_IDS.FAIRIES,
+        abilityTags: ['special', 'ongoing'],
+        summonMode: 'insteadOfRegularMinionAndAction',
+        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.TITANS, index: 3 },
     },
     {
         id: 'changerbots_mergacon',
@@ -74,6 +101,15 @@ export const TITAN_CARD_DEFS: TitanCardDef[] = [
         abilityTags: ['special', 'ongoing', 'talent'],
         summonMode: 'explicit',
         previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.TITANS, index: 8 },
+    },
+    {
+        id: 'killer_plants_killer_kudzu',
+        type: 'titan',
+        name: 'Killer Kudzu',
+        faction: SMASHUP_FACTION_IDS.KILLER_PLANTS,
+        abilityTags: ['special', 'ongoing', 'talent'],
+        summonMode: 'insteadOfRegularMinion',
+        previewRef: { type: 'atlas', atlasId: 'tts_atlas_8789f47742', index: 7 },
     },
     {
         id: 'kaiju_gorgodzolla',
@@ -167,6 +203,15 @@ export const TITAN_CARD_DEFS: TitanCardDef[] = [
         abilityTags: ['special', 'ongoing', 'talent'],
         summonMode: 'explicit',
         previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.TITANS, index: 14 },
+    },
+    {
+        id: 'frankenstein_the_bride',
+        type: 'titan',
+        name: 'The Bride',
+        faction: SMASHUP_FACTION_IDS.FRANKENSTEIN,
+        abilityTags: ['special', 'ongoing', 'talent'],
+        summonMode: 'explicit',
+        previewRef: { type: 'atlas', atlasId: 'tts_atlas_8789f47742', index: 13 },
     },
     {
         id: 'super_spies_moon_zero_three',

@@ -6,6 +6,8 @@
  */
 
 import type { PlayerId, RandomFn, MatchState } from '../../../engine/types';
+import { buildTargetAiHint, OPTIONAL_SKIP_AI_HINT } from '../../../engine/ai';
+import type { AiEffectIntent, AiHint } from '../../../engine/ai';
 import type {
     PromptOption as EnginePromptOption,
     SimpleChoiceConfig,
@@ -20,6 +22,7 @@ import { resolveLiveBaseIndex } from './utils';
 import type {
     SmashUpCore,
     MinionOnBase,
+    TitanState,
     MinionPlayedEvent,
     LimitModifiedEvent,
     MinionReturnedEvent,
@@ -41,23 +44,19 @@ import type {
     CardInstance,
     SmashUpEvent,
     CardsDrawnEvent,
+    DeckReshuffledEvent,
     DeckReorderedEvent,
     AbilityFeedbackEvent,
     OngoingCardCounterChangedEvent,
     CardToDeckBottomEvent,
-    TitanState,
-    TitanPlayedEvent,
-    TitanMovedEvent,
     TitanRemovedFromPlayEvent,
-    TitanPowerCounterAddedEvent,
-    TitanPowerCounterRemovedEvent,
-    TitanPlayAsKind,
-    ActionCardDef,
-    SpecialLimitUsedEvent,
+    TitanMetadataUpdatedEvent,
 } from './types';
 import { SU_EVENT_TYPES as SU_EVENTS } from './events';
 import { getEffectivePower } from './ongoingModifiers';
-import { collectTriggers } from './ongoingEffects';
+import { triggerAllBaseAbilities } from './baseAbilities';
+import { collectTriggers, fireTriggers } from './ongoingEffects';
+import { reduce } from './reduce';
 import { getCardDef, getMinionDef, getTitanDef } from '../data/cards';
 import { drawCards } from './utils';
 
@@ -91,7 +90,8 @@ export function createSkipOption(label: string = '跳过'): EnginePromptOption<{
         id: 'skip',
         label,
         value: { skip: true },
-        displayMode: 'button'
+        displayMode: 'button',
+        _ai: OPTIONAL_SKIP_AI_HINT,
     };
 }
 
@@ -109,6 +109,94 @@ export function getMinionPower(state: SmashUpCore, minion: MinionOnBase, baseInd
 }
 
 // ============================================================================
+// 泰坦查询与离场
+// ============================================================================
+
+export function getTitanByUid(
+    state: SmashUpCore | MatchState<SmashUpCore>,
+    titanUid: string,
+): TitanState | undefined {
+    const core = 'core' in state ? state.core : state;
+    return (core.titans ?? []).find((titan) => titan.uid === titanUid);
+}
+
+export function getTitansOnBase(
+    state: SmashUpCore | MatchState<SmashUpCore>,
+    baseIndex: number,
+): TitanState[] {
+    const core = 'core' in state ? state.core : state;
+    return (core.titans ?? []).filter(
+        (titan) => titan.location.zone === 'base' && titan.location.baseIndex === baseIndex,
+    );
+}
+
+export function getTitanByController(
+    state: SmashUpCore | MatchState<SmashUpCore>,
+    controllerId: PlayerId,
+): TitanState | undefined {
+    const core = 'core' in state ? state.core : state;
+    return (core.titans ?? []).find(
+        (titan) => titan.controllerId === controllerId && titan.location.zone === 'base',
+    );
+}
+
+export function getSpiritOfTheForestByController(
+    state: SmashUpCore | MatchState<SmashUpCore>,
+    controllerId: PlayerId,
+): TitanState | undefined {
+    const titan = getTitanByController(state, controllerId);
+    return titan?.defId === 'fairies_spirit_of_the_forest' ? titan : undefined;
+}
+
+export function getAvailableSpiritOfTheForestOrTitan(
+    state: SmashUpCore | MatchState<SmashUpCore>,
+    controllerId: PlayerId,
+): TitanState | undefined {
+    const core = 'core' in state ? state.core : state;
+    const titan = getSpiritOfTheForestByController(core, controllerId);
+    if (!titan) return undefined;
+    const usedTurn = typeof titan.metadata?.spiritOfTheForestUsedTurn === 'number'
+        ? titan.metadata.spiritOfTheForestUsedTurn
+        : undefined;
+    return usedTurn === core.turnNumber ? undefined : titan;
+}
+
+export function markSpiritOfTheForestOrUsed(
+    titanUid: string,
+    turnNumber: number,
+    now: number,
+): TitanMetadataUpdatedEvent {
+    return {
+        type: SU_EVENTS.TITAN_METADATA_UPDATED,
+        payload: {
+            titanUid,
+            metadataUpdate: { spiritOfTheForestUsedTurn: turnNumber },
+            reason: 'fairies_spirit_of_the_forest_or',
+        },
+        timestamp: now,
+    };
+}
+
+export function removeTitanFromPlay(
+    titan: TitanState,
+    reason: string,
+    now: number,
+): TitanRemovedFromPlayEvent {
+    return {
+        type: SU_EVENTS.TITAN_REMOVED_FROM_PLAY,
+        payload: {
+            titanUid: titan.uid,
+            defId: titan.defId,
+            ownerId: titan.ownerId,
+            controllerId: titan.controllerId,
+            fromBaseIndex: titan.location.zone === 'base' ? titan.location.baseIndex : undefined,
+            reason,
+        },
+        timestamp: now,
+    };
+}
+
+// ============================================================================
 // 随从消灭
 // ============================================================================
 
@@ -120,11 +208,12 @@ export function destroyMinion(
     ownerId: PlayerId,
     destroyerId: PlayerId | undefined,
     reason: string,
-    now: number
+    now: number,
+    sourceKind?: 'action' | 'nonAction',
 ): MinionDestroyedEvent {
     return {
         type: SU_EVENTS.MINION_DESTROYED,
-        payload: { minionUid, minionDefId, fromBaseIndex, ownerId, destroyerId, reason },
+        payload: { minionUid, minionDefId, fromBaseIndex, ownerId, destroyerId, reason, sourceKind } as MinionDestroyedEvent['payload'],
         timestamp: now,
     };
 }
@@ -184,22 +273,6 @@ export function changeMinionController(
 
 export function getAllTitans(state: SmashUpCore): TitanState[] {
     return state.titans ?? [];
-}
-
-export function getTitansOnBase(state: SmashUpCore, baseIndex: number): TitanState[] {
-    return getAllTitans(state).filter(
-        titan => titan.location.zone === 'base' && titan.location.baseIndex === baseIndex,
-    );
-}
-
-export function getTitanByUid(state: SmashUpCore, titanUid: string): TitanState | undefined {
-    return getAllTitans(state).find(titan => titan.uid === titanUid);
-}
-
-export function getTitanByController(state: SmashUpCore, controllerId: PlayerId): TitanState | undefined {
-    return getAllTitans(state).find(
-        titan => titan.controllerId === controllerId && titan.location.zone === 'base',
-    );
 }
 
 export function getSetAsideTitansPlayableAs(
@@ -264,25 +337,6 @@ export function moveTitan(
             fromBaseIndex,
             toBaseIndex,
             ...(toBaseDefId ? { toBaseDefId } : {}),
-            reason,
-        },
-        timestamp: now,
-    };
-}
-
-export function removeTitanFromPlay(
-    titan: TitanState,
-    reason: string,
-    now: number,
-): TitanRemovedFromPlayEvent {
-    return {
-        type: SU_EVENTS.TITAN_REMOVED_FROM_PLAY,
-        payload: {
-            titanUid: titan.uid,
-            defId: titan.defId,
-            ownerId: titan.ownerId,
-            controllerId: titan.controllerId,
-            ...(titan.location.zone === 'base' ? { fromBaseIndex: titan.location.baseIndex } : {}),
             reason,
         },
         timestamp: now,
@@ -370,6 +424,7 @@ export function buildValidatedDestroyEvents(
         destroyerId?: PlayerId;
         reason: string;
         now: number;
+        sourceKind?: 'action' | 'nonAction';
     },
 ): MinionDestroyedEvent[] {
     const minion = findMinionOnBase(state, params.fromBaseIndex, params.minionUid);
@@ -384,6 +439,7 @@ export function buildValidatedDestroyEvents(
             params.destroyerId,
             params.reason,
             params.now,
+            params.sourceKind,
         ),
     ];
 }
@@ -859,13 +915,14 @@ export function fireMinionPlayedTriggers(params: {
 }): { events: SmashUpEvent[]; matchState?: MatchState<SmashUpCore> } {
     const { core, playerId, cardUid, defId, baseIndex, power, random, now } = params;
     let matchState = params.matchState;
+    let triggerCore = core;
     const events: SmashUpEvent[] = [];
 
     // 注意：此函数被 postProcessSystemEvents 调用时，MINION_PLAYED 事件已经被 reduce 到 core 中
     // 所以随从已经在基地上了，不需要再次 reduce
 
     // 1. onPlay 能力触发
-    const executor = resolveOnPlay(defId);
+    const executor = params.playedEvt.payload.skipOnPlayAbility ? undefined : resolveOnPlay(defId);
     if (executor) {
         const ctx: AbilityContext = {
             state: core,
@@ -879,33 +936,54 @@ export function fireMinionPlayedTriggers(params: {
         };
         const result = executor(ctx);
         events.push(...result.events);
-        if (result.matchState) matchState = result.matchState;
+        if (result.events.length > 0) {
+            for (const event of result.events) {
+                triggerCore = reduce(triggerCore, event);
+            }
+        }
+        if (result.matchState) {
+            matchState = {
+                ...result.matchState,
+                core: triggerCore,
+            };
+        } else if (triggerCore !== core) {
+            matchState = {
+                ...matchState,
+                core: triggerCore,
+            };
+        }
     }
 
     // 2. 基地能力触发 onMinionPlayed（改为入队，按 Wiki 同时触发排序解决）
     const minionDef = getMinionDef(defId);
+    const sourceEventId = `minion-played:${cardUid}:${baseIndex}:${now}`;
+    const frameId = `minion-played-frame:${cardUid}:${baseIndex}:${now}`;
     const queuedBase = collectBaseAbilityTriggers({
-        core,
+        core: triggerCore,
         timing: 'onMinionPlayed',
         ownerPlayerId: playerId,
         baseIndex,
         triggerMinionUid: cardUid,
         triggerMinionDefId: defId,
         triggerMinionPower: minionDef?.power ?? power,
+        frameId,
+        sourceEventId,
         now,
     });
     if (queuedBase) events.push(queuedBase as unknown as SmashUpEvent);
 
     // 3. ongoing 触发器 onMinionPlayed（改为入队，按 Wiki 同时触发排序解决）
-    const playedMinion = core.bases[baseIndex]?.minions.find(m => m.uid === cardUid);
-    const queued = collectTriggers(core, 'onMinionPlayed', {
-        state: core,
+    const playedMinion = triggerCore.bases[baseIndex]?.minions.find(m => m.uid === cardUid);
+    const queued = collectTriggers(triggerCore, 'onMinionPlayed', {
+        state: triggerCore,
         matchState,
         playerId,
         baseIndex,
         triggerMinionUid: cardUid,
         triggerMinionDefId: defId,
         triggerMinion: playedMinion,
+        frameId,
+        sourceEventId,
         random,
         now,
     });
@@ -941,16 +1019,24 @@ export function grantExtraMinion(
     /** 限定额度只能用于指定基地（不设则为全局额度） */
     restrictToBase?: number,
     /** 额外选项 */
-    options?: { sameNameOnly?: boolean; sameNameDefId?: string; powerMax?: number },
+    options?: {
+        sameNameOnly?: boolean;
+        sameNameDefId?: string;
+        powerMax?: number;
+        playTiming?: 'banked' | 'immediate';
+        consumePendingMinionPlayEffectOnSkip?: boolean;
+    },
 ): LimitModifiedEvent {
     return {
         type: SU_EVENTS.LIMIT_MODIFIED,
         payload: {
             playerId, limitType: 'minion', delta: 1, reason,
+            ...(options?.playTiming ? { playTiming: options.playTiming } : {}),
             ...(restrictToBase !== undefined ? { restrictToBase } : {}),
             ...(options?.powerMax !== undefined ? { powerMax: options.powerMax } : {}),
             ...(options?.sameNameOnly ? { sameNameOnly: true } : {}),
             ...(options?.sameNameDefId ? { sameNameDefId: options.sameNameDefId } : {}),
+            ...(options?.consumePendingMinionPlayEffectOnSkip ? { consumePendingMinionPlayEffectOnSkip: true } : {}),
         },
         timestamp: now,
     };
@@ -961,13 +1047,91 @@ export function grantExtraMinion(
 export function grantExtraAction(
     playerId: PlayerId,
     reason: string,
-    now: number
+    now: number,
+    options?: { playTiming?: 'banked' | 'immediate' },
 ): LimitModifiedEvent {
     return {
         type: SU_EVENTS.LIMIT_MODIFIED,
-        payload: { playerId, limitType: 'action', delta: 1, reason },
+        payload: {
+            playerId,
+            limitType: 'action',
+            delta: 1,
+            reason,
+            ...(options?.playTiming ? { playTiming: options.playTiming } : {}),
+        },
         timestamp: now,
     };
+}
+
+export function buildStandardDrawEvents(
+    state: SmashUpCore | MatchState<SmashUpCore>,
+    playerId: PlayerId,
+    count: number,
+    random: RandomFn,
+    now: number,
+): SmashUpEvent[] {
+    const core = 'core' in state ? state.core : state;
+    const player = core.players[playerId];
+    if (!player || count <= 0) return [];
+
+    const drawResult = drawCards(player, count, random);
+    const events: SmashUpEvent[] = [];
+
+    if (drawResult.reshuffledDeckUids && drawResult.reshuffledDeckUids.length > 0) {
+        events.push({
+            type: SU_EVENTS.DECK_RESHUFFLED,
+            payload: {
+                playerId,
+                deckUids: drawResult.reshuffledDeckUids,
+            },
+            timestamp: now,
+        } as DeckReshuffledEvent);
+    }
+
+    if (drawResult.drawnUids.length > 0) {
+        events.push({
+            type: SU_EVENTS.CARDS_DRAWN,
+            payload: {
+                playerId,
+                count: drawResult.drawnUids.length,
+                cardUids: drawResult.drawnUids,
+            },
+            timestamp: now,
+        } as CardsDrawnEvent);
+    }
+
+    return events;
+}
+
+export function resolveExtraPlayTiming(matchState?: Pick<MatchState<SmashUpCore>, 'sys'>): 'banked' | 'immediate' {
+    return matchState?.sys?.phase === 'playCards' ? 'banked' : 'immediate';
+}
+
+export function grantContextualExtraMinion(
+    ctx: { playerId: PlayerId; now: number; matchState?: Pick<MatchState<SmashUpCore>, 'sys'> },
+    reason: string,
+    restrictToBase?: number,
+    options?: { sameNameOnly?: boolean; sameNameDefId?: string; powerMax?: number },
+): LimitModifiedEvent {
+    return grantExtraMinion(
+        ctx.playerId,
+        reason,
+        ctx.now,
+        restrictToBase,
+        {
+            ...options,
+            playTiming: resolveExtraPlayTiming(ctx.matchState),
+        },
+    );
+}
+
+export function grantContextualExtraAction(
+    ctx: { playerId: PlayerId; now: number; matchState?: Pick<MatchState<SmashUpCore>, 'sys'> },
+    reason: string,
+): LimitModifiedEvent {
+    return grantExtraAction(ctx.playerId, reason, ctx.now, {
+        playTiming: resolveExtraPlayTiming(ctx.matchState),
+    });
 }
 
 // ============================================================================
@@ -1191,35 +1355,6 @@ export function drawMadnessCards(
     };
 }
 
-export function buildStandardDrawEvents(
-    state: SmashUpCore,
-    playerId: PlayerId,
-    count: number,
-    random: RandomFn,
-    now: number,
-): SmashUpEvent[] {
-    if (count <= 0) return [];
-    const player = state.players[playerId];
-    if (!player) return [];
-    const draw = drawCards(player, count, random);
-    const events: SmashUpEvent[] = [];
-    if (draw.reshuffledDeckUids && draw.reshuffledDeckUids.length > 0) {
-        events.push({
-            type: SU_EVENTS.DECK_REORDERED,
-            payload: { playerId, deckUids: draw.reshuffledDeckUids },
-            timestamp: now,
-        } as DeckReorderedEvent);
-    }
-    if (draw.drawnUids.length > 0) {
-        events.push({
-            type: SU_EVENTS.CARDS_DRAWN,
-            payload: { playerId, count: draw.drawnUids.length, cardUids: draw.drawnUids },
-            timestamp: now,
-        } as CardsDrawnEvent);
-    }
-    return events;
-}
-
 /**
  * 生成返回疯狂卡事件
  * 
@@ -1258,6 +1393,23 @@ export function countMadnessCards(player: { hand: { defId: string }[]; deck: { d
     for (const c of player.hand) if (c.defId === MADNESS_CARD_DEF_ID) count++;
     for (const c of player.deck) if (c.defId === MADNESS_CARD_DEF_ID) count++;
     for (const c of player.discard) if (c.defId === MADNESS_CARD_DEF_ID) count++;
+    return count;
+}
+
+/** 计算某位玩家整局持有的疯狂卡数量（含埋葬区） */
+export function countMadnessCardsForPlayer(state: SmashUpCore, playerId: PlayerId): number {
+    const player = state.players[playerId];
+    if (!player) return 0;
+
+    let count = countMadnessCards(player);
+    for (const base of state.bases) {
+        for (const buried of base.buriedCards ?? []) {
+            if (buried.controllerId === playerId && buried.defId === MADNESS_CARD_DEF_ID) {
+                count++;
+            }
+        }
+    }
+
     return count;
 }
 
@@ -1342,6 +1494,78 @@ export function openAfterScoringWindow(
 // 交互辅助函数（目标选择）
 // ============================================================================
 
+type MinionTargetEffectType = ProtectionType | 'buff';
+
+function inferMinionEffectIntent(
+    effectType: MinionTargetEffectType | undefined,
+): AiEffectIntent | undefined {
+    switch (effectType) {
+        case 'buff':
+            return 'buff';
+        case 'destroy':
+            return 'destroy';
+        case 'move':
+            return 'move';
+        case 'action':
+        case 'affect':
+            return 'affect';
+        default:
+            return undefined;
+    }
+}
+
+function buildMinionTargetAiHint(args: {
+    minion: MinionOnBase;
+    sourcePlayerId: PlayerId;
+    effectType?: MinionTargetEffectType;
+}): AiHint {
+    const effectIntent = inferMinionEffectIntent(args.effectType);
+    return buildTargetAiHint({
+        actorPlayerId: args.sourcePlayerId,
+        targetPlayerId: args.minion.controller,
+        effectIntent,
+        targetKind: 'minion',
+        targetOwnerId: args.minion.owner,
+        targetControllerId: args.minion.controller,
+    });
+}
+
+export function buildPlayerTargetOptions<TExtraValue extends Record<string, unknown> = Record<string, never>>(
+    candidates: Array<{
+        id?: string;
+        label: string;
+        targetPlayerId: PlayerId;
+        value?: TExtraValue;
+        displayMode?: EnginePromptOption<{ targetPlayerId: PlayerId } & TExtraValue>['displayMode'];
+        priorityHint?: number;
+        forcedTargetPolicy?: AiHint['forcedTargetPolicy'];
+    }>,
+    context: {
+        sourcePlayerId: PlayerId;
+        effectIntent?: AiEffectIntent;
+        derivedFrom?: AiHint['derivedFrom'];
+    },
+): EnginePromptOption<{ targetPlayerId: PlayerId } & TExtraValue>[] {
+    return candidates.map((candidate, index) => ({
+        id: candidate.id ?? `player-${index}`,
+        label: candidate.label,
+        value: {
+            targetPlayerId: candidate.targetPlayerId,
+            ...((candidate.value ?? {}) as TExtraValue),
+        },
+        ...(candidate.displayMode ? { displayMode: candidate.displayMode } : {}),
+        _ai: buildTargetAiHint({
+            actorPlayerId: context.sourcePlayerId,
+            targetPlayerId: candidate.targetPlayerId,
+            effectIntent: context.effectIntent,
+            targetKind: 'player',
+            priorityHint: candidate.priorityHint,
+            forcedTargetPolicy: candidate.forcedTargetPolicy,
+            derivedFrom: context.derivedFrom ?? 'inferred',
+        }),
+    }));
+}
+
 /**
  * 构建随从目标选择的交互选项（自动保护过滤）
  * 
@@ -1364,7 +1588,7 @@ export function buildMinionTargetOptions(
         /** 显式来源类型；仅在无法提供 sourceDefId 时使用 */
         sourceKind?: 'action' | 'nonAction';
         /** 效果类型覆盖（可选，不传则自动检查 destroy + affect） */
-        effectType?: ProtectionType;
+        effectType?: MinionTargetEffectType;
         /** 是否额外尊重“行动卡保护”（如烟雾弹） */
         respectActionProtection?: boolean;
     }
@@ -1401,12 +1625,29 @@ export function buildMinionTargetOptions(
         return true;
     });
 
-    return filteredCandidates.map((c, i) => ({
-        id: `minion-${i}`,
-        label: c.label,
-        value: { minionUid: c.uid, baseIndex: c.baseIndex, defId: c.defId },
-        _source: 'field' as const,
-    }));
+    return filteredCandidates.map((c, i) => {
+        const minion = state.bases[c.baseIndex]?.minions.find(m => m.uid === c.uid);
+        if (!minion) {
+            return {
+                id: `minion-${i}`,
+                label: c.label,
+                value: { minionUid: c.uid, baseIndex: c.baseIndex, defId: c.defId },
+                _source: 'field' as const,
+            };
+        }
+
+        return {
+            id: `minion-${i}`,
+            label: c.label,
+            value: { minionUid: c.uid, baseIndex: c.baseIndex, defId: c.defId },
+            _source: 'field' as const,
+            _ai: buildMinionTargetAiHint({
+                minion,
+                sourcePlayerId,
+                effectType,
+            }),
+        };
+    });
 }
 
 /**
@@ -1420,7 +1661,7 @@ export function buildActionMinionTargetOptions(
     context: {
         state: SmashUpCore;
         sourcePlayerId: PlayerId;
-        effectType?: ProtectionType;
+        effectType?: MinionTargetEffectType;
     },
 ): EnginePromptOption<{ minionUid: string; baseIndex: number; defId: string }>[] {
     return buildMinionTargetOptions(candidates, {

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { getSmashUpAtlasImagesByKind } from '../domain/atlasCatalog';
 import { smashUpCriticalImageResolver } from '../criticalImageResolver';
-import { smashUpRuntimeCriticalImageResolver } from '../runtimeCriticalImageResolver';
 
 const ALL_BASE_ATLAS = getSmashUpAtlasImagesByKind('base');
 const ALL_CARD_ATLAS = getSmashUpAtlasImagesByKind('card');
@@ -37,19 +36,16 @@ function makePlayingState(
 }
 
 describe('smashUpCriticalImageResolver', () => {
-    it('无 state 时返回全量图集，允许创建房间后立即并行预热', () => {
+    it('无 state 时不主动预热全量图集', () => {
         const result = smashUpCriticalImageResolver(undefined, undefined, '0');
 
-        expect(result.critical).toEqual([...ALL_CARD_ATLAS, ...ALL_BASE_ATLAS]);
+        expect(result.critical).toEqual([]);
         expect(result.warm).toEqual([]);
         expect(result.phaseKey).toBe('init:0');
     });
-});
-
-describe('smashUpRuntimeCriticalImageResolver', () => {
 
     it('factionSelect 阶段保留全部卡图为 critical，但让已选派系底图先 warm', () => {
-        const result = smashUpRuntimeCriticalImageResolver(
+        const result = smashUpCriticalImageResolver(
             makeFactionSelectState({
                 '0': ['dinosaurs', 'miskatonic_university'],
                 '1': ['robots', 'wizards'],
@@ -73,7 +69,7 @@ describe('smashUpRuntimeCriticalImageResolver', () => {
     });
 
     it('教程 factionSelect 阶段返回空资源，直接等待后续 playing 阶段', () => {
-        const result = smashUpRuntimeCriticalImageResolver({
+        const result = smashUpCriticalImageResolver({
             sys: { phase: 'factionSelect', tutorial: { active: true } },
             core: { players: {} },
         }, undefined, '0');
@@ -84,7 +80,7 @@ describe('smashUpRuntimeCriticalImageResolver', () => {
     });
 
     it('playing 阶段按共享底图 -> 自己派系卡图 -> 对手派系卡图排序 critical', () => {
-        const result = smashUpRuntimeCriticalImageResolver(
+        const result = smashUpCriticalImageResolver(
             makePlayingState({
                 '0': ['dinosaurs', 'miskatonic_university'],
                 '1': ['robots', 'wizards'],
@@ -108,7 +104,7 @@ describe('smashUpRuntimeCriticalImageResolver', () => {
     });
 
     it('新接入的 Oops 四派系会命中新卡图与新基地图集', () => {
-        const result = smashUpRuntimeCriticalImageResolver(
+        const result = smashUpCriticalImageResolver(
             makePlayingState({
                 '0': ['ancient_egyptians', 'cowboys'],
                 '1': ['samurai', 'vikings'],
@@ -121,8 +117,23 @@ describe('smashUpRuntimeCriticalImageResolver', () => {
         expect(result.critical).toContain('smashup/base/aiji_base');
     });
 
+    it('fairies 会命中 Pretty Pretty card atlas 与共享 Pretty Pretty base atlas', () => {
+        const result = smashUpCriticalImageResolver(
+            makePlayingState({
+                '0': ['fairies', 'kitty_cats'],
+                '1': ['princesses', 'mythic_horses'],
+            }),
+            undefined,
+            '0',
+        );
+
+        expect(result.critical).toContain('smashup/cards/pretty_pretty');
+        expect(result.critical).toContain('smashup/base/base3');
+        expect(result.critical).toContain('smashup/taitan/taitan1');
+    });
+
     it('教程 playing 阶段仍只加载已选派系对应图集', () => {
-        const result = smashUpRuntimeCriticalImageResolver(
+        const result = smashUpCriticalImageResolver(
             makePlayingState(
                 {
                     '0': ['ghosts', 'pirates'],
@@ -141,7 +152,7 @@ describe('smashUpRuntimeCriticalImageResolver', () => {
     });
 
     it('POD faction 会预热对应的本地 POD 基地图集路径', () => {
-        const result = smashUpRuntimeCriticalImageResolver(
+        const result = smashUpCriticalImageResolver(
             makePlayingState({
                 '0': ['killer_plants_pod', 'giant_ants_pod'],
                 '1': ['elder_things_pod', 'miskatonic_university_pod'],
@@ -155,7 +166,7 @@ describe('smashUpRuntimeCriticalImageResolver', () => {
     });
 
     it('playing 阶段缺少派系数据时回退到全量图集', () => {
-        const result = smashUpRuntimeCriticalImageResolver(
+        const result = smashUpCriticalImageResolver(
             { sys: { phase: 'playCards' }, core: {} },
             undefined,
             '0',
