@@ -842,6 +842,33 @@ describe('pirate_first_mate afterScoring', () => {
         });
         expect(events.filter(e => e.type === SU_EVENTS.MINION_MOVED).length).toBe(0);
     });
+
+    it('只会为当前计分基地上的大副创建触发，不会把其他基地上的大副一起加入队列', () => {
+        const scoringMate = makeMinion('mate-score', 'pirate_first_mate', '0', 2, { powerModifier: 0 });
+        const otherMate = makeMinion('mate-other', 'pirate_first_mate', '0', 2, { powerModifier: 0 });
+        const state = makeState({
+            bases: [
+                makeBase({ defId: 'base_scoring', minions: [scoringMate] }),
+                makeBase({ defId: 'base_other', minions: [otherMate] }),
+                makeBase({ defId: 'base_dest', minions: [] }),
+            ],
+        });
+
+        const queued = collectTriggers(state, 'afterScoring', {
+            state,
+            playerId: '0',
+            baseIndex: 0,
+            rankings: [{ playerId: '0', power: 2, vp: 1 }],
+            random: dummyRandom,
+            now: 100,
+        });
+
+        expect(queued).toBeDefined();
+        const mateTriggers = queued!.payload.triggers.filter(t => t.sourceDefId === 'pirate_first_mate');
+        expect(mateTriggers).toHaveLength(1);
+        expect(mateTriggers[0].sourceCardUid).toBe('mate-score');
+        expect(mateTriggers[0].sourceBaseIndex).toBe(0);
+    });
 });
 
 describe('pirate_first_mate afterScoring - 多实例交互', () => {
