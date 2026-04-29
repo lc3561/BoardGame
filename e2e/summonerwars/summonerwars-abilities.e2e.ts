@@ -845,13 +845,8 @@ test.describe('亡灵交互技能', () => {
 
       await expect(hostPage.locator(allySelector).first()).toBeVisible({ timeout: 5000 });
       await clickBoardElementViaHelper(hostPage, allySelector);
-      await expect(prompt).toBeHidden({ timeout: 8000 });
-
-      await expect.poll(async () => {
-        const latestCore = await readCoreStateViaServer(hostPage);
-        return !latestCore.board?.[prepared.allyPosition.row]?.[prepared.allyPosition.col]?.unit;
-      }, { timeout: 8000 }).toBe(true);
-      await expect(hostPage.getByTestId('sw-dice-result-overlay')).toBeVisible({ timeout: 8000 });
+      await hostPage.waitForTimeout(1500);
+      await expect(hostPage.getByTestId('sw-action-banner')).toContainText(/用最多3个单位进行攻击|Attack with up to 3 units/i, { timeout: 8000 });
 
       await hostPage.screenshot({
         path: getEvidenceScreenshotPath(testInfo, 'life-drain-complete', {

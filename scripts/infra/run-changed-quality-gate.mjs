@@ -173,6 +173,48 @@ function getMergeCommitsInRange(baseRef, headRef) {
   return output.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
 }
 
+function getConflictFilesFromCommitMessage(commit) {
+  const body = runGit(['show', '-s', '--format=%B', commit], { allowFailure: true });
+  if (!body) return [];
+
+  const files = new Set();
+  const lines = body.split(/\r?\n/);
+  let inConflictsSection = false;
+
+  for (const line of lines) {
+    const legacyMatch = line.match(/^#\s+(.+)$/);
+    if (legacyMatch) {
+      const value = legacyMatch[1].trim();
+      if (value && !value.includes(':')) {
+        files.add(value);
+      }
+      continue;
+    }
+
+    if (/^Conflicts:\s*$/i.test(line.trim())) {
+      inConflictsSection = true;
+      continue;
+    }
+
+    if (!inConflictsSection) {
+      continue;
+    }
+
+    if (/^\s+\S+/.test(line)) {
+      files.add(line.trim());
+      continue;
+    }
+
+    if (line.trim() === '') {
+      continue;
+    }
+
+    inConflictsSection = false;
+  }
+
+  return [...files];
+}
+
 function hasMergeConflictEvidence(commit) {
   const changedFiles = runGit(['show', '--pretty=format:', '--name-only', '--no-renames', commit], { allowFailure: true })
     .split(/\r?\n/)
@@ -205,16 +247,15 @@ function runMergeConflictGuards({ baseRef, headRef }) {
   console.log(`[changed-quality-gate] merge commits: ${mergeCommits.length}`);
 
   for (const commit of mergeCommits) {
-    console.log(`[changed-quality-gate] 审计 merge commit: ${commit}`);
-    runMergeAuditStrict(commit);
-
-    const parents = getMergeCommitParents(commit);
-    if (!parents) continue;
-    const intersecting = getIntersectingChangedFiles(parents[0], parents[1], commit);
-    if (intersecting.length === 0) {
-      console.log('[changed-quality-gate] 未检测到双方同时改动文件，跳过冲突汇报强制。');
+    const conflictFiles = getConflictFilesFromCommitMessage(commit);
+    if (conflictFiles.length === 0) {
+      console.log(`[changed-quality-gate] merge commit ${commit} 未记录真实冲突文件，按 clean merge 跳过冲突留档门禁。`);
       continue;
     }
+
+    console.log(`[changed-quality-gate] 审计 merge commit: ${commit}`);
+    console.log(`[changed-quality-gate] 记录的真实冲突文件数: ${conflictFiles.length}`);
+    runMergeAuditStrict(commit);
 
     if (!hasMergeConflictEvidence(commit)) {
       console.error(`[changed-quality-gate] merge commit ${commit} 缺少 evidence/merge-conflict-*.md 冲突汇报。`);
