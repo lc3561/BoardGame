@@ -461,8 +461,12 @@
       "fairies": {
         "name": "仙灵",
         "description": "通过持续行动转移、临时力量修正和战术封锁灵活掌控基地节奏。"
+      },
+      "princesses": {
+        "name": "公主",
+        "description": "用额外出牌、弃牌堆回收与持续增益拖长价值战，并靠 Eliza 压制对手爆发。"
       }
-  },
+    },
   "tutorial": {
     "title": "大杀四方教学",
     "welcome": "欢迎来到大杀四方！组合两个种族争夺基地，率先获得15点胜利分数即可获胜。",
@@ -3661,11 +3665,71 @@
       "name": "结果",
       "effectText": "打在一个基地上。选择一项：持续，这里的所有随从具有 +1 力量；或持续，这里的所有随从具有 -1 力量。"
     },
-      "fairies_fairy_ballet": {
-        "name": "精灵芭蕾",
-        "effectText": "选择一项：抽取两张卡牌；或抽取一张卡牌并打出一张额外的战术。"
-      }
-  },
+        "fairies_fairy_ballet": {
+          "name": "精灵芭蕾",
+          "effectText": "选择一项：抽取两张卡牌；或抽取一张卡牌并打出一张额外的战术。"
+        },
+        "princesses_happily_ever_after": {
+          "name": "永远幸福",
+          "effectText": "打出到基地上。\n持续：如果当这里计分时你是这里的赢家，获得 1VP。"
+        },
+        "princesses_true_loves_kiss": {
+          "name": "真爱之吻",
+          "effectText": "移动一个仆从到另一个基地。"
+        },
+        "princesses_direct_to_dvd_sequel": {
+          "name": "直出结局",
+          "effectText": "从你的弃牌堆洗入一个仆从到你的牌库并抓一张牌。"
+        },
+        "princesses_woodland_helpers": {
+          "name": "丛林帮手",
+          "effectText": "打出到基地上。\n持续：在你打出一个行动后，你可以将它放到牌库底而不是你的弃牌堆。"
+        },
+        "princesses_some_day_my_prince_will_come": {
+          "name": "总有一天我的王子会来的",
+          "effectText": "异能：在一个基地计分前，移动一个仆从从那里到另一个基地。"
+        },
+        "princesses_fairy_godmother": {
+          "name": "妖精奶奶",
+          "effectText": "抽一张卡，或者一个仆从获得 +2 力量直到回合结束。"
+        },
+        "princesses_skillet": {
+          "name": "平底锅",
+          "effectText": "摧毁一个力量为 2 或更小的仆从并抓三张牌。"
+        },
+        "princesses_heirloom": {
+          "name": "传家宝",
+          "effectText": "打出到一个仆从上。\n持续：该仆从身上的每张传家宝使其获得 +1 力量。本卡不能被摧毁。"
+        },
+        "princesses_tale_as_old_as_time": {
+          "name": "古老的传说",
+          "effectText": "选择一个基地并将你的所有仆从移动到那里。"
+        },
+        "princesses_marie_degraw": {
+          "name": "玛丽·德格劳",
+          "abilityText": "天赋：展示你牌库顶的牌。如果它是一个仆从，抽取它。否则，将其放到你的牌库底。"
+        },
+        "princesses_eliza": {
+          "name": "伊莱莎",
+          "abilityText": "持续：其他玩家每回合至多只能打出一张额外牌。"
+        },
+        "princesses_snow_white": {
+          "name": "白雪公主",
+          "abilityText": "天赋：移动一个仆从从另一个基地到这里。"
+        },
+        "princesses_apricot": {
+          "name": "杏子公主",
+          "abilityText": "天赋：摧毁另一个玩家在这里的力量为 2 或更小的仆从。"
+        },
+        "princesses_griselda": {
+          "name": "格丽泽尔达",
+          "abilityText": "天赋：从你的弃牌堆中放置一张传家宝到你的手上。"
+        },
+        "princesses_sleeping_beauty": {
+          "name": "睡美人",
+          "abilityText": "持续：如果本仆从将要进入弃牌堆，将其改为洗入你的牌库。"
+        }
+      },
   "endgame": {
     "victory": "胜利",
     "defeat": "落败",

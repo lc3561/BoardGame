@@ -390,6 +390,8 @@ export interface PlayerState {
     actionsPlayed: number;
     /** 本回合可打出行动额度（默认 1） */
     actionLimit: number;
+    /** 本回合作为“额外牌”打出的牌总数（Eliza 等效果使用） */
+    extraCardsPlayedThisTurn?: number;
     /** 起手无随从时“可”重抽一次；用于防止重复重抽 */
     startingHandMulliganUsed?: boolean;
     /** 本回合每个基地已打出随从数（baseIndex → count），用于北极基地等限制 */

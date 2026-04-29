@@ -484,15 +484,19 @@
       "name": "Skeletons",
       "description": "Bury and recycle low-power minions from the discard pile."
     },
-    "world_champs": {
-      "name": "World Champs",
-      "description": "A mixed all-star roster focused on extra actions and tempo bursts."
+      "world_champs": {
+        "name": "World Champs",
+        "description": "A mixed all-star roster focused on extra actions and tempo bursts."
+      },
+      "fairies": {
+        "name": "Fairies",
+        "description": "Shift attachments, bend power totals, and lock opponents out of key action plays."
+      },
+      "princesses": {
+        "name": "Princesses",
+        "description": "Stretch value with extra plays, discard recursion, and sticky boosts while Eliza caps opposing bursts."
+      }
     },
-    "fairies": {
-      "name": "Fairies",
-      "description": "Shift attachments, bend power totals, and lock opponents out of key action plays."
-    }
-  },
   "tutorial": {
     "title": "Smash Up Tutorial",
     "welcome": "Welcome to Smash Up! Combine two factions, fight for base control, and be the first to reach 15 victory points.",
@@ -1555,10 +1559,10 @@
       "name": "Beautiful Castle",
       "abilityText": "Minions here of power 5 or more are unaffected by other players' cards."
     },
-    "base_castle_of_ice": {
-      "name": "Castle of Ice",
-      "abilityText": "Minions cannot be played here."
-    },
+      "base_castle_of_ice": {
+        "name": "Ice Castle",
+        "abilityText": "Minions cannot be played here."
+      },
     "base_land_of_balance": {
       "name": "Land of Balance",
       "abilityText": "After you play a minion here, you may move one of your minions from another base to here."
@@ -3691,11 +3695,71 @@
       "name": "Enchantment",
       "effectText": "Play on a base. Choose one: ongoing all minions here have +1 power; or ongoing all minions here have -1 power."
     },
-    "fairies_fairy_ballet": {
-      "name": "Fairy Ballet",
-      "effectText": "Choose one: draw 2 cards; or draw a card and play an extra action."
-    }
-  },
+      "fairies_fairy_ballet": {
+        "name": "Fairy Ballet",
+        "effectText": "Choose one: draw 2 cards; or draw a card and play an extra action."
+      },
+      "princesses_happily_ever_after": {
+        "name": "Happily Ever After",
+        "effectText": "Play on a base.\nOngoing: If when this base scores you are a winner here, gain 1 VP."
+      },
+      "princesses_true_loves_kiss": {
+        "name": "True Love’s Kiss",
+        "effectText": "Move a minion to another base."
+      },
+      "princesses_direct_to_dvd_sequel": {
+        "name": "Direct to DVD Sequel",
+        "effectText": "Shuffle a minion from your discard pile into your deck and draw a card."
+      },
+      "princesses_woodland_helpers": {
+        "name": "Woodland Helpers",
+        "effectText": "Play on a base.\nOngoing: After you play an action, you may place it on the bottom of your deck instead of your discard pile."
+      },
+      "princesses_some_day_my_prince_will_come": {
+        "name": "Some Day My Prince Will Come",
+        "effectText": "Special: Before a base scores, move a minion from there to another base."
+      },
+      "princesses_fairy_godmother": {
+        "name": "Fairy Godmother",
+        "effectText": "Draw a card, or one minion gains +2 power until the end of the turn."
+      },
+      "princesses_skillet": {
+        "name": "Skillet",
+        "effectText": "Destroy a minion of power 2 or less and draw 3 cards."
+      },
+      "princesses_heirloom": {
+        "name": "Heirloom",
+        "effectText": "Play on a minion.\nOngoing: This minion gains +1 power for each Heirloom on it. This card cannot be destroyed."
+      },
+      "princesses_tale_as_old_as_time": {
+        "name": "Tale as Old as Time",
+        "effectText": "Choose a base and move all your minions there."
+      },
+      "princesses_marie_degraw": {
+        "name": "Marie DeGraw",
+        "abilityText": "Talent: Reveal the top card of your deck. If it is a minion, draw it. Otherwise, place it on the bottom of your deck."
+      },
+      "princesses_eliza": {
+        "name": "Eliza",
+        "abilityText": "Ongoing: Other players can play no more than one extra card each turn."
+      },
+      "princesses_snow_white": {
+        "name": "Snow White",
+        "abilityText": "Talent: Move a minion from another base to here."
+      },
+      "princesses_apricot": {
+        "name": "Apricot",
+        "abilityText": "Talent: Destroy another player's minion here of power 2 or less."
+      },
+      "princesses_griselda": {
+        "name": "Griselda",
+        "abilityText": "Talent: Return a Heirloom from your discard pile to your hand."
+      },
+      "princesses_sleeping_beauty": {
+        "name": "Sleeping Beauty",
+        "abilityText": "Ongoing: If this minion would go to the discard pile, shuffle it into your deck instead."
+      }
+    },
   "endgame": {
     "victory": "Victory",
     "defeat": "Defeat",

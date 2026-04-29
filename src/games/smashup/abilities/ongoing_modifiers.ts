@@ -315,6 +315,10 @@ function registerFairiesModifiers(): void {
         }, 0);
     }, { handlesPodInternally: true });
 }
+
+function registerPrincessesModifiers(): void {
+    registerOngoingPowerModifier('princesses_heirloom', 'minion', 'self', 1);
+}
 // ============================================================================
 // 基地持续力量修正
 // ============================================================================
@@ -356,5 +360,6 @@ export function registerAllOngoingModifiers(): void {
     registerMermaidsModifiers();
     registerWorldChampsModifiers();
     registerFairiesModifiers();
+    registerPrincessesModifiers();
     registerWerewolfModifiers();
 }
