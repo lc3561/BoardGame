@@ -35,7 +35,6 @@ import { RESOURCE_IDS } from './resources';
 import { resolveEffectsToEvents, type EffectContext } from './effects';
 import { buildDrawEvents } from './deckEvents';
 import { applyEvents } from './utils';
-import { getAutoResponseEnabled } from '../ui/AutoResponseToggle';
 import { hasAfterCardPlayedWindowBeenHandled } from './responseWindowGuards';
 
 type MatchStateView = {
@@ -253,7 +252,7 @@ export function executeCardCommand(
                     break;
                 }
                 const responderQueue = getResponderQueue(stateAfterCard, 'afterCardPlayed', opponentId, card.id, actingPlayerId, phase);
-                if (responderQueue.length > 0 && getAutoResponseEnabled()) {
+                if (responderQueue.length > 0) {
                     const windowId = `afterCard-${card.id}-${timestamp}`;
                     const responseWindowEvent: ResponseWindowOpenedEvent = {
                         type: 'RESPONSE_WINDOW_OPENED',

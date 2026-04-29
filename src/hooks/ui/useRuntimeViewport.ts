@@ -35,6 +35,16 @@ const parseCssPixels = (value: string) => {
     return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const readStableLayoutViewportHeight = () => {
+    if (typeof window === 'undefined' || typeof document === 'undefined') {
+        return 0;
+    }
+    return Math.max(
+        Number.isFinite(window.innerHeight) ? window.innerHeight : 0,
+        Number.isFinite(document.documentElement.clientHeight) ? document.documentElement.clientHeight : 0,
+    );
+};
+
 export const readRuntimeSafeAreaInsets = (): RuntimeSafeAreaInsets => {
     if (typeof window === 'undefined') {
         return EMPTY_SAFE_AREA;
@@ -176,8 +186,10 @@ export const applyRuntimeViewportCssVars = (
     const keyboardInsetBottom = 'keyboardInsetBottom' in viewport
         ? Math.max(0, viewport.keyboardInsetBottom)
         : 0;
+    const stableLayoutViewportHeight = readStableLayoutViewportHeight();
     root.style.setProperty('--runtime-viewport-width', `${viewport.width}px`);
     root.style.setProperty('--runtime-viewport-height', `${viewport.height}px`);
+    root.style.setProperty('--layout-viewport-height', `${Math.max(viewport.height, stableLayoutViewportHeight)}px`);
     root.style.setProperty('--keyboard-inset-height', `${keyboardInsetBottom}px`);
     root.dataset.keyboardVisible = keyboardInsetBottom > 0 ? 'true' : 'false';
 

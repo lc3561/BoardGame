@@ -47,7 +47,6 @@ import type { ResponseWindowOpenedEvent } from './events';
 import { createDamageCalculation } from '../../../engine/primitives';
 import { getUsableTokensForOffensiveRollEnd } from './tokenResponse';
 import { getPlayerAbilityBaseDamage, playerAbilityHasDamage, playerAbilityNeedsSingleOpponentTarget } from './abilityLookup';
-import { getAutoResponseEnabled } from '../ui/AutoResponseToggle';
 import { evaluateTriggerCondition } from './combat';
 
 const pendingAttackNeedsTargetingRoll = (core: DiceThroneCore): boolean => {
@@ -291,7 +290,7 @@ function checkAfterAttackResponseWindow(
     // 只允许进攻方响应（card-dizzy："如果你对对手造成至少8伤害"，只有进攻方才能触发）
     // excludeId = defenderId，防止防御方也进入响应队列
     const responderQueue = getResponderQueue(stateAfterAttack, 'afterAttackResolved', attackerId, undefined, defenderId, phase);
-    if (responderQueue.length === 0 || !getAutoResponseEnabled()) return null;
+    if (responderQueue.length === 0) return null;
 
     return {
         type: 'RESPONSE_WINDOW_OPENED',

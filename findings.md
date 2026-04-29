@@ -745,3 +745,24 @@
   - 但《暗杀》真实语义是“附着后在回合结束时消灭该随从”；
   - 所以这里修的是验证口径，不是卡牌实现。
 - 这再次说明三新派系重审除了卡图和中文名，还要把“验证断言是否忠于卡图语义”也纳入审计范围。
+
+## 2026-04-29 World Champs《快如闪电 / 女主角 / 阿拉密斯》补证与旧误判失效
+- 旧“《女主角》复制标准行动实现没问题”的结论已经失效。
+- 失效原因不是卡图、中文名或索引，而是旧审计主要停在 `events`，没有把 `finalState`、`triggerQueue`、`reaction session` 收口和真实入口 E2E 拉进来。
+- 这次定位出的两条真实根因是：
+  1. `smashup_reaction_choose` handler 把已经预先 reduce 过的 `core` 连同事件一起交还系统层，导致同一批事件再次 reduce；《女主角》因此从应得 `+2` 落成了 `+4`。
+  2. `collectTriggers()` 对《阿拉密斯》的 `onMinionAffected` 过滤不够，只要别的随从被标准行动影响，也可能把《阿拉密斯》错误再入队。
+- 为了让这条真实入口稳定可测，本轮还补了两类配套修正：
+  - `GameTestContext.playCard()` 与 `selectOption()` 对“无基地前置、直接选随从”的行动牌和重名中文选项做了更稳的 direct respond；
+  - 《女主角》同批次目标过滤被显式收窄到“原始受影响的同基地其他己方随从”，避免同批次误回看。
+- 定向复跑结果：
+  - `newFactionAbilities` 聚焦 3 条：`3 passed`
+  - `快如闪电打到阿拉密斯后应可选触发女主角复制并让阿拉密斯提供额外行动`：`1 passed`
+- 新证据文档：
+  - `evidence/smashup/smashup-world-champs-diva-aramis-fast-as-lightning-e2e-2026-04-28.md`
+- 关键截图绝对路径：
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-world-champs-diva-aramis-reaction-prompt-2026-04-28.png`
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-world-champs-diva-aramis-resolved-2026-04-28.png`
+- 结论：
+  - 这次不是数据录入错误，而是**reaction/reducer 边界错误 + trigger scope 错误**。
+  - 审计维度必须继续保持：`卡图/locale/defId/注册` 之外，再强制覆盖 `finalState / triggerQueue / reaction session / 真实入口 E2E`。

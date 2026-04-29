@@ -19,6 +19,7 @@
 - 《高速追逐》《现在是闪电时间！》《聪明Set-Up》也已于 2026-04-27 补齐浏览器级真实入口证据，见 `evidence/smashup/smashup-world-champs-high-speed-smart-blitz-e2e-2026-04-27.md`。
 - 《着魔》《嗯？》也已于 2026-04-28 补齐浏览器级真实入口证据，见 `evidence/smashup/smashup-world-champs-bewitched-eh-e2e-2026-04-28.md`。
 - 《彩虹女孩》《怪兽冲击》也已于 2026-04-28 补齐浏览器级真实入口证据，见 `evidence/smashup/smashup-world-champs-rainbow-kaiju-e2e-2026-04-28.md`。
+- 《快如闪电》《女主角》《阿拉密斯》也已于 2026-04-29 补齐联合反应窗真实入口证据，见 `evidence/smashup/smashup-world-champs-diva-aramis-fast-as-lightning-e2e-2026-04-28.md`。
 - 但 `World Champs` 仍缺整派系级真实入口玩法覆盖，不能把 `斯坦福` 单卡证据外推成三派系最终收口。
 - 2026-04-26 22:31 再次补记：
   - `World Champs` 新增《金币猫》《鲨鱼纹身》对象级 L3 证据；
@@ -36,6 +37,10 @@
     - `World Champs` 当前至少已有 `16` 条正路径对象级 L3 证据，新增《彩虹女孩》《怪兽冲击》；
     - 《怪兽冲击》本轮没有暴露实现少给额度的问题，真实问题只是测试断言误把《暗杀》当成立即消灭；
     - 因而当前总口径仍是“对象级补证继续扩展”，不是三新派系整包最终收口。
+  - 2026-04-29 再次补记（三）：
+    - `World Champs` 当前至少已有 `19` 条正路径对象级 L3 证据，新增《快如闪电》《女主角》《阿拉密斯》；
+    - 其中《女主角》旧“实现正确”结论已失效，真实根因是 `smashup_reaction_choose` 双 reduce，只有补看 `finalState` 才能发现；
+    - 《阿拉密斯》同时暴露出 `onMinionAffected` 触发范围缺口，再次说明 closeout 不能只看卡图/locale/单条 events。
 - 在补齐真实入口玩法证据前，本文档不得再被引用为“三派系玩法已完成最终收口”的证明材料。
 
 ## 范围

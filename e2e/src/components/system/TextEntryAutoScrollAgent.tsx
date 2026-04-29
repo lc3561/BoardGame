@@ -19,7 +19,9 @@ export const TextEntryAutoScrollAgent = () => {
         }
 
         const shouldHandleTarget = (target: HTMLElement) => {
-            if (!isTextEntryProxyEligible(target)) return false;
+            if (isTextEntryProxyEligible(target)) {
+                return false;
+            }
             return document.documentElement.dataset.keyboardVisible !== 'true';
         };
 
@@ -70,4 +72,3 @@ export const TextEntryAutoScrollAgent = () => {
 
     return null;
 };
-

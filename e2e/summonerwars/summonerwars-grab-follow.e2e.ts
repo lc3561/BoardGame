@@ -16,6 +16,8 @@
  * - 单位移动到目标位置
  */
 
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import type { BrowserContext, Page } from '@playwright/test';
 import { test, expect } from '../framework';
 import { cloneState } from '../helpers/summonerwars';
@@ -31,6 +33,9 @@ const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
   await game.setupScene({ gameId: 'summonerwars' });
 };
 void __ensureThreeAxesMarker;
+
+const EVIDENCE_DIR = join(process.cwd(), 'test-results', 'evidence-screenshots', '_shared', 'summonerwars-grab-follow');
+mkdirSync(EVIDENCE_DIR, { recursive: true });
 
 
 // ============================================================================
@@ -558,6 +563,10 @@ test.describe('召唤师战争 - 友方移动后选择跟随位置', () => {
       hostPage.locator('[class*="prompt"]').filter({ hasText: /选择位置|Select position|抓附|Grab|跟随|Follow/i })
     );
     await expect(grabFollowPrompt).toBeVisible({ timeout: 8000 });
+    await hostPage.screenshot({
+      path: join(EVIDENCE_DIR, 'grab-follow-prompt-visible.png'),
+      fullPage: false,
+    });
 
     // 点击抓附手相邻的空位
     const followPosition = hostPage.locator('[data-testid^="sw-cell-"][data-valid-ability-pos="true"]').first();
@@ -575,6 +584,10 @@ test.describe('召唤师战争 - 友方移动后选择跟随位置', () => {
         `[data-testid^="sw-unit-"][data-owner="0"][data-unit-name*="抓附手"][data-cell-coord="${followCoord}"]`,
       ),
     ).toBeVisible({ timeout: 5000 });
+    await hostPage.screenshot({
+      path: join(EVIDENCE_DIR, 'grab-follow-follow-position-resolved.png'),
+      fullPage: false,
+    });
 
     await hostContext.close();
     await guestContext.close();

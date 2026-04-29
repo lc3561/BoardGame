@@ -609,4 +609,30 @@ describe('≥15 VP 胜利检查', () => {
         expect(result.finalState.sys.phase).toBe('playCards');
         expect(result.finalState.core.currentPlayerIndex).toBe(1);
     });
+
+    it('未到 endTurn 时即使 VP 达标也不应提前结束', () => {
+        const runner = createRunner();
+        const draftResult = runner.run({
+            name: 'draft',
+            commands: DRAFT_COMMANDS,
+        });
+        const core = {
+            ...draftResult.finalState.core,
+            turnPhase: 'playCards',
+            players: {
+                ...draftResult.finalState.core.players,
+                ['0']: {
+                    ...draftResult.finalState.core.players['0'],
+                    vp: VP_TO_WIN,
+                },
+            },
+        };
+
+        expect(SmashUpDomain.isGameOver!(core)).toBeUndefined();
+
+        core.turnPhase = 'endTurn';
+        const gameOver = SmashUpDomain.isGameOver!(core);
+        expect(gameOver).toBeDefined();
+        expect(gameOver!.winner).toBe('0');
+    });
 });

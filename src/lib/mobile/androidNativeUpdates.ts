@@ -164,6 +164,7 @@ type NativeUpdateRequest = {
 
 const DEFAULT_NATIVE_UPDATE_CHANNEL = 'stable';
 const DEFAULT_NATIVE_UPDATE_MANIFEST_BASE_URL = 'https://assets.easyboardgame.top/official/native-app-updates/android';
+const DEBUG_ANDROID_APP_ID_SEGMENTS = new Set(['debug', 'dev', 'test', 'qa']);
 const nativeUpdateRequestListeners = new Set<(request: NativeUpdateRequest) => void>();
 const nativePlugin = registerPlugin<NativeAppUpdatePlugin>('AppUpdate');
 let nativePluginLoader: NativeAppUpdatePlugin | null | undefined;
@@ -208,7 +209,25 @@ const parseBooleanEnv = (value: string | boolean | undefined) => {
     return /^(1|true|yes|on)$/i.test((value || '').trim());
 };
 
+const readTrimmedEnv = (value: string | boolean | undefined) => (
+    typeof value === 'string' ? value.trim() : ''
+);
+
 const isAbsoluteHttpUrl = (value: string) => /^https?:\/\//i.test(value);
+
+const isNonReleaseAndroidAppId = (appId: string) => (
+    appId
+        .split('.')
+        .some((segment) => DEBUG_ANDROID_APP_ID_SEGMENTS.has(segment.trim().toLowerCase()))
+);
+
+const isAndroidNativeUpdateAllowedForAppId = (env: Partial<ImportMetaEnv> & { CAPACITOR_APP_ID?: string }) => {
+    const appId = readTrimmedEnv(env.VITE_CAPACITOR_APP_ID) || readTrimmedEnv(env.CAPACITOR_APP_ID);
+    if (!appId || !isNonReleaseAndroidAppId(appId)) {
+        return true;
+    }
+    return parseBooleanEnv(env.VITE_ANDROID_NATIVE_UPDATE_ALLOW_DEBUG_APP);
+};
 
 const resolveAndroidNativeUpdateChannel = (env: Partial<ImportMetaEnv>) => (
     typeof env.VITE_ANDROID_NATIVE_UPDATE_CHANNEL === 'string' && env.VITE_ANDROID_NATIVE_UPDATE_CHANNEL.trim()
@@ -241,7 +260,9 @@ export const readAndroidNativeUpdateConfig = (env: Partial<ImportMetaEnv> = impo
     const channel = resolveAndroidNativeUpdateChannel(env);
 
     return {
-        enabled: parseBooleanEnv(env.VITE_ANDROID_NATIVE_UPDATE_ENABLED) && isAbsoluteHttpUrl(manifestUrl),
+        enabled: parseBooleanEnv(env.VITE_ANDROID_NATIVE_UPDATE_ENABLED)
+            && isAbsoluteHttpUrl(manifestUrl)
+            && isAndroidNativeUpdateAllowedForAppId(env),
         manifestUrl,
         channel,
     };

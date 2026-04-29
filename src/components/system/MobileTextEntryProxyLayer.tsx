@@ -15,6 +15,7 @@ interface ProxyState {
     multiline: boolean;
     value: string;
     placeholder: string;
+    inputType?: string;
     inputMode?: string;
     maxLength?: number;
     enterKeyHint?: string;
@@ -26,6 +27,7 @@ interface TargetProxySnapshot {
     readonly?: boolean;
     contentEditable?: string | null;
     caretColor?: string;
+    hostPointerEvents?: string;
 }
 
 const KEYBOARD_PROXY_MIN_INSET = 72;
@@ -33,6 +35,8 @@ const TARGET_PROXY_ATTR = 'data-mobile-text-entry-proxy-source';
 const DEFAULT_PROXY_BACKGROUND = 'rgba(255, 248, 240, 0.98)';
 const DEFAULT_PROXY_BOX_SHADOW = '0 18px 40px rgba(15, 23, 42, 0.18)';
 const MOBILE_TEXT_ENTRY_DEBUG = true;
+const POINTER_SWITCH_GRACE_MS = 600;
+const SUBMIT_ENTER_KEY_HINTS = new Set(['enter', 'go', 'search', 'send']);
 
 const debugProxyEvent = (phase: string, details: Record<string, unknown> = {}) => {
     if (!MOBILE_TEXT_ENTRY_DEBUG || typeof console === 'undefined') {
@@ -75,6 +79,76 @@ const isTransparentColor = (value: string | null | undefined) => {
         || normalized === 'rgba(0,0,0,0)';
 };
 
+const getOwningForm = (target: HTMLElement | null) => {
+    if (!target) {
+        return null;
+    }
+    if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLButtonElement) {
+        return target.form;
+    }
+    return target.closest('form');
+};
+
+const sharesImplicitRetargetContext = (from: HTMLElement | null, to: HTMLElement | null) => {
+    if (!from || !to) {
+        return false;
+    }
+
+    const fromForm = getOwningForm(from);
+    const toForm = getOwningForm(to);
+    if (fromForm && fromForm === toForm) {
+        return true;
+    }
+
+    const fromHost = from.closest('[data-mobile-text-entry-proxy-host="true"]');
+    const toHost = to.closest('[data-mobile-text-entry-proxy-host="true"]');
+    return fromHost instanceof HTMLElement && fromHost === toHost;
+};
+
+const deriveProxyInputType = (input: HTMLInputElement | null): string | undefined => {
+    if (!input) {
+        return undefined;
+    }
+    const normalized = input.type.toLowerCase();
+    switch (normalized) {
+        case 'password':
+        case 'search':
+        case 'tel':
+        case 'text':
+        case 'url':
+            return normalized;
+        default:
+            return 'text';
+    }
+};
+
+const deriveProxyInputMode = (target: HTMLElement, input: HTMLInputElement | null): string | undefined => {
+    const explicitInputMode = input?.inputMode || target.getAttribute('inputmode') || undefined;
+    if (explicitInputMode) {
+        return explicitInputMode;
+    }
+    const normalized = input?.type.toLowerCase();
+    switch (normalized) {
+        case 'email':
+            return 'email';
+        case 'number':
+            return 'decimal';
+        default:
+            return undefined;
+    }
+};
+
+const safeSetInputSelection = (input: HTMLInputElement, selectionStart: number, selectionEnd: number) => {
+    try {
+        input.setSelectionRange(selectionStart, selectionEnd);
+    } catch (error) {
+        debugProxyEvent('selection-range-skip', {
+            inputType: input.type,
+            message: error instanceof Error ? error.message : String(error),
+        });
+    }
+};
+
 const buildProxyState = (target: HTMLElement): ProxyState => {
     const tagName = target.tagName.toLowerCase();
     const multiline = tagName === 'textarea' || target.getAttribute('contenteditable') !== null || target.isContentEditable;
@@ -86,7 +160,8 @@ const buildProxyState = (target: HTMLElement): ProxyState => {
         multiline,
         value: readTextEntryValue(target),
         placeholder: target.getAttribute('placeholder') ?? '',
-        inputMode: input?.inputMode || target.getAttribute('inputmode') || undefined,
+        inputType: deriveProxyInputType(input),
+        inputMode: deriveProxyInputMode(target, input),
         maxLength: input?.maxLength && input.maxLength > 0 ? input.maxLength : undefined,
         enterKeyHint: input?.enterKeyHint || target.getAttribute('enterkeyhint') || undefined,
         className: target.className,
@@ -115,8 +190,10 @@ const buildProxyState = (target: HTMLElement): ProxyState => {
 };
 
 const freezeTargetForProxy = (target: HTMLElement): TargetProxySnapshot => {
+    const host = target.closest('[data-mobile-text-entry-proxy-host="true"]');
     const snapshot: TargetProxySnapshot = {
         caretColor: target.style.caretColor,
+        hostPointerEvents: host instanceof HTMLElement ? host.style.pointerEvents : undefined,
     };
 
     if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
@@ -128,14 +205,21 @@ const freezeTargetForProxy = (target: HTMLElement): TargetProxySnapshot => {
     }
 
     target.style.caretColor = 'transparent';
+    if (host instanceof HTMLElement) {
+        host.style.pointerEvents = 'none';
+    }
     target.setAttribute(TARGET_PROXY_ATTR, 'true');
 
     return snapshot;
 };
 
 const restoreTargetAfterProxy = (target: HTMLElement, snapshot: TargetProxySnapshot | null) => {
+    const host = target.closest('[data-mobile-text-entry-proxy-host="true"]');
     target.removeAttribute(TARGET_PROXY_ATTR);
     target.style.caretColor = snapshot?.caretColor ?? '';
+    if (host instanceof HTMLElement) {
+        host.style.pointerEvents = snapshot?.hostPointerEvents ?? '';
+    }
 
     if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
         target.readOnly = snapshot?.readonly ?? false;
@@ -158,6 +242,8 @@ export const MobileTextEntryProxyLayer = () => {
     const proxiedSnapshotRef = useRef<TargetProxySnapshot | null>(null);
     const blurCleanupTimerRef = useRef<number | null>(null);
     const lastKeyboardInsetRef = useRef<number>(0);
+    const lastPointerIntentRef = useRef<{ at: number; target: HTMLElement | null }>({ at: 0, target: null });
+    const suppressProxyRestoreUntilRef = useRef<number>(0);
     const proxyTarget = proxyState?.target ?? null;
 
     const dismissProxySession = () => {
@@ -174,6 +260,39 @@ export const MobileTextEntryProxyLayer = () => {
         });
         setProxyState(null);
     };
+
+    const hasRecentPointerIntentFor = (target: HTMLElement | null) => {
+        const { at, target: pointerTarget } = lastPointerIntentRef.current;
+        if (!target || !pointerTarget) {
+            return false;
+        }
+        if (Date.now() - at > POINTER_SWITCH_GRACE_MS) {
+            return false;
+        }
+        return pointerTarget === target || target.contains(pointerTarget) || pointerTarget.contains(target);
+    };
+
+    const shouldSuppressImplicitProxyRetarget = (target: Element | null) => {
+        if (!(target instanceof HTMLElement)) {
+            return false;
+        }
+        if (!proxiedTargetRef.current || target === proxiedTargetRef.current) {
+            return false;
+        }
+        if (!isTextEntryElement(target) || !isTextEntryProxyEligible(target)) {
+            return false;
+        }
+        if (sharesImplicitRetargetContext(proxiedTargetRef.current, target)) {
+            return false;
+        }
+        return !hasRecentPointerIntentFor(target);
+    };
+
+    const markSuppressedImplicitRetarget = () => {
+        suppressProxyRestoreUntilRef.current = Date.now() + POINTER_SWITCH_GRACE_MS;
+    };
+
+    const shouldSkipProxyRestore = () => suppressProxyRestoreUntilRef.current > Date.now();
 
     const readKeyboardInset = () => {
         const cssInset = readCssKeyboardInset();
@@ -292,8 +411,23 @@ export const MobileTextEntryProxyLayer = () => {
                 if (active === inputRef.current || isProxyUiElement(active)) {
                     return;
                 }
+                if (shouldSuppressImplicitProxyRetarget(active)) {
+                    markSuppressedImplicitRetarget();
+                    debugProxyEvent('focusout-suppress-implicit-retarget', {
+                        activeTag: active instanceof HTMLElement ? active.tagName : null,
+                        activeTestId: active instanceof HTMLElement ? active.getAttribute('data-testid') : null,
+                    });
+                    (active as HTMLElement).blur();
+                    setProxyState(null);
+                    return;
+                }
                 if (isTextEntryElement(active) && isTextEntryProxyEligible(active) && readKeyboardInset() >= KEYBOARD_PROXY_MIN_INSET) {
                     activateProxy(active);
+                    return;
+                }
+                if (shouldSkipProxyRestore()) {
+                    debugProxyEvent('focusout-skip-restore-after-suppressed-retarget');
+                    setProxyState(null);
                     return;
                 }
                 if (proxiedTargetRef.current && readKeyboardInset() >= KEYBOARD_PROXY_MIN_INSET) {
@@ -327,14 +461,25 @@ export const MobileTextEntryProxyLayer = () => {
             maybeActivateFromActiveElement();
         };
 
+        const handlePointerIntent = (event: Event) => {
+            const target = event.target instanceof HTMLElement ? event.target : null;
+            lastPointerIntentRef.current = { at: Date.now(), target };
+        };
+
         document.addEventListener('focusin', handleFocusIn, true);
         document.addEventListener('focusout', handleFocusOut, true);
+        document.addEventListener('pointerdown', handlePointerIntent, true);
+        document.addEventListener('touchstart', handlePointerIntent, true);
+        document.addEventListener('mousedown', handlePointerIntent, true);
         window.visualViewport?.addEventListener('resize', handleViewportResize);
 
         return () => {
             clearPendingBlurCleanup();
             document.removeEventListener('focusin', handleFocusIn, true);
             document.removeEventListener('focusout', handleFocusOut, true);
+            document.removeEventListener('pointerdown', handlePointerIntent, true);
+            document.removeEventListener('touchstart', handlePointerIntent, true);
+            document.removeEventListener('mousedown', handlePointerIntent, true);
             window.visualViewport?.removeEventListener('resize', handleViewportResize);
         };
     }, []);
@@ -391,7 +536,7 @@ export const MobileTextEntryProxyLayer = () => {
         if (next) {
             next.focus({ preventScroll: true });
             const selectionEnd = readTextEntryValue(proxyTarget).length;
-            next.setSelectionRange?.(selectionEnd, selectionEnd);
+            safeSetInputSelection(next, selectionEnd, selectionEnd);
         }
 
         return () => {
@@ -411,13 +556,47 @@ export const MobileTextEntryProxyLayer = () => {
     }
 
     const keyboardInset = readKeyboardInset();
+    const resolvedEnterKeyHint = proxyState.enterKeyHint
+        ?? (proxyState.multiline
+            ? undefined
+            : proxyState.inputType === 'search'
+                ? 'search'
+                : getOwningForm(proxyState.target)
+                    ? 'enter'
+                    : 'done');
+    const submitAndDismissProxySession = () => {
+        debugProxyEvent('proxy-submit', {
+            targetTag: proxyState.target.tagName,
+            targetTestId: proxyState.target.getAttribute('data-testid'),
+            inputType: proxyState.inputType,
+            activeTag: document.activeElement instanceof HTMLElement ? document.activeElement.tagName : null,
+            activeTestId: document.activeElement instanceof HTMLElement ? document.activeElement.getAttribute('data-testid') : null,
+        });
+        const form = proxyState.target.form;
+        if (form) {
+            const submitter = form.querySelector('button[type="submit"]:not(:disabled), input[type="submit"]:not(:disabled)');
+            if (submitter instanceof HTMLButtonElement || submitter instanceof HTMLInputElement) {
+                submitter.click();
+                dismissProxySession();
+                return;
+            }
+            if (typeof form.requestSubmit === 'function') {
+                form.requestSubmit();
+                dismissProxySession();
+                return;
+            }
+            form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+        }
+        dismissProxySession();
+    };
+
     const sharedProps = {
         ref: inputRef,
         value: proxyState.value,
         placeholder: proxyState.placeholder,
         inputMode: proxyState.inputMode as HTMLAttributes<HTMLInputElement>['inputMode'],
         maxLength: proxyState.maxLength,
-        enterKeyHint: proxyState.enterKeyHint as HTMLAttributes<HTMLInputElement>['enterKeyHint'],
+        enterKeyHint: resolvedEnterKeyHint as HTMLAttributes<HTMLInputElement>['enterKeyHint'],
         autoCapitalize: 'sentences' as const,
         autoCorrect: 'on',
         spellCheck: true,
@@ -439,6 +618,15 @@ export const MobileTextEntryProxyLayer = () => {
             syncProxyValueToTextEntry(proxyState.target, nextValue);
         },
         onKeyDown: (event: ReactKeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+            debugProxyEvent('proxy-keydown', {
+                key: event.key,
+                code: event.code,
+                isComposing: event.nativeEvent.isComposing,
+                shiftKey: event.shiftKey,
+                enterKeyHint: resolvedEnterKeyHint,
+                activeTag: document.activeElement instanceof HTMLElement ? document.activeElement.tagName : null,
+                activeTestId: document.activeElement instanceof HTMLElement ? document.activeElement.getAttribute('data-testid') : null,
+            });
             if (
                 event.key === 'Enter'
                 && !proxyState.multiline
@@ -446,24 +634,12 @@ export const MobileTextEntryProxyLayer = () => {
                 && !event.nativeEvent.isComposing
             ) {
                 event.preventDefault();
-                const form = proxyState.target.form;
-                if (form) {
-                    const submitter = form.querySelector('button[type="submit"]:not(:disabled), input[type="submit"]:not(:disabled)');
-                    if (submitter instanceof HTMLButtonElement || submitter instanceof HTMLInputElement) {
-                        submitter.click();
-                        dismissProxySession();
-                        return;
-                    }
-                    if (typeof form.requestSubmit === 'function') {
-                        form.requestSubmit();
-                        dismissProxySession();
-                        return;
-                    }
-                    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-                    dismissProxySession();
+                if (resolvedEnterKeyHint && SUBMIT_ENTER_KEY_HINTS.has(resolvedEnterKeyHint)) {
+                    submitAndDismissProxySession();
                     return;
                 }
                 dismissProxySession();
+                return;
             }
 
             const forwardedEvent = new KeyboardEvent('keydown', {
@@ -486,6 +662,13 @@ export const MobileTextEntryProxyLayer = () => {
             }
         },
         onKeyUp: (event: ReactKeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+            debugProxyEvent('proxy-keyup', {
+                key: event.key,
+                code: event.code,
+                isComposing: event.nativeEvent.isComposing,
+                activeTag: document.activeElement instanceof HTMLElement ? document.activeElement.tagName : null,
+                activeTestId: document.activeElement instanceof HTMLElement ? document.activeElement.getAttribute('data-testid') : null,
+            });
             const forwardedEvent = new KeyboardEvent('keyup', {
                 key: event.key,
                 code: event.code,
@@ -517,6 +700,16 @@ export const MobileTextEntryProxyLayer = () => {
                 if (active === inputRef.current || isProxyUiElement(active)) {
                     return;
                 }
+                if (shouldSuppressImplicitProxyRetarget(active)) {
+                    markSuppressedImplicitRetarget();
+                    debugProxyEvent('proxy-blur-suppress-implicit-retarget', {
+                        activeTag: active instanceof HTMLElement ? active.tagName : null,
+                        activeTestId: active instanceof HTMLElement ? active.getAttribute('data-testid') : null,
+                    });
+                    (active as HTMLElement).blur();
+                    setProxyState(null);
+                    return;
+                }
                 if (isTextEntryElement(active) && isTextEntryProxyEligible(active) && readKeyboardInset() >= KEYBOARD_PROXY_MIN_INSET) {
                     setProxyState(buildProxyState(active));
                     return;
@@ -539,9 +732,15 @@ export const MobileTextEntryProxyLayer = () => {
             style={{ zIndex: UI_Z_INDEX.modalRoot + 120 }}
             data-testid="mobile-text-entry-proxy"
         >
-            <div
+            <form
                 className="pointer-events-auto mx-auto w-full max-w-3xl px-3"
                 style={{ paddingBottom: `max(12px, calc(${Math.max(0, keyboardInset)}px + var(--safe-area-bottom)))` }}
+                onSubmit={(event) => {
+                    event.preventDefault();
+                    if (!proxyState.multiline) {
+                        submitAndDismissProxySession();
+                    }
+                }}
             >
                 {proxyState.multiline ? (
                     <textarea
@@ -553,11 +752,11 @@ export const MobileTextEntryProxyLayer = () => {
                 ) : (
                     <input
                         {...sharedProps}
-                        type="text"
+                        type={proxyState.inputType ?? 'text'}
                         data-testid="mobile-text-entry-proxy-input"
                     />
                 )}
-            </div>
+            </form>
         </div>,
         portalRoot,
     );

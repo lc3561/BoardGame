@@ -159,6 +159,9 @@ export const DiceThroneBoard: React.FC<DiceThroneBoardProps> = ({ G: rawG, dispa
     const isResponseActorOnMyTeam = Boolean(
         isResponseWindowOpen && currentResponderId && (currentResponderId === rootPid || isDirectDiceActor),
     );
+    const isManualSelfResponseWindow = Boolean(
+        isResponseWindowOpen && currentResponderId === rootPid && autoResponseEnabled,
+    );
     const playerOrder = React.useMemo(() => getSeatingOrder(G), [G]);
     const otherPids = React.useMemo(() => playerOrder.filter(pid => pid !== rootPid), [playerOrder, rootPid]);
     const defaultFocusedPid = React.useMemo(() => {
@@ -645,11 +648,11 @@ export const DiceThroneBoard: React.FC<DiceThroneBoardProps> = ({ G: rawG, dispa
     // 响应窗口打开时，如果本地玩家是响应者，也应该高亮可用技能
     const canHighlightAbility = (
         (canOperateView && isViewRolling && isRollPhase && (currentPhase === 'defensiveRoll' || hasRolled))
-        || (isResponseWindowOpen && currentResponderId === rootPid)
+        || isManualSelfResponseWindow
     ) && !isAttackShowcaseVisible;
     const canSelectAbility = (
         (canOperateView && isViewRolling && isRollPhase && (currentPhase === 'defensiveRoll' ? true : G.rollConfirmed))
-        || (isResponseWindowOpen && currentResponderId === rootPid)
+        || isManualSelfResponseWindow
     ) && !isAttackShowcaseVisible;
 
     // 同一 slot 多 variant 选择：玩家点击 slot 时，如果该 slot 有多个 variant 同时满足，弹窗让玩家选
@@ -657,7 +660,7 @@ export const DiceThroneBoard: React.FC<DiceThroneBoardProps> = ({ G: rawG, dispa
 
     // 响应窗口状态已在上方声明（380-381行），这里直接使用
     const responseWindow = access.responseWindow;
-    const isResponder = isResponseWindowOpen && currentResponderId === rootPid;
+    const isResponder = isManualSelfResponseWindow;
 
     // （variant 选择弹窗由 onSelectAbility 回调触发，不需要自动弹出）
 

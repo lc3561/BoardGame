@@ -62,10 +62,16 @@ import { BoardGrid, getCellPosition } from './ui/BoardGrid';
 import { AbilityButtonsPanel } from './ui/AbilityButtonsPanel';
 import { PathTrailEffect } from './ui/PathTrailEffect';
 import {
+  deriveInteractionCardsByOptionIds,
+  deriveAfterAttackAbilityMode,
+  deriveMindCaptureMode,
+  deriveRapidFireMode,
+  deriveSoulTransferMode,
   deriveSystemAbilityMode,
   getSystemAbilityUiRoute,
   getSystemCardSelectorAbilityId,
   getSystemCardSelectorTitleKey,
+  isSwSimpleChoiceType,
   listActivatedAbilityTargetCardIds,
   findActivatedAbilityTargetOptionByCardId,
   type SwSimpleChoiceInteraction,
@@ -405,22 +411,7 @@ export const SummonerWarsBoard: React.FC<Props> = ({
     } satisfies SwSimpleChoiceInteraction;
   }, [currentInteraction, myPlayerId]);
   const afterAttackAbilityMode = useMemo<AfterAttackAbilityModeState | null>(() => {
-    if (!swInteraction) return null;
-    if (
-      swInteraction.type !== 'after_attack_mind_transmission'
-      && swInteraction.type !== 'after_attack_telekinesis_target'
-    ) {
-      return null;
-    }
-    const sourceUnitId = typeof swInteraction.meta?.sourceUnitId === 'string' ? swInteraction.meta.sourceUnitId : undefined;
-    const sourcePosition = swInteraction.meta?.sourcePosition as CellCoord | undefined;
-    const abilityId = swInteraction.meta?.abilityId as AfterAttackAbilityModeState['abilityId'] | undefined;
-    if (!sourceUnitId || !sourcePosition || !abilityId) return null;
-    return {
-      abilityId,
-      sourceUnitId,
-      sourcePosition,
-    };
+    return deriveAfterAttackAbilityMode(swInteraction);
   }, [swInteraction]);
   const [interactionAbilityDraft, setInteractionAbilityDraft] = useState<{
     interactionId: string;
@@ -488,43 +479,15 @@ export const SummonerWarsBoard: React.FC<Props> = ({
   }, [dispatch, findSkipInteractionOptionId, respondInteractionOption, swInteraction]);
 
   const soulTransferMode = useMemo(() => {
-    if (!swInteraction || swInteraction.type !== 'soul_transfer') return null;
-    const meta = swInteraction.meta as { sourceUnitId?: string; sourcePosition?: CellCoord; victimPosition?: CellCoord };
-    if (!meta.sourceUnitId || !meta.sourcePosition || !meta.victimPosition) return null;
-    return {
-      sourceUnitId: meta.sourceUnitId,
-      sourcePosition: meta.sourcePosition,
-      victimPosition: meta.victimPosition,
-    };
+    return deriveSoulTransferMode(swInteraction);
   }, [swInteraction]);
 
   const mindCaptureMode = useMemo(() => {
-    if (!swInteraction || swInteraction.type !== 'mind_capture') return null;
-    const meta = swInteraction.meta as {
-      sourceUnitId?: string;
-      sourcePosition?: CellCoord;
-      targetPosition?: CellCoord;
-      targetUnitId?: string;
-      hits?: number;
-    };
-    if (!meta.sourceUnitId || !meta.sourcePosition || !meta.targetPosition || !meta.targetUnitId || !meta.hits) return null;
-    return {
-      sourceUnitId: meta.sourceUnitId,
-      sourcePosition: meta.sourcePosition,
-      targetPosition: meta.targetPosition,
-      targetUnitId: meta.targetUnitId,
-      hits: meta.hits,
-    };
+    return deriveMindCaptureMode(swInteraction);
   }, [swInteraction]);
 
   const effectiveRapidFireMode = useMemo(() => {
-    if (swInteraction?.type !== 'after_attack_rapid_fire') return null;
-    const meta = swInteraction.meta as { sourceUnitId?: string; sourcePosition?: CellCoord };
-    if (!meta.sourceUnitId || !meta.sourcePosition) return null;
-    return {
-      sourceUnitId: meta.sourceUnitId,
-      sourcePosition: meta.sourcePosition,
-    };
+    return deriveRapidFireMode(swInteraction);
   }, [swInteraction]);
 
   const abilityMode = systemAbilityMode;
@@ -533,6 +496,7 @@ export const SummonerWarsBoard: React.FC<Props> = ({
     [abilityMode],
   );
   const systemCardSelectorAbilityId = getSystemCardSelectorAbilityId(abilityMode);
+  const isSystemCardSelectorActive = systemCardSelectorAbilityId !== null && abilityUiRoute === 'card-selector';
   const systemAbilitySelectableCardIds = systemCardSelectorAbilityId
     ? (() => {
       const ids = listActivatedAbilityTargetCardIds(swInteraction, systemCardSelectorAbilityId, 'selectCard');
@@ -563,16 +527,11 @@ export const SummonerWarsBoard: React.FC<Props> = ({
   }, [core, swInteraction]);
 
   const systemInfectionCards = useMemo(() => {
-    if (!swInteraction || swInteraction.type !== 'infection') return null;
-    const discard = core.players[myPlayerId]?.discard ?? [];
-    const cardLookup = new Map(discard.map((card) => [card.id, card]));
-    return swInteraction.options
-      .map((option) => cardLookup.get(option.id))
-      .filter((card): card is Card => !!card);
+    return deriveInteractionCardsByOptionIds(swInteraction, 'infection', core.players[myPlayerId]?.discard ?? []);
   }, [core.players, myPlayerId, swInteraction]);
 
-  const systemGrabFollowMode = !!swInteraction && swInteraction.type === 'grab_follow';
-  const systemFeedBeastMode = !!swInteraction && swInteraction.type === 'feed_beast';
+  const systemGrabFollowMode = isSwSimpleChoiceType(swInteraction, 'grab_follow');
+  const systemFeedBeastMode = isSwSimpleChoiceType(swInteraction, 'feed_beast');
 
   // 格子交互 Hook
   const interaction = useCellInteraction({
@@ -770,29 +729,16 @@ export const SummonerWarsBoard: React.FC<Props> = ({
 
   // StatusBanners 回调
   const handleCancelAbility = useCallback(() => {
-    if (
-      swInteraction
-      && [
-        'ice_shards',
-        'on_phase_start_blood_rune',
-        'on_phase_start_illusion',
-        'after_move_spirit_bond',
-        'after_move_ancestral_bond',
-        'after_move_structure_shift_target',
-        'after_move_structure_shift_direction',
-        'after_move_frost_axe',
-        'after_attack_mind_transmission',
-        'activated_ability_target',
-        'fire_sacrifice_summon',
-        'ice_ram_target',
-        'ice_ram_push',
-      ].includes(swInteraction.type)
-    ) {
+    if (abilityMode) {
+      cancelSwInteraction(true);
+      return;
+    }
+    if (swInteraction && ['ice_shards', 'after_attack_mind_transmission', 'fire_sacrifice_summon'].includes(swInteraction.type)) {
       cancelSwInteraction(true);
       return;
     }
     setAbilityMode(null);
-  }, [cancelSwInteraction, setAbilityMode, swInteraction]);
+  }, [abilityMode, cancelSwInteraction, setAbilityMode, swInteraction]);
   const handleCancelBeforeAttack = useCallback(() => interaction.handleCancelBeforeAttack(), [interaction]);
   const handleCancelBloodSummon = useCallback(() => {
     if (swInteraction?.type?.startsWith('blood_summon')) {
@@ -849,21 +795,21 @@ export const SummonerWarsBoard: React.FC<Props> = ({
     }
   }, [findInteractionOptionId, respondInteractionOption, swInteraction]);
   const handleConfirmSoulTransfer = useCallback(() => {
-    if (!swInteraction || swInteraction.type !== 'soul_transfer') return;
+    if (!soulTransferMode) return;
     const optionId = findInteractionOptionId((option) => {
       const value = option.value as { action?: string } | undefined;
       return value?.action === 'soul_transfer';
     });
     respondInteractionOption(optionId);
-  }, [findInteractionOptionId, respondInteractionOption, swInteraction]);
+  }, [findInteractionOptionId, respondInteractionOption, soulTransferMode]);
   const handleSkipSoulTransfer = useCallback(() => {
-    if (!swInteraction || swInteraction.type !== 'soul_transfer') return;
+    if (!soulTransferMode) return;
     const optionId = findInteractionOptionId((option) => {
       const value = option.value as { skip?: boolean } | undefined;
       return value?.skip === true;
     });
     respondInteractionOption(optionId);
-  }, [findInteractionOptionId, respondInteractionOption, swInteraction]);
+  }, [findInteractionOptionId, respondInteractionOption, soulTransferMode]);
   const handleSkipFuneralPyre = useCallback(() => {
     if (swInteraction?.type === 'funeral_pyre') {
       const optionId = findInteractionOptionId((option) => {
@@ -935,49 +881,43 @@ export const SummonerWarsBoard: React.FC<Props> = ({
 
   // 心灵捕获 + 攻击后技能回调
   const handleConfirmMindCapture = useCallback((choice: 'control' | 'damage') => {
-    if (!swInteraction || swInteraction.type !== 'mind_capture') return;
+    if (!mindCaptureMode) return;
     const optionId = findInteractionOptionId((option) => {
       const value = option.value as { action?: string; choice?: string } | undefined;
       return value?.action === 'mind_capture' && value.choice === choice;
     });
     respondInteractionOption(optionId);
-  }, [findInteractionOptionId, respondInteractionOption, swInteraction]);
+  }, [findInteractionOptionId, mindCaptureMode, respondInteractionOption]);
   const handleCancelAfterAttackAbility = useCallback(() => {
-    if (
-      swInteraction?.type === 'after_attack_mind_transmission'
-      || swInteraction?.type === 'after_attack_telekinesis_target'
-      || swInteraction?.type === 'after_attack_telekinesis_direction'
-      || swInteraction?.type === 'after_attack_rapid_fire'
-    ) {
+    if (afterAttackAbilityMode || effectiveRapidFireMode) {
       cancelSwInteraction(true);
     }
-  }, [cancelSwInteraction, swInteraction]);
+  }, [afterAttackAbilityMode, cancelSwInteraction, effectiveRapidFireMode]);
 
   // 连续射击确认/取消
   const handleConfirmRapidFire = useCallback(() => {
-    if (swInteraction?.type === 'after_attack_rapid_fire') {
-      const optionId = findInteractionOptionId((option) => {
-        const value = option.value as { action?: string; skip?: boolean } | undefined;
-        return value?.action === 'after_attack_rapid_fire' && value.skip !== true;
-      });
-      respondInteractionOption(optionId);
-    }
-  }, [findInteractionOptionId, respondInteractionOption, swInteraction]);
+    if (!effectiveRapidFireMode) return;
+    const optionId = findInteractionOptionId((option) => {
+      const value = option.value as { action?: string; skip?: boolean } | undefined;
+      return value?.action === 'after_attack_rapid_fire' && value.skip !== true;
+    });
+    respondInteractionOption(optionId);
+  }, [effectiveRapidFireMode, findInteractionOptionId, respondInteractionOption]);
   const handleCancelRapidFire = useCallback(() => {
-    if (swInteraction?.type === 'after_attack_rapid_fire') {
+    if (effectiveRapidFireMode) {
       cancelSwInteraction(true);
     }
-  }, [cancelSwInteraction, swInteraction]);
+  }, [cancelSwInteraction, effectiveRapidFireMode]);
   // 鲜血符文选择回调
   const handleConfirmBloodRune = useCallback((choice: 'damage' | 'charge') => {
-    if (swInteraction?.type !== 'on_phase_start_blood_rune') return;
+    if (abilityMode?.abilityId !== 'blood_rune') return;
     const optionId = findInteractionOptionId((option) => {
       const value = option.value as { action?: string; choice?: string } | undefined;
       return value?.action === 'on_phase_start_blood_rune' && value.choice === choice;
     });
     respondInteractionOption(optionId);
     setAbilityMode(null);
-  }, [findInteractionOptionId, respondInteractionOption, setAbilityMode, swInteraction]);
+  }, [abilityMode?.abilityId, findInteractionOptionId, respondInteractionOption, setAbilityMode]);
   // 寒冰碎屑确认回调
   const handleConfirmIceShards = useCallback(() => {
     if (!swInteraction || swInteraction.type !== 'ice_shards') return;
@@ -988,46 +928,42 @@ export const SummonerWarsBoard: React.FC<Props> = ({
     respondInteractionOption(optionId);
   }, [findInteractionOptionId, respondInteractionOption, swInteraction]);
   const handleSkipGrabFollow = useCallback(() => {
-    if (!swInteraction || swInteraction.type !== 'grab_follow') return;
+    if (!systemGrabFollowMode) return;
     const optionId = findInteractionOptionId((option) => {
       const value = option.value as { skip?: boolean } | undefined;
       return option.id === 'skip' || value?.skip === true;
     });
     respondInteractionOption(optionId);
-  }, [findInteractionOptionId, respondInteractionOption, swInteraction]);
+  }, [findInteractionOptionId, respondInteractionOption, systemGrabFollowMode]);
   // 喂养巨食兽自毁回调
   const handleConfirmFeedBeastSelfDestroy = useCallback(() => {
-    if (!swInteraction || swInteraction.type !== 'feed_beast') return;
+    if (!systemFeedBeastMode) return;
     const optionId = findInteractionOptionId((option) => {
       const value = option.value as { action?: string; choice?: string } | undefined;
       return value?.action === 'feed_beast' && value.choice === 'self_destroy';
     });
     respondInteractionOption(optionId);
-  }, [findInteractionOptionId, respondInteractionOption, swInteraction]);
+  }, [findInteractionOptionId, respondInteractionOption, systemFeedBeastMode]);
   const handleSelectInfectionCard = useCallback((card: Card) => {
-    if (!swInteraction || swInteraction.type !== 'infection') return;
+    if (!systemInfectionCards) return;
     respondInteractionOption(card.id);
-  }, [respondInteractionOption, swInteraction]);
+  }, [respondInteractionOption, systemInfectionCards]);
   const handleSkipInfection = useCallback(() => {
-    if (!swInteraction || swInteraction.type !== 'infection') return;
+    if (!systemInfectionCards) return;
     const optionId = findInteractionOptionId((option) => {
       const value = option.value as { skip?: boolean } | undefined;
       return option.id === 'skip' || value?.skip === true;
     });
     respondInteractionOption(optionId);
-  }, [findInteractionOptionId, respondInteractionOption, swInteraction]);
+  }, [findInteractionOptionId, respondInteractionOption, systemInfectionCards]);
   const handleCancelTelekinesis = useCallback(() => {
-    if (
-      swInteraction?.type === 'after_attack_telekinesis_target'
-      || swInteraction?.type === 'after_attack_telekinesis_direction'
-      || swInteraction?.type === 'activated_ability_target'
-    ) {
+    if (interaction.telekinesisTargetMode || swInteraction?.type === 'after_attack_telekinesis_target') {
       cancelSwInteraction(true);
     }
-  }, [cancelSwInteraction, swInteraction]);
+  }, [cancelSwInteraction, interaction.telekinesisTargetMode, swInteraction?.type]);
   // afterMove 技能：充能自身
   const handleAfterMoveSelfCharge = useCallback(() => {
-    if (swInteraction?.type !== 'after_move_spirit_bond' && swInteraction?.type !== 'after_move_frost_axe') {
+    if (abilityMode?.abilityId !== 'spirit_bond' && abilityMode?.abilityId !== 'frost_axe') {
       return;
     }
     const optionId = findInteractionOptionId((option) => {
@@ -1037,7 +973,7 @@ export const SummonerWarsBoard: React.FC<Props> = ({
     });
     respondInteractionOption(optionId);
     setAbilityMode(null);
-  }, [findInteractionOptionId, respondInteractionOption, setAbilityMode, swInteraction]);
+  }, [abilityMode?.abilityId, findInteractionOptionId, respondInteractionOption, setAbilityMode]);
   const handleSaveLayout = useCallback(async (config: BoardLayoutConfig) => saveSummonerWarsLayout(config), []);
 
   const debugPanel = !isSpectator ? (
@@ -1472,7 +1408,7 @@ export const SummonerWarsBoard: React.FC<Props> = ({
                 </div>
 
               {/* 技能卡牌选择器 */}
-              {systemCardSelectorAbilityId && abilityUiRoute === 'card-selector' && (
+              {isSystemCardSelectorActive && (
                 <CardSelectorOverlay
                   title={t(getSystemCardSelectorTitleKey(systemCardSelectorAbilityId))}
                   cards={core.players[myPlayerId]?.discard.filter(c => {
@@ -1482,7 +1418,7 @@ export const SummonerWarsBoard: React.FC<Props> = ({
                     return systemAbilitySelectableCardIds.has(c.id);
                   }) ?? []}
                   onSelect={(card) => {
-                    if (swInteraction?.type !== 'activated_ability_target') return;
+                    if (!isSystemCardSelectorActive || !swInteraction) return;
                     const option = findActivatedAbilityTargetOptionByCardId(
                       swInteraction,
                       systemCardSelectorAbilityId,
@@ -1493,7 +1429,7 @@ export const SummonerWarsBoard: React.FC<Props> = ({
                     respondInteractionOption(option.id);
                   }}
                   onCancel={() => {
-                    if (swInteraction?.type !== 'activated_ability_target') return;
+                    if (!isSystemCardSelectorActive || !swInteraction) return;
                     dispatch(INTERACTION_COMMANDS.CANCEL, { interactionId: swInteraction.id });
                   }}
                 />

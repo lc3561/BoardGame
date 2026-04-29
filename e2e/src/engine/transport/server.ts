@@ -1015,9 +1015,10 @@ export class GameTransportServer {
         const core = match.state.core as { hostStarted?: unknown } | undefined;
         const isPublicPregameSetup = core?.hostStarted === false;
         // 通用保护：当真人是当前操作者时，seat-legal-only 仅允许在两类公开场景触发：
-        // 1. defensiveRoll 这类 off-turn 真人防御阶段；
+        // 1. defensiveRoll / targetingRoll 这类 off-turn 真人阶段；
         // 2. hostStarted=false 的公开预开局 setup，此时 AI 选阵营/准备不会越权代真人推进。
-        if (currentPhase !== 'defensiveRoll' && !isPublicPregameSetup) {
+        const isHumanActiveOffTurnRollPhase = currentPhase === 'defensiveRoll' || currentPhase === 'targetingRoll';
+        if (!isHumanActiveOffTurnRollPhase && !isPublicPregameSetup) {
             return null;
         }
 
@@ -2816,8 +2817,9 @@ export class GameTransportServer {
      *   - false: 用于 state:sync / state:update，客户端需要保留完整 baseline 与事件驱动动画/特效/交互
      */
     private stripStateForTransport(viewState: unknown, options?: { stripEventStream?: boolean }): unknown {
+        const serializeTransportState = <T,>(state: T): T => JSON.parse(JSON.stringify(state)) as T;
         const state = viewState as { sys?: Record<string, unknown> };
-        if (!state.sys) return viewState;
+        if (!state.sys) return serializeTransportState(viewState);
 
         const sys = state.sys;
         const patches: Record<string, unknown> = {};
@@ -2869,12 +2871,14 @@ export class GameTransportServer {
         }
 
         // 无需裁剪
-        if (Object.keys(patches).length === 0) return viewState;
+        if (Object.keys(patches).length === 0) {
+            return serializeTransportState(viewState);
+        }
 
-        return {
+        return serializeTransportState({
             ...state,
             sys: { ...sys, ...patches },
-        };
+        });
     }
 
     private stripStateForTraining(viewState: unknown): unknown {

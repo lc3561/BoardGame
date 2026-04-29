@@ -445,6 +445,8 @@ function buildPositionOptions<T extends { action: string }>(
   return positions.map((pos) => ({
     id: `pos:${pos.row},${pos.col}`,
     label: `(${pos.row},${pos.col})`,
+    labelKey: 'actions.position',
+    labelParams: { row: pos.row, col: pos.col },
     value: buildValue(pos),
   }));
 }
@@ -1552,7 +1554,7 @@ export function createSummonerWarsInteractionSystem(): EngineSystem<SummonerWars
               options.push({
                 id: 'charge',
                 label: '消耗充能',
-                labelKey: 'actions.chargeSelf',
+                labelKey: 'actions.withdrawCharge',
                 value: { action: 'after_attack_withdraw_cost', costType: 'charge' },
               });
             }
@@ -1560,7 +1562,7 @@ export function createSummonerWarsInteractionSystem(): EngineSystem<SummonerWars
               options.push({
                 id: 'magic',
                 label: '消耗魔力',
-                labelKey: 'actions.payMagic',
+                labelKey: 'actions.withdrawMagic',
                 value: { action: 'after_attack_withdraw_cost', costType: 'magic' },
               });
             }
@@ -2297,6 +2299,8 @@ export function createSummonerWarsInteractionSystem(): EngineSystem<SummonerWars
                 const options: PromptOption<SwInteractionValue>[] = dests.map((dest) => ({
                   id: `pos:${dest.position.row},${dest.position.col}`,
                   label: `(${dest.position.row},${dest.position.col})`,
+                  labelKey: 'actions.position',
+                  labelParams: { row: dest.position.row, col: dest.position.col },
                   value: {
                     action: 'stun_destination',
                     targetPosition: dest.position,
@@ -2500,6 +2504,8 @@ export function createSummonerWarsInteractionSystem(): EngineSystem<SummonerWars
                     options.push({
                       id: `pos:${pos.row},${pos.col}`,
                       label: `(${pos.row},${pos.col})`,
+                      labelKey: 'actions.position',
+                      labelParams: { row: pos.row, col: pos.col },
                       value: { action: 'glacial_shift_destination', newPosition: pos, targetPosition: pos },
                     });
                   }
@@ -2787,6 +2793,8 @@ export function createSummonerWarsInteractionSystem(): EngineSystem<SummonerWars
               ...destinations.map((dest) => ({
                 id: `pos:${dest.position.row},${dest.position.col}`,
                 label: `(${dest.position.row},${dest.position.col})`,
+                labelKey: 'actions.position',
+                labelParams: { row: dest.position.row, col: dest.position.col },
                 value: {
                   action: 'after_attack_telekinesis_direction',
                   targetPosition: picked.targetPosition,
@@ -3161,6 +3169,8 @@ export function createSummonerWarsInteractionSystem(): EngineSystem<SummonerWars
                 ...destinations.map((dest) => ({
                   id: `pos:${dest.position.row},${dest.position.col}`,
                   label: `(${dest.position.row},${dest.position.col})`,
+                  labelKey: 'actions.position',
+                  labelParams: { row: dest.position.row, col: dest.position.col },
                   value: {
                     action: 'after_attack_telekinesis_direction',
                     targetPosition: picked.targetPosition,

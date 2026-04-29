@@ -31,10 +31,14 @@ export const FriendsChatModal = ({ isOpen, onClose, inviteData, initialFriendId 
     return (
         <div
             className="modal-base-container fixed inset-0 z-50 flex items-center justify-center p-4"
+            data-lock-layout-viewport="true"
             style={{
+                '--modal-active-viewport-height': 'var(--layout-viewport-height, var(--runtime-viewport-height, 100dvh))',
+                '--modal-active-bottom-inset': 'var(--safe-area-bottom)',
+                '--modal-max-height': 'calc(var(--layout-viewport-height, var(--runtime-viewport-height, 100dvh)) - max(1rem, var(--safe-area-top)) - max(1rem, var(--safe-area-bottom)))',
                 paddingTop: 'max(1rem, var(--safe-area-top))',
                 paddingRight: 'max(1rem, var(--safe-area-right))',
-                paddingBottom: 'max(1rem, var(--runtime-modal-bottom-inset))',
+                paddingBottom: 'max(1rem, var(--modal-active-bottom-inset, var(--runtime-modal-bottom-inset)))',
                 paddingLeft: 'max(1rem, var(--safe-area-left))',
             }}
         >
@@ -55,7 +59,7 @@ export const FriendsChatModal = ({ isOpen, onClose, inviteData, initialFriendId 
                 onClick={(e) => e.stopPropagation()}
                 data-testid="friends-chat-modal-content"
                 className="relative bg-parchment-card-bg w-full max-w-4xl min-h-0 rounded-lg shadow-2xl overflow-hidden flex flex-col md:flex-row border border-parchment-card-border/30"
-                style={{ height: 'min(600px, var(--runtime-modal-max-height))' }}
+                style={{ height: 'min(600px, var(--modal-max-height, var(--runtime-modal-max-height)))' }}
             >
                 {/* 关闭按钮 */}
                 <button

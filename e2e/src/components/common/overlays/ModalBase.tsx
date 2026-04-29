@@ -10,6 +10,7 @@ interface ModalBaseProps {
     overlayStyle?: CSSProperties;
     containerClassName?: string;
     containerStyle?: CSSProperties;
+    preserveKeyboardLayout?: boolean;
     children: ReactNode;
 }
 
@@ -44,10 +45,22 @@ export const ModalBase = memo(({
     overlayStyle,
     containerClassName,
     containerStyle,
+    preserveKeyboardLayout = false,
     children,
 }: ModalBaseProps) => {
     const resolvedOverlayStyle: CSSProperties = { zIndex: UI_Z_INDEX.modalOverlay, ...overlayStyle };
-    const resolvedContainerStyle: CSSProperties = { zIndex: UI_Z_INDEX.modalContent, ...containerStyle };
+    const lockedLayoutContainerStyle = preserveKeyboardLayout
+        ? ({
+            '--modal-active-viewport-height': 'var(--layout-viewport-height, var(--runtime-viewport-height, 100dvh))',
+            '--modal-active-bottom-inset': 'var(--safe-area-bottom)',
+            '--modal-max-height': 'calc(var(--layout-viewport-height, var(--runtime-viewport-height, 100dvh)) - max(1rem, var(--safe-area-top)) - max(1rem, var(--safe-area-bottom)))',
+        } as CSSProperties)
+        : undefined;
+    const resolvedContainerStyle: CSSProperties = {
+        zIndex: UI_Z_INDEX.modalContent,
+        ...lockedLayoutContainerStyle,
+        ...containerStyle,
+    };
 
     return (
         <>
@@ -73,6 +86,7 @@ export const ModalBase = memo(({
                     'modal-base-container fixed inset-0 flex items-center justify-center pointer-events-none',
                     containerClassName
                 )}
+                data-lock-layout-viewport={preserveKeyboardLayout ? 'true' : undefined}
                 style={{ willChange: 'transform, opacity', ...resolvedContainerStyle }}
             >
                 <div className="w-full flex justify-center">

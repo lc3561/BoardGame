@@ -130,6 +130,22 @@ describe('Property 19: 疯狂牌库生命周期', () => {
             expect(new Set(uids).size).toBe(3);
         });
 
+        it('同一初始快照连续生成两次 MADNESS_DRAWN 时，reduce 后仍应保证手牌 uid 唯一', () => {
+            const core = makeCore();
+            const firstEvent = drawMadnessCards('0', 1, core, 'test_a', 1000)!;
+            const secondEvent = drawMadnessCards('0', 1, core, 'test_b', 1000)!;
+
+            const afterFirst = reduce(core, firstEvent);
+            const afterSecond = reduce(afterFirst, secondEvent);
+            const madnessUids = afterSecond.players['0'].hand
+                .filter(card => card.defId === MADNESS_CARD_DEF_ID)
+                .map(card => card.uid);
+
+            expect(madnessUids).toHaveLength(2);
+            expect(new Set(madnessUids).size).toBe(2);
+            expect(afterSecond.nextUid).toBe(102);
+        });
+
         it('疯狂牌库为空时不生成事件', () => {
             const core = makeCore({ madnessDeck: [] });
             const evt = drawMadnessCards('0', 1, core, 'test', 1000);

@@ -24,7 +24,10 @@ export const PasswordField = ({
     const [isVisible, setIsVisible] = useState(false);
 
     return (
-        <div className={clsx('relative', wrapperClassName)}>
+        <div
+            className={clsx('relative', wrapperClassName)}
+            data-mobile-text-entry-proxy-host="true"
+        >
             <input
                 {...inputProps}
                 type={isVisible ? 'text' : 'password'}

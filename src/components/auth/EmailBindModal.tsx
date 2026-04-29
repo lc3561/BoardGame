@@ -86,16 +86,17 @@ export const EmailBindModal = ({ isOpen, onClose, closeOnBackdrop }: EmailBindMo
         <ModalBase
             onClose={onClose}
             closeOnBackdrop={closeOnBackdrop}
+            preserveKeyboardLayout
             containerClassName="p-4 sm:p-6"
             containerStyle={{
                 paddingTop: 'max(1rem, var(--safe-area-top))',
                 paddingRight: 'max(1rem, var(--safe-area-right))',
-                paddingBottom: 'max(1rem, var(--runtime-modal-bottom-inset))',
+                paddingBottom: 'max(1rem, var(--modal-active-bottom-inset, var(--runtime-modal-bottom-inset)))',
                 paddingLeft: 'max(1rem, var(--safe-area-left))',
             }}
         >
             <div
-                className="bg-parchment-card-bg pointer-events-auto w-full max-w-[340px] sm:max-w-sm max-h-[var(--runtime-modal-max-height)] overflow-y-auto shadow-parchment-card-hover border border-parchment-card-border/50 p-6 sm:p-8 relative rounded-sm"
+                className="bg-parchment-card-bg pointer-events-auto w-full max-w-[340px] sm:max-w-sm max-h-[var(--modal-max-height,var(--runtime-modal-max-height))] overflow-y-auto shadow-parchment-card-hover border border-parchment-card-border/50 p-6 sm:p-8 relative rounded-sm"
                 data-testid="email-bind-modal"
             >
                 {/* 装饰性边角 */}

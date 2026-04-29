@@ -173,6 +173,10 @@ export interface TriggerContext {
     counterChangeKind?: 'added' | 'removed';
     /** 指示物变化量（added 为正，removed 为负） */
     counterDelta?: number;
+    /** onMinionAffected 时的原始影响事件，用于可选复制等需要保留原事件语义的场景 */
+    affectEvent?: SmashUpEvent;
+    /** onMinionAffected 时，同一原始事件命中的随从目标快照，用于去重/按批判断 */
+    affectBatchTargets?: Array<{ minionUid: string; baseIndex: number; controllerId: PlayerId }>;
     /** 基地计分排名（仅 afterScoring） */
     rankings?: { playerId: PlayerId; power: number; vp: number }[];
     /** 埋葬/翻开相关卡牌 UID */
@@ -451,6 +455,7 @@ function createTriggerInstance(
         affectType: ctx.affectType,
         counterChangeKind: ctx.counterChangeKind,
         counterDelta: ctx.counterDelta,
+        affectEvent: ctx.affectEvent,
         rankings: ctx.rankings,
         triggerBaseControllersAtTrigger,
         buriedCardUid: (ctx as any).buriedCardUid,
@@ -487,7 +492,37 @@ function shouldSkipTriggerInstance(
     entry: TriggerEntry,
     timing: TitanAwareTriggerTiming,
     located: TriggerSourceLocation,
+    ctx: Omit<TriggerContext, 'timing'>,
 ): boolean {
+    if (
+        entry.sourceDefId === 'world_champs_aramis'
+        && timing === 'onMinionAffected'
+        && located.uid
+        && ctx.triggerMinionUid !== located.uid
+    ) {
+        return true;
+    }
+
+    if (
+        entry.sourceDefId === 'world_champs_diva'
+        && timing === 'onMinionAffected'
+        && located.uid
+        && located.baseIndex !== undefined
+        && located.controllerId
+    ) {
+        const firstOtherFriendlyTargetUid = ctx.affectBatchTargets?.find(target =>
+            target.baseIndex === located.baseIndex
+            && target.controllerId === located.controllerId
+            && target.minionUid !== located.uid
+        )?.minionUid;
+        if (!firstOtherFriendlyTargetUid) {
+            return true;
+        }
+        if (ctx.triggerMinionUid !== firstOtherFriendlyTargetUid) {
+            return true;
+        }
+    }
+
     return entry.sourceDefId === 'explorers_very_large_boulder'
         && timing === 'onMinionMoved'
         && !!located.titanUid
@@ -526,7 +561,7 @@ export function collectTriggers(
         if (entry.perInstance) {
             for (const located of locatedSources) {
                 if (!isTriggerSourceEligible(entry, timing, located, ctx.baseIndex)) continue;
-                if (shouldSkipTriggerInstance(state, entry, timing, located)) continue;
+                if (shouldSkipTriggerInstance(state, entry, timing, located, ctx)) continue;
                 triggers.push(createTriggerInstance(state, entry, timing, now, triggers.length, pid, located, ctx));
             }
             continue;
@@ -534,7 +569,7 @@ export function collectTriggers(
 
         const located = locatedSources[0];
         if (!isTriggerSourceEligible(entry, timing, located, ctx.baseIndex)) continue;
-        if (shouldSkipTriggerInstance(state, entry, timing, located)) continue;
+        if (shouldSkipTriggerInstance(state, entry, timing, located, ctx)) continue;
         triggers.push(createTriggerInstance(state, entry, timing, now, triggers.length, pid, located, ctx));
     }
 

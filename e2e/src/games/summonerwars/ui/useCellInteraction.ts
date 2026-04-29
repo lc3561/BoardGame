@@ -29,9 +29,10 @@ import { useEventCardModes, requiresEventInteraction } from './useEventCardModes
 import type { InteractionDescriptor, PromptOption } from '../../../engine/systems/InteractionSystem';
 import { INTERACTION_COMMANDS } from '../../../engine/systems/InteractionSystem';
 import {
-  findActivatedAbilityTargetOptionByPosition,
+  findSystemAbilityPositionOption,
   findSystemAbilityUnitOptionByPosition,
   getSystemAbilityUiRoute,
+  listSystemAbilityPositionTargets,
   resolveBeforeAttackCancellation,
   resolveBeforeAttackCardConfirmation,
   type SwSimpleChoiceInteraction,
@@ -236,43 +237,7 @@ export function useCellInteraction({
   const validAbilityPositions = useMemo(() => {
     if (interactionPositions.length > 0) return interactionPositions;
     if (!abilityMode || !swInteraction) return [];
-
-    if (abilityMode.abilityId === 'structure_shift' && abilityMode.step === 'selectNewPosition') {
-      return swInteraction.options
-        .map((opt) => {
-          const value = opt.value as { action?: string; newPosition?: CellCoord } | undefined;
-          return value?.action === 'after_move_structure_shift_direction' && value.newPosition
-            ? value.newPosition
-            : null;
-        })
-        .filter((pos): pos is CellCoord => !!pos);
-    }
-
-    if (abilityMode.abilityId === 'ice_ram' && abilityMode.step === 'selectPushDirection') {
-      return swInteraction.options
-        .map((opt) => {
-          const value = opt.value as { action?: string; pushNewPosition?: CellCoord } | undefined;
-          return value?.action === 'ice_ram_push' && value.pushNewPosition
-            ? value.pushNewPosition
-            : null;
-        })
-        .filter((pos): pos is CellCoord => !!pos);
-    }
-
-    if (abilityMode.abilityId === 'revive_undead' && abilityMode.step === 'selectPosition') {
-      const positions: CellCoord[] = [];
-      for (let row = 0; row < BOARD_ROWS; row++) {
-        for (let col = 0; col < BOARD_COLS; col++) {
-          const position = { row, col };
-          if (findActivatedAbilityTargetOptionByPosition(swInteraction, 'revive_undead', position, 'selectPosition')) {
-            positions.push(position);
-          }
-        }
-      }
-      return positions;
-    }
-
-    return [];
+    return listSystemAbilityPositionTargets(swInteraction, abilityMode);
   }, [abilityMode, interactionPositions, swInteraction]);
 
   // 技能可选单位（系统交互分支优先使用 InteractionSystem options 作为权威真相源）
@@ -483,69 +448,28 @@ export function useCellInteraction({
       return;
     }
 
-    // 结构变换第二步：选择推拉方向
-    if (abilityMode && abilityMode.abilityId === 'structure_shift' && abilityMode.step === 'selectNewPosition') {
+    if (
+      abilityMode
+      && getSystemAbilityUiRoute(abilityMode) === 'board-cell-position'
+      && abilityMode.step !== 'selectUnit'
+    ) {
       const isValid = validAbilityPositions.some(p => p.row === gameRow && p.col === gameCol);
-      if (isValid && abilityMode.targetPosition && swInteraction?.type === 'after_move_structure_shift_direction') {
-        const option = swInteraction.options.find((opt) => {
-          const value = opt.value as { action?: string; targetPosition?: CellCoord; newPosition?: CellCoord } | undefined;
-          return value?.action === 'after_move_structure_shift_direction'
-            && value.targetPosition?.row === abilityMode.targetPosition?.row
-            && value.targetPosition?.col === abilityMode.targetPosition?.col
-            && value.newPosition?.row === gameRow
-            && value.newPosition?.col === gameCol;
-        });
-        if (option) {
-          dispatch(INTERACTION_COMMANDS.RESPOND, {
-            interactionId: swInteraction.id,
-            optionId: option.id,
-          });
-          setAbilityMode(null);
-        }
-      }
-      return;
-
-    // 寒冰冲撞第二步：选择推拉方向（或跳过）
-    } else if (abilityMode && abilityMode.abilityId === 'ice_ram' && abilityMode.step === 'selectPushDirection') {
-      const isValid = validAbilityPositions.some(p => p.row === gameRow && p.col === gameCol);
-      if (isValid && abilityMode.targetPosition && abilityMode.structurePosition && swInteraction?.type === 'ice_ram_push') {
-        const optionId = swInteraction.options.find((opt) => {
-          const value = opt.value as { action?: string; pushNewPosition?: CellCoord } | undefined;
-          return value?.action === 'ice_ram_push'
-            && value.pushNewPosition?.row === gameRow
-            && value.pushNewPosition?.col === gameCol;
-        })?.id ?? null;
-        if (optionId) {
-          respondInteractionOption(optionId);
-          setAbilityMode(null);
-        }
-      }
-      return;
-    }
-
-    // 技能目标选择模式（复活死灵、感染）
-    if (abilityMode && abilityMode.step === 'selectPosition') {
-      const isValid = validAbilityPositions.some(p => p.row === gameRow && p.col === gameCol);
-      if (isValid && abilityMode.abilityId === 'revive_undead' && swInteraction?.type === 'activated_ability_target') {
-        const option = findActivatedAbilityTargetOptionByPosition(
-          swInteraction,
-          'revive_undead',
-          { row: gameRow, col: gameCol },
-          'selectPosition',
-        );
+      if (isValid) {
+        const option = findSystemAbilityPositionOption(swInteraction, abilityMode, { row: gameRow, col: gameCol });
         if (option) {
           respondInteractionOption(option.id);
           setAbilityMode(null);
+        } else {
+          console.warn('[SummonerWars] 未处理的系统能力位置选择分支', {
+            abilityId: abilityMode.abilityId,
+            step: abilityMode.step,
+            structurePosition: abilityMode.structurePosition ?? null,
+            targetPosition: abilityMode.targetPosition ?? null,
+            selectedPosition: { row: gameRow, col: gameCol },
+            swInteractionType: swInteraction?.type ?? null,
+            route: getSystemAbilityUiRoute(abilityMode),
+          });
         }
-      } else if (isValid) {
-        console.warn('[SummonerWars] 未处理的系统能力位置选择分支', {
-          abilityId: abilityMode.abilityId,
-          step: abilityMode.step,
-          context: abilityMode.context,
-          swInteractionType: swInteraction?.type ?? null,
-          targetPosition: { row: gameRow, col: gameCol },
-          route: getSystemAbilityUiRoute(abilityMode),
-        });
       }
       return;
     }

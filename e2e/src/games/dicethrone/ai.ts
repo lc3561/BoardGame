@@ -1744,7 +1744,11 @@ const buildPhaseActions = (state: DiceThroneState, playerId: PlayerId, phase: Tu
         }
     }
 
-    if ((phase === 'offensiveRoll' || phase === 'defensiveRoll') && state.core.rollCount < state.core.rollLimit && !state.core.rollConfirmed) {
+    if (
+        (phase === 'offensiveRoll' || phase === 'targetingRoll' || phase === 'defensiveRoll')
+        && state.core.rollCount < state.core.rollLimit
+        && !state.core.rollConfirmed
+    ) {
         appendAction(actions, state, playerId, {
             actionId: createAiLegalActionId('roll', 'dice'),
             kind: 'roll-dice',
@@ -1752,6 +1756,18 @@ const buildPhaseActions = (state: DiceThroneState, playerId: PlayerId, phase: Tu
             commands: [{ type: 'ROLL_DICE', payload: {} }],
             metadata: withAiActionStrategyTags({}, ['dice-setup']),
         });
+    }
+
+    if (phase === 'targetingRoll') {
+        if (state.core.rollCount > 0 && !state.core.rollConfirmed) {
+            appendAction(actions, state, playerId, {
+                actionId: createAiLegalActionId('roll', 'confirm-targeting'),
+                kind: 'confirm-roll',
+                label: '确认目标骰面',
+                commands: [{ type: 'CONFIRM_ROLL', payload: {} }],
+                metadata: withAiActionStrategyTags({}, ['dice-setup']),
+            });
+        }
     }
 
     if (phase === 'offensiveRoll' || phase === 'defensiveRoll') {

@@ -16,10 +16,13 @@
  * - 应用效果
  */
 
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { test, expect } from '../framework';
 import type { BrowserContext, Page } from '@playwright/test';
 import { cloneState } from '../helpers/summonerwars';
 import { setChineseLocale } from '../helpers/common';
+import { COMMON_UNITS_FROST } from '../src/games/summonerwars/config/factions/frost';
 
 type __ThreeAxeGameMarker = {
   openTestGame: (gameId: string) => Promise<void>;
@@ -31,6 +34,15 @@ const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
   await game.setupScene({ gameId: 'summonerwars' });
 };
 void __ensureThreeAxesMarker;
+
+const EVIDENCE_DIR = join(process.cwd(), 'test-results', 'evidence-screenshots', '_shared', 'summonerwars-choice-selection');
+mkdirSync(EVIDENCE_DIR, { recursive: true });
+
+const FROST_AXE_SMITH_CARD = COMMON_UNITS_FROST.find((card) => card.id === 'frost-ice-smith');
+const FROST_ATTACH_TARGET_CARD = COMMON_UNITS_FROST.find((card) => card.id === 'frost-mage');
+if (!FROST_AXE_SMITH_CARD || !FROST_ATTACH_TARGET_CARD) {
+  throw new Error('无法加载冰霜战斧 E2E 所需的真实极地矮人单位卡配置');
+}
 
 
 // ============================================================================
@@ -412,67 +424,77 @@ const prepareFrostAxeState = (coreState: any) => {
   if (!player) throw new Error('无法读取玩家0状态');
 
   player.moveCount = 0;
+  next.turn = 1;
 
-  // 查找寒冰锻造师或放置一个
   const board = next.board;
-  let smithPlaced = false;
-  let soldierPlaced = false;
+  const inBounds = (row: number, col: number) => row >= 0 && row < 8 && col >= 0 && col < 6;
+  const isEmptyCell = (row: number, col: number) => inBounds(row, col) && !board[row][col].unit && !board[row][col].structure;
+  const orthogonalNeighbors = (row: number, col: number) => ([
+    { row: row - 1, col },
+    { row: row + 1, col },
+    { row, col: col - 1 },
+    { row, col: col + 1 },
+  ]).filter((pos) => inBounds(pos.row, pos.col));
 
-  for (let row = 5; row < 8 && !smithPlaced; row++) {
-    for (let col = 0; col < 6 && !smithPlaced; col++) {
-      const cell = board[row][col];
-      if (cell.unit && cell.unit.owner === '0' && cell.unit.card.abilities?.includes('frost_axe')) {
-        smithPlaced = true;
-        // 确保有充能
-        cell.unit.boosts = 2;
-        
-        // 在相邻位置放置友方士兵
-        const adjPositions = [
-          { row: row - 1, col },
-          { row: row + 1, col },
-          { row, col: col - 1 },
-          { row, col: col + 1 },
-        ];
-        for (const adj of adjPositions) {
-          if (adj.row >= 0 && adj.row < 8 && adj.col >= 0 && adj.col < 6) {
-            if (!board[adj.row][adj.col].unit && !board[adj.row][adj.col].structure) {
-              board[adj.row][adj.col].unit = {
-                instanceId: `ally-soldier-${adj.row}-${adj.col}`,
-                cardId: 'frost-soldier-1',
-                card: {
-                  id: 'frost-soldier',
-                  name: '友方士兵',
-                  cardType: 'unit',
-                  faction: 'frost',
-                  cost: 1,
-                  life: 2,
-                  strength: 1,
-                  attackType: 'melee',
-                  attackRange: 1,
-                  unitClass: 'common',
-                  deckSymbols: [],
-                },
-                owner: '0',
-                position: adj,
-                damage: 0,
-                boosts: 0,
-                hasMoved: false,
-                hasAttacked: false,
-              };
-              soldierPlaced = true;
-              break;
-            }
+  let smithPosition: { row: number; col: number } | null = null;
+  let movePosition: { row: number; col: number } | null = null;
+  let soldierPosition: { row: number; col: number } | null = null;
+
+  outer: for (let row = 5; row < 8; row++) {
+    for (let col = 0; col < 6; col++) {
+      if (!isEmptyCell(row, col)) continue;
+      for (const moveCandidate of orthogonalNeighbors(row, col)) {
+        if (!isEmptyCell(moveCandidate.row, moveCandidate.col)) continue;
+        for (const targetCandidate of orthogonalNeighbors(row, col)) {
+          if (
+            (targetCandidate.row === moveCandidate.row && targetCandidate.col === moveCandidate.col)
+            || !isEmptyCell(targetCandidate.row, targetCandidate.col)
+          ) {
+            continue;
           }
+          smithPosition = { row, col };
+          movePosition = moveCandidate;
+          soldierPosition = targetCandidate;
+          break outer;
         }
       }
     }
   }
 
-  if (!smithPlaced || !soldierPlaced) {
-    throw new Error('无法准备冰霜战斧测试状态：未找到寒冰锻造师或无法放置友方士兵');
+  if (!smithPosition || !movePosition || !soldierPosition) {
+    throw new Error('无法准备冰霜战斧测试状态：未找到可用的移动/附加三格布局');
   }
 
-  return next;
+  board[smithPosition.row][smithPosition.col].unit = {
+    instanceId: `frost-smith-${smithPosition.row}-${smithPosition.col}`,
+    cardId: `${FROST_AXE_SMITH_CARD.id}-e2e-smith`,
+    card: { ...FROST_AXE_SMITH_CARD },
+    owner: '0',
+    position: smithPosition,
+    damage: 0,
+    boosts: 1,
+    hasMoved: false,
+    hasAttacked: false,
+  };
+
+  board[soldierPosition.row][soldierPosition.col].unit = {
+    instanceId: `frost-target-${soldierPosition.row}-${soldierPosition.col}`,
+    cardId: `${FROST_ATTACH_TARGET_CARD.id}-e2e-target`,
+    card: { ...FROST_ATTACH_TARGET_CARD },
+    owner: '0',
+    position: soldierPosition,
+    damage: 0,
+    boosts: 0,
+    hasMoved: false,
+    hasAttacked: false,
+  };
+
+  return {
+    state: next,
+    smithPosition,
+    movePosition,
+    soldierPosition,
+  };
 };
 
 // ============================================================================
@@ -520,7 +542,14 @@ test.describe('召唤师战争 - 选择控制/伤害（二选一）', () => {
 
     // 准备测试状态
     const coreState = await readCoreState(hostPage);
-    const frostAxeCore = prepareFrostAxeState(coreState);
+    const {
+      state: frostAxeCore,
+      smithPosition,
+      movePosition,
+    } = prepareFrostAxeState(coreState);
+    if (!smithPosition || !movePosition) {
+      throw new Error('冰霜战斧测试状态缺少寒冰锻造师或移动目标坐标');
+    }
     await applyCoreState(hostPage, frostAxeCore);
     await closeDebugPanelIfOpen(hostPage);
 
@@ -528,42 +557,35 @@ test.describe('召唤师战争 - 选择控制/伤害（二选一）', () => {
     await waitForPhase(hostPage, 'move');
 
     // 查找寒冰锻造师
-    const smith = hostPage.locator('[data-testid^="sw-unit-"][data-owner="0"]').filter({
-      has: hostPage.locator('[data-unit-name*="锻造"]')
-    }).first();
+    const smith = hostPage.getByTestId(`sw-unit-${smithPosition.row}-${smithPosition.col}`);
     await expect(smith).toBeVisible({ timeout: 5000 });
 
     // 记录初始充能
     const initialBoosts = parseInt(await smith.getAttribute('data-unit-boosts') ?? '0');
 
     // 点击寒冰锻造师
-    await clickBoardElement(hostPage, '[data-testid^="sw-unit-"][data-owner="0"]');
-
-    // 查找并点击冰霜战斧按钮
-    const frostAxeButton = hostPage.getByRole('button', { name: /冰霜战斧|Frost Axe/i });
-    await expect(frostAxeButton).toBeVisible({ timeout: 5000 });
-    await frostAxeButton.click();
+    await clickBoardElement(hostPage, `[data-testid="sw-unit-${smithPosition.row}-${smithPosition.col}"]`);
+    await hostPage.waitForTimeout(300);
+    await clickBoardElement(hostPage, `[data-testid="sw-cell-${movePosition.row}-${movePosition.col}"]`);
     await hostPage.waitForTimeout(500);
 
-    // 验证选择界面出现
-    const choiceSelector = hostPage.locator('[data-testid="choice-selector"]').or(
-      hostPage.locator('[class*="choice"]').filter({ hasText: /选择|Choose/i })
-    );
-    await expect(choiceSelector).toBeVisible({ timeout: 8000 });
+    const abilityPrompt = hostPage.getByTestId('sw-ability-prompt');
+    await expect(abilityPrompt).toBeVisible({ timeout: 8000 });
 
     // 选择"充能自身"选项
-    const selfButton = choiceSelector.locator('button').filter({ hasText: /充能自身|Charge Self|自身/i }).first();
+    const selfButton = hostPage.getByRole('button', { name: /充能自身|Charge Self/i });
     await expect(selfButton).toBeVisible({ timeout: 3000 });
     await selfButton.click();
     await hostPage.waitForTimeout(500);
 
-    // 验证选择界面关闭
-    await expect(choiceSelector).toBeHidden({ timeout: 5000 });
+    // 验证提示关闭
+    await expect(abilityPrompt).toBeHidden({ timeout: 5000 });
 
     // 验证充能增加
     await expect.poll(async () => {
-      const currentBoosts = parseInt(await smith.getAttribute('data-unit-boosts') ?? '0');
-      return currentBoosts > initialBoosts;
+      const latestCore = await readCoreState(hostPage);
+      const movedUnit = latestCore?.board?.[movePosition.row]?.[movePosition.col]?.unit;
+      return typeof movedUnit?.boosts === 'number' && movedUnit.boosts > initialBoosts;
     }, { timeout: 5000 }).toBe(true);
 
     await hostContext.close();
@@ -609,53 +631,62 @@ test.describe('召唤师战争 - 选择控制/伤害（二选一）', () => {
     await waitForSummonerWarsUI(guestPage);
 
     const coreState = await readCoreState(hostPage);
-    const frostAxeCore = prepareFrostAxeState(coreState);
+    const {
+      state: frostAxeCore,
+      smithPosition,
+      movePosition,
+      soldierPosition,
+    } = prepareFrostAxeState(coreState);
+    if (!smithPosition || !movePosition || !soldierPosition) {
+      throw new Error('冰霜战斧测试状态缺少寒冰锻造师、移动目标或友方目标坐标');
+    }
     await applyCoreState(hostPage, frostAxeCore);
     await closeDebugPanelIfOpen(hostPage);
 
     await waitForPhase(hostPage, 'move');
 
-    const smith = hostPage.locator('[data-testid^="sw-unit-"][data-owner="0"]').filter({
-      has: hostPage.locator('[data-unit-name*="锻造"]')
-    }).first();
+    const smith = hostPage.getByTestId(`sw-unit-${smithPosition.row}-${smithPosition.col}`);
     await expect(smith).toBeVisible({ timeout: 5000 });
 
-    const initialBoosts = parseInt(await smith.getAttribute('data-unit-boosts') ?? '0');
-
-    await clickBoardElement(hostPage, '[data-testid^="sw-unit-"][data-owner="0"]');
-
-    const frostAxeButton = hostPage.getByRole('button', { name: /冰霜战斧|Frost Axe/i });
-    await expect(frostAxeButton).toBeVisible({ timeout: 5000 });
-    await frostAxeButton.click();
+    await clickBoardElement(hostPage, `[data-testid="sw-unit-${smithPosition.row}-${smithPosition.col}"]`);
+    await hostPage.waitForTimeout(300);
+    await clickBoardElement(hostPage, `[data-testid="sw-cell-${movePosition.row}-${movePosition.col}"]`);
     await hostPage.waitForTimeout(500);
 
-    const choiceSelector = hostPage.locator('[data-testid="choice-selector"]').or(
-      hostPage.locator('[class*="choice"]').filter({ hasText: /选择|Choose/i })
-    );
-    await expect(choiceSelector).toBeVisible({ timeout: 8000 });
-
-    // 选择"附加到士兵"选项
-    const attachButton = choiceSelector.locator('button').filter({ hasText: /附加|Attach|士兵/i }).first();
-    await expect(attachButton).toBeVisible({ timeout: 3000 });
-    await attachButton.click();
-    await hostPage.waitForTimeout(500);
-
-    // 验证选择界面关闭
-    await expect(choiceSelector).toBeHidden({ timeout: 5000 });
+    const abilityPrompt = hostPage.getByTestId('sw-ability-prompt');
+    await expect(abilityPrompt).toBeVisible({ timeout: 8000 });
+    await expect(hostPage.getByRole('button', { name: /充能自身|Charge Self/i })).toBeVisible({ timeout: 5000 });
+    await hostPage.screenshot({
+      path: join(EVIDENCE_DIR, 'frost-axe-choice-visible.png'),
+      fullPage: false,
+    });
 
     // 验证单位选择界面出现（需要选择目标士兵）
-    const unitSelector = hostPage.locator('[data-testid^="sw-cell-"][class*="border-green"]').first();
+    const unitSelector = hostPage.getByTestId(`sw-cell-${soldierPosition.row}-${soldierPosition.col}`);
     await expect(unitSelector).toBeVisible({ timeout: 5000 });
 
     // 点击友方士兵
-    await clickBoardElement(hostPage, '[data-testid^="sw-cell-"][class*="border-green"]');
+    await clickBoardElement(hostPage, `[data-testid="sw-cell-${soldierPosition.row}-${soldierPosition.col}"]`);
     await hostPage.waitForTimeout(500);
 
-    // 验证充能减少（消耗了充能）
-    await expect.poll(async () => {
-      const currentBoosts = parseInt(await smith.getAttribute('data-unit-boosts') ?? '0');
-      return currentBoosts < initialBoosts;
-    }, { timeout: 5000 }).toBe(true);
+    await expect(abilityPrompt).toBeHidden({ timeout: 5000 });
+    await expect(hostPage.locator(`[data-testid="sw-unit-${movePosition.row}-${movePosition.col}"]`)).toHaveCount(0, { timeout: 5000 });
+
+    const allySoldier = hostPage.getByTestId(`sw-unit-${soldierPosition.row}-${soldierPosition.col}`);
+    await expect(allySoldier).toBeVisible({ timeout: 5000 });
+    await expect(allySoldier.locator('[title="附加单位"], [title="Attached Unit"]')).toBeVisible({ timeout: 5000 });
+    await hostPage.screenshot({
+      path: join(EVIDENCE_DIR, 'frost-axe-attached-buff-icon-visible.png'),
+      fullPage: false,
+    });
+
+    await allySoldier.hover();
+    await expect(hostPage.getByText(/当前状态|Current Status/)).toBeVisible({ timeout: 5000 });
+    await expect(hostPage.getByText(/附加单位|Attached Unit/)).toBeVisible({ timeout: 5000 });
+    await hostPage.screenshot({
+      path: join(EVIDENCE_DIR, 'frost-axe-attached-buff-details-visible.png'),
+      fullPage: false,
+    });
 
     await hostContext.close();
     await guestContext.close();

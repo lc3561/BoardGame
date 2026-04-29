@@ -6199,10 +6199,10 @@ describe('World Champs abilities', () => {
         expect(second.events.some(event => event.type === SU_EVENTS.LIMIT_MODIFIED)).toBe(false);
     });
 
-    it('world_champs_diva 在同基地其他己方随从受标准行动影响时复制同样效果（每回合一次）', () => {
+    it('world_champs_diva 应以可选反应形式复制标准行动效果，未选择前不会自动生效，且不受“你的回合”限制', () => {
         const core = makeState({
             turnOrder: ['0', '1'],
-            currentPlayerIndex: 0,
+            currentPlayerIndex: 1,
             turnNumber: 5,
             players: {
                 '0': makePlayer('0'),
@@ -6218,29 +6218,202 @@ describe('World Champs abilities', () => {
             }],
         });
 
-        const intercepted = interceptEvent(core, {
+        const originalEvent = {
             type: SU_EVENTS.TEMP_POWER_ADDED,
-            payload: { minionUid: 'ally-1', baseIndex: 0, amount: 2, reason: 'world_champs_fast_as_lightning' },
+            payload: {
+                minionUid: 'ally-1',
+                baseIndex: 0,
+                amount: 2,
+                reason: 'world_champs_fast_as_lightning',
+                sourcePlayerId: '1',
+                sourceDefId: 'world_champs_fast_as_lightning',
+                sourceCardUid: 'enemy-fast-1',
+                sourceControllerId: '1',
+                sourceBaseIndex: 0,
+            },
             timestamp: 3200,
-        } as any);
-        const events = Array.isArray(intercepted) ? intercepted : intercepted ? [intercepted] : [];
-        expect(events.length).toBeGreaterThan(1);
-        const afterFirst = events.reduce((acc, event) => reduce(acc, event as any), core);
-        expect(afterFirst.bases[0].minions.find(minion => minion.uid === 'ally-1')?.tempPowerModifier).toBe(2);
-        expect(afterFirst.bases[0].minions.find(minion => minion.uid === 'diva-1')?.tempPowerModifier).toBe(2);
-
-        const secondOriginalEvent = {
-            type: SU_EVENTS.TEMP_POWER_ADDED,
-            payload: { minionUid: 'ally-1', baseIndex: 0, amount: 1, reason: 'world_champs_fast_as_lightning' },
-            timestamp: 3201,
         };
-        const secondIntercepted = interceptEvent(afterFirst, secondOriginalEvent as any);
-        const secondEvents = Array.isArray(secondIntercepted)
-            ? secondIntercepted
-            : [secondIntercepted ?? secondOriginalEvent];
-        const afterSecond = secondEvents.reduce((acc, event) => reduce(acc, event as any), afterFirst);
-        expect(afterSecond.bases[0].minions.find(minion => minion.uid === 'ally-1')?.tempPowerModifier).toBe(3);
-        expect(afterSecond.bases[0].minions.find(minion => minion.uid === 'diva-1')?.tempPowerModifier).toBe(2);
+        const afterOriginal = reduce(core, originalEvent as any);
+        const queued = collectTriggers(afterOriginal, 'onMinionAffected', {
+            state: afterOriginal,
+            matchState: makeMatchState(afterOriginal),
+            playerId: '1',
+            baseIndex: 0,
+            sourceCardUid: 'enemy-fast-1',
+            sourceBaseIndex: 0,
+            sourceControllerId: '1',
+            triggerMinionUid: 'ally-1',
+            triggerMinionDefId: 'robot_microbot_alpha',
+            triggerMinion: afterOriginal.bases[0].minions.find(minion => minion.uid === 'ally-1'),
+            affectType: 'power_change',
+            affectEvent: originalEvent as any,
+            affectBatchTargets: [{ minionUid: 'ally-1', baseIndex: 0, controllerId: '0' }],
+            reason: 'world_champs_fast_as_lightning',
+            random: defaultTestRandom,
+            now: 3200,
+        });
+
+        expect(queued).toBeDefined();
+        const queuedCore = {
+            ...afterOriginal,
+            triggerQueue: (queued as any).payload.triggers,
+        };
+        const passPrompt = maybeResolveReactionQueue(makeMatchState(queuedCore), defaultTestRandom, 3200);
+        const prompt = maybeResolveReactionQueue(makeMatchState(queuedCore), defaultTestRandom, 3200);
+        expect(prompt?.state.sys.interaction.current?.data?.sourceId).toBe('smashup_reaction_choose');
+
+        const optionIds = (prompt!.state.sys.interaction.current as any).data.options.map((option: any) => option.id);
+        expect(optionIds).toContain('pass');
+        const queueById = new Map(prompt!.state.core.triggerQueue?.map(trigger => [trigger.id, trigger]) ?? []);
+        const divaOption = (prompt!.state.sys.interaction.current as any).data.options.find((option: any) => {
+            const trigger = queueById.get(option.value?.triggerId) as any;
+            return trigger?.sourceDefId === 'world_champs_diva';
+        });
+        expect(divaOption).toBeDefined();
+        expect(prompt!.state.core.bases[0].minions.find(minion => minion.uid === 'diva-1')?.tempPowerModifier ?? 0).toBe(0);
+
+        const passed = runCommand(
+            passPrompt!.state,
+            { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: 'pass' } } as any,
+            defaultTestRandom,
+        );
+        expect(passed.finalState.core.bases[0].minions.find(minion => minion.uid === 'diva-1')?.tempPowerModifier ?? 0).toBe(0);
+
+        const resolved = runCommand(
+            prompt!.state,
+            { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: divaOption.id } } as any,
+            defaultTestRandom,
+        );
+        const divaCopyEvent = resolved.events.find((event: any) =>
+            event.type === SU_EVENTS.TEMP_POWER_ADDED
+            && event.payload?.minionUid === 'diva-1'
+            && event.payload?.amount === 2,
+        );
+        expect(divaCopyEvent).toBeDefined();
+        expect(resolved.events.some((event: any) =>
+            event.type === SU_EVENTS.MINION_METADATA_UPDATED
+            && event.payload?.minionUid === 'diva-1'
+            && event.payload?.reason === 'world_champs_diva_once_per_turn',
+        )).toBe(true);
+        expect(resolved.finalState.core.bases[0].minions.find(minion => minion.uid === 'diva-1')?.tempPowerModifier ?? 0).toBe(2);
+    });
+
+    it('world_champs_fast_as_lightning 打到阿拉密斯后应进入包含女主角与阿拉密斯的反应窗', () => {
+        const core = makeState({
+            turnOrder: ['0', '1'],
+            currentPlayerIndex: 0,
+            turnNumber: 9,
+            players: {
+                '0': makePlayer('0', {
+                    hand: [makeCard('fal-1', 'world_champs_fast_as_lightning', 'action', '0')],
+                }),
+                '1': makePlayer('1'),
+            },
+            bases: [{
+                defId: 'base_a',
+                minions: [
+                    makeMinion('diva-1', 'world_champs_diva', '0', 3, { powerModifier: 0, tempPowerModifier: 0 }),
+                    makeMinion('aramis-1', 'world_champs_aramis', '0', 4, { powerModifier: 0, tempPowerModifier: 0 }),
+                ],
+                ongoingActions: [],
+            }],
+        });
+
+        const played = runCommand(
+            makeMatchState(core),
+            { type: SU_COMMANDS.PLAY_ACTION, playerId: '0', payload: { cardUid: 'fal-1' } },
+            defaultTestRandom,
+        );
+        const targetPrompt = getInteractionsFromMS(played.finalState)[0] as any;
+        expect(targetPrompt?.data?.sourceId).toBe('world_champs_fast_as_lightning');
+
+        const aramisOption = targetPrompt.data.options.find((option: any) => option.value?.minionUid === 'aramis-1');
+        expect(aramisOption).toBeDefined();
+
+        const targeted = runCommand(
+            played.finalState,
+            { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: aramisOption.id } } as any,
+            defaultTestRandom,
+        );
+
+        const reactionPrompt = getInteractionsFromMS(targeted.finalState)[0] as any;
+        expect(reactionPrompt?.data?.sourceId).toBe('smashup_reaction_choose');
+
+        const queuedById = new Map((targeted.finalState.core.triggerQueue ?? []).map((trigger: any) => [trigger.id, trigger]));
+        const optionSourceDefIds = (reactionPrompt?.data?.options ?? [])
+            .map((option: any) => queuedById.get(option.value?.triggerId)?.sourceDefId)
+            .filter(Boolean);
+
+        expect(optionSourceDefIds).toContain('world_champs_diva');
+        expect(optionSourceDefIds).toContain('world_champs_aramis');
+    });
+
+    it('world_champs_fast_as_lightning 依次选择女主角与阿拉密斯后应正确收口并保留额外行动', () => {
+        const core = makeState({
+            turnOrder: ['0', '1'],
+            currentPlayerIndex: 0,
+            turnNumber: 9,
+            players: {
+                '0': makePlayer('0', {
+                    hand: [makeCard('fal-1', 'world_champs_fast_as_lightning', 'action', '0')],
+                }),
+                '1': makePlayer('1'),
+            },
+            bases: [{
+                defId: 'base_a',
+                minions: [
+                    makeMinion('diva-1', 'world_champs_diva', '0', 3, { powerModifier: 0, tempPowerModifier: 0 }),
+                    makeMinion('aramis-1', 'world_champs_aramis', '0', 4, { powerModifier: 0, tempPowerModifier: 0 }),
+                ],
+                ongoingActions: [],
+            }],
+        });
+
+        const played = runCommand(
+            makeMatchState(core),
+            { type: SU_COMMANDS.PLAY_ACTION, playerId: '0', payload: { cardUid: 'fal-1' } },
+            defaultTestRandom,
+        );
+        const targetPrompt = getInteractionsFromMS(played.finalState)[0] as any;
+        const aramisTargetOption = targetPrompt.data.options.find((option: any) => option.value?.minionUid === 'aramis-1');
+        expect(aramisTargetOption).toBeDefined();
+
+        const targeted = runCommand(
+            played.finalState,
+            { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: aramisTargetOption.id } } as any,
+            defaultTestRandom,
+        );
+        const initialReactionPrompt = getInteractionsFromMS(targeted.finalState)[0] as any;
+        const initialQueue = new Map((targeted.finalState.core.triggerQueue ?? []).map((trigger: any) => [trigger.id, trigger]));
+        const divaOption = initialReactionPrompt.data.options.find((option: any) =>
+            initialQueue.get(option.value?.triggerId)?.sourceDefId === 'world_champs_diva'
+        );
+        expect(divaOption).toBeDefined();
+
+        const afterDiva = runCommand(
+            targeted.finalState,
+            { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: divaOption.id } } as any,
+            defaultTestRandom,
+        );
+        expect(afterDiva.finalState.core.bases[0].minions.find(minion => minion.uid === 'diva-1')?.tempPowerModifier ?? 0).toBe(2);
+
+        const secondReactionPrompt = getInteractionsFromMS(afterDiva.finalState)[0] as any;
+        const secondQueue = new Map((afterDiva.finalState.core.triggerQueue ?? []).map((trigger: any) => [trigger.id, trigger]));
+        const aramisReactionOption = secondReactionPrompt.data.options.find((option: any) =>
+            secondQueue.get(option.value?.triggerId)?.sourceDefId === 'world_champs_aramis'
+        );
+        expect(aramisReactionOption).toBeDefined();
+
+        const afterAramis = runCommand(
+            afterDiva.finalState,
+            { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: aramisReactionOption.id } } as any,
+            defaultTestRandom,
+        );
+
+        expect(getInteractionsFromMS(afterAramis.finalState)).toHaveLength(0);
+        expect(afterAramis.finalState.core.bases[0].minions.find(minion => minion.uid === 'aramis-1')?.tempPowerModifier ?? 0).toBe(2);
+        expect(afterAramis.finalState.core.players['0'].actionsPlayed).toBe(1);
+        expect(afterAramis.finalState.core.players['0'].actionLimit).toBeGreaterThanOrEqual(2);
     });
 
     it('world_champs_smart_set_up 首次有随从打到附着基地时抽 1 张', () => {

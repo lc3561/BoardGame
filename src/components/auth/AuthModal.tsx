@@ -25,6 +25,7 @@ const EMPTY_REMEMBERED_FIELDS: AuthRememberedFields = {
 };
 let inMemoryRememberedFields: AuthRememberedFields = { ...EMPTY_REMEMBERED_FIELDS };
 const AUTH_INPUT_DEBUG = true;
+let authInputDebugTokenSeed = 0;
 
 function debugAuthInputEvent(phase: string, details: Record<string, unknown> = {}) {
     if (!AUTH_INPUT_DEBUG || typeof console === 'undefined') {
@@ -35,6 +36,32 @@ function debugAuthInputEvent(phase: string, details: Record<string, unknown> = {
     } catch {
         console.warn('[auth-input-debug]', phase, details);
     }
+}
+
+function ensureAuthInputDebugToken(node: HTMLInputElement | null): string | null {
+    if (!node) {
+        return null;
+    }
+    const existing = node.dataset.authInputDebugToken;
+    if (existing) {
+        return existing;
+    }
+    const nextToken = `auth-input-${++authInputDebugTokenSeed}`;
+    node.dataset.authInputDebugToken = nextToken;
+    return nextToken;
+}
+
+function describeAuthInputNode(node: HTMLInputElement | null) {
+    if (!node) {
+        return null;
+    }
+    return {
+        testId: node.getAttribute('data-testid'),
+        token: ensureAuthInputDebugToken(node),
+        valueLength: node.value.length,
+        readOnly: node.readOnly,
+        isConnected: node.isConnected,
+    };
 }
 
 function mergeRememberedFields(
@@ -125,6 +152,9 @@ export const AuthModal = ({ isOpen, onClose, initialMode = 'login', closeOnBackd
     const resetCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const rememberedFieldsRef = useRef<AuthRememberedFields>(initialRememberedFields);
     const draftHydratedRef = useRef(false);
+    const registerEmailInputRef = useRef<HTMLInputElement | null>(null);
+    const registerCodeInputRef = useRef<HTMLInputElement | null>(null);
+    const registerUsernameInputRef = useRef<HTMLInputElement | null>(null);
 
     const { t } = useTranslation('auth');
     const { login, register, sendRegisterCode, sendResetCode, resetPassword: resetPasswordAction } = useAuth();
@@ -140,16 +170,37 @@ export const AuthModal = ({ isOpen, onClose, initialMode = 'login', closeOnBackd
         writeRememberedFields(rememberedFieldsRef.current);
     }, []);
     const handleAccountChange = (value: string) => {
+        debugAuthInputEvent('state-update', {
+            field: 'login-account',
+            nextValueLength: value.length,
+        });
         setAccount(value);
         persistRememberedField('account', value);
     };
     const handleUsernameChange = (value: string) => {
+        debugAuthInputEvent('state-update', {
+            field: 'register-username',
+            nextValueLength: value.length,
+        });
         setUsername(value);
         persistRememberedField('username', value);
     };
     const handleEmailChange = (value: string) => {
+        debugAuthInputEvent('state-update', {
+            field: 'register-email',
+            nextValueLength: value.length,
+        });
         setEmail(value);
         persistRememberedField('email', value);
+    };
+    const handleCodeChange = (value: string) => {
+        const sanitized = value.replace(/\D/g, '').slice(0, 6);
+        debugAuthInputEvent('state-update', {
+            field: 'register-code',
+            nextValueLength: sanitized.length,
+            rawValueLength: value.length,
+        });
+        setCode(sanitized);
     };
     const handleResetEmailChange = (value: string) => {
         setResetEmail(value);
@@ -160,8 +211,11 @@ export const AuthModal = ({ isOpen, onClose, initialMode = 'login', closeOnBackd
             debugAuthInputEvent('focus', {
                 field,
                 testId: event.currentTarget.getAttribute('data-testid'),
+                token: ensureAuthInputDebugToken(event.currentTarget),
                 type: event.currentTarget.type,
                 valueLength: event.currentTarget.value.length,
+                readOnly: event.currentTarget.readOnly,
+                isConnected: event.currentTarget.isConnected,
                 activeTag: document.activeElement instanceof HTMLElement ? document.activeElement.tagName : null,
                 activeTestId: document.activeElement instanceof HTMLElement ? document.activeElement.getAttribute('data-testid') : null,
             });
@@ -170,8 +224,11 @@ export const AuthModal = ({ isOpen, onClose, initialMode = 'login', closeOnBackd
             debugAuthInputEvent('blur', {
                 field,
                 testId: event.currentTarget.getAttribute('data-testid'),
+                token: ensureAuthInputDebugToken(event.currentTarget),
                 type: event.currentTarget.type,
                 valueLength: event.currentTarget.value.length,
+                readOnly: event.currentTarget.readOnly,
+                isConnected: event.currentTarget.isConnected,
                 activeTag: document.activeElement instanceof HTMLElement ? document.activeElement.tagName : null,
                 activeTestId: document.activeElement instanceof HTMLElement ? document.activeElement.getAttribute('data-testid') : null,
             });
@@ -181,8 +238,11 @@ export const AuthModal = ({ isOpen, onClose, initialMode = 'login', closeOnBackd
             debugAuthInputEvent('input', {
                 field,
                 testId: target.getAttribute('data-testid'),
+                token: ensureAuthInputDebugToken(target),
                 type: target.type,
                 valueLength: target.value.length,
+                readOnly: target.readOnly,
+                isConnected: target.isConnected,
                 activeTag: document.activeElement instanceof HTMLElement ? document.activeElement.tagName : null,
                 activeTestId: document.activeElement instanceof HTMLElement ? document.activeElement.getAttribute('data-testid') : null,
             });
@@ -279,6 +339,24 @@ export const AuthModal = ({ isOpen, onClose, initialMode = 'login', closeOnBackd
         };
     }, []);
 
+    useEffect(() => {
+        if (!isOpen || mode !== 'register') {
+            return;
+        }
+        debugAuthInputEvent('register-state', {
+            emailLength: email.length,
+            codeLength: code.length,
+            usernameLength: username.length,
+            passwordLength: password.length,
+            confirmPasswordLength: confirmPassword.length,
+            emailNode: describeAuthInputNode(registerEmailInputRef.current),
+            codeNode: describeAuthInputNode(registerCodeInputRef.current),
+            usernameNode: describeAuthInputNode(registerUsernameInputRef.current),
+            activeTag: document.activeElement instanceof HTMLElement ? document.activeElement.tagName : null,
+            activeTestId: document.activeElement instanceof HTMLElement ? document.activeElement.getAttribute('data-testid') : null,
+        });
+    }, [isOpen, mode, email, code, username, password, confirmPassword]);
+
     const handleSendCode = async () => {
         if (!email) {
             setError(t('email.error.missingEmail'));
@@ -344,6 +422,19 @@ export const AuthModal = ({ isOpen, onClose, initialMode = 'login', closeOnBackd
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        debugAuthInputEvent('submit', {
+            mode,
+            emailLength: email.length,
+            codeLength: code.length,
+            usernameLength: username.length,
+            passwordLength: password.length,
+            confirmPasswordLength: confirmPassword.length,
+            emailNode: describeAuthInputNode(registerEmailInputRef.current),
+            codeNode: describeAuthInputNode(registerCodeInputRef.current),
+            usernameNode: describeAuthInputNode(registerUsernameInputRef.current),
+            activeTag: document.activeElement instanceof HTMLElement ? document.activeElement.tagName : null,
+            activeTestId: document.activeElement instanceof HTMLElement ? document.activeElement.getAttribute('data-testid') : null,
+        });
         setError('');
         setIsLoading(true);
 
@@ -427,17 +518,18 @@ export const AuthModal = ({ isOpen, onClose, initialMode = 'login', closeOnBackd
         <ModalBase
             onClose={onClose}
             closeOnBackdrop={closeOnBackdrop}
-            // 让弹窗容器跟随 --runtime-viewport-height，移动端键盘弹出时保持可滚动可见。
-            containerClassName="modal-base-container p-0"
+            // 注册代理输入激活后不应再因键盘缩小 visual viewport 而整体重排/上抬。
+            preserveKeyboardLayout
+            containerClassName="modal-base-container auth-modal-container p-0"
             containerStyle={{
                 paddingTop: 'max(1rem, var(--safe-area-top))',
                 paddingRight: 'max(1rem, var(--safe-area-right))',
-                paddingBottom: 'max(1rem, var(--runtime-modal-bottom-inset))',
+                paddingBottom: 'max(1rem, var(--modal-active-bottom-inset, var(--runtime-modal-bottom-inset)))',
                 paddingLeft: 'max(1rem, var(--safe-area-left))',
             }}
         >
             <div
-                className="bg-[#fcfbf9] pointer-events-auto relative mx-4 flex w-[calc(100vw-2rem)] max-w-[400px] max-h-[var(--runtime-modal-max-height)] flex-col overflow-hidden rounded-sm border border-[#e5e0d0] shadow-[0_10px_40px_rgba(67,52,34,0.1)]"
+                className="bg-[#fcfbf9] pointer-events-auto relative mx-4 flex w-[calc(100vw-2rem)] max-w-[400px] max-h-[var(--modal-max-height,var(--runtime-modal-max-height))] flex-col overflow-hidden rounded-sm border border-[#e5e0d0] shadow-[0_10px_40px_rgba(67,52,34,0.1)]"
                 data-testid="auth-modal"
             >
                 {/* 装饰边角 */}
@@ -505,6 +597,10 @@ export const AuthModal = ({ isOpen, onClose, initialMode = 'login', closeOnBackd
                                                     type="email"
                                                     value={email}
                                                     onChange={(e) => handleEmailChange(e.target.value)}
+                                                    ref={(node) => {
+                                                        registerEmailInputRef.current = node;
+                                                        ensureAuthInputDebugToken(node);
+                                                    }}
                                                     className={textInputClassName}
                                                     placeholder={t('email.placeholder.address')}
                                                     required
@@ -539,7 +635,11 @@ export const AuthModal = ({ isOpen, onClose, initialMode = 'login', closeOnBackd
                                         <input
                                             type="text"
                                             value={code}
-                                            onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                                            onChange={(e) => handleCodeChange(e.target.value)}
+                                            ref={(node) => {
+                                                registerCodeInputRef.current = node;
+                                                ensureAuthInputDebugToken(node);
+                                            }}
                                             className={textInputClassName}
                                             placeholder={t('email.placeholder.code')}
                                             required
@@ -641,6 +741,10 @@ export const AuthModal = ({ isOpen, onClose, initialMode = 'login', closeOnBackd
                                         type="text"
                                         value={username}
                                         onChange={(e) => handleUsernameChange(e.target.value)}
+                                        ref={(node) => {
+                                            registerUsernameInputRef.current = node;
+                                            ensureAuthInputDebugToken(node);
+                                        }}
                                         className={textInputClassName}
                                         placeholder={t('placeholder.username')}
                                         required

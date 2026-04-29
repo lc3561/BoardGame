@@ -45,8 +45,8 @@ export const GameReviews = ({ gameId }: { gameId: string }) => {
         openModal({
             closeOnBackdrop: true,
             render: ({ close }) => (
-                <ModalBase onClose={close}>
-                    <div className="bg-parchment-card-bg w-full max-w-lg max-h-[var(--runtime-modal-max-height)] rounded-sm shadow-parchment-card border border-parchment-card-border/30 overflow-hidden pointer-events-auto flex flex-col">
+                <ModalBase onClose={close} preserveKeyboardLayout>
+                    <div className="bg-parchment-card-bg w-full max-w-lg max-h-[var(--modal-max-height,var(--runtime-modal-max-height))] rounded-sm shadow-parchment-card border border-parchment-card-border/30 overflow-hidden pointer-events-auto flex flex-col">
                         {/* 弹窗头部 */}
                         <div className="shrink-0 flex items-center justify-between px-4 py-4 sm:px-6 border-b border-parchment-card-border/10">
                             <span className="text-lg font-bold text-parchment-base-text uppercase tracking-widest">

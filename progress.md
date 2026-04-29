@@ -657,3 +657,13 @@
     - 新增证据文档：`evidence/smashup/smashup-world-champs-rainbow-kaiju-e2e-2026-04-28.md`
     - 已回写：`evidence/smashup/smashup-10th-anniversary-factions-audit-20260419.md`、`evidence/smashup/smashup-10th-anniversary-final-closeout-20260419.md`、`evidence/smashup/smashup-10th-anniversary-reintake-2026-04-25.md`、`findings.md`
   - Next: 继续按“卡图优先 + 对象级真证据 + 特殊入口抽样”推进三新派系剩余残余范围；当前仍不能把 World Champs 对象级补证写成整派系或三派系最终收口。
+
+- **[2026-04-29 00:12:00] Action**: World Champs《快如闪电 / 女主角 / 阿拉密斯》联合反应窗重审、根因修复与口径回写
+  - Result:
+    - 清理 `src/games/smashup/domain/ongoingEffects.ts` 与 `e2e/src/games/smashup/domain/ongoingEffects.ts` 中误留的重复《阿拉密斯》过滤分支，保留单一有效实现。
+    - 定向复跑：
+      - `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/newFactionAbilities.test.ts --configLoader native --maxWorkers 1 --testNamePattern "world_champs_diva 应以可选反应形式复制标准行动效果|world_champs_fast_as_lightning 打到阿拉密斯后应进入包含女主角与阿拉密斯的反应窗|world_champs_fast_as_lightning 依次选择女主角与阿拉密斯后应正确收口并保留额外行动"` → `3 passed`
+      - `$env:BG_BYPASS_GLOBAL_HEAVY_BUDGET='1'; $env:BG_ALLOW_HEAVY_TASK_CONCURRENCY='1'; npm run test:e2e:ci:file -- e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "快如闪电打到阿拉密斯后应可选触发女主角复制并让阿拉密斯提供额外行动"` → `1 passed`
+    - 新增证据文档：`evidence/smashup/smashup-world-champs-diva-aramis-fast-as-lightning-e2e-2026-04-28.md`
+    - 已回写：`evidence/smashup/smashup-10th-anniversary-factions-audit-20260419.md`、`evidence/smashup/smashup-10th-anniversary-final-closeout-20260419.md`、`evidence/smashup/smashup-10th-anniversary-reintake-2026-04-25.md`、`task_plan.md`、`findings.md`
+  - Next: 继续按“卡图优先 + 对象级真证据 + 实现级状态边界抽样”推进三新派系剩余残余范围；当前仍不能把 World Champs 对象级补证写成整派系或三派系最终收口。

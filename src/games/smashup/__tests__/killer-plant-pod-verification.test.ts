@@ -350,6 +350,9 @@ describe('Killer Plants POD Card Logic Verification', () => {
         const drawUids = drawEvents.flatMap(event => (event as any).payload.cardUids ?? []);
         expect(drawUids).toEqual(expect.arrayContaining(['wl-1', 'we-1']));
         expect(respondResult.finalState.core.players['0'].hand.map(card => card.uid)).toContain('we-1');
+        expect(respondResult.finalState.sys.phase).toBe('playCards');
+        expect(respondResult.finalState.sys.interaction.current).toBeUndefined();
+        expect((respondResult.finalState.sys as any)._waitForStartTurnInteractionReduce).toBeUndefined();
     });
 
     it('Sprout 连锁打出另一个 Sprout 时，阶段应保持在 startTurn 直到整条链结束', () => {

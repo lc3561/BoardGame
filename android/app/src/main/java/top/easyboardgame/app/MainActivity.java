@@ -79,6 +79,7 @@ public class MainActivity extends BridgeActivity {
             forceBuiltinCapgoBundleSelection();
         }
         registerPlugin(GamePackagePlugin.class);
+        registerPlugin(AppUpdatePlugin.class);
         bridgeBuilder.addWebViewListener(
             new WebViewListener() {
                 @Override

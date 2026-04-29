@@ -3,7 +3,7 @@ import { createSimpleChoice, queueInteraction } from '../../../engine/systems/In
 import { registerAbility } from '../domain/abilityRegistry';
 import type { AbilityContext, AbilityResult } from '../domain/abilityRegistry';
 import { registerInteractionHandler, type InteractionHandler } from '../domain/abilityInteractionHandlers';
-import { registerInterceptor, registerTrigger } from '../domain/ongoingEffects';
+import { registerTrigger } from '../domain/ongoingEffects';
 import type { TriggerContext } from '../domain/ongoingEffects';
 import { canStartDuel, startDuel } from '../domain/duel';
 import { registerDiscardSpecialProvider } from '../domain/discardSpecialAbilities';
@@ -531,7 +531,7 @@ function worldChampsAramisOnMinionAffected(ctx: TriggerContext): SmashUpEvent[] 
     if (ctx.playerId !== ctx.sourceControllerId) return [];
     const currentPlayerId = ctx.state.turnOrder[ctx.state.currentPlayerIndex];
     if (currentPlayerId !== ctx.sourceControllerId) return [];
-    const actionDefId = normalizeSourceDefIdFromReason(ctx.reason);
+    const actionDefId = resolveSourceDefIdFromEvent(ctx.affectEvent) ?? normalizeSourceDefIdFromReason(ctx.reason);
     if (!isActionDefId(actionDefId)) return [];
 
     const sourceMinion = ctx.state.bases[ctx.sourceBaseIndex]?.minions.find(minion => minion.uid === ctx.sourceCardUid);
@@ -551,6 +551,40 @@ function worldChampsAramisOnMinionAffected(ctx: TriggerContext): SmashUpEvent[] 
             'world_champs_aramis_once_per_turn',
             ctx.now,
         ),
+    ];
+}
+
+function worldChampsDivaOnMinionAffected(ctx: TriggerContext): SmashUpEvent[] {
+    if (!ctx.sourceCardUid || ctx.sourceBaseIndex === undefined || ctx.sourceControllerId === undefined) return [];
+    if (!ctx.affectEvent) return [];
+    if (ctx.triggerMinionUid === ctx.sourceCardUid) return [];
+
+    const actionDefId = resolveSourceDefIdFromEvent(ctx.affectEvent) ?? normalizeSourceDefIdFromReason(ctx.reason);
+    if (!isStandardActionDefId(actionDefId)) return [];
+
+    const sourceMinion = ctx.state.bases[ctx.sourceBaseIndex]?.minions.find(minion => minion.uid === ctx.sourceCardUid);
+    if (!sourceMinion) return [];
+    const usedTurn = Number(sourceMinion.metadata?.[WORLD_CHAMPS_DIVA_TRIGGERED_TURN_META] ?? -1);
+    if (usedTurn === ctx.state.turnNumber) return [];
+
+    const mirroredEvent = buildDivaMirroredEvent(
+        ctx.affectEvent,
+        sourceMinion.uid,
+        sourceMinion.defId,
+        ctx.sourceBaseIndex,
+        ctx.sourceControllerId,
+    );
+    if (!mirroredEvent) return [];
+
+    return [
+        buildMinionMetadataUpdatedEvent(
+            sourceMinion.uid,
+            ctx.sourceBaseIndex,
+            { [WORLD_CHAMPS_DIVA_TRIGGERED_TURN_META]: ctx.state.turnNumber },
+            'world_champs_diva_once_per_turn',
+            ctx.now,
+        ),
+        mirroredEvent,
     ];
 }
 
@@ -604,6 +638,7 @@ function normalizeSourceDefIdFromReason(reason?: string): string | undefined {
 }
 
 function resolveSourceDefIdFromEvent(event: SmashUpEvent): string | undefined {
+    if (!event) return undefined;
     const payload = (event as { payload?: Record<string, unknown> }).payload;
     if (!payload) return undefined;
     const explicit = payload.sourceDefId;
@@ -740,78 +775,6 @@ function buildDivaMirroredEvent(
     }
 }
 
-function worldChampsDivaInterceptor(state: SmashUpCore, event: SmashUpEvent): SmashUpEvent[] | undefined {
-    const payload = (event as { payload?: Record<string, unknown> }).payload;
-    if (!payload || typeof payload !== 'object') return undefined;
-    const reason = payload.reason;
-    if (typeof reason === 'string' && reason.includes('world_champs_diva_copy')) return undefined;
-
-    const sourceDefId = resolveSourceDefIdFromEvent(event);
-    if (!isStandardActionDefId(sourceDefId)) return undefined;
-
-    let targetUid: string | undefined;
-    let targetBaseIndex: number | undefined;
-    switch (event.type) {
-        case SU_EVENTS.POWER_COUNTER_ADDED:
-        case SU_EVENTS.POWER_COUNTER_REMOVED:
-        case SU_EVENTS.TEMP_POWER_ADDED:
-        case SU_EVENTS.PERMANENT_POWER_ADDED:
-            targetUid = payload.minionUid as string | undefined;
-            targetBaseIndex = payload.baseIndex as number | undefined;
-            break;
-        case SU_EVENTS.MINION_DESTROYED:
-            targetUid = payload.minionUid as string | undefined;
-            targetBaseIndex = payload.fromBaseIndex as number | undefined;
-            break;
-        case SU_EVENTS.MINION_MOVED:
-            targetUid = payload.minionUid as string | undefined;
-            targetBaseIndex = payload.fromBaseIndex as number | undefined;
-            break;
-        case SU_EVENTS.MINION_RETURNED:
-            targetUid = payload.minionUid as string | undefined;
-            targetBaseIndex = payload.fromBaseIndex as number | undefined;
-            break;
-        default:
-            return undefined;
-    }
-    if (!targetUid || targetBaseIndex === undefined) return undefined;
-    const targetMinion = state.bases[targetBaseIndex]?.minions.find(minion => minion.uid === targetUid);
-    if (!targetMinion) return undefined;
-
-    const divaCandidates = state.bases[targetBaseIndex]?.minions.filter(minion =>
-        minion.defId === 'world_champs_diva'
-        && minion.controller === targetMinion.controller
-        && minion.uid !== targetUid,
-    ) ?? [];
-    if (divaCandidates.length === 0) return undefined;
-
-    const currentPlayerId = state.turnOrder[state.currentPlayerIndex];
-    if (!currentPlayerId) return undefined;
-
-    const mirroredEvents: SmashUpEvent[] = [];
-    for (const diva of divaCandidates) {
-        const usedTurn = Number(diva.metadata?.[WORLD_CHAMPS_DIVA_TRIGGERED_TURN_META] ?? -1);
-        if (usedTurn === state.turnNumber) continue;
-        if (currentPlayerId !== diva.controller) continue;
-
-        const mirroredEvent = buildDivaMirroredEvent(event, diva.uid, diva.defId, targetBaseIndex, diva.controller);
-        if (!mirroredEvent) continue;
-        mirroredEvents.push(
-            buildMinionMetadataUpdatedEvent(
-                diva.uid,
-                targetBaseIndex,
-                { [WORLD_CHAMPS_DIVA_TRIGGERED_TURN_META]: state.turnNumber },
-                'world_champs_diva_once_per_turn',
-                event.timestamp,
-            ),
-            mirroredEvent,
-        );
-    }
-
-    if (mirroredEvents.length === 0) return undefined;
-    return [event, ...mirroredEvents];
-}
-
 function worldChampsSheriffBeforeScoring(ctx: TriggerContext): AbilityResult {
     if (!ctx.matchState || ctx.baseIndex === undefined || !ctx.sourceCardUid || !ctx.sourceControllerId) {
         return { events: [] };
@@ -927,6 +890,11 @@ export function registerWorldChampsAbilities(): void {
         optional: true,
         perInstance: true,
     });
+    registerTrigger('world_champs_diva', 'onMinionAffected', worldChampsDivaOnMinionAffected, {
+        optional: true,
+        perInstance: true,
+        playerContext: 'sourceController',
+    });
     registerTrigger('world_champs_sheriff', 'beforeScoring', worldChampsSheriffBeforeScoring, {
         optional: true,
         perInstance: true,
@@ -953,8 +921,6 @@ export function registerWorldChampsAbilities(): void {
         perInstance: true,
         sourceScope: 'triggerBase',
     });
-
-    registerInterceptor('world_champs_diva', worldChampsDivaInterceptor);
 }
 
 const handleWorldChampsStoneford: InteractionHandler = (state, playerId, value, _data, _random, timestamp) => {

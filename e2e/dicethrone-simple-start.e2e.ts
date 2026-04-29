@@ -142,6 +142,8 @@ async function setupDTOnlineAiRoom(
     baseURL: string | undefined,
     options: {
         minimumActionDelayMs?: number;
+        numPlayers?: number;
+        aiSeatIds?: string[];
     } = {},
 ): Promise<{
     hostPage: Page;
@@ -164,6 +166,21 @@ async function setupDTOnlineAiRoom(
     }
 
     const guestId = `dt_ai_e2e_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+    const numPlayers = Math.max(2, options.numPlayers ?? 2);
+    const aiSeatIds = (options.aiSeatIds?.length
+        ? options.aiSeatIds
+        : Array.from({ length: numPlayers - 1 }, (_, index) => String(index + 1)))
+        .filter((seatId, index, array) => array.indexOf(seatId) === index)
+        .filter((seatId) => Number(seatId) >= 1 && Number(seatId) < numPlayers);
+    const seatControllers = Object.fromEntries(
+        aiSeatIds.map((seatId) => [
+            seatId,
+            {
+                type: 'local-ai',
+                minimumActionDelayMs: options.minimumActionDelayMs ?? 2000,
+            },
+        ]),
+    );
     await hostPage.addInitScript(
         (id) => {
             localStorage.setItem('guest_id', id);
@@ -175,16 +192,11 @@ async function setupDTOnlineAiRoom(
 
     const matchId = await createDTRoomViaAPI(hostPage, {
         guestId,
-        numPlayers: 2,
+        numPlayers,
         gameServerBaseURL: getGameServerBaseURL(),
         setupData: {
             enableAi: true,
-            seatControllers: {
-                '1': {
-                    type: 'local-ai',
-                    minimumActionDelayMs: options.minimumActionDelayMs ?? 2000,
-                },
-            },
+            seatControllers,
         },
     });
     if (!matchId) {
@@ -211,6 +223,16 @@ async function setupDTOnlineAiRoom(
         hostContext,
         matchId,
     };
+}
+
+async function waitForAiSeatCredentials(
+    page: Page,
+    matchId: string,
+    playerIds: readonly string[],
+): Promise<void> {
+    for (const playerId of playerIds) {
+        await waitForAiSeatCredential(page, matchId, playerId);
+    }
 }
 
 const readHarnessState = async <T = any>(page: Page): Promise<T> => page.evaluate(() => {
@@ -2121,7 +2143,13 @@ test.describe('DiceThrone Simple Start', () => {
     test('Online AI 真人房间：主阶段到攻击链时间线应可区分动作延迟与传输重试', async ({ browser }, testInfo) => {
         test.setTimeout(180000);
         const baseURL = testInfo.project.use.baseURL as string | undefined;
-        const setup = await setupDTOnlineAiRoom(browser, baseURL, { minimumActionDelayMs: 1000 });
+        const aiSeatIds = ['1', '2', '3'] as const;
+        const primaryAiSeatId = '1';
+        const setup = await setupDTOnlineAiRoom(browser, baseURL, {
+            minimumActionDelayMs: 1000,
+            numPlayers: 4,
+            aiSeatIds: [...aiSeatIds],
+        });
         if (!setup) {
             test.skip(true, 'DiceThrone AI 联机房间创建失败');
             return;
@@ -2158,23 +2186,33 @@ test.describe('DiceThrone Simple Start', () => {
 
             if (entry === 'character-selection') {
                 await waitForCharacterSelection(hostPage, 20000);
-                await waitForAiSeatCredential(hostPage, matchId, '1');
+                await waitForAiSeatCredentials(hostPage, matchId, aiSeatIds);
                 await selectCharacter(hostPage, 'monk');
 
                 await expect.poll(async () => {
-                    const state = await getMatchState(matchId, hostPage);
-                    return {
-                        hostSelected: state.core?.selectedCharacters?.['0'] ?? null,
-                        aiSelected: state.core?.selectedCharacters?.['1'] ?? null,
-                        aiReady: state.core?.readyPlayers?.['1'] ?? false,
-                    };
+                    return hostPage.evaluate((seatIds) => {
+                        const state = (window as any).__BG_TEST_HARNESS__?.state?.get?.();
+                        const selectedCharacters = state?.core?.selectedCharacters ?? {};
+                        const readyPlayers = state?.core?.readyPlayers ?? {};
+                        const seatingOrder = Array.isArray(state?.core?.seatingOrder) ? state.core.seatingOrder : [];
+                        return {
+                            hostSelected: selectedCharacters['0'] ?? null,
+                            aiSelectedSeatIds: seatIds.filter((seatId) => {
+                                const selected = selectedCharacters[seatId];
+                                return selected && selected !== 'unselected';
+                            }),
+                            aiReadySeatIds: seatIds.filter((seatId) => readyPlayers[seatId] === true),
+                            seatingOrder,
+                        };
+                    }, [...aiSeatIds]);
                 }, {
                     timeout: 30000,
                     message: '等待 DiceThrone host/AI 一起完成在线真人房间前置条件',
                 }).toEqual({
                     hostSelected: 'monk',
-                    aiSelected: expect.not.stringMatching(/^unselected$/),
-                    aiReady: true,
+                    aiSelectedSeatIds: [...aiSeatIds],
+                    aiReadySeatIds: [...aiSeatIds],
+                    seatingOrder: ['0', '1', '2', '3'],
                 });
 
                 const startButton = hostPage.locator('button').filter({ hasText: /开始游戏|Start Game|Press.*Start/i }).first();
@@ -2185,7 +2223,12 @@ test.describe('DiceThrone Simple Start', () => {
 
             await waitForTestHarness(hostPage, 15000);
             await expect.poll(async () => {
-                return readHarnessTurnSnapshot(hostPage);
+                const snapshot = await readHarnessTurnSnapshot(hostPage);
+                const state = await getMatchState(matchId, hostPage);
+                return {
+                    ...snapshot,
+                    seatingOrder: state.core?.seatingOrder ?? null,
+                };
             }, {
                 timeout: 30000,
                 intervals: [200, 300, 500, 800],
@@ -2193,7 +2236,10 @@ test.describe('DiceThrone Simple Start', () => {
             }).toMatchObject({
                 activePlayerId: '0',
                 phase: 'main1',
+                seatingOrder: ['0', '1', '2', '3'],
             });
+
+            await expect(hostPage.locator('[data-testid^="dt-top-header-"]')).toHaveCount(3, { timeout: 10000 });
 
             await saveEvidenceScreenshot(hostPage, testInfo, '40-online-ai-real-timeline-host-main1');
 
@@ -2243,7 +2289,7 @@ test.describe('DiceThrone Simple Start', () => {
                     entry.text.includes('[ONLINE_AI_TRANSPORT]')
                     && entry.text.includes('"stage":"state-update"')
                     && entry.text.includes('"phase":"main1"')
-                    && entry.text.includes('"currentPlayerId":"1"')
+                    && entry.text.includes(`"currentPlayerId":"${primaryAiSeatId}"`)
                 ))?.atMs ?? 0;
                 const hostDiscardAtMs = consoleTimeline.find((entry) => (
                     entry.text.includes('[ONLINE_AI_TRANSPORT]')
@@ -2279,6 +2325,12 @@ test.describe('DiceThrone Simple Start', () => {
                 const patchApplyFailedEvents = consoleTimeline.filter((entry) => (
                     entry.text.includes('[ONLINE_AI_TRANSPORT]')
                     && entry.text.includes('"stage":"patch-apply-failed"')
+                    && entry.text.includes(`"playerId":"${primaryAiSeatId}"`)
+                ));
+                const secondaryPatchApplyFailedEvents = consoleTimeline.filter((entry) => (
+                    entry.text.includes('[ONLINE_AI_TRANSPORT]')
+                    && entry.text.includes('"stage":"patch-apply-failed"')
+                    && !entry.text.includes(`"playerId":"${primaryAiSeatId}"`)
                 ));
                 const phaseSnapshot = await readHarnessTurnSnapshot(hostPage);
                 const attackChainReachedDefensiveRoll = phaseSnapshot.activePlayerId === '0'
@@ -2293,6 +2345,7 @@ test.describe('DiceThrone Simple Start', () => {
                     submittedVisibleActions,
                     transportWarningCount: transportWarnings.length,
                     patchApplyFailedCount: patchApplyFailedEvents.length,
+                    secondaryPatchApplyFailedCount: secondaryPatchApplyFailedEvents.length,
                     activePlayerId: phaseSnapshot.activePlayerId,
                     phase: phaseSnapshot.phase,
                     rollCount: phaseSnapshot.rollCount,
@@ -2303,13 +2356,7 @@ test.describe('DiceThrone Simple Start', () => {
             const isAttackChainReady = (summary: Awaited<ReturnType<typeof summarizeAiAttackChain>>) => {
                 return summary.patchApplyFailedCount === 0
                     && summary.submittedVisibleActionCount >= 2
-                    && (
-                        summary.submittedRollCount >= 2
-                        || (
-                            summary.submittedRollCount >= 1
-                            && (summary.submittedAbilitySelectionCount >= 1 || summary.attackChainReachedDefensiveRoll)
-                        )
-                    );
+                    && (summary.submittedRollCount >= 2 || summary.attackChainReachedDefensiveRoll);
             };
 
             const attackChainDeadline = Date.now() + 45000;
@@ -2325,13 +2372,7 @@ test.describe('DiceThrone Simple Start', () => {
             expect(attackChainSummary.patchApplyFailedCount).toBe(0);
             expect(attackChainSummary.submittedVisibleActionCount).toBeGreaterThanOrEqual(2);
             expect(isAttackChainReady(attackChainSummary)).toBe(true);
-            expect(attackChainSummary.submittedRollCount >= 2 || (
-                attackChainSummary.submittedRollCount >= 1
-                && (
-                    attackChainSummary.submittedAbilitySelectionCount >= 1
-                    || attackChainSummary.attackChainReachedDefensiveRoll
-                )
-            )).toBe(true);
+            expect(attackChainSummary.submittedRollCount >= 2 || attackChainSummary.attackChainReachedDefensiveRoll).toBe(true);
 
             await saveEvidenceScreenshot(hostPage, testInfo, '42-online-ai-real-timeline-after-attack-chain');
 
@@ -2348,6 +2389,7 @@ test.describe('DiceThrone Simple Start', () => {
                 submittedVisibleActionCount: attackChainSummary.submittedVisibleActionCount,
                 attackChainReachedDefensiveRoll: attackChainSummary.attackChainReachedDefensiveRoll,
                 patchApplyFailedCount: attackChainSummary.patchApplyFailedCount,
+                secondaryPatchApplyFailedCount: attackChainSummary.secondaryPatchApplyFailedCount,
                 firstToSecondRollGapMs: rollSubmittedTimeline.length >= 2
                     ? rollSubmittedTimeline[1].atMs - rollSubmittedTimeline[0].atMs
                     : null,
@@ -2359,13 +2401,7 @@ test.describe('DiceThrone Simple Start', () => {
             await writeFile(consoleJsonPath, JSON.stringify(consoleTimeline, null, 2), 'utf8');
             await writeFile(summaryJsonPath, JSON.stringify(derivedSummary, null, 2), 'utf8');
 
-            expect(rollSubmittedTimeline.length >= 2 || (
-                rollSubmittedTimeline.length >= 1
-                && (
-                    attackChainSummary.submittedAbilitySelectionCount >= 1
-                    || attackChainSummary.attackChainReachedDefensiveRoll
-                )
-            )).toBe(true);
+            expect(rollSubmittedTimeline.length >= 2 || attackChainSummary.attackChainReachedDefensiveRoll).toBe(true);
         } finally {
             const rollSubmittedTimeline = consoleTimeline.filter((entry) => (
                 entry.text.includes('[ONLINE_AI_PERF]')
@@ -2376,11 +2412,16 @@ test.describe('DiceThrone Simple Start', () => {
             const perfEvents = consoleTimeline.filter((entry) => entry.text.includes('[ONLINE_AI_PERF]'));
             const patchApplyFailedCount = transportEvents.filter((entry) => (
                 entry.text.includes('"stage":"patch-apply-failed"')
+                && entry.text.includes(`"playerId":"${primaryAiSeatId}"`)
+            )).length;
+            const secondaryPatchApplyFailedCount = transportEvents.filter((entry) => (
+                entry.text.includes('"stage":"patch-apply-failed"')
+                && !entry.text.includes(`"playerId":"${primaryAiSeatId}"`)
             )).length;
             const aiTurnStartAtMs = transportEvents.find((entry) => (
                 entry.text.includes('"stage":"state-update"')
                 && entry.text.includes('"phase":"main1"')
-                && entry.text.includes('"currentPlayerId":"1"')
+                && entry.text.includes(`"currentPlayerId":"${primaryAiSeatId}"`)
             ))?.atMs ?? null;
             const hostDiscardAtMs = transportEvents.find((entry) => (
                 entry.text.includes('"stage":"state-update"')
@@ -2418,6 +2459,7 @@ test.describe('DiceThrone Simple Start', () => {
                     : null,
                 attackChainReachedDefensiveRoll: finalSnapshot?.activePlayerId === '0' && finalSnapshot?.phase === 'defensiveRoll',
                 patchApplyFailedCount,
+                secondaryPatchApplyFailedCount,
                 transportEventCount: transportEvents.length,
                 perfEventCount: perfEvents.length,
                 finalSnapshot,

@@ -970,3 +970,52 @@
   - 《怪兽冲击》当前已补齐“打出后真实获得两个额外行动，并被实际消耗为后续两张行动”的浏览器级 L3 真实入口证据。
   - 《怪兽冲击》本轮没有暴露实现 bug；中途暴露的是**E2E 断言把《暗杀》误当成即时消灭**，不是数据录入问题。
   - 截至本轮，`World Champs` 已累计补到 `16` 条正路径对象级 L3 证据；但三新派系整包仍维持 **仍有残余范围**。
+
+### 复核记录（2026-04-29 00:12）：World Champs《快如闪电 / 女主角 / 阿拉密斯》补证 + 旧误判失效回写
+
+- 触发原因：
+  - 用户对“《斯坦福》完全没触发、打出却触发别的效果、是不是审计维度不够全面”这条质疑是对的，当前必须继续往实现级边界深挖。
+  - 本轮继续按“卡图优先 + 对象级真实入口 + 旧结论失效回写”推进，优先补《快如闪电》《女主角》《阿拉密斯》这条联合反应窗链路。
+- 本轮实现：
+  1. `src/games/smashup/domain/reactionQueueHandlers.ts`
+  2. `e2e/src/games/smashup/domain/reactionQueueHandlers.ts`
+     - 给 `smashup_reaction_choose` 增加 `keepSysUpdatesOnly(...)`，阻断已预先 reduce 过的 `core` 被系统层再次连同原事件 reduce。
+  3. `src/games/smashup/domain/ongoingEffects.ts`
+  4. `e2e/src/games/smashup/domain/ongoingEffects.ts`
+     - 收窄《阿拉密斯》`onMinionAffected` 触发范围：只有“自己被标准行动影响”时才允许入队。
+     - 收窄《女主角》同批次复制范围：只对原始受影响的“同基地其他己方随从”建立一次可选复制反应。
+  5. `e2e/framework/GameTestContext.ts`
+     - 加强“无基地前置、直接选随从”的行动牌 helper 稳定性；
+     - `selectOption()` 优先直发 `SYS_INTERACTION_RESPOND`，避免和场上中文卡名撞点击。
+  6. `src/games/smashup/__tests__/newFactionAbilities.test.ts`
+     - 新增 3 条定向回归：
+       - `world_champs_diva 应以可选反应形式复制标准行动效果，未选择前不会自动生效，且不受“你的回合”限制`
+       - `world_champs_fast_as_lightning 打到阿拉密斯后应进入包含女主角与阿拉密斯的反应窗`
+       - `world_champs_fast_as_lightning 依次选择女主角与阿拉密斯后应正确收口并保留额外行动`
+  7. `e2e/smashup/smashup-robot-hoverbot-new.e2e.ts`
+     - 新增：`快如闪电打到阿拉密斯后应可选触发女主角复制并让阿拉密斯提供额外行动`
+- 根因裁定：
+  1. 《女主角》本轮确认不是配置错误，而是 **reaction handler 双 reduce**：
+     - 旧审计只看 `events`，会以为复制只发了 `+2`；
+     - 但 `finalState` 里会被二次 reduce 成 `+4`；
+     - 因而旧“《女主角》实现正确”结论失效。
+  2. 《阿拉密斯》本轮确认不是索引错位，而是 **trigger scope 错误**：
+     - 《女主角》复制事件命中自己后，旧 `collectTriggers()` 仍会把《阿拉密斯》错误再入队；
+     - 这和卡图/中文名/defId 没关系，是实现级过滤缺口。
+  3. 当前这条链还顺手暴露了 **E2E helper 稳定性缺口**，否则“直接选随从”的真实入口并不稳。
+- 本轮验证：
+  1. `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/newFactionAbilities.test.ts --configLoader native --maxWorkers 1 --testNamePattern "world_champs_diva 应以可选反应形式复制标准行动效果|world_champs_fast_as_lightning 打到阿拉密斯后应进入包含女主角与阿拉密斯的反应窗|world_champs_fast_as_lightning 依次选择女主角与阿拉密斯后应正确收口并保留额外行动"`
+     - 结果：`3 passed`
+  2. `$env:BG_BYPASS_GLOBAL_HEAVY_BUDGET='1'; $env:BG_ALLOW_HEAVY_TASK_CONCURRENCY='1'; npm run test:e2e:ci:file -- e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "快如闪电打到阿拉密斯后应可选触发女主角复制并让阿拉密斯提供额外行动"`
+     - 结果：`1 passed`
+- 新增证据文档：
+  - `evidence/smashup/smashup-world-champs-diva-aramis-fast-as-lightning-e2e-2026-04-28.md`
+- 稳定截图绝对路径：
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-world-champs-diva-aramis-reaction-prompt-2026-04-28.png`
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-world-champs-diva-aramis-resolved-2026-04-28.png`
+- 结论：
+  - 《快如闪电》当前已补齐“打到阿拉密斯 -> 进入联合反应窗”的 L3 证据。
+  - 《女主角》当前已补齐“可选复制标准行动，最终只得 `+2`”的 L3 证据。
+  - 《阿拉密斯》当前已补齐“自己被标准行动影响后提供额外行动，并被真实消费”的 L3 证据。
+  - 这次进一步证明：三新派系重审不能只看 `卡图 / locale / defId / 注册 / 单条 events`，还必须强制补 `finalState / triggerQueue / reaction session / 真实入口 E2E`。
+  - 截至本轮，`World Champs` 已累计补到 `19` 条正路径对象级 L3 证据；但三新派系整包仍维持 **仍有残余范围**。

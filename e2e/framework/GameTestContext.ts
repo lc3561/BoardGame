@@ -1176,8 +1176,26 @@ export class GameTestContext {
 
         // 4. 如果需要选择目标随从，点击随从
         if (options?.targetMinionUid) {
-            await this.page.click(`[data-minion-uid="${options.targetMinionUid}"]`);
-            await this.page.waitForTimeout(300);
+            if (options.targetBaseIndex === undefined && await isCardStillInHand()) {
+                await this.page.click(`[data-card-uid="${cardUid}"]`);
+                await this.page.waitForTimeout(300);
+            }
+
+            const interactionOption = await this.page.evaluate((targetMinionUid) => {
+                const harness = (window as any).__BG_TEST_HARNESS__;
+                const state = harness?.state?.get?.();
+                const current = state?.sys?.interaction?.current;
+                const options = current?.data?.options ?? [];
+                const matched = options.find((option: any) => option?.value?.minionUid === targetMinionUid);
+                return matched?.id ?? null;
+            }, options.targetMinionUid);
+
+            if (interactionOption) {
+                await this.selectOption(interactionOption);
+            } else {
+                await this.page.click(`[data-minion-uid="${options.targetMinionUid}"]`);
+                await this.page.waitForTimeout(300);
+            }
         }
 
         // 5. 无目标卡牌在新版 SmashUp UI 中默认是“首击选中，次击确认打出”。
@@ -1286,6 +1304,33 @@ export class GameTestContext {
      */
     async selectOption(optionId: string): Promise<void> {
         await this.dismissRevealOverlayIfPresent();
+        const optionMeta = await this.page.evaluate((id) => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const state = harness?.state?.get?.();
+            const interaction = state?.sys?.interaction?.current;
+            const options = interaction?.data?.options ?? [];
+            const option = options.find((entry: any) => entry.id === id);
+            return {
+                interactionPlayerId: interaction?.playerId ?? null,
+                existsInCurrentInteraction: !!option,
+                label: typeof option?.label === 'string' ? option.label : null,
+                value: option?.value ?? null,
+            };
+        }, optionId);
+
+        if (optionMeta?.existsInCurrentInteraction && optionMeta?.interactionPlayerId) {
+            await this.page.evaluate(({ id, playerId }) => {
+                const harness = (window as any).__BG_TEST_HARNESS__;
+                harness.command.dispatch({
+                    type: 'SYS_INTERACTION_RESPOND',
+                    playerId,
+                    payload: { optionId: id },
+                });
+            }, { id: optionId, playerId: optionMeta.interactionPlayerId });
+            await this.page.waitForTimeout(300);
+            return;
+        }
+
         const cardLikeOption = this.page.locator(`[data-option-id="${optionId}"]`).first();
         try {
             await cardLikeOption.waitFor({ state: 'visible', timeout: 2000 });
@@ -1295,17 +1340,6 @@ export class GameTestContext {
         } catch {
             // 卡牌选项不可见，继续尝试其他方式
         }
-
-        const optionMeta = await this.page.evaluate((id) => {
-            const harness = (window as any).__BG_TEST_HARNESS__;
-            const state = harness?.state?.get?.();
-            const options = state?.sys?.interaction?.current?.data?.options ?? [];
-            const option = options.find((entry: any) => entry.id === id);
-            return {
-                label: typeof option?.label === 'string' ? option.label : null,
-                value: option?.value ?? null,
-            };
-        }, optionId);
 
         const optionLabel = optionMeta?.label;
         if (optionLabel) {

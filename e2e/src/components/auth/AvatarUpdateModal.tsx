@@ -129,15 +129,16 @@ export const AvatarUpdateModal = ({ isOpen, onClose, closeOnBackdrop }: AvatarUp
         <ModalBase
             onClose={handleClose}
             closeOnBackdrop={closeOnBackdrop}
+            preserveKeyboardLayout
             containerClassName="p-4 sm:p-6"
             containerStyle={{
                 paddingTop: 'max(1rem, var(--safe-area-top))',
                 paddingRight: 'max(1rem, var(--safe-area-right))',
-                paddingBottom: 'max(1rem, var(--runtime-modal-bottom-inset))',
+                paddingBottom: 'max(1rem, var(--modal-active-bottom-inset, var(--runtime-modal-bottom-inset)))',
                 paddingLeft: 'max(1rem, var(--safe-area-left))',
             }}
         >
-            <div className="bg-parchment-card-bg pointer-events-auto w-full max-w-[420px] max-h-[var(--runtime-modal-max-height)] overflow-y-auto shadow-parchment-card-hover border border-parchment-card-border/50 p-6 sm:p-8 relative rounded-sm font-serif">
+            <div className="bg-parchment-card-bg pointer-events-auto w-full max-w-[420px] max-h-[var(--modal-max-height,var(--runtime-modal-max-height))] overflow-y-auto shadow-parchment-card-hover border border-parchment-card-border/50 p-6 sm:p-8 relative rounded-sm font-serif">
                 {/* 标题 */}
                 <div className="text-center mb-5">
                     <div className="text-xs sm:text-sm text-parchment-light-text font-bold uppercase tracking-wider">

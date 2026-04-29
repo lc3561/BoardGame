@@ -13,6 +13,34 @@ import { GAME_MANIFEST } from '../../games/manifest.generated';
 import { getLastErrorContext } from '../../lib/feedback/errorContext';
 import { resolveGameDisplayName } from '../lobby/gameDetailsContent';
 
+const FEEDBACK_MODAL_DEBUG = true;
+
+const readRectSnapshot = (element: Element | null) => {
+    if (!(element instanceof HTMLElement)) {
+        return null;
+    }
+    const rect = element.getBoundingClientRect();
+    return {
+        left: Math.round(rect.left),
+        top: Math.round(rect.top),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+        right: Math.round(rect.right),
+        bottom: Math.round(rect.bottom),
+    };
+};
+
+const debugFeedbackModalEvent = (phase: string, details: Record<string, unknown> = {}) => {
+    if (!FEEDBACK_MODAL_DEBUG || typeof console === 'undefined') {
+        return;
+    }
+    try {
+        console.warn('[feedback-modal-debug]', JSON.stringify({ phase, ...details }));
+    } catch {
+        console.warn('[feedback-modal-debug]', phase, details);
+    }
+};
+
 interface FeedbackRuntimeContext {
     mode?: 'online' | 'local' | 'tutorial';
     matchId?: string;
@@ -64,6 +92,8 @@ export const FeedbackModal = ({ onClose, actionLogText, stateSnapshot, runtimeCo
     const { success, error } = useToast();
     const location = useLocation();
     const backdropRef = useRef<HTMLDivElement>(null);
+    const panelRef = useRef<HTMLDivElement>(null);
+    const contentTextareaRef = useRef<HTMLTextAreaElement>(null);
     const portalRoot = useMemo(() => {
         if (typeof document === 'undefined') return null;
         return document.getElementById('modal-root') ?? document.body;
@@ -104,6 +134,60 @@ export const FeedbackModal = ({ onClose, actionLogText, stateSnapshot, runtimeCo
             window.removeEventListener('orientationchange', syncCompactLandscape);
         };
     }, []);
+
+    useEffect(() => {
+        if (typeof window === 'undefined' || typeof document === 'undefined') {
+            return undefined;
+        }
+
+        const emitLayoutSnapshot = (phase: string) => {
+            const rootStyles = window.getComputedStyle(document.documentElement);
+            const proxy = document.querySelector('[data-testid="mobile-text-entry-proxy"]');
+            const proxyInput = document.querySelector('[data-testid="mobile-text-entry-proxy-input"], [data-testid="mobile-text-entry-proxy-textarea"]');
+            debugFeedbackModalEvent(phase, {
+                activeTag: document.activeElement instanceof HTMLElement ? document.activeElement.tagName : null,
+                activeTestId: document.activeElement instanceof HTMLElement ? document.activeElement.getAttribute('data-testid') : null,
+                keyboardInset: rootStyles.getPropertyValue('--keyboard-inset-height').trim(),
+                runtimeViewportHeight: rootStyles.getPropertyValue('--runtime-viewport-height').trim(),
+                layoutViewportHeight: rootStyles.getPropertyValue('--layout-viewport-height').trim(),
+                modalMaxHeight: rootStyles.getPropertyValue('--modal-max-height').trim(),
+                modalBottomInset: rootStyles.getPropertyValue('--modal-active-bottom-inset').trim(),
+                keyboardVisible: document.documentElement.dataset.keyboardVisible ?? null,
+                innerWidth: window.innerWidth,
+                innerHeight: window.innerHeight,
+                visualViewportWidth: Math.round(window.visualViewport?.width ?? 0),
+                visualViewportHeight: Math.round(window.visualViewport?.height ?? 0),
+                visualViewportOffsetTop: Math.round(window.visualViewport?.offsetTop ?? 0),
+                panelRect: readRectSnapshot(panelRef.current),
+                textareaRect: readRectSnapshot(contentTextareaRef.current),
+                proxyRect: readRectSnapshot(proxy),
+                proxyInputRect: readRectSnapshot(proxyInput),
+            });
+        };
+
+        const handleFocusIn = () => {
+            window.setTimeout(() => emitLayoutSnapshot('focusin'), 40);
+        };
+        const handleInput = () => {
+            window.setTimeout(() => emitLayoutSnapshot('input'), 0);
+        };
+        const handleViewportResize = () => emitLayoutSnapshot('visualViewport-resize');
+        const handleWindowResize = () => emitLayoutSnapshot('window-resize');
+
+        emitLayoutSnapshot('mount');
+        window.setTimeout(() => emitLayoutSnapshot('mount+120ms'), 120);
+        document.addEventListener('focusin', handleFocusIn, true);
+        contentTextareaRef.current?.addEventListener('input', handleInput);
+        window.visualViewport?.addEventListener('resize', handleViewportResize);
+        window.addEventListener('resize', handleWindowResize);
+
+        return () => {
+            document.removeEventListener('focusin', handleFocusIn, true);
+            contentTextareaRef.current?.removeEventListener('input', handleInput);
+            window.visualViewport?.removeEventListener('resize', handleViewportResize);
+            window.removeEventListener('resize', handleWindowResize);
+        };
+    }, [isCompactLandscape]);
 
     // 游戏内自动注入 gameId，非游戏页面允许手动选择
     const isInGame = location.pathname.startsWith('/play/');
@@ -236,11 +320,17 @@ export const FeedbackModal = ({ onClose, actionLogText, stateSnapshot, runtimeCo
                 isCompactLandscape ? 'items-start' : 'items-center',
             )}
             data-testid="feedback-modal"
+            data-lock-layout-viewport="true"
             style={{
                 zIndex: UI_Z_INDEX.modalContent,
+                '--modal-active-viewport-height': 'var(--layout-viewport-height, var(--runtime-viewport-height, 100dvh))',
+                '--modal-active-bottom-inset': 'var(--safe-area-bottom)',
+                '--modal-max-height': 'calc(var(--layout-viewport-height, var(--runtime-viewport-height, 100dvh)) - max(1rem, var(--safe-area-top)) - max(1rem, var(--safe-area-bottom)))',
                 paddingTop: isCompactLandscape ? 'max(0.5rem, var(--safe-area-top))' : 'max(1rem, var(--safe-area-top))',
                 paddingRight: 'max(1rem, var(--safe-area-right))',
-                paddingBottom: isCompactLandscape ? 'max(0.5rem, var(--runtime-modal-bottom-inset))' : 'max(1rem, var(--runtime-modal-bottom-inset))',
+                paddingBottom: isCompactLandscape
+                    ? 'max(0.5rem, var(--modal-active-bottom-inset, var(--runtime-modal-bottom-inset)))'
+                    : 'max(1rem, var(--modal-active-bottom-inset, var(--runtime-modal-bottom-inset)))',
                 paddingLeft: 'max(1rem, var(--safe-area-left))',
             }}
             role="dialog"
@@ -250,11 +340,12 @@ export const FeedbackModal = ({ onClose, actionLogText, stateSnapshot, runtimeCo
                 initial={{ opacity: 0, scale: 0.95, y: 20 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                ref={panelRef}
                 className={cn(
                     'bg-parchment-base-bg rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col border-2 border-parchment-brown/30',
                     isCompactLandscape && 'max-w-[40rem]',
                 )}
-                style={{ maxHeight: 'var(--runtime-modal-max-height)' }}
+                style={{ maxHeight: 'var(--modal-max-height, var(--runtime-modal-max-height))' }}
             >
                 {/* Header */}
                 <div className={cn(
@@ -348,6 +439,7 @@ export const FeedbackModal = ({ onClose, actionLogText, stateSnapshot, runtimeCo
                         <label className={fieldLabelClassName}>{t('hud.feedback.contentLabel')}</label>
                         <div className="relative">
                             <textarea
+                                ref={contentTextareaRef}
                                 value={content}
                                 onChange={(e) => setContent(e.target.value)}
                                 onPaste={handlePaste}

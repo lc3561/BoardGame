@@ -1659,6 +1659,13 @@ export function processAffectTriggers(
 
     for (const [eventIndex, event] of events.entries()) {
         const affectRecords = buildAffectRecords(core, event, playerId);
+        const affectBatchTargets = affectRecords
+            .filter(record => record.countsForOnMinionAffected && record.triggerMinion && record.baseIndex !== undefined)
+            .map(record => ({
+                minionUid: record.triggerMinionUid ?? record.triggerMinion!.uid,
+                baseIndex: record.baseIndex!,
+                controllerId: record.triggerMinion!.controller,
+            }));
         for (const [recordIndex, record] of affectRecords.entries()) {
             if (!record.countsForOnMinionAffected || !record.triggerMinion || record.baseIndex === undefined) continue;
             const sourceEventId = `minion-affected:${event.type}:${record.triggerMinionUid}:${record.affectType}:${record.baseIndex}:${eventIndex}:${recordIndex}:${now}`;
@@ -1680,6 +1687,8 @@ export function processAffectTriggers(
                 affectType: record.affectType,
                 counterChangeKind: record.counterChangeKind,
                 counterDelta: record.counterDelta,
+                affectEvent: event,
+                affectBatchTargets,
                 reason: record.reason,
                 random,
                 now,

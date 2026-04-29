@@ -24,6 +24,7 @@ import {
     type CommandInput,
     createHeroMatchup,
     getCardById,
+    advanceTo,
 } from './test-utils';
 import { DICETHRONE_CHARACTER_CATALOG, type DiceThroneCore } from '../domain/types';
 import type { MatchState, RandomFn } from '../../../engine/types';
@@ -1519,6 +1520,78 @@ describe('AI legal actions', () => {
 
         expect(executedKinds).toEqual(['roll-dice', 'confirm-roll', 'advance-phase']);
         expect(state.sys.phase).toBe('main2');
+    });
+
+    it('本地 AI 在四人 targetingRoll 应能继续掷目标骰并推进，而不是 idle 卡思考', async () => {
+        const playerIds = ['0', '1', '2', '3'] as const;
+        const random = createQueuedRandom([1, 1, 1, 1, 1, 2]);
+        let state = createNoResponseSetup()(playerIds as unknown as string[], random);
+
+        const setupCommands: CommandInput[] = [
+            ...advanceTo('offensiveRoll', '0'),
+            cmd('ROLL_DICE', '0'),
+            cmd('CONFIRM_ROLL', '0'),
+            cmd('SELECT_ABILITY', '0', { abilityId: 'fist-technique-5' }),
+            cmd('ADVANCE_PHASE', '0'),
+        ];
+
+        for (const input of setupCommands) {
+            const result = executePipeline(
+                pipelineConfig,
+                state,
+                { type: input.type, playerId: input.playerId, payload: input.payload, timestamp: Date.now() },
+                random,
+                [...playerIds],
+            );
+            expect(result.success).toBe(true);
+            state = result.state as MatchState<DiceThroneCore>;
+        }
+
+        expect(state.sys.phase).toBe('targetingRoll');
+
+        const initialActions = buildDiceThroneAiLegalActions({
+            playerId: '0',
+            state,
+        });
+        expect(initialActions.some((action) => action.kind === 'roll-dice')).toBe(true);
+        expect(initialActions.some((action) => action.kind === 'select-ability')).toBe(false);
+
+        const executedKinds: string[] = [];
+        for (let step = 0; step < 3; step += 1) {
+            const resolution = await resolveNextLocalAiAction({
+                engineConfig,
+                state,
+                matchId: 'local:test',
+                seatControllers: {
+                    '0': { type: 'local-ai' },
+                },
+            });
+
+            expect(resolution?.playerId).toBe('0');
+            expect(resolution?.action).toBeTruthy();
+            executedKinds.push(resolution!.action.kind);
+
+            for (const command of resolution!.action.commands) {
+                const result = executePipeline(
+                    pipelineConfig,
+                    state,
+                    {
+                        type: command.type,
+                        playerId: resolution!.playerId,
+                        payload: command.payload ?? {},
+                        timestamp: Date.now(),
+                    },
+                    random,
+                    [...playerIds],
+                );
+                expect(result.success).toBe(true);
+                state = result.state as MatchState<DiceThroneCore>;
+            }
+        }
+
+        expect(executedKinds).toEqual(['roll-dice', 'confirm-roll', 'advance-phase']);
+        expect(state.sys.phase).toBe('defensiveRoll');
+        expect(state.core.pendingAttack?.defenderId).toBe('3');
     });
 
     it('本地 AI 在 displayOnly 奖励骰结算伴随响应与交互链时，应沿真实链路收口且不误生成 bonus-die 动作', async () => {

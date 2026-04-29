@@ -72,6 +72,7 @@
         --safe-area-bottom-with-keyboard: max(var(--safe-area-bottom), var(--keyboard-inset-height));
         --runtime-modal-bottom-inset: max(var(--safe-area-bottom), 0px);
         --runtime-viewport-width: 100vw;
+        --layout-viewport-height: 100vh;
         /*
          * 默认值必须先落到旧 WebView 也能识别的单位。
          * 某些 Android WebView 在 JS 同步真实 viewport 之前，会先用这里的变量参与 calc()；
@@ -198,6 +199,23 @@
     overscroll-behavior: contain;
     scroll-padding-top: max(1rem, var(--safe-area-top));
     scroll-padding-bottom: max(1rem, calc(var(--keyboard-inset-height) + 1rem));
+}
+
+.modal-base-container[data-lock-layout-viewport="true"] {
+    height: var(--modal-active-viewport-height, var(--runtime-viewport-height, 100dvh));
+    max-height: var(--modal-active-viewport-height, var(--runtime-viewport-height, 100dvh));
+}
+
+html[data-keyboard-visible="true"] .auth-modal-container {
+    --modal-active-viewport-height: var(--runtime-viewport-height, 100dvh);
+    --modal-active-bottom-inset: var(--runtime-modal-bottom-inset);
+    align-items: flex-start;
+}
+
+html[data-keyboard-visible="true"] .auth-modal-container {
+    --modal-active-viewport-height: var(--runtime-viewport-height, 100dvh);
+    --modal-active-bottom-inset: var(--runtime-modal-bottom-inset);
+    align-items: flex-start;
 }
 
 /* 娓告垙涓撳睘瀛椾綋锛歮anifest.fontFamily 閫氳繃 MatchRoom/LocalMatchRoom 娉ㄥ叆涓?CSS 鍙橀噺锛?

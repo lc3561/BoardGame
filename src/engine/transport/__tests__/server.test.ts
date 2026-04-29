@@ -4454,6 +4454,203 @@ describe('GameTransportServer（离座与重连）', () => {
         }
     });
 
+    it('online AI watchdog 在 human active 的 off-turn targetingRoll 阶段也应代 AI 执行合法动作，避免 4 人选目标卡死', async () => {
+        const io = new MockIO();
+        const storage = new InMemoryStorage();
+        const feedbackReporter = vi.fn(async () => undefined);
+        const gameId = 'test-watchdog-offturn-targeting-legal-action';
+
+        aiModule.registerGameAiRuntime({
+            gameId,
+            buildLegalActions: ({ playerId, state }) => {
+                const phase = (state.sys?.phase ?? '') as string;
+                const core = state.core as {
+                    rollCount?: number;
+                    rollConfirmed?: boolean;
+                };
+
+                if (playerId !== '1' || phase !== 'targetingRoll') {
+                    return [];
+                }
+
+                if ((core.rollCount ?? 0) === 0) {
+                    return [{
+                        actionId: 'legal-roll',
+                        kind: 'roll-dice',
+                        label: '合法掷出选目标骰',
+                        commands: [{ type: 'ROLL_DICE', payload: {} }],
+                    }];
+                }
+
+                if (core.rollConfirmed !== true) {
+                    return [{
+                        actionId: 'legal-confirm',
+                        kind: 'confirm-roll',
+                        label: '合法确认选目标骰',
+                        commands: [{ type: 'CONFIRM_ROLL', payload: {} }],
+                    }];
+                }
+
+                return [{
+                    actionId: 'legal-advance',
+                    kind: 'advance-phase',
+                    label: '合法结束 targetingRoll',
+                    commands: [{ type: 'ADVANCE_PHASE', payload: {} }],
+                }];
+            },
+            localPolicies: {
+                offTurnTargetingRecoveryPolicy: {
+                    id: 'offTurnTargetingRecoveryPolicy',
+                    decide: (context) => ({
+                        actionId: context.legalActions[0]?.actionId ?? 'legal-advance',
+                        confidence: 0.96,
+                        reasoningSummary: '当前真人仍是 activePlayer，但 AI targetingRoll 已有合法动作，应由 watchdog 代执行。',
+                    }),
+                },
+            },
+            defaultLocalPolicyId: 'offTurnTargetingRecoveryPolicy',
+        });
+
+        await storage.createMatch('match-watchdog-offturn-targeting-legal-action', {
+            initialState: {
+                G: {
+                    core: {
+                        activePlayerId: '0',
+                        currentPlayerIndex: 0,
+                        turnOrder: ['0', '1'],
+                        rollCount: 0,
+                        rollLimit: 1,
+                        rollConfirmed: false,
+                    },
+                    sys: {
+                        phase: 'targetingRoll',
+                        turnNumber: 4,
+                        eventStream: { nextId: 1 },
+                        interaction: {
+                            current: undefined,
+                            queue: [],
+                            isBlocked: false,
+                        },
+                        responseWindow: {
+                            current: undefined,
+                        },
+                    },
+                },
+                _stateID: 0,
+                randomSeed: 'seed',
+                randomCursor: 0,
+            },
+            metadata: createOnlineAiRecoveryMetadata({
+                gameName: gameId,
+                seatControllers: {
+                    '0': { type: 'human' },
+                    '1': { type: 'local-ai', policyId: 'offTurnTargetingRecoveryPolicy' },
+                },
+            }),
+        });
+
+        const server = new GameTransportServer({
+            io: io as unknown as any,
+            storage,
+            games: [createEngineConfigWithId(gameId)],
+            onlineAiRecoveryTickMs: 0,
+            onlineAiRecoveryTimeoutMs: 0,
+            onlineAiFeedbackReporter: feedbackReporter,
+        });
+
+        const serverInternal = server as unknown as {
+            loadMatch: (matchID: string) => Promise<any>;
+            runOnlineAiRecoveryTick: () => Promise<void>;
+            executeCommandInternal: (
+                match: any,
+                playerID: string,
+                commandType: string,
+                payload: unknown,
+                options?: { suppressBroadcast?: boolean },
+            ) => Promise<boolean>;
+        };
+
+        const match = await serverInternal.loadMatch('match-watchdog-offturn-targeting-legal-action');
+        const executeSpy = vi.spyOn(serverInternal, 'executeCommandInternal').mockImplementation(async (
+            activeMatch,
+            playerID,
+            commandType,
+        ) => {
+            expect(playerID).toBe('1');
+
+            if (commandType === 'ROLL_DICE') {
+                activeMatch.state = {
+                    ...activeMatch.state,
+                    core: {
+                        ...activeMatch.state.core,
+                        rollCount: 1,
+                        rollConfirmed: false,
+                    },
+                    sys: {
+                        ...activeMatch.state.sys,
+                        eventStream: { nextId: 2 },
+                    },
+                };
+                return true;
+            }
+
+            if (commandType === 'CONFIRM_ROLL') {
+                activeMatch.state = {
+                    ...activeMatch.state,
+                    core: {
+                        ...activeMatch.state.core,
+                        rollConfirmed: true,
+                    },
+                    sys: {
+                        ...activeMatch.state.sys,
+                        eventStream: { nextId: 3 },
+                    },
+                };
+                return true;
+            }
+
+            if (commandType === 'ADVANCE_PHASE') {
+                activeMatch.state = {
+                    ...activeMatch.state,
+                    sys: {
+                        ...activeMatch.state.sys,
+                        phase: 'defensiveRoll',
+                        eventStream: { nextId: 4 },
+                    },
+                };
+                return true;
+            }
+
+            return true;
+        });
+
+        try {
+            await serverInternal.runOnlineAiRecoveryTick();
+            await serverInternal.runOnlineAiRecoveryTick();
+            await nextTick();
+            await nextTick();
+
+            expect(executeSpy.mock.calls.map(([, , commandType]) => commandType)).toEqual([
+                'ROLL_DICE',
+                'CONFIRM_ROLL',
+                'ADVANCE_PHASE',
+            ]);
+            expect(match.state.sys.phase).toBe('defensiveRoll');
+            expect(feedbackReporter).toHaveBeenCalledWith(expect.objectContaining({
+                matchId: 'match-watchdog-offturn-targeting-legal-action',
+                gameId,
+                playerId: '1',
+                incidentKind: 'legal-action-recovered',
+                status: 'resolved',
+            }));
+
+            const payload = feedbackReporter.mock.calls[0]?.[0] as { reason?: string } | undefined;
+            expect(payload?.reason).toContain('seat-legal-only:legal-action:advance-phase:legal-advance');
+        } finally {
+            executeSpy.mockRestore();
+        }
+    });
+
     it('dicethrone: defensiveRoll 存在 displayOnly pendingBonusDiceSettlement 时，watchdog 仍应按防御合法动作推进，而不是误打 bonus-die 命令', async () => {
         const io = new MockIO();
         const storage = new InMemoryStorage();

@@ -714,6 +714,70 @@ describe('Feature: incremental-state-sync', () => {
       const result = applyPatches(clientState, diff.patches!);
       expect(result.success).toBe(false); // 证明问题存在
     });
+
+    it('function-valued multistep interaction fields must be stripped before transport diff, otherwise add patch loses value over the wire', () => {
+      const cachedTransportState = {
+        sys: {
+          interaction: {
+            current: {
+              kind: 'multistep-choice',
+              data: {
+                meta: {
+                  dtType: 'modifyDie',
+                  selectCount: 2,
+                },
+              },
+            },
+          },
+        },
+      };
+
+      const rawServerState = {
+        sys: {
+          interaction: {
+            current: {
+              kind: 'multistep-choice',
+              data: {
+                meta: {
+                  dtType: 'modifyDie',
+                  selectCount: 2,
+                },
+                localReducer: () => null,
+                toCommands: () => [],
+              },
+            },
+          },
+        },
+      };
+
+      const unsafeDiff = computeDiff(cachedTransportState, rawServerState, Infinity);
+      expect(unsafeDiff.type).toBe('patch');
+      const localReducerPatch = unsafeDiff.patches!.find((patch) => patch.path === '/sys/interaction/current/data/localReducer');
+      expect(localReducerPatch).toBeDefined();
+      expect(localReducerPatch!.op).toBe('add');
+      expect(typeof (localReducerPatch as Operation & { value?: unknown }).value).toBe('function');
+
+      const wireSafeUnsafePatches = JSON.parse(JSON.stringify(unsafeDiff.patches));
+      const degradedPatch = wireSafeUnsafePatches.find((patch: Operation) => patch.path === '/sys/interaction/current/data/localReducer') as Operation | undefined;
+      expect(degradedPatch).toEqual({
+        op: 'add',
+        path: '/sys/interaction/current/data/localReducer',
+      });
+
+      const failedApply = applyPatches(cachedTransportState, wireSafeUnsafePatches as Operation[]);
+      expect(failedApply.success).toBe(false);
+      expect(failedApply.error).toContain('OPERATION_VALUE_REQUIRED');
+
+      const sanitizedTransportState = JSON.parse(JSON.stringify(rawServerState));
+      const safeDiff = computeDiff(cachedTransportState, sanitizedTransportState, Infinity);
+      expect(safeDiff.type).toBe('patch');
+      expect(safeDiff.patches?.some((patch) => patch.path === '/sys/interaction/current/data/localReducer')).toBe(false);
+      expect(safeDiff.patches?.some((patch) => patch.path === '/sys/interaction/current/data/toCommands')).toBe(false);
+
+      const safeApply = applyPatches(cachedTransportState, safeDiff.patches ?? []);
+      expect(safeApply.success).toBe(true);
+      expect(safeApply.state).toEqual(sanitizedTransportState);
+    });
   });
 
   // ========================================================================

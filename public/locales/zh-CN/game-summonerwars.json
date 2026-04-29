@@ -61,7 +61,8 @@
     "chargeSelf": "充能自身",
     "playEvent": "打出",
     "discardForMagic": "弃牌",
-    "attachToSoldier": "附加到士兵"
+    "attachToSoldier": "附加到士兵",
+    "position": "({{row}},{{col}})"
   },
   "player": {
     "default1": "玩家1",
@@ -320,6 +321,14 @@
       "needStandardEvents": "需要6张标准事件",
       "needChampions": "需要3个冠军单位",
       "needCommons": "需要16个普通单位",
+      "requireSummoner": "牌组必须包含一个召唤师",
+      "commonsTooFew": "普通单位需要 {{required}} 张，当前 {{current}} 张",
+      "commonsTooMany": "普通单位最多 {{required}} 张，当前 {{current}} 张",
+      "championsTooFew": "冠军单位需要 {{required}} 个，当前 {{current}} 个",
+      "championsTooMany": "冠军单位最多 {{required}} 个，当前 {{current}} 个",
+      "standardEventsTooFew": "标准事件需要 {{required}} 张，当前 {{current}} 张",
+      "standardEventsTooMany": "标准事件最多 {{required}} 张，当前 {{current}} 张",
+      "symbolMismatchCount": "{{count}} 张卡牌的符号与召唤师不匹配",
       "symbolMismatch": "卡牌「{{name}}」的符号与召唤师不匹配",
       "maxStandardEvents": "同名标准事件最多2张",
       "maxChampions": "同名冠军单位最多1个",

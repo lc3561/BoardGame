@@ -51,7 +51,6 @@ import { getPlayerPassiveAbilities } from './passiveAbility';
 import { buildDrawEvents } from './deckEvents';
 import { RESOURCE_IDS } from './resources';
 import { getCustomActionHandler } from './effects';
-import { getAutoResponseEnabled } from '../ui/AutoResponseToggle';
 import { findHeroCard } from '../heroes';
 import {
     hasAfterCardPlayedWindowBeenHandled,
@@ -428,7 +427,7 @@ export function execute(
                 rollerId,
                 phase,
             );
-            if (responderQueue.length > 0 && getAutoResponseEnabled()) {
+            if (responderQueue.length > 0) {
                 const windowId = `afterRollConfirmed-${timestamp}`;
                 const responseWindowEvent: ResponseWindowOpenedEvent = {
                     type: 'RESPONSE_WINDOW_OPENED',
@@ -925,7 +924,7 @@ export function execute(
                         interaction.playerId,
                         phase,
                     );
-                    if (responderQueue.length > 0 && getAutoResponseEnabled()) {
+                    if (responderQueue.length > 0) {
                         const responseWindowEvent: ResponseWindowOpenedEvent = {
                             type: 'RESPONSE_WINDOW_OPENED',
                             payload: {

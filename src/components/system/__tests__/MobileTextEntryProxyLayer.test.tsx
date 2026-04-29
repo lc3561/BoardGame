@@ -102,6 +102,7 @@ describe('MobileTextEntryProxyLayer', () => {
         expect((initialProxy as HTMLInputElement).value).toBe('alpha');
 
         await act(async () => {
+            fireEvent.pointerDown(secondInput);
             fireEvent.blur(initialProxy);
             secondInput.focus();
             fireEvent.focusIn(secondInput);
@@ -112,6 +113,49 @@ describe('MobileTextEntryProxyLayer', () => {
         const proxies = screen.getAllByTestId('mobile-text-entry-proxy-input');
         expect(proxies).toHaveLength(1);
         expect((proxies[0] as HTMLInputElement).value).toBe('beta');
+        expect(firstInput.readOnly).toBe(false);
+        expect(secondInput.readOnly).toBe(true);
+    });
+
+    it('代理输入失焦后若无手势却跳到同一表单下一个输入框，应直接切换代理', async () => {
+        const modalRoot = document.getElementById('modal-root');
+        if (!modalRoot) throw new Error('missing modal root');
+
+        const form = document.createElement('form');
+        const firstInput = document.createElement('input');
+        firstInput.type = 'text';
+        firstInput.placeholder = 'first';
+        firstInput.value = 'alpha';
+
+        const secondInput = document.createElement('input');
+        secondInput.type = 'text';
+        secondInput.placeholder = 'second';
+        secondInput.value = '';
+
+        form.appendChild(firstInput);
+        form.appendChild(secondInput);
+        modalRoot.appendChild(form);
+
+        render(<MobileTextEntryProxyLayer />);
+
+        await act(async () => {
+            firstInput.focus();
+            fireEvent.focusIn(firstInput);
+            await vi.advanceTimersByTimeAsync(60);
+        });
+
+        const initialProxy = screen.getByTestId('mobile-text-entry-proxy-input');
+
+        await act(async () => {
+            fireEvent.blur(initialProxy);
+            secondInput.focus();
+            fireEvent.focusIn(secondInput);
+            fireEvent.focusOut(firstInput);
+            await vi.advanceTimersByTimeAsync(160);
+        });
+
+        const proxyInput = screen.getByTestId('mobile-text-entry-proxy-input') as HTMLInputElement;
+        expect(proxyInput.value).toBe('');
         expect(firstInput.readOnly).toBe(false);
         expect(secondInput.readOnly).toBe(true);
     });
@@ -170,6 +214,101 @@ describe('MobileTextEntryProxyLayer', () => {
         expect(proxyInput.style.backgroundColor).toBe('rgba(255, 248, 240, 0.98)');
     });
 
+    it('单行非表单代理输入默认使用 done enterKeyHint', async () => {
+        const modalRoot = document.getElementById('modal-root');
+        if (!modalRoot) throw new Error('missing modal root');
+
+        const sourceInput = document.createElement('input');
+        sourceInput.type = 'text';
+        modalRoot.appendChild(sourceInput);
+
+        render(<MobileTextEntryProxyLayer />);
+
+        await act(async () => {
+            sourceInput.focus();
+            fireEvent.focusIn(sourceInput);
+            await vi.advanceTimersByTimeAsync(60);
+        });
+
+        const proxyInput = screen.getByTestId('mobile-text-entry-proxy-input') as HTMLInputElement;
+        expect(proxyInput.getAttribute('enterkeyhint')).toBe('done');
+    });
+
+    it('单行表单代理输入默认使用 enter enterKeyHint', async () => {
+        const modalRoot = document.getElementById('modal-root');
+        if (!modalRoot) throw new Error('missing modal root');
+
+        const form = document.createElement('form');
+        const sourceInput = document.createElement('input');
+        sourceInput.type = 'text';
+        form.appendChild(sourceInput);
+        modalRoot.appendChild(form);
+
+        render(<MobileTextEntryProxyLayer />);
+
+        await act(async () => {
+            sourceInput.focus();
+            fireEvent.focusIn(sourceInput);
+            await vi.advanceTimersByTimeAsync(60);
+        });
+
+        const proxyInput = screen.getByTestId('mobile-text-entry-proxy-input') as HTMLInputElement;
+        expect(proxyInput.getAttribute('enterkeyhint')).toBe('enter');
+    });
+
+    it('密码输入代理会保留 password 类型并禁用宿主交互而不隐藏宿主内容', async () => {
+        const modalRoot = document.getElementById('modal-root');
+        if (!modalRoot) throw new Error('missing modal root');
+
+        const host = document.createElement('div');
+        host.setAttribute('data-mobile-text-entry-proxy-host', 'true');
+        const sourceInput = document.createElement('input');
+        sourceInput.type = 'password';
+        host.appendChild(sourceInput);
+        modalRoot.appendChild(host);
+
+        const view = render(<MobileTextEntryProxyLayer />);
+
+        await act(async () => {
+            sourceInput.focus();
+            fireEvent.focusIn(sourceInput);
+            await vi.advanceTimersByTimeAsync(60);
+        });
+
+        const proxyInput = screen.getByTestId('mobile-text-entry-proxy-input') as HTMLInputElement;
+        expect(proxyInput.type).toBe('password');
+        expect(host.style.opacity).toBe('');
+        expect(host.style.pointerEvents).toBe('none');
+        expect(sourceInput.style.opacity).toBe('');
+
+        view.unmount();
+
+        expect(host.style.pointerEvents).toBe('');
+    });
+
+    it('邮箱代理输入会回退为 text 并保留 email 键盘布局', async () => {
+        const modalRoot = document.getElementById('modal-root');
+        if (!modalRoot) throw new Error('missing modal root');
+
+        const sourceInput = document.createElement('input');
+        sourceInput.type = 'email';
+        sourceInput.value = 'abc@example.com';
+        modalRoot.appendChild(sourceInput);
+
+        render(<MobileTextEntryProxyLayer />);
+
+        await act(async () => {
+            sourceInput.focus();
+            fireEvent.focusIn(sourceInput);
+            await vi.advanceTimersByTimeAsync(60);
+        });
+
+        const proxyInput = screen.getByTestId('mobile-text-entry-proxy-input') as HTMLInputElement;
+        expect(proxyInput.type).toBe('text');
+        expect(proxyInput.inputMode).toBe('email');
+        expect(proxyInput.value).toBe('abc@example.com');
+    });
+
     it('visualViewport resize 先于 CSS 变量更新时不应误判键盘关闭', async () => {
         const modalRoot = document.getElementById('modal-root');
         if (!modalRoot) throw new Error('missing modal root');
@@ -220,7 +359,7 @@ describe('MobileTextEntryProxyLayer', () => {
 
         expect(screen.getByTestId('mobile-text-entry-proxy-input')).toBeTruthy();
         expect(sourceInput.readOnly).toBe(true);
-        expect(sourceInput.style.opacity).toBe('0');
+        expect(sourceInput.style.opacity).toBe('');
         expect(sourceInput.getAttribute('data-mobile-text-entry-proxy-source')).toBe('true');
 
         view.unmount();
@@ -316,7 +455,35 @@ describe('MobileTextEntryProxyLayer', () => {
         expect(editable.textContent).toBe('after');
     });
 
-    it('单行代理输入按 Enter 时会提交源表单', async () => {
+    it('单行非表单代理输入默认按 Enter 时只关闭代理', async () => {
+        const modalRoot = document.getElementById('modal-root');
+        if (!modalRoot) throw new Error('missing modal root');
+
+        const sourceInput = document.createElement('input');
+        sourceInput.type = 'text';
+        sourceInput.placeholder = 'feedback';
+        modalRoot.appendChild(sourceInput);
+
+        render(<MobileTextEntryProxyLayer />);
+
+        await act(async () => {
+            sourceInput.focus();
+            fireEvent.focusIn(sourceInput);
+            await vi.advanceTimersByTimeAsync(60);
+        });
+
+        const proxyInput = screen.getByTestId('mobile-text-entry-proxy-input');
+
+        await act(async () => {
+            fireEvent.change(proxyInput, { target: { value: 'hello from proxy' } });
+            fireEvent.keyDown(proxyInput, { key: 'Enter', code: 'Enter' });
+            await vi.advanceTimersByTimeAsync(20);
+        });
+
+        expect(screen.queryByTestId('mobile-text-entry-proxy-input')).toBeNull();
+    });
+
+    it('单行表单代理输入默认按 Enter 时会提交源表单', async () => {
         const modalRoot = document.getElementById('modal-root');
         if (!modalRoot) throw new Error('missing modal root');
 
@@ -346,6 +513,81 @@ describe('MobileTextEntryProxyLayer', () => {
         await act(async () => {
             fireEvent.change(proxyInput, { target: { value: 'hello from proxy' } });
             fireEvent.keyDown(proxyInput, { key: 'Enter', code: 'Enter' });
+            await vi.advanceTimersByTimeAsync(20);
+        });
+
+        expect(onSubmit).toHaveBeenCalledTimes(1);
+        expect(screen.queryByTestId('mobile-text-entry-proxy-input')).toBeNull();
+    });
+
+    it('动作型 enterKeyHint 会让单行代理输入按 Enter 时提交源表单', async () => {
+        const modalRoot = document.getElementById('modal-root');
+        if (!modalRoot) throw new Error('missing modal root');
+
+        const form = document.createElement('form');
+        const sourceInput = document.createElement('input');
+        sourceInput.type = 'text';
+        sourceInput.placeholder = 'chat';
+        sourceInput.setAttribute('enterkeyhint', 'send');
+        const submitButton = document.createElement('button');
+        submitButton.type = 'submit';
+        submitButton.textContent = 'send';
+        const onSubmit = vi.fn((event: Event) => event.preventDefault());
+        form.addEventListener('submit', onSubmit);
+        form.appendChild(sourceInput);
+        form.appendChild(submitButton);
+        modalRoot.appendChild(form);
+
+        render(<MobileTextEntryProxyLayer />);
+
+        await act(async () => {
+            sourceInput.focus();
+            fireEvent.focusIn(sourceInput);
+            await vi.advanceTimersByTimeAsync(60);
+        });
+
+        const proxyInput = screen.getByTestId('mobile-text-entry-proxy-input');
+
+        await act(async () => {
+            fireEvent.change(proxyInput, { target: { value: 'hello from proxy' } });
+            fireEvent.keyDown(proxyInput, { key: 'Enter', code: 'Enter' });
+            await vi.advanceTimersByTimeAsync(20);
+        });
+
+        expect(onSubmit).toHaveBeenCalledTimes(1);
+        expect(screen.queryByTestId('mobile-text-entry-proxy-input')).toBeNull();
+    });
+
+    it('代理表单 submit 会提交源表单并关闭代理输入', async () => {
+        const modalRoot = document.getElementById('modal-root');
+        if (!modalRoot) throw new Error('missing modal root');
+
+        const form = document.createElement('form');
+        const sourceInput = document.createElement('input');
+        sourceInput.type = 'text';
+        const submitButton = document.createElement('button');
+        submitButton.type = 'submit';
+        submitButton.textContent = 'send';
+        const onSubmit = vi.fn((event: Event) => event.preventDefault());
+        form.addEventListener('submit', onSubmit);
+        form.appendChild(sourceInput);
+        form.appendChild(submitButton);
+        modalRoot.appendChild(form);
+
+        render(<MobileTextEntryProxyLayer />);
+
+        await act(async () => {
+            sourceInput.focus();
+            fireEvent.focusIn(sourceInput);
+            await vi.advanceTimersByTimeAsync(60);
+        });
+
+        const proxyInput = screen.getByTestId('mobile-text-entry-proxy-input');
+        const proxyForm = proxyInput.closest('form');
+        expect(proxyForm).not.toBeNull();
+
+        await act(async () => {
+            fireEvent.submit(proxyForm!);
             await vi.advanceTimersByTimeAsync(20);
         });
 

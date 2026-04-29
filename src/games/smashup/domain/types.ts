@@ -557,6 +557,7 @@ export interface TriggerInstance {
     affectType?: import('./ongoingEffects').AffectType;
     counterChangeKind?: 'added' | 'removed';
     counterDelta?: number;
+    affectEvent?: SmashUpEvent;
     rankings?: { playerId: PlayerId; power: number; vp: number }[];
     triggerBaseControllersAtTrigger?: PlayerId[];
     actionTargetBaseIndex?: number;
@@ -639,6 +640,8 @@ export interface SmashUpCore {
     baseDiscard: string[];
     /** 回合数 */
     turnNumber: number;
+    /** 最近一次通过 SYS_PHASE_CHANGED 同步到 core 的阶段。 */
+    turnPhase?: string;
     /** UID 自增计数器 */
     nextUid: number;
     /** 游戏结果 */

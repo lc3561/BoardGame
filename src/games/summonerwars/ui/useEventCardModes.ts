@@ -27,7 +27,11 @@ import type {
   StunModeState, HypnoticLureModeState, TelekinesisTargetModeState,
 } from './modeTypes';
 import type { PromptOption } from '../../../engine/systems/InteractionSystem';
-import { findActivatedAbilityDirectionOptionByPosition } from './systemInteractionAdapter';
+import {
+  deriveTelekinesisTargetMode,
+  deriveWithdrawMode,
+  findActivatedAbilityDirectionOptionByPosition,
+} from './systemInteractionAdapter';
 
 const INTERACTIVE_EVENT_BASE_IDS = new Set<string>([
   CARD_IDS.NECRO_HELLFIRE_BLADE,
@@ -319,61 +323,13 @@ export function useEventCardModes({
   }, [swInteraction]);
 
   const systemWithdrawMode = useMemo<WithdrawModeState | null>(() => {
-    if (!swInteraction) return null;
-    const sourceUnitId = typeof swInteraction.meta?.sourceUnitId === 'string' ? swInteraction.meta.sourceUnitId : undefined;
-    if (!sourceUnitId) return null;
-    if (swInteraction.type === 'after_attack_withdraw_cost') {
-      return {
-        sourceUnitId,
-        step: 'selectCost',
-      };
-    }
-    if (swInteraction.type === 'after_attack_withdraw_position') {
-      const costType = swInteraction.meta?.costType as WithdrawModeState['costType'] | undefined;
-      if (!costType) return null;
-      return {
-        sourceUnitId,
-        step: 'selectPosition',
-        costType,
-      };
-    }
-    return null;
+    return deriveWithdrawMode(swInteraction);
   }, [swInteraction]);
 
   const withdrawMode = systemWithdrawMode;
 
   const systemTelekinesisTargetMode = useMemo<TelekinesisTargetModeState | null>(() => {
-    if (!swInteraction) return null;
-    const isSystemDirectionMode = swInteraction.type === 'after_attack_telekinesis_direction'
-      || (swInteraction.type === 'activated_ability_target' && swInteraction.meta?.step === 'selectDirection');
-    if (!isSystemDirectionMode) return null;
-    const sourceUnitId = typeof swInteraction.meta?.sourceUnitId === 'string' ? swInteraction.meta.sourceUnitId : undefined;
-    const sourcePosition = swInteraction.meta?.sourcePosition as CellCoord | undefined;
-    const targetPosition = swInteraction.meta?.targetPosition as CellCoord | undefined;
-    const abilityId = swInteraction.meta?.abilityId as TelekinesisTargetModeState['abilityId'] | undefined;
-    if (!sourceUnitId || !targetPosition || !abilityId) return null;
-    const destinations = swInteraction.options
-      .map((option) => {
-        const value = option.value as {
-          moveRow?: number;
-          moveCol?: number;
-        } | undefined;
-        const match = typeof option.id === 'string' ? option.id.match(/^pos:(\d+),(\d+)$/) : null;
-        if (!match || typeof value?.moveRow !== 'number' || typeof value?.moveCol !== 'number') return null;
-        return {
-          position: { row: Number(match[1]), col: Number(match[2]) },
-          moveRow: value.moveRow,
-          moveCol: value.moveCol,
-        };
-      })
-      .filter((item): item is { position: CellCoord; moveRow: number; moveCol: number } => !!item);
-    return {
-      abilityId,
-      sourceUnitId,
-      sourcePosition,
-      targetPosition,
-      destinations,
-    };
+    return deriveTelekinesisTargetMode(swInteraction);
   }, [swInteraction]);
 
   const telekinesisTargetMode = systemTelekinesisTargetMode;

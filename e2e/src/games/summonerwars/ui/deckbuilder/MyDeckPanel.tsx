@@ -103,6 +103,28 @@ export const MyDeckPanel: React.FC<MyDeckPanelProps> = ({
     const autoEventCount = currentDeck.autoCards.filter(c => c.cardType === 'event').length;
     const unitCount = Array.from(currentDeck.manualCards.values()).filter(i => i.card.cardType === 'unit').reduce((sum, i) => sum + i.count, 0) + (currentDeck.summoner ? 1 : 0) + autoUnitCount;
     const eventCount = Array.from(currentDeck.manualCards.values()).filter(i => i.card.cardType === 'event').reduce((sum, i) => sum + i.count, 0) + autoEventCount;
+    const getValidationErrorText = useCallback((message: string, messageKey?: string, messageParams?: Record<string, string | number>) => {
+        switch (messageKey) {
+            case 'deckBuilder.validation.requireSummoner':
+                return t('deckBuilder.validation.requireSummoner');
+            case 'deckBuilder.validation.commonsTooFew':
+                return t('deckBuilder.validation.commonsTooFew', messageParams);
+            case 'deckBuilder.validation.commonsTooMany':
+                return t('deckBuilder.validation.commonsTooMany', messageParams);
+            case 'deckBuilder.validation.championsTooFew':
+                return t('deckBuilder.validation.championsTooFew', messageParams);
+            case 'deckBuilder.validation.championsTooMany':
+                return t('deckBuilder.validation.championsTooMany', messageParams);
+            case 'deckBuilder.validation.standardEventsTooFew':
+                return t('deckBuilder.validation.standardEventsTooFew', messageParams);
+            case 'deckBuilder.validation.standardEventsTooMany':
+                return t('deckBuilder.validation.standardEventsTooMany', messageParams);
+            case 'deckBuilder.validation.symbolMismatchCount':
+                return t('deckBuilder.validation.symbolMismatchCount', messageParams);
+            default:
+                return message;
+        }
+    }, [t]);
 
     return (
         <div className="w-80 h-full bg-[#121212] border-l border-white/10 flex flex-col flex-shrink-0 shadow-[-10px_0_30px_rgba(0,0,0,0.5)]">
@@ -138,7 +160,7 @@ export const MyDeckPanel: React.FC<MyDeckPanelProps> = ({
                     <ul className="space-y-0.5">
                         {validationResult.errors.map((err, idx) => (
                             <li key={idx} className="text-[10px] text-red-300 flex justify-between">
-                                <span>{err.message}</span>
+                                <span>{getValidationErrorText(err.message, err.messageKey, err.messageParams)}</span>
                                 <span className="opacity-50">{err.current}/{err.expected}</span>
                             </li>
                         ))}

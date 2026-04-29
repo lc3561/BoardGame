@@ -32,6 +32,8 @@ export type DeckValidationRule =
 export interface DeckValidationError {
     rule: DeckValidationRule;
     message: string;
+    messageKey?: string;
+    messageParams?: Record<string, string | number>;
     current: number;
     expected: number;
 }
@@ -70,6 +72,7 @@ export function validateDeck(deck: DeckDraft): DeckValidationResult {
         errors.push({
             rule: 'summoner_count',
             message: '牌组必须包含一个召唤师',
+            messageKey: 'deckBuilder.validation.requireSummoner',
             current: 0,
             expected: 1,
         });
@@ -97,6 +100,10 @@ export function validateDeck(deck: DeckDraft): DeckValidationResult {
             message: commonCount < REQUIRED_COMMONS
                 ? `普通单位需要 ${REQUIRED_COMMONS} 张，当前 ${commonCount} 张`
                 : `普通单位最多 ${REQUIRED_COMMONS} 张，当前 ${commonCount} 张`,
+            messageKey: commonCount < REQUIRED_COMMONS
+                ? 'deckBuilder.validation.commonsTooFew'
+                : 'deckBuilder.validation.commonsTooMany',
+            messageParams: { required: REQUIRED_COMMONS, current: commonCount },
             current: commonCount,
             expected: REQUIRED_COMMONS,
         });
@@ -109,6 +116,10 @@ export function validateDeck(deck: DeckDraft): DeckValidationResult {
             message: championCount < REQUIRED_CHAMPIONS
                 ? `冠军单位需要 ${REQUIRED_CHAMPIONS} 个，当前 ${championCount} 个`
                 : `冠军单位最多 ${REQUIRED_CHAMPIONS} 个，当前 ${championCount} 个`,
+            messageKey: championCount < REQUIRED_CHAMPIONS
+                ? 'deckBuilder.validation.championsTooFew'
+                : 'deckBuilder.validation.championsTooMany',
+            messageParams: { required: REQUIRED_CHAMPIONS, current: championCount },
             current: championCount,
             expected: REQUIRED_CHAMPIONS,
         });
@@ -121,6 +132,10 @@ export function validateDeck(deck: DeckDraft): DeckValidationResult {
             message: standardEventCount < REQUIRED_STANDARD_EVENTS
                 ? `标准事件需要 ${REQUIRED_STANDARD_EVENTS} 张，当前 ${standardEventCount} 张`
                 : `标准事件最多 ${REQUIRED_STANDARD_EVENTS} 张，当前 ${standardEventCount} 张`,
+            messageKey: standardEventCount < REQUIRED_STANDARD_EVENTS
+                ? 'deckBuilder.validation.standardEventsTooFew'
+                : 'deckBuilder.validation.standardEventsTooMany',
+            messageParams: { required: REQUIRED_STANDARD_EVENTS, current: standardEventCount },
             current: standardEventCount,
             expected: REQUIRED_STANDARD_EVENTS,
         });
@@ -139,6 +154,8 @@ export function validateDeck(deck: DeckDraft): DeckValidationResult {
             errors.push({
                 rule: 'symbol_mismatch',
                 message: `${mismatchCount} 张卡牌的符号与召唤师不匹配`,
+                messageKey: 'deckBuilder.validation.symbolMismatchCount',
+                messageParams: { count: mismatchCount },
                 current: mismatchCount,
                 expected: 0,
             });

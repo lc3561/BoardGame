@@ -1,6 +1,12 @@
 import type { PromptOption } from '../../../engine/systems/InteractionSystem';
 import type { CellCoord } from '../domain/types';
-import type { AbilityModeState } from './useGameEvents';
+import type {
+  AbilityModeState,
+  AfterAttackAbilityModeState,
+  MindCaptureModeState,
+  SoulTransferModeState,
+} from './useGameEvents';
+import type { RapidFireModeState, TelekinesisTargetModeState, WithdrawModeState } from './modeTypes';
 
 export interface SwSimpleChoiceInteraction {
   id: string;
@@ -75,6 +81,184 @@ export function getSystemCardSelectorTitleKey(
   abilityId: SystemCardSelectorAbilityId,
 ): SystemCardSelectorTitleKey {
   return SYSTEM_CARD_SELECTOR_TITLE_KEYS[abilityId];
+}
+
+export function isSwSimpleChoiceType(
+  swInteraction: SwSimpleChoiceInteraction | null | undefined,
+  type: string,
+): boolean {
+  return swInteraction?.type === type;
+}
+
+export function deriveInteractionCardsByOptionIds<TCard extends { id: string }>(
+  swInteraction: SwSimpleChoiceInteraction | null | undefined,
+  expectedType: string,
+  cards: TCard[],
+): TCard[] | null {
+  if (!isSwSimpleChoiceType(swInteraction, expectedType)) return null;
+  const cardLookup = new Map(cards.map((card) => [card.id, card]));
+  return swInteraction.options
+    .map((option) => cardLookup.get(option.id))
+    .filter((card): card is TCard => !!card);
+}
+
+export function deriveAfterAttackAbilityMode(
+  swInteraction: SwSimpleChoiceInteraction | null | undefined,
+): AfterAttackAbilityModeState | null {
+  if (
+    !swInteraction
+    || (
+      swInteraction.type !== 'after_attack_mind_transmission'
+      && swInteraction.type !== 'after_attack_telekinesis_target'
+    )
+  ) {
+    return null;
+  }
+
+  const sourceUnitId = typeof swInteraction.meta?.sourceUnitId === 'string' ? swInteraction.meta.sourceUnitId : undefined;
+  const sourcePosition = isCellCoord(swInteraction.meta?.sourcePosition) ? swInteraction.meta.sourcePosition : undefined;
+  const abilityId = swInteraction.meta?.abilityId;
+  if (
+    !sourceUnitId
+    || !sourcePosition
+    || (
+      abilityId !== 'telekinesis'
+      && abilityId !== 'high_telekinesis'
+      && abilityId !== 'mind_transmission'
+    )
+  ) {
+    return null;
+  }
+
+  return {
+    abilityId,
+    sourceUnitId,
+    sourcePosition,
+  };
+}
+
+export function deriveSoulTransferMode(
+  swInteraction: SwSimpleChoiceInteraction | null | undefined,
+): SoulTransferModeState | null {
+  if (!swInteraction || swInteraction.type !== 'soul_transfer') return null;
+  const sourceUnitId = typeof swInteraction.meta?.sourceUnitId === 'string' ? swInteraction.meta.sourceUnitId : undefined;
+  const sourcePosition = isCellCoord(swInteraction.meta?.sourcePosition) ? swInteraction.meta.sourcePosition : undefined;
+  const victimPosition = isCellCoord(swInteraction.meta?.victimPosition) ? swInteraction.meta.victimPosition : undefined;
+  if (!sourceUnitId || !sourcePosition || !victimPosition) return null;
+  return {
+    sourceUnitId,
+    sourcePosition,
+    victimPosition,
+  };
+}
+
+export function deriveMindCaptureMode(
+  swInteraction: SwSimpleChoiceInteraction | null | undefined,
+): MindCaptureModeState | null {
+  if (!swInteraction || swInteraction.type !== 'mind_capture') return null;
+  const sourceUnitId = typeof swInteraction.meta?.sourceUnitId === 'string' ? swInteraction.meta.sourceUnitId : undefined;
+  const sourcePosition = isCellCoord(swInteraction.meta?.sourcePosition) ? swInteraction.meta.sourcePosition : undefined;
+  const targetPosition = isCellCoord(swInteraction.meta?.targetPosition) ? swInteraction.meta.targetPosition : undefined;
+  const targetUnitId = typeof swInteraction.meta?.targetUnitId === 'string' ? swInteraction.meta.targetUnitId : undefined;
+  const hits = typeof swInteraction.meta?.hits === 'number' ? swInteraction.meta.hits : undefined;
+  if (!sourceUnitId || !sourcePosition || !targetPosition || !targetUnitId || !hits) return null;
+  return {
+    sourceUnitId,
+    sourcePosition,
+    targetPosition,
+    targetUnitId,
+    hits,
+  };
+}
+
+export function deriveRapidFireMode(
+  swInteraction: SwSimpleChoiceInteraction | null | undefined,
+): RapidFireModeState | null {
+  if (!swInteraction || swInteraction.type !== 'after_attack_rapid_fire') return null;
+  const sourceUnitId = typeof swInteraction.meta?.sourceUnitId === 'string' ? swInteraction.meta.sourceUnitId : undefined;
+  const sourcePosition = isCellCoord(swInteraction.meta?.sourcePosition) ? swInteraction.meta.sourcePosition : undefined;
+  if (!sourceUnitId || !sourcePosition) return null;
+  return {
+    sourceUnitId,
+    sourcePosition,
+  };
+}
+
+export function deriveWithdrawMode(
+  swInteraction: SwSimpleChoiceInteraction | null | undefined,
+): WithdrawModeState | null {
+  if (!swInteraction) return null;
+  const sourceUnitId = typeof swInteraction.meta?.sourceUnitId === 'string' ? swInteraction.meta.sourceUnitId : undefined;
+  if (!sourceUnitId) return null;
+
+  if (swInteraction.type === 'after_attack_withdraw_cost') {
+    return {
+      sourceUnitId,
+      step: 'selectCost',
+    };
+  }
+
+  if (swInteraction.type === 'after_attack_withdraw_position') {
+    const costType = swInteraction.meta?.costType;
+    if (costType !== 'charge' && costType !== 'magic') return null;
+    return {
+      sourceUnitId,
+      step: 'selectPosition',
+      costType,
+    };
+  }
+
+  return null;
+}
+
+export function deriveTelekinesisTargetMode(
+  swInteraction: SwSimpleChoiceInteraction | null | undefined,
+): TelekinesisTargetModeState | null {
+  if (!swInteraction) return null;
+  const isSystemDirectionMode = swInteraction.type === 'after_attack_telekinesis_direction'
+    || (swInteraction.type === 'activated_ability_target' && swInteraction.meta?.step === 'selectDirection');
+  if (!isSystemDirectionMode) return null;
+
+  const sourceUnitId = typeof swInteraction.meta?.sourceUnitId === 'string' ? swInteraction.meta.sourceUnitId : undefined;
+  const sourcePosition = isCellCoord(swInteraction.meta?.sourcePosition) ? swInteraction.meta.sourcePosition : undefined;
+  const targetPosition = isCellCoord(swInteraction.meta?.targetPosition) ? swInteraction.meta.targetPosition : undefined;
+  const abilityId = swInteraction.meta?.abilityId;
+  if (
+    !sourceUnitId
+    || !targetPosition
+    || (
+      abilityId !== 'telekinesis'
+      && abilityId !== 'high_telekinesis'
+      && abilityId !== 'telekinesis_instead'
+      && abilityId !== 'high_telekinesis_instead'
+    )
+  ) {
+    return null;
+  }
+
+  const destinations = swInteraction.options
+    .map((option) => {
+      const value = option.value as {
+        moveRow?: number;
+        moveCol?: number;
+      } | undefined;
+      const match = typeof option.id === 'string' ? option.id.match(/^pos:(\d+),(\d+)$/) : null;
+      if (!match || typeof value?.moveRow !== 'number' || typeof value?.moveCol !== 'number') return null;
+      return {
+        position: { row: Number(match[1]), col: Number(match[2]) },
+        moveRow: value.moveRow,
+        moveCol: value.moveCol,
+      };
+    })
+    .filter((item): item is { position: CellCoord; moveRow: number; moveCol: number } => !!item);
+
+  return {
+    abilityId,
+    sourceUnitId,
+    sourcePosition,
+    targetPosition,
+    destinations,
+  };
 }
 
 export function isActivatedAbilityInteraction(
@@ -230,6 +414,114 @@ export function findActivatedAbilityDirectionOptionByPosition(
       && Number(match[1]) === position.row
       && Number(match[2]) === position.col;
   }) ?? null;
+}
+
+export function findStructureShiftDirectionOption(
+  swInteraction: SwSimpleChoiceInteraction | null | undefined,
+  targetPosition: CellCoord,
+  newPosition: CellCoord,
+): PromptOption | null {
+  if (swInteraction?.type !== 'after_move_structure_shift_direction') return null;
+  return swInteraction.options.find((option) => {
+    const value = option.value as {
+      action?: string;
+      targetPosition?: CellCoord;
+      newPosition?: CellCoord;
+    } | undefined;
+    return value?.action === 'after_move_structure_shift_direction'
+      && value.targetPosition?.row === targetPosition.row
+      && value.targetPosition?.col === targetPosition.col
+      && value.newPosition?.row === newPosition.row
+      && value.newPosition?.col === newPosition.col;
+  }) ?? null;
+}
+
+export function findIceRamPushOption(
+  swInteraction: SwSimpleChoiceInteraction | null | undefined,
+  pushNewPosition: CellCoord,
+): PromptOption | null {
+  if (swInteraction?.type !== 'ice_ram_push') return null;
+  return swInteraction.options.find((option) => {
+    const value = option.value as {
+      action?: string;
+      pushNewPosition?: CellCoord;
+    } | undefined;
+    return value?.action === 'ice_ram_push'
+      && value.pushNewPosition?.row === pushNewPosition.row
+      && value.pushNewPosition?.col === pushNewPosition.col;
+  }) ?? null;
+}
+
+export function listSystemAbilityPositionTargets(
+  swInteraction: SwSimpleChoiceInteraction | null | undefined,
+  abilityMode: AbilityModeState | null | undefined,
+): CellCoord[] {
+  if (!swInteraction || !abilityMode) return [];
+
+  if (abilityMode.abilityId === 'structure_shift' && abilityMode.step === 'selectNewPosition') {
+    return swInteraction.options
+      .map((option) => {
+        const value = option.value as { action?: string; newPosition?: CellCoord } | undefined;
+        return value?.action === 'after_move_structure_shift_direction' && isCellCoord(value.newPosition)
+          ? value.newPosition
+          : null;
+      })
+      .filter((position): position is CellCoord => !!position);
+  }
+
+  if (abilityMode.abilityId === 'ice_ram' && abilityMode.step === 'selectPushDirection') {
+    return swInteraction.options
+      .map((option) => {
+        const value = option.value as { action?: string; pushNewPosition?: CellCoord } | undefined;
+        return value?.action === 'ice_ram_push' && isCellCoord(value.pushNewPosition)
+          ? value.pushNewPosition
+          : null;
+      })
+      .filter((position): position is CellCoord => !!position);
+  }
+
+  if (abilityMode.abilityId === 'revive_undead' && abilityMode.step === 'selectPosition') {
+    return swInteraction.options
+      .map((option) => {
+        const value = option.value as {
+          action?: string;
+          abilityId?: string;
+          targetPosition?: CellCoord;
+        } | undefined;
+        return value?.action === 'activated_ability_target'
+          && value.abilityId === 'revive_undead'
+          && isCellCoord(value.targetPosition)
+          ? value.targetPosition
+          : null;
+      })
+      .filter((position): position is CellCoord => !!position);
+  }
+
+  return [];
+}
+
+export function findSystemAbilityPositionOption(
+  swInteraction: SwSimpleChoiceInteraction | null | undefined,
+  abilityMode: AbilityModeState | null | undefined,
+  position: CellCoord,
+): PromptOption | null {
+  if (!swInteraction || !abilityMode) return null;
+
+  if (abilityMode.abilityId === 'structure_shift' && abilityMode.step === 'selectNewPosition') {
+    return abilityMode.targetPosition
+      ? findStructureShiftDirectionOption(swInteraction, abilityMode.targetPosition, position)
+      : null;
+  }
+
+  if (abilityMode.abilityId === 'ice_ram' && abilityMode.step === 'selectPushDirection') {
+    return findIceRamPushOption(swInteraction, position);
+  }
+
+  if (abilityMode.abilityId === 'revive_undead' && abilityMode.step === 'selectPosition') {
+    return findActivatedAbilityTargetOptionByPosition(swInteraction, 'revive_undead', position, 'selectPosition');
+  }
+
+  return null;
 }
 
 export function findSystemAbilityUnitOptionByPosition(

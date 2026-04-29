@@ -376,6 +376,16 @@ export function createSmashUpEventSystem(): EngineSystem<SmashUpCore> {
                 };
             }
 
+            if ((newState.sys as any)[pendingStartTurnInteractionReduceFlag]) {
+                newState = {
+                    ...newState,
+                    sys: {
+                        ...newState.sys,
+                        [pendingStartTurnInteractionReduceFlag]: undefined,
+                    } as typeof newState.sys,
+                };
+            }
+
             for (const event of events) {
                 const eventTimestamp = typeof event.timestamp === 'number' ? event.timestamp : 0;
                 latestTimestamp = Math.max(latestTimestamp, eventTimestamp);

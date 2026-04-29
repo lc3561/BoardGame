@@ -8,14 +8,26 @@ import type { EventStreamEntry, GameEvent } from '../../../engine/types';
 import { computeEventStreamDelta, type AbilityModeState } from '../ui/useGameEvents';
 import {
   ACTIVATED_ABILITY_IDS,
+  deriveInteractionCardsByOptionIds,
+  deriveAfterAttackAbilityMode,
+  deriveMindCaptureMode,
+  deriveRapidFireMode,
+  deriveSoulTransferMode,
   deriveSystemAbilityMode,
+  findSystemAbilityPositionOption,
+  deriveTelekinesisTargetMode,
+  deriveWithdrawMode,
   findActivatedAbilityDirectionOptionByPosition,
   findActivatedAbilityTargetOptionByCardId,
   findActivatedAbilityTargetOptionByPosition,
+  findIceRamPushOption,
+  findStructureShiftDirectionOption,
   getSystemCardSelectorAbilityId,
   getSystemCardSelectorTitleKey,
   getSystemAbilityUiRoute,
+  isSwSimpleChoiceType,
   findSystemAbilityUnitOptionByPosition,
+  listSystemAbilityPositionTargets,
   listActivatedAbilityTargetCardIds,
   resolveBeforeAttackCancellation,
   resolveBeforeAttackCardConfirmation,
@@ -585,6 +597,146 @@ describe('systemInteractionAdapter', () => {
     }, null)).toBeNull();
   });
 
+  it('感染卡牌选择与简单提示态通过 adapter helper 收敛', () => {
+    const infectionInteraction: SwSimpleChoiceInteraction = {
+      id: 'sw-infection-cards',
+      type: 'infection',
+      meta: {
+        type: 'infection',
+        sourceUnitId: 'plague-1',
+      },
+      options: [
+        { id: 'plague-zombie-a', label: 'A', value: { action: 'infection' } },
+        { id: 'skip', label: 'skip', value: { skip: true } },
+      ],
+    };
+    const discard = [
+      { id: 'plague-zombie-a', name: 'Plague Zombie A' },
+      { id: 'plague-zombie-b', name: 'Plague Zombie B' },
+    ];
+    expect(deriveInteractionCardsByOptionIds(infectionInteraction, 'infection', discard)).toEqual([
+      { id: 'plague-zombie-a', name: 'Plague Zombie A' },
+    ]);
+    expect(deriveInteractionCardsByOptionIds(infectionInteraction, 'feed_beast', discard)).toBeNull();
+    expect(isSwSimpleChoiceType({ ...infectionInteraction, type: 'grab_follow' }, 'grab_follow')).toBe(true);
+    expect(isSwSimpleChoiceType({ ...infectionInteraction, type: 'feed_beast' }, 'grab_follow')).toBe(false);
+  });
+
+  it('攻击后与系统专用交互模式解析统一收敛到 adapter', () => {
+    expect(deriveAfterAttackAbilityMode({
+      id: 'sw-after-attack-1',
+      type: 'after_attack_mind_transmission',
+      meta: {
+        type: 'after_attack_mind_transmission',
+        abilityId: 'mind_transmission',
+        sourceUnitId: 'mind-witch-1',
+        sourcePosition: { row: 4, col: 2 },
+      },
+      options: [],
+    })).toEqual({
+      abilityId: 'mind_transmission',
+      sourceUnitId: 'mind-witch-1',
+      sourcePosition: { row: 4, col: 2 },
+    });
+
+    expect(deriveSoulTransferMode({
+      id: 'sw-soul-transfer-1',
+      type: 'soul_transfer',
+      meta: {
+        type: 'soul_transfer',
+        sourceUnitId: 'archer-1',
+        sourcePosition: { row: 5, col: 2 },
+        victimPosition: { row: 5, col: 3 },
+      },
+      options: [],
+    })).toEqual({
+      sourceUnitId: 'archer-1',
+      sourcePosition: { row: 5, col: 2 },
+      victimPosition: { row: 5, col: 3 },
+    });
+
+    expect(deriveMindCaptureMode({
+      id: 'sw-mind-capture-1',
+      type: 'mind_capture',
+      meta: {
+        type: 'mind_capture',
+        sourceUnitId: 'tekel-1',
+        sourcePosition: { row: 3, col: 2 },
+        targetPosition: { row: 3, col: 3 },
+        targetUnitId: 'victim-1',
+        hits: 2,
+      },
+      options: [],
+    })).toEqual({
+      sourceUnitId: 'tekel-1',
+      sourcePosition: { row: 3, col: 2 },
+      targetPosition: { row: 3, col: 3 },
+      targetUnitId: 'victim-1',
+      hits: 2,
+    });
+
+    expect(deriveRapidFireMode({
+      id: 'sw-rapid-fire-1',
+      type: 'after_attack_rapid_fire',
+      meta: {
+        type: 'after_attack_rapid_fire',
+        sourceUnitId: 'archer-2',
+        sourcePosition: { row: 2, col: 1 },
+      },
+      options: [],
+    })).toEqual({
+      sourceUnitId: 'archer-2',
+      sourcePosition: { row: 2, col: 1 },
+    });
+
+    expect(deriveWithdrawMode({
+      id: 'sw-withdraw-1',
+      type: 'after_attack_withdraw_position',
+      meta: {
+        type: 'after_attack_withdraw_position',
+        sourceUnitId: 'warrior-1',
+        costType: 'magic',
+      },
+      options: [],
+    })).toEqual({
+      sourceUnitId: 'warrior-1',
+      step: 'selectPosition',
+      costType: 'magic',
+    });
+
+    expect(deriveTelekinesisTargetMode({
+      id: 'sw-tele-direction-1',
+      type: 'activated_ability_target',
+      meta: {
+        type: 'activated_ability_target',
+        abilityId: 'telekinesis_instead',
+        sourceUnitId: 'sly-1',
+        sourcePosition: { row: 4, col: 2 },
+        targetPosition: { row: 4, col: 3 },
+        step: 'selectDirection',
+      },
+      options: [
+        {
+          id: 'pos:4,4',
+          label: '(4,4)',
+          value: { action: 'after_attack_telekinesis_direction', moveRow: 0, moveCol: 1 },
+        },
+      ],
+    })).toEqual({
+      abilityId: 'telekinesis_instead',
+      sourceUnitId: 'sly-1',
+      sourcePosition: { row: 4, col: 2 },
+      targetPosition: { row: 4, col: 3 },
+      destinations: [
+        {
+          position: { row: 4, col: 4 },
+          moveRow: 0,
+          moveCol: 1,
+        },
+      ],
+    });
+  });
+
   it('能按卡牌和位置匹配 activated_ability_target 选项', () => {
     const swInteraction: SwSimpleChoiceInteraction = {
       id: 'sw-activated-1',
@@ -700,6 +852,152 @@ describe('systemInteractionAdapter', () => {
         { row: 6, col: 2 },
       )?.id,
     ).toBe('pos:6,2');
+  });
+
+  it('能匹配 structure_shift 与 ice_ram 第二步位置选项', () => {
+    const structureShiftInteraction: SwSimpleChoiceInteraction = {
+      id: 'sw-structure-shift-direction',
+      type: 'after_move_structure_shift_direction',
+      meta: {
+        type: 'after_move_structure_shift_direction',
+        sourceUnitId: 'builder-1',
+        targetPosition: { row: 5, col: 3 },
+      },
+      options: [
+        {
+          id: 'shift-up',
+          label: 'up',
+          value: {
+            action: 'after_move_structure_shift_direction',
+            targetPosition: { row: 5, col: 3 },
+            newPosition: { row: 4, col: 3 },
+          },
+        },
+      ],
+    };
+    expect(findStructureShiftDirectionOption(
+      structureShiftInteraction,
+      { row: 5, col: 3 },
+      { row: 4, col: 3 },
+    )?.id).toBe('shift-up');
+    expect(findStructureShiftDirectionOption(
+      structureShiftInteraction,
+      { row: 5, col: 3 },
+      { row: 6, col: 3 },
+    )).toBeNull();
+
+    const iceRamInteraction: SwSimpleChoiceInteraction = {
+      id: 'sw-ice-ram-push',
+      type: 'ice_ram_push',
+      meta: {
+        type: 'ice_ram_push',
+        sourceUnitId: 'ice-ram',
+        targetPosition: { row: 2, col: 3 },
+      },
+      options: [
+        {
+          id: 'push-right',
+          label: 'push-right',
+          value: {
+            action: 'ice_ram_push',
+            pushNewPosition: { row: 2, col: 4 },
+          },
+        },
+      ],
+    };
+    expect(findIceRamPushOption(iceRamInteraction, { row: 2, col: 4 })?.id).toBe('push-right');
+    expect(findIceRamPushOption(iceRamInteraction, { row: 2, col: 5 })).toBeNull();
+  });
+
+  it('board-cell-position 系统交互通过共享 helper 统一高亮与点击消费', () => {
+    const structureShiftInteraction: SwSimpleChoiceInteraction = {
+      id: 'sw-structure-shift-direction-2',
+      type: 'after_move_structure_shift_direction',
+      meta: {
+        type: 'after_move_structure_shift_direction',
+        sourceUnitId: 'builder-1',
+        sourcePosition: { row: 5, col: 2 },
+        targetPosition: { row: 5, col: 3 },
+      },
+      options: [
+        {
+          id: 'shift-up',
+          label: 'up',
+          value: {
+            action: 'after_move_structure_shift_direction',
+            targetPosition: { row: 5, col: 3 },
+            newPosition: { row: 4, col: 3 },
+          },
+        },
+      ],
+    };
+    const structureShiftMode = deriveSystemAbilityMode(structureShiftInteraction, null);
+    expect(listSystemAbilityPositionTargets(structureShiftInteraction, structureShiftMode)).toEqual([{ row: 4, col: 3 }]);
+    expect(findSystemAbilityPositionOption(
+      structureShiftInteraction,
+      structureShiftMode,
+      { row: 4, col: 3 },
+    )?.id).toBe('shift-up');
+
+    const iceRamInteraction: SwSimpleChoiceInteraction = {
+      id: 'sw-ice-ram-push-2',
+      type: 'ice_ram_push',
+      meta: {
+        type: 'ice_ram_push',
+        sourceUnitId: 'interaction-source',
+        structurePosition: { row: 2, col: 2 },
+        targetPosition: { row: 2, col: 3 },
+      },
+      options: [
+        {
+          id: 'push-right',
+          label: 'push-right',
+          value: {
+            action: 'ice_ram_push',
+            pushNewPosition: { row: 2, col: 4 },
+          },
+        },
+      ],
+    };
+    const iceRamMode = deriveSystemAbilityMode(iceRamInteraction, null);
+    expect(listSystemAbilityPositionTargets(iceRamInteraction, iceRamMode)).toEqual([{ row: 2, col: 4 }]);
+    expect(findSystemAbilityPositionOption(
+      iceRamInteraction,
+      iceRamMode,
+      { row: 2, col: 4 },
+    )?.id).toBe('push-right');
+
+    const reviveUndeadInteraction: SwSimpleChoiceInteraction = {
+      id: 'sw-revive-position-1',
+      type: 'activated_ability_target',
+      meta: {
+        type: 'activated_ability_target',
+        abilityId: 'revive_undead',
+        sourceUnitId: 'summoner-1',
+        sourcePosition: { row: 7, col: 2 },
+        step: 'selectPosition',
+        targetCardId: 'discard-undead-1',
+      },
+      options: [
+        {
+          id: 'pos:6,2',
+          label: '(6,2)',
+          value: {
+            action: 'activated_ability_target',
+            abilityId: 'revive_undead',
+            targetCardId: 'discard-undead-1',
+            targetPosition: { row: 6, col: 2 },
+          },
+        },
+      ],
+    };
+    const reviveUndeadMode = deriveSystemAbilityMode(reviveUndeadInteraction, null);
+    expect(listSystemAbilityPositionTargets(reviveUndeadInteraction, reviveUndeadMode)).toEqual([{ row: 6, col: 2 }]);
+    expect(findSystemAbilityPositionOption(
+      reviveUndeadInteraction,
+      reviveUndeadMode,
+      { row: 6, col: 2 },
+    )?.id).toBe('pos:6,2');
   });
 
   it('findSystemAbilityUnitOptionByPosition 能命中现役 selectUnit 系统交互', () => {

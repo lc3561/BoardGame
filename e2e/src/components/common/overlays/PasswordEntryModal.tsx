@@ -38,17 +38,18 @@ export const PasswordEntryModal = ({
                     onClose={handleClose}
                     closeOnBackdrop={closeOnBackdrop}
                     overlayClassName="bg-[#2b2114]/30"
+                    preserveKeyboardLayout
                     containerClassName="p-4 sm:p-6"
                     containerStyle={{
                         paddingTop: 'max(1rem, var(--safe-area-top))',
                         paddingRight: 'max(1rem, var(--safe-area-right))',
-                        paddingBottom: 'max(1rem, var(--runtime-modal-bottom-inset))',
+                        paddingBottom: 'max(1rem, var(--modal-active-bottom-inset, var(--runtime-modal-bottom-inset)))',
                         paddingLeft: 'max(1rem, var(--safe-area-left))',
                     }}
                 >
                     <div
                         data-testid="room-password-modal"
-                        className="bg-parchment-card-bg border border-parchment-card-border/50 shadow-parchment-card-hover rounded-sm w-full max-w-[20rem] sm:max-w-sm max-h-[var(--runtime-modal-max-height)] overflow-hidden text-center font-serif pointer-events-auto flex flex-col"
+                        className="bg-parchment-card-bg border border-parchment-card-border/50 shadow-parchment-card-hover rounded-sm w-full max-w-[20rem] sm:max-w-sm max-h-[var(--modal-max-height,var(--runtime-modal-max-height))] overflow-hidden text-center font-serif pointer-events-auto flex flex-col"
                     >
                         <div className="flex-1 min-h-0 overflow-y-auto p-6">
                             <div className="text-xs sm:text-sm text-parchment-light-text font-bold uppercase tracking-wider mb-2">

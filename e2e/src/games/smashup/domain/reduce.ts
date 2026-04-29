@@ -121,6 +121,73 @@ function removeCardUidFromOwnerZones(
     };
 }
 
+function collectOccupiedUids(state: SmashUpCore): Set<string> {
+    const occupied = new Set<string>();
+
+    for (const player of Object.values(state.players)) {
+        for (const card of player.hand) occupied.add(card.uid);
+        for (const card of player.deck) occupied.add(card.uid);
+        for (const card of player.discard) occupied.add(card.uid);
+    }
+
+    for (const base of state.bases) {
+        for (const minion of base.minions) {
+            occupied.add(minion.uid);
+            for (const attached of minion.attachedActions ?? []) {
+                occupied.add(attached.uid);
+            }
+        }
+        for (const ongoing of base.ongoingActions) {
+            occupied.add(ongoing.uid);
+        }
+        for (const buried of base.buriedCards ?? []) {
+            occupied.add(buried.uid);
+        }
+    }
+
+    for (const titan of state.titans ?? []) {
+        occupied.add(titan.uid);
+    }
+
+    return occupied;
+}
+
+function allocateMadnessCardUids(
+    state: SmashUpCore,
+    requestedUids: string[],
+    actualCount: number,
+): { cardUids: string[]; nextUid: number } {
+    const occupied = collectOccupiedUids(state);
+    const resolvedUids: string[] = [];
+    let fallbackNextUid = state.nextUid;
+
+    for (let index = 0; index < actualCount; index += 1) {
+        const requestedUid = requestedUids[index];
+        if (
+            requestedUid
+            && !occupied.has(requestedUid)
+            && !resolvedUids.includes(requestedUid)
+        ) {
+            resolvedUids.push(requestedUid);
+            occupied.add(requestedUid);
+            continue;
+        }
+
+        while (occupied.has(`madness_${fallbackNextUid}`)) {
+            fallbackNextUid += 1;
+        }
+        const generatedUid = `madness_${fallbackNextUid}`;
+        resolvedUids.push(generatedUid);
+        occupied.add(generatedUid);
+        fallbackNextUid += 1;
+    }
+
+    return {
+        cardUids: resolvedUids,
+        nextUid: Math.max(state.nextUid + actualCount, fallbackNextUid),
+    };
+}
+
 function removeMinionUidFromBases(
     bases: BaseInPlay[],
     minionUid: string,
@@ -235,6 +302,16 @@ function detachCardUidFromBases(
 
 export function reduce(state: SmashUpCore, event: SmashUpEvent): SmashUpCore {
     switch (event.type) {
+        case 'SYS_PHASE_CHANGED': {
+            const payload = event.payload as { to?: string } | undefined;
+            return payload?.to === undefined
+                ? state
+                : {
+                    ...state,
+                    turnPhase: payload.to,
+                };
+        }
+
         case SU_EVENTS.FACTION_SELECTED: {
             const { playerId, factionId } = event.payload;
             const selection = state.factionSelection;
@@ -2681,7 +2758,8 @@ export function reduce(state: SmashUpCore, event: SmashUpEvent): SmashUpCore {
             // 从疯狂牌库取出 count 张，生成卡牌实例放入玩家手牌
             const actualCount = Math.min(count, state.madnessDeck.length);
             const newMadnessDeck = state.madnessDeck.slice(actualCount);
-            const madnessCards: CardInstance[] = cardUids.slice(0, actualCount).map(uid => ({
+            const allocation = allocateMadnessCardUids(state, cardUids, actualCount);
+            const madnessCards: CardInstance[] = allocation.cardUids.map(uid => ({
                 uid,
                 defId: MADNESS_CARD_DEF_ID,
                 type: 'action' as const,
@@ -2690,7 +2768,7 @@ export function reduce(state: SmashUpCore, event: SmashUpEvent): SmashUpCore {
             return {
                 ...state,
                 madnessDeck: newMadnessDeck,
-                nextUid: state.nextUid + actualCount,
+                nextUid: allocation.nextUid,
                 players: {
                     ...state.players,
                     [playerId]: {

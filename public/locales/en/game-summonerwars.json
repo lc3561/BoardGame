@@ -61,7 +61,8 @@
     "chargeSelf": "Charge Self",
     "playEvent": "Play",
     "discardForMagic": "Discard",
-    "attachToSoldier": "Attach to Soldier"
+    "attachToSoldier": "Attach to Soldier",
+    "position": "({{row}},{{col}})"
   },
   "player": {
     "default1": "Player 1",
@@ -320,6 +321,14 @@
       "needStandardEvents": "Need 6 Standard Events",
       "needChampions": "Need 3 Champions",
       "needCommons": "Need 16 Commons",
+      "requireSummoner": "A deck must include exactly one summoner",
+      "commonsTooFew": "Commons require {{required}} cards, currently {{current}}",
+      "commonsTooMany": "Commons allow at most {{required}} cards, currently {{current}}",
+      "championsTooFew": "Champions require {{required}} units, currently {{current}}",
+      "championsTooMany": "Champions allow at most {{required}} units, currently {{current}}",
+      "standardEventsTooFew": "Standard events require {{required}} cards, currently {{current}}",
+      "standardEventsTooMany": "Standard events allow at most {{required}} cards, currently {{current}}",
+      "symbolMismatchCount": "{{count}} cards do not match the summoner's deck symbols",
       "symbolMismatch": "Card \"{{name}}\" does not match summoner symbols",
       "maxStandardEvents": "Max 2 copies of the same Standard Event",
       "maxChampions": "Max 1 copy of the same Champion",

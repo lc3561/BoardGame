@@ -79,6 +79,31 @@ describe('androidLiveUpdates', () => {
         }).enabled).toBe(false);
     });
 
+    it('debug 测试包默认禁用原生更新检查，即使环境变量显式开启也不生效', () => {
+        expect(readAndroidNativeUpdateConfig({
+            VITE_ANDROID_NATIVE_UPDATE_ENABLED: 'true',
+            VITE_ANDROID_NATIVE_UPDATE_MANIFEST_URL: 'https://assets.easyboardgame.top/official/native-app-updates/android/stable/latest.json',
+            VITE_CAPACITOR_APP_ID: 'top.easyboardgame.app.debug',
+        }).enabled).toBe(false);
+    });
+
+    it('显式允许 debug 包原生更新后，测试包才恢复原生更新能力', () => {
+        expect(readAndroidNativeUpdateConfig({
+            VITE_ANDROID_NATIVE_UPDATE_ENABLED: 'true',
+            VITE_ANDROID_NATIVE_UPDATE_MANIFEST_URL: 'https://assets.easyboardgame.top/official/native-app-updates/android/stable/latest.json',
+            VITE_CAPACITOR_APP_ID: 'top.easyboardgame.app.debug',
+            VITE_ANDROID_NATIVE_UPDATE_ALLOW_DEBUG_APP: 'true',
+        }).enabled).toBe(true);
+    });
+
+    it('即使只有 CAPACITOR_APP_ID，debug 测试包也必须禁用原生更新检查', () => {
+        expect(readAndroidNativeUpdateConfig({
+            VITE_ANDROID_NATIVE_UPDATE_ENABLED: 'true',
+            VITE_ANDROID_NATIVE_UPDATE_MANIFEST_URL: 'https://assets.easyboardgame.top/official/native-app-updates/android/stable/latest.json',
+            CAPACITOR_APP_ID: 'top.easyboardgame.app.debug',
+        }).enabled).toBe(false);
+    });
+
     it('网页端下载入口优先解析 native update latest.json 中的 APK 地址', async () => {
         const result = await resolveAndroidWebAppDownload({
             VITE_ANDROID_NATIVE_UPDATE_MANIFEST_URL: 'https://assets.easyboardgame.top/official/native-app-updates/android/stable/latest.json',

@@ -587,6 +587,7 @@ function executeQueuedTrigger(
         affectType: trigger.affectType,
         counterChangeKind: trigger.counterChangeKind,
         counterDelta: trigger.counterDelta,
+        affectEvent: trigger.affectEvent,
         actionTargetBaseIndex: trigger.actionTargetBaseIndex,
         actionTargetType: trigger.actionTargetType,
         actionTargetMinionUid: trigger.actionTargetMinionUid,

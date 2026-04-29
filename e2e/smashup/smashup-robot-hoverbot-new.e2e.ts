@@ -1863,6 +1863,129 @@ test.describe('Smash Up 牌库检索交互', () => {
         await saveStableScreenshot(page, testInfo, 'smashup-world-champs-kaiju-conflict-third-action-resolved-2026-04-28');
     });
 
+    test('快如闪电打到阿拉密斯后应可选触发女主角复制并让阿拉密斯提供额外行动', async ({ page, game }, testInfo) => {
+        test.setTimeout(60000);
+
+        await page.goto('/play/smashup');
+        await page.waitForFunction(
+            () => (window as any).__BG_TEST_HARNESS__?.state?.isRegistered?.() === true,
+            { timeout: 15000 },
+        );
+
+        await game.setupScene({
+            gameId: 'smashup',
+            player0: {
+                hand: ['world_champs_fast_as_lightning', 'world_champs_its_blitzin_time'],
+                deck: [],
+                factions: ['world_champs', 'robots'],
+            },
+            player1: {
+                hand: [],
+                deck: [],
+                factions: ['pirates', 'dinosaurs'],
+            },
+            currentPlayer: '0',
+            phase: 'playCards',
+            bases: [{
+                defId: 'base_1',
+                minions: [
+                    { uid: 'diva-1', defId: 'world_champs_diva', owner: '0', controller: '0', tempPowerModifier: 0 },
+                    { uid: 'aramis-1', defId: 'world_champs_aramis', owner: '0', controller: '0', tempPowerModifier: 0 },
+                ],
+                ongoingActions: [],
+            }],
+        });
+
+        await game.playCard('world_champs_fast_as_lightning', { targetMinionUid: 'aramis-1' });
+        await game.waitForInteraction('smashup_reaction_choose');
+
+        const reactionMeta = await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const state = harness?.state?.get?.();
+            const triggerQueue = new Map((state?.core?.triggerQueue ?? []).map((trigger: any) => [trigger.id, trigger]));
+            return {
+                sourceId: state?.sys?.interaction?.current?.data?.sourceId ?? null,
+                options: (state?.sys?.interaction?.current?.data?.options ?? []).map((option: any) => ({
+                    id: option.id,
+                    label: option.label ?? null,
+                    triggerSourceDefId: option.value?.triggerId
+                        ? (triggerQueue.get(option.value.triggerId)?.sourceDefId ?? null)
+                        : null,
+                })),
+            };
+        });
+
+        expect(reactionMeta.sourceId).toBe('smashup_reaction_choose');
+        expect(reactionMeta.options.some((option: any) => option.triggerSourceDefId === 'world_champs_diva')).toBe(true);
+        expect(reactionMeta.options.some((option: any) => option.triggerSourceDefId === 'world_champs_aramis')).toBe(true);
+        const divaOptionId = reactionMeta.options.find((option: any) => option.triggerSourceDefId === 'world_champs_diva')?.id;
+        expect(divaOptionId).toBeTruthy();
+
+        await game.screenshot('world-champs-diva-aramis-reaction-prompt', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-world-champs-diva-aramis-reaction-prompt-2026-04-28');
+
+        await game.selectOption(divaOptionId);
+        await page.waitForFunction(() => {
+            const state = (window as any).__BG_TEST_HARNESS__?.state?.get?.();
+            const baseMinions = state?.core?.bases?.[0]?.minions ?? [];
+            const diva = baseMinions.find((minion: any) => minion.uid === 'diva-1');
+            const triggerQueue = new Map((state?.core?.triggerQueue ?? []).map((trigger: any) => [trigger.id, trigger]));
+            const currentOptions = state?.sys?.interaction?.current?.data?.options ?? [];
+            const remainingTriggerSourceDefIds = currentOptions
+                .map((option: any) => triggerQueue.get(option.value?.triggerId)?.sourceDefId ?? null)
+                .filter(Boolean);
+            return diva?.tempPowerModifier === 2
+                && state?.sys?.interaction?.current?.data?.sourceId === 'smashup_reaction_choose'
+                && remainingTriggerSourceDefIds.length === 1
+                && remainingTriggerSourceDefIds[0] === 'world_champs_aramis';
+        }, { timeout: 5000, polling: 200 });
+
+        const aramisOptionId = await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const state = harness?.state?.get?.();
+            const triggerQueue = new Map((state?.core?.triggerQueue ?? []).map((trigger: any) => [trigger.id, trigger]));
+            const currentOptions = state?.sys?.interaction?.current?.data?.options ?? [];
+            return currentOptions.find((option: any) =>
+                triggerQueue.get(option.value?.triggerId)?.sourceDefId === 'world_champs_aramis'
+            )?.id ?? null;
+        });
+        expect(aramisOptionId).toBeTruthy();
+        await game.selectOption(aramisOptionId);
+        await game.waitForNoInteraction();
+
+        const afterTriggers = await game.getState();
+        const afterTriggerBaseMinions = afterTriggers.core.bases[0].minions;
+        const divaAfterTrigger = afterTriggerBaseMinions.find((minion: any) => minion.uid === 'diva-1');
+        const aramisAfterTrigger = afterTriggerBaseMinions.find((minion: any) => minion.uid === 'aramis-1');
+
+        expect(divaAfterTrigger?.tempPowerModifier ?? 0).toBe(2);
+        expect(aramisAfterTrigger?.tempPowerModifier ?? 0).toBe(2);
+        expect(afterTriggers.core.players['0'].actionsPlayed).toBe(1);
+        expect(afterTriggers.core.players['0'].actionLimit).toBeGreaterThanOrEqual(2);
+
+        await game.playCard('world_champs_its_blitzin_time');
+        await game.waitForInteraction('world_champs_its_blitzin_time');
+        await game.selectInteractionOptionBy(
+            (option: any) => option.value?.minionUid === 'diva-1',
+            '阿拉密斯提供的额外行动选择女主角',
+        );
+        await game.waitForNoInteraction();
+        await dismissSpotlightQueueIfPresent(page);
+
+        const finalState = await game.getState();
+        const finalBaseMinions = finalState.core.bases[0].minions;
+        const finalDiva = finalBaseMinions.find((minion: any) => minion.uid === 'diva-1');
+        const finalAramis = finalBaseMinions.find((minion: any) => minion.uid === 'aramis-1');
+
+        expect(finalState.core.players['0'].actionsPlayed).toBe(2);
+        expect(finalState.core.players['0'].hand).toHaveLength(0);
+        expect(finalDiva?.tempPowerModifier ?? 0).toBe(5);
+        expect(finalAramis?.tempPowerModifier ?? 0).toBe(2);
+
+        await game.screenshot('world-champs-diva-aramis-resolved', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-world-champs-diva-aramis-resolved-2026-04-28');
+    });
+
     test('聪明Set-Up附着后应在该基地本回合首次打出随从时让你抽一张牌', async ({ page, game }, testInfo) => {
         test.setTimeout(60000);
 
