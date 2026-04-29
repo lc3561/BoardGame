@@ -672,7 +672,7 @@ const prepareLifeDrainOnlineState = (coreState: any) => {
     (card) => card.cardType === 'unit' && card.id.startsWith('necro-undead-warrior-'),
   );
   const enemyCard = paladinDeck.deck.find(
-    (card) => card.cardType === 'unit' && card.unitClass === 'common',
+    (card) => card.cardType === 'unit' && card.id === 'paladin-corin',
   );
 
   if (!dragosCard || dragosCard.cardType !== 'unit') {
@@ -682,7 +682,7 @@ const prepareLifeDrainOnlineState = (coreState: any) => {
     throw new Error('未找到真实亡灵战士卡牌模板');
   }
   if (!enemyCard || enemyCard.cardType !== 'unit') {
-    throw new Error('未找到真实敌方士兵卡牌模板');
+    throw new Error('未找到真实敌方高血单位卡牌模板');
   }
 
   const board = next.board as Array<Array<Record<string, any>>>;
