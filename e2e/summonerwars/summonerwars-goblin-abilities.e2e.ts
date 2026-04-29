@@ -9,6 +9,7 @@
 
 import { test, expect } from '../framework';
 import { clearEvidenceScreenshotsForTest, getEvidenceScreenshotPath } from '../framework/evidenceScreenshots';
+import type { Page } from '@playwright/test';
 
 type __ThreeAxeGameMarker = {
   openTestGame: (gameId: string) => Promise<void>;
@@ -25,14 +26,31 @@ import {
   setupSWOnlineMatch,
   readCoreState,
   applyCoreState,
+  clickBoardElement,
   closeDebugPanelIfOpen,
   waitForPhase,
   cloneState,
 } from '../helpers/summonerwars';
+import { CHAMPION_UNITS_GOBLIN, COMMON_UNITS_GOBLIN } from '../../src/games/summonerwars/config/factions/goblin';
+import { COMMON_UNITS as COMMON_UNITS_NECROMANCER } from '../../src/games/summonerwars/config/factions/necromancer';
 
 // ============================================================================
 // 测试状态准备函数
 // ============================================================================
+
+const GOBLIN_GLUTTON_CARD = CHAMPION_UNITS_GOBLIN.find((card) => card.id === 'goblin-glutton');
+const GOBLIN_CLIMBER_CARD = COMMON_UNITS_GOBLIN.find((card) => card.id === 'goblin-climber');
+const NECRO_WARRIOR_CARD = COMMON_UNITS_NECROMANCER.find((card) => card.id === 'necro-undead-warrior');
+
+if (!GOBLIN_GLUTTON_CARD || !GOBLIN_CLIMBER_CARD || !NECRO_WARRIOR_CARD) {
+  throw new Error('无法从真实派系配置加载 feed_beast 测试所需卡牌');
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- E2E 测试中 coreState 为动态 JSON 结构
+const clearBoardCell = (board: any[][], row: number, col: number) => {
+  board[row][col].unit = null;
+  board[row][col].structure = null;
+};
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- E2E 测试中 coreState 为动态 JSON 结构
 const prepareVanishState = (coreState: any) => {
@@ -123,6 +141,103 @@ const prepareBloodRuneState = (coreState: any) => {
   
   if (!blarfPos) throw new Error('无法放置布拉夫');
   return { state: next, blarfPos };
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const prepareFeedBeastState = (coreState: any) => {
+  const next = cloneState(coreState);
+  next.phase = 'attack';
+  next.currentPlayer = '0';
+  next.selectedUnit = undefined;
+  next.abilityUsageCount = {};
+
+  const player = next.players?.['0'];
+  if (!player) throw new Error('无法读取玩家0状态');
+  player.attackCount = 0;
+
+  const board = next.board;
+  clearBoardCell(board, 6, 2);
+  clearBoardCell(board, 6, 3);
+  clearBoardCell(board, 5, 2);
+
+  board[6][2].unit = {
+    instanceId: 'feed-beast-glutton',
+    cardId: GOBLIN_GLUTTON_CARD.id,
+    card: { ...GOBLIN_GLUTTON_CARD },
+    owner: '0',
+    position: { row: 6, col: 2 },
+    damage: 0,
+    boosts: 0,
+    hasMoved: false,
+    hasAttacked: false,
+  };
+
+  board[6][3].unit = {
+    instanceId: 'feed-beast-ally',
+    cardId: GOBLIN_CLIMBER_CARD.id,
+    card: { ...GOBLIN_CLIMBER_CARD },
+    owner: '0',
+    position: { row: 6, col: 3 },
+    damage: 0,
+    boosts: 0,
+    hasMoved: false,
+    hasAttacked: false,
+  };
+
+  board[5][2].unit = {
+    instanceId: 'feed-beast-target',
+    cardId: NECRO_WARRIOR_CARD.id,
+    card: { ...NECRO_WARRIOR_CARD, life: 9 },
+    owner: '1',
+    position: { row: 5, col: 2 },
+    damage: 0,
+    boosts: 0,
+    hasMoved: false,
+    hasAttacked: false,
+  };
+
+  return next;
+};
+
+const dismissDiceResultOverlay = async (page: import('@playwright/test').Page) => {
+  const overlay = page.getByTestId('sw-dice-result-overlay');
+  const visible = await overlay.isVisible().catch(() => false);
+  if (!visible) return;
+  await overlay.click({ force: true }).catch(() => {});
+  await expect(overlay).toBeHidden({ timeout: 8000 });
+};
+
+const readHarnessState = async (page: Page) => page.evaluate(() => {
+  const harness = (window as Window & {
+    __BG_TEST_HARNESS__?: {
+      state?: {
+        isRegistered?: () => boolean;
+        get?: () => unknown;
+      };
+    };
+  }).__BG_TEST_HARNESS__;
+  if (!harness?.state?.isRegistered?.()) {
+    throw new Error('TestHarness 未就绪');
+  }
+  return harness.state.get();
+});
+
+type HarnessSnapshot = {
+  core?: {
+    board?: Array<Array<{ unit?: unknown }>>;
+    phase?: string;
+  };
+  sys?: {
+    interaction?: {
+      current?: {
+        data?: {
+          sw?: {
+            type?: string;
+          };
+        };
+      } | null;
+    };
+  };
 };
 
 // ============================================================================
@@ -275,6 +390,93 @@ test.describe('洞穴地精阵营特色交互', () => {
       await hostPage.screenshot({
         path: getEvidenceScreenshotPath(testInfo, 'blood-rune-after-damage', {
           subdir: 'summonerwars/summonerwars-goblin-abilities.e2e/鲜血符文：选择自伤获得充能',
+        }),
+        fullPage: true,
+      });
+    } finally {
+      void hostContext.close().catch(() => {});
+      void guestContext.close().catch(() => {});
+    }
+  });
+
+  test('喂养巨食兽：攻击阶段结束吞噬相邻友方', async ({ browser }, testInfo) => {
+    test.setTimeout(180000);
+    await clearEvidenceScreenshotsForTest(testInfo);
+    const baseURL = testInfo.project.use.baseURL as string | undefined;
+    const match = await setupSWOnlineMatch(browser, baseURL, 'goblin', 'necromancer');
+    if (!match) { test.skip(true, 'Game server unavailable or room creation failed.'); return; }
+    const { hostPage, hostContext, guestContext } = match;
+
+    try {
+      const coreState = await readCoreState(hostPage);
+      const feedBeastCore = prepareFeedBeastState(coreState);
+      await applyCoreState(hostPage, feedBeastCore);
+      await closeDebugPanelIfOpen(hostPage);
+      await waitForPhase(hostPage, 'attack');
+      await hostPage.waitForTimeout(500);
+
+      await clickBoardElement(hostPage, `[data-testid="sw-unit-6-2"][data-owner="0"][data-unit-name="${GOBLIN_GLUTTON_CARD.name}"]`);
+      await clickBoardElement(hostPage, `[data-testid="sw-unit-5-2"][data-owner="1"][data-unit-name="${NECRO_WARRIOR_CARD.name}"]`);
+
+      await expect.poll(async () => {
+        const latestCore = await readCoreState(hostPage);
+        return latestCore?.players?.['0']?.attackCount ?? 0;
+      }, { timeout: 10000 }).toBeGreaterThan(0);
+
+      await dismissDiceResultOverlay(hostPage);
+      const afterAttackState = await readCoreState(hostPage);
+      afterAttackState.selectedUnit = undefined;
+      await applyCoreState(hostPage, afterAttackState);
+      await closeDebugPanelIfOpen(hostPage);
+      await hostPage.waitForTimeout(400);
+
+      const endPhaseBtn = hostPage.getByTestId('sw-end-phase');
+      await expect(endPhaseBtn).toBeVisible({ timeout: 5000 });
+      await endPhaseBtn.click({ force: true });
+
+      const prompt = hostPage.getByTestId('sw-ability-prompt').filter({
+        hasText: /喂养巨食兽|Feed Beast/i,
+      }).first();
+      await expect(prompt).toBeVisible({ timeout: 10000 });
+      await expect.poll(async () => {
+        const harnessState = await readHarnessState(hostPage) as HarnessSnapshot;
+        return harnessState.sys?.interaction?.current?.data?.sw?.type ?? null;
+      }, { timeout: 10000 }).toBe('feed_beast');
+
+      const allyCell = hostPage.getByTestId('sw-cell-6-3');
+      await expect(allyCell).toHaveAttribute('data-valid-ability-pos', 'true');
+
+      await closeDebugPanelIfOpen(hostPage);
+      await hostPage.screenshot({
+        path: getEvidenceScreenshotPath(testInfo, 'feed-beast-prompt-visible', {
+          subdir: 'summonerwars/summonerwars-goblin-abilities.e2e/喂养巨食兽：攻击阶段结束吞噬相邻友方',
+        }),
+        fullPage: true,
+      });
+
+      await clickBoardElement(hostPage, '[data-testid="sw-cell-6-3"]');
+
+      await expect.poll(async () => {
+        const harnessState = await readHarnessState(hostPage) as HarnessSnapshot;
+        return {
+          allyPresent: !!harnessState?.core?.board?.[6]?.[3]?.unit,
+          beastPresent: !!harnessState?.core?.board?.[6]?.[2]?.unit,
+          phase: harnessState?.core?.phase ?? null,
+          interactionType: harnessState?.sys?.interaction?.current?.data?.sw?.type ?? null,
+        };
+      }, { timeout: 15000 }).toEqual({
+          allyPresent: false,
+          beastPresent: true,
+          phase: 'magic',
+          interactionType: null,
+      });
+      await waitForPhase(hostPage, 'magic');
+      await expect(prompt).toBeHidden({ timeout: 10000 });
+
+      await closeDebugPanelIfOpen(hostPage);
+      await hostPage.screenshot({
+        path: getEvidenceScreenshotPath(testInfo, 'feed-beast-destroy-adjacent-complete', {
+          subdir: 'summonerwars/summonerwars-goblin-abilities.e2e/喂养巨食兽：攻击阶段结束吞噬相邻友方',
         }),
         fullPage: true,
       });

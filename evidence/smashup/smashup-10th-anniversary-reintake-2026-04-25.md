@@ -67,14 +67,14 @@
 | --- | --- | --- | --- |
 | 0 | Ultimate Song | 最后的歌声 | 不是移动己方随从；是强制其他玩家额外打出 3 力或以下仆从到目标基地，否则展示无符合手牌，并取消这些仆从能力；你可额外打仆从和/或行动 |
 | 1 | Captive Audience | 迷倒观众 | 不是移动对手仆从；是按目标基地上“不属于你”的仆从数量给你的一个仆从 +1 力量，并额外打行动 |
-| 2 | Becalmed Shores | 安静的海岸 | 持续为“其他玩家仆从 -1 力量”，天赋是“转移这个行动到另一个基地” |
+| 2 | Becalmed Shores | 安静的海岸 | 持续为“其他玩家仆从 -1 力量”，天赋是“转移这个行动到另一个基地”；2026-04-29 已补真实入口 E2E 证据 |
 | 3 | Siren Song | 塞壬的歌声 | 选择一个基地，把每位其他玩家在那里的一张仆从移动到同一个、且你有仆从的另一个基地 |
 | 4 | Toll Bay | 死亡海湾 | 选择基地，按其他玩家在那里仆从数抽牌 |
 | 5 | Shipwreck Cove | 沉船湾 | 持续：你在这里的仆从各 +1；特殊：计分后把这张牌转移到另一个基地 |
 | 6 | Siren | 塞壬 | 其他玩家在这里的仆从在其控制者总力量中少算 1，不是仅你回合生效 |
 | 7 | Temptress | 诱惑者 | 若本回合有其他玩家仆从移动到这里，则该仆从本回合 +2 |
 | 8 | Charmer | 迷人的人 | 天赋：先可移动自己，再可把另一个玩家 3 力或以下仆从移动到它所在基地 |
-| 9 | Mermaid Queen | 人鱼女王 | 把其他玩家 1 个仆从移到这里，或选择这里 1 个 3 力或以下仆从，直到回合结束获得其控制权 |
+| 9 | Mermaid Queen | 人鱼女王 | 把其他玩家 1 个仆从移到这里，或选择这里 1 个 3 力或以下仆从，直到回合结束获得其控制权；2026-04-29 已补移动模式真实入口 E2E 证据 |
 | 10 | Charmed | 魅惑 | 选择 3 力或以下仆从，可移到你有仆从的另一基地；其力量到回合结束不计入控制者总力量；额外打行动 |
 | 11 | Desert Island | 无人岛 | 持续：这里每个仆从都不能把自己的力量加到其控制者的总力量中；你的回合开始前移除这张牌 |
 
@@ -255,7 +255,7 @@
       - 持续减力由 `registerOngoingPowerModifier('mermaids_becalmed_shores', 'base', 'opponentMinions', -1)` 覆盖；
       - 天赋移动由 `mermaidsBecalmedShoresTalent` + `handleMermaidsOngoingMove` 覆盖；
       - `newFactionAbilities.test.ts` 已覆盖真实交互 prompt。
-    - 结论：**当前代码与卡图一致，本轮无新增修复。**
+    - 结论：**当前代码与卡图一致。**
   - `沉船湾 / Shipwreck Cove`
     - 卡图切片：`temp/cards7-05.png`
     - 卡图口径：**打到基地上；持续：你在这里的仆从 +1 力量；特殊：这个基地计分后，你可以把这张牌移到另一个基地。**
@@ -272,7 +272,17 @@
       - 第二段“再把别人的 3 力或以下仆从移到相同基地”由 `queueCharmerTargetPrompt` / `handleMermaidsCharmerTarget` 覆盖；
       - 若跳过第一段，自身留在原基地，第二段仍以该基地为目标，符合卡图语义；
       - `newFactionAbilities.test.ts` 已覆盖“先移自己，再拉别人的 3 力仆从”真实链路。
-    - 结论：**当前代码与卡图一致，本轮无新增修复。**
+    - 结论：**当前代码与卡图一致。**
+  - `人鱼女王 / Mermaid Queen`
+    - 2026-04-29 已补浏览器级真实入口证据：`evidence/smashup/smashup-mermaids-mermaid-queen-becalmed-e2e-2026-04-29.md`
+    - 本轮覆盖的是 `move` 分支：打出后选择“移动其他玩家一个仆从到这里”，并在棋盘上真实完成迁移。
+  - `安静的海岸 / Becalmed Shores`
+    - 2026-04-29 已补浏览器级真实入口证据：`evidence/smashup/smashup-mermaids-mermaid-queen-becalmed-e2e-2026-04-29.md`
+    - 本轮覆盖的是“打到基地上后，再从场上发动持续牌天赋迁移到另一个基地”。
+  - `塞壬的歌声 / Siren Song`
+    - 2026-04-29 已补浏览器级真实入口证据：`evidence/smashup/smashup-mermaids-siren-song-e2e-2026-04-29.md`
+    - 本轮覆盖的是“来源基地必须存在其他己方基地可去”以及“把来源基地上的敌方仆从移到该己方基地”。
+  - 截至本轮，`Mermaids` 当前至少已有 `最后的歌声 / 迷倒观众 / 人鱼女王 / 安静的海岸 / 塞壬的歌声` 共 `5` 条正路径对象级 L3 证据；但三新派系整包仍不能据此直接改判为“已收口”。
 
 ### 2026-04-26 第二轮回写
 
@@ -311,5 +321,8 @@
   - `复仇者`：已改成“从弃牌堆埋葬到基地”的入口，不再沿用旧的“别处离场牌被埋葬”错语义
 - 当前仍需明确标注的残余风险：
   - `复仇者` 图面“你的回合中”这条旧残余已失效：当前实现已改成弃牌堆主动特殊能力，并补了真实入口证据，见 `evidence/smashup/smashup-skeletons-revenant-e2e-2026-04-26.md`。
+  - `他们出来了` 已于 2026-04-29 补浏览器级真实入口证据：`evidence/smashup/smashup-skeletons-dig-em-up-e2e-2026-04-29.md`。
+  - `墓园` 已于 2026-04-29 补浏览器级真实入口证据：`evidence/smashup/smashup-skeletons-graveyard-e2e-2026-04-29.md`。
+  - `骸骨之王` 已于 2026-04-29 补浏览器级真实入口证据：`evidence/smashup/smashup-skeletons-lord-of-bones-e2e-2026-04-29.md`；且本轮确认浏览器真入口里先过 `smashup_reaction_choose`，不能只沿用单测观察面。
   - `Skeletons` 虽已补到更完整的 L2 + L3 证据，但整派系仍需和 `Mermaids / World Champs / 基地` 一起看最终整包重审，不能单独外推出“三派系完成”。
 

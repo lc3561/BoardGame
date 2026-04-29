@@ -8,11 +8,15 @@
  * - 不同交互类型的 UI 差异
  */
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { MemoryRouter } from 'react-router-dom';
 import { InteractionOverlay } from '../InteractionOverlay';
 import type { InteractionDescriptor, HeroState } from '../../domain/types';
 import type { PlayerId } from '../../../../engine/types';
+import { ModalStackProvider, useModalStack } from '../../../../contexts/ModalStackContext';
+import { ModalStackRoot } from '../../../../components/system/ModalStackRoot';
+import { useSyncedModalStackEntry } from '../../../../hooks/ui/useSyncedModalStackEntry';
 
 // Mock i18next
 vi.mock('react-i18next', () => ({
@@ -653,5 +657,110 @@ describe('InteractionOverlay', () => {
             expect(screen.getByTestId('dt-status-owner-0')).toBeInTheDocument();
             expect(screen.queryByTestId('dt-status-owner-999')).not.toBeInTheDocument();
         });
+    });
+});
+
+describe('useSyncedModalStackEntry', () => {
+    beforeEach(() => {
+        const existingRoot = document.getElementById('modal-root');
+        if (existingRoot) {
+            existingRoot.remove();
+        }
+        const modalRoot = document.createElement('div');
+        modalRoot.id = 'modal-root';
+        document.body.appendChild(modalRoot);
+    });
+
+    const SyncedModalHarness = ({
+        enabled,
+        label,
+        onClosed,
+    }: {
+        enabled: boolean;
+        label: string;
+        onClosed?: () => void;
+    }) => {
+        const entry = React.useMemo(() => ({
+            onClose: onClosed,
+            render: ({ close }: { close: () => void; closeOnBackdrop: boolean }) => (
+                <div>
+                    <div data-testid="synced-modal-label">{label}</div>
+                    <button type="button" onClick={close}>close-synced-modal</button>
+                </div>
+            ),
+        }), [label, onClosed]);
+
+        useSyncedModalStackEntry({
+            enabled,
+            entryId: 'test-synced-modal',
+            entry,
+        });
+
+        return null;
+    };
+
+    const CloseTopButton = () => {
+        const { closeTop } = useModalStack();
+        return (
+            <button type="button" onClick={() => closeTop()}>
+                close-top-entry
+            </button>
+        );
+    };
+
+    it('应在 entry 更新时原位更新栈内容而不是重复打开', async () => {
+        const App = ({ enabled, label }: { enabled: boolean; label: string }) => (
+            <MemoryRouter>
+                <ModalStackProvider>
+                    <SyncedModalHarness enabled={enabled} label={label} />
+                    <ModalStackRoot />
+                </ModalStackProvider>
+            </MemoryRouter>
+        );
+
+        const { rerender } = render(<App enabled label="初始内容" />);
+        await act(async () => {
+            await Promise.resolve();
+        });
+
+        expect(screen.getByTestId('synced-modal-label')).toHaveTextContent('初始内容');
+
+        await act(async () => {
+            rerender(<App enabled label="更新后内容" />);
+            await Promise.resolve();
+        });
+
+        expect(screen.getByTestId('synced-modal-label')).toHaveTextContent('更新后内容');
+    });
+
+    it('外部关闭栈顶时应同步回写 enabled=false，且不应立刻重开', async () => {
+        const App = () => {
+            const [enabled, setEnabled] = React.useState(true);
+            return (
+                <MemoryRouter>
+                    <ModalStackProvider>
+                        <SyncedModalHarness enabled={enabled} label="可关闭弹窗" onClosed={() => setEnabled(false)} />
+                        <CloseTopButton />
+                        <div data-testid="sync-enabled-state">{enabled ? 'open' : 'closed'}</div>
+                        <ModalStackRoot />
+                    </ModalStackProvider>
+                </MemoryRouter>
+            );
+        };
+
+        render(<App />);
+        await act(async () => {
+            await Promise.resolve();
+        });
+
+        expect(screen.getByTestId('synced-modal-label')).toHaveTextContent('可关闭弹窗');
+
+        await act(async () => {
+            fireEvent.click(screen.getByText('close-top-entry'));
+            await Promise.resolve();
+        });
+
+        expect(screen.queryByTestId('synced-modal-label')).not.toBeInTheDocument();
+        expect(screen.getByTestId('sync-enabled-state')).toHaveTextContent('closed');
     });
 });

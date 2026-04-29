@@ -667,3 +667,73 @@
     - 新增证据文档：`evidence/smashup/smashup-world-champs-diva-aramis-fast-as-lightning-e2e-2026-04-28.md`
     - 已回写：`evidence/smashup/smashup-10th-anniversary-factions-audit-20260419.md`、`evidence/smashup/smashup-10th-anniversary-final-closeout-20260419.md`、`evidence/smashup/smashup-10th-anniversary-reintake-2026-04-25.md`、`task_plan.md`、`findings.md`
   - Next: 继续按“卡图优先 + 对象级真证据 + 实现级状态边界抽样”推进三新派系剩余残余范围；当前仍不能把 World Champs 对象级补证写成整派系或三派系最终收口。
+
+- **[2026-04-29 01:04:00] Action**: Mermaids《人鱼女王 / 安静的海岸》对象级 L3 补证
+  - Result:
+    - 更新 `e2e/smashup/smashup-robot-hoverbot-new.e2e.ts`：
+      - 新增 `人鱼女王应可选择移动其他玩家的一个仆从到这里`
+      - 新增 `安静的海岸应可从场上发动天赋并移到另一个基地`
+    - 定向复跑：
+      - `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/newFactionAbilities.test.ts --configLoader native --maxWorkers 1 --testNamePattern "mermaids_mermaid_queen|mermaids_becalmed_shores"` → `3 passed`
+      - `npm run test:e2e:ci:file -- e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "人鱼女王应可选择移动其他玩家的一个仆从到这里"` → `1 passed`
+      - `node scripts/infra/run-e2e-single.mjs ci e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "安静的海岸应可从场上发动天赋并移到另一个基地"` → `1 passed`
+    - 新增证据文档：`evidence/smashup/smashup-mermaids-mermaid-queen-becalmed-e2e-2026-04-29.md`
+    - 已回写：`evidence/smashup/smashup-10th-anniversary-factions-audit-20260419.md`、`evidence/smashup/smashup-10th-anniversary-reintake-2026-04-25.md`、`evidence/smashup/smashup-10th-anniversary-final-closeout-20260419.md`、`task_plan.md`、`findings.md`
+  - Next: 继续按“卡图优先 + 对象级真证据”推进 `Skeletons / Mermaids` 剩余链路；当前仍不能把单派系补证写成三新派系整包最终收口。
+
+- **[2026-04-29 09:30:49] Action**: Mermaids《塞壬的歌声》+ Skeletons《他们出来了》对象级 L3 补证
+  - Result:
+    - 更新 `e2e/smashup/smashup-robot-hoverbot-new.e2e.ts`：
+      - 新增 `塞壬的歌声应只提供有其他己方基地可去的来源基地，并把目标仆从移到该己方基地`
+      - 新增 `他们出来了应只允许选择有己方埋葬牌的基地，并可一次挖掘多张己方埋葬牌`
+    - 定向复跑：
+      - `node scripts/infra/run-e2e-single.mjs ci e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "他们出来了应只允许选择有己方埋葬牌的基地，并可一次挖掘多张己方埋葬牌"` → `1 passed`
+      - `node scripts/infra/run-e2e-single.mjs ci e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "塞壬的歌声应只提供有其他己方基地可去的来源基地，并把目标仆从移到该己方基地"` → `1 passed`
+    - 新增证据文档：
+      - `evidence/smashup/smashup-mermaids-siren-song-e2e-2026-04-29.md`
+      - `evidence/smashup/smashup-skeletons-dig-em-up-e2e-2026-04-29.md`
+    - 过程里额外发现并修正 1 条场景数据低级错误：测试初稿误用了不存在的 `robot_microbot_beta`，已改成真实 card def 后重跑通过。
+    - 已回写：`evidence/smashup/smashup-10th-anniversary-factions-audit-20260419.md`、`evidence/smashup/smashup-10th-anniversary-reintake-2026-04-25.md`、`evidence/smashup/smashup-10th-anniversary-final-closeout-20260419.md`、`task_plan.md`、`findings.md`
+  - Next: 继续按“卡图优先 + 对象级真证据 + 场景 card def 真值约束”推进 `Mermaids / Skeletons` 剩余链路；当前仍不能把对象级补证写成三新派系整包最终收口。
+
+- **[2026-04-29 09:47:00] Action**: Skeletons《墓园》对象级 L3 补证
+  - Result:
+    - 更新 `e2e/smashup/smashup-robot-hoverbot-new.e2e.ts`：
+      - 新增 `墓园应可从场上发动天赋挖掘己方埋葬牌，并在挖出随从后可放置 +1 指示物`
+    - 定向复跑：
+      - `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/newFactionAbilities.test.ts --configLoader native --maxWorkers 1 --testNamePattern "skeletons_graveyard 天赋挖掘后若是随从会进入可选 \+1 指示物交互"` → `1 passed`
+      - `node scripts/infra/run-e2e-single.mjs ci e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "墓园应可从场上发动天赋挖掘己方埋葬牌，并在挖出随从后可放置 \+1 指示物"` → `1 passed`
+    - 新增证据文档：
+      - `evidence/smashup/smashup-skeletons-graveyard-e2e-2026-04-29.md`
+    - 已回写：`evidence/smashup/smashup-10th-anniversary-factions-audit-20260419.md`、`evidence/smashup/smashup-10th-anniversary-reintake-2026-04-25.md`、`evidence/smashup/smashup-10th-anniversary-final-closeout-20260419.md`、`task_plan.md`、`findings.md`
+  - Next: 继续按“卡图优先 + 对象级真证据 + 场景 card def 真值约束”推进 `Skeletons / Mermaids` 剩余链路；当前仍不能把对象级补证写成三新派系整包最终收口。
+
+- **[2026-04-29 09:58:00] Action**: Skeletons《骸骨之王》对象级 L3 补证
+  - Result:
+    - 更新 `e2e/smashup/smashup-robot-hoverbot-new.e2e.ts`：
+      - 新增 `骸骨之王应可从场上发动天赋挖掘这里任意埋葬牌，并在挖出其他随从后可放置 +1 指示物`
+      - 中途发现真实浏览器入口并不是“直接进 +1 提示”，而是先进入 `smashup_reaction_choose`；已按真实链路修正测试。
+    - 定向复跑：
+      - `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/newFactionAbilities.test.ts --configLoader native --maxWorkers 1 --testNamePattern "skeletons_lord_of_bones 天赋可挖掘这里任意埋葬牌而不只限自己"` → `1 passed`
+      - `BG_ALLOW_HEAVY_TASK_CONCURRENCY=1 node scripts/infra/run-e2e-single.mjs ci e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "骸骨之王应可从场上发动天赋挖掘这里任意埋葬牌，并在挖出其他随从后可放置 \+1 指示物"` → `1 passed`
+    - 新增证据文档：
+      - `evidence/smashup/smashup-skeletons-lord-of-bones-e2e-2026-04-29.md`
+    - 已回写：`evidence/smashup/smashup-10th-anniversary-factions-audit-20260419.md`、`evidence/smashup/smashup-10th-anniversary-reintake-2026-04-25.md`、`evidence/smashup/smashup-10th-anniversary-final-closeout-20260419.md`、`task_plan.md`、`findings.md`
+  - Next: 继续按“卡图优先 + 对象级真证据 + finalState / triggerQueue / reaction session / 真实入口 E2E”推进 `Skeletons / Mermaids` 剩余链路；当前仍不能把对象级补证写成三新派系整包最终收口。
+
+- **[2026-04-29 10:08:00] Action**: 回写项目内长期任务 / 派系重审 workflow 门禁
+  - Result:
+    - 更新 `.windsurf/skills/data-entry-workflow/SKILL.md`：
+      - 新增“批量派系重审附加门禁”
+      - 强制“当前批次未清空不得停”
+      - 强制 `defId` 真值预检
+    - 更新 `docs/games/smashup/workflows/smashup-faction-implementation.md`：
+      - 新增“批量派系重审 / 重录模式”
+      - 新增 `L0-L4` 分层验收
+      - 新增 `reaction session` 抽样门禁
+    - 更新 `docs/ai-rules/testing-audit.md`：
+      - 新增“批量重审对象清单”
+      - 新增“E2E 场景真值 defId 预检”
+      - 新增“reaction session 不得被单测观察面替代”
+    - 已回写：`task_plan.md`、`findings.md`
+  - Next: 后续继续三新派系重审时，先按新门禁建立批次清单，再继续补剩余对象，不再按“做 1-2 张就停”的节奏推进。

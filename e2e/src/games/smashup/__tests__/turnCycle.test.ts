@@ -545,7 +545,7 @@ describe('手牌超限弃牌', () => {
 // ============================================================================
 
 describe('≥15 VP 胜利检查', () => {
-    it('回合结束时 VP >= VP_TO_WIN 触发游戏结束', () => {
+    it('基地计分完成后进入 draw 时，VP >= VP_TO_WIN 触发游戏结束', () => {
         // 选秀后注入高 VP
         const runner1 = createRunner();
         const draftResult = runner1.run({
@@ -570,12 +570,12 @@ describe('≥15 VP 胜利检查', () => {
         const result = runner2.run({
             name: 'VP 达标游戏结束',
             commands: [
-                // P0 回合：playCards → 多轮自动推进（含 endTurn，isGameOver 检查）
+        // P0 回合：playCards → 多轮自动推进（计分完成后进入 draw 时即可检查 isGameOver）
                 { type: 'ADVANCE_PHASE', playerId: '0', payload: undefined },
             ] as any[],
         });
 
-        // isGameOver 应该在 endTurn 后检测到 P0 VP >= 15
+        // isGameOver 应该在基地计分链结束后检测到 P0 VP >= 15
         const core = result.finalState.core;
         expect(core.players['0'].vp).toBeGreaterThanOrEqual(VP_TO_WIN);
 
@@ -610,7 +610,7 @@ describe('≥15 VP 胜利检查', () => {
         expect(result.finalState.core.currentPlayerIndex).toBe(1);
     });
 
-    it('未到 endTurn 时即使 VP 达标也不应提前结束', () => {
+    it('未到基地计分完成后的结算时机时，即使 VP 达标也不应提前结束', () => {
         const runner = createRunner();
         const draftResult = runner.run({
             name: 'draft',
@@ -630,7 +630,10 @@ describe('≥15 VP 胜利检查', () => {
 
         expect(SmashUpDomain.isGameOver!(core)).toBeUndefined();
 
-        core.turnPhase = 'endTurn';
+        core.turnPhase = 'scoreBases';
+        expect(SmashUpDomain.isGameOver!(core)).toBeUndefined();
+
+        core.turnPhase = 'draw';
         const gameOver = SmashUpDomain.isGameOver!(core);
         expect(gameOver).toBeDefined();
         expect(gameOver!.winner).toBe('0');

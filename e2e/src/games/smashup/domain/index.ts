@@ -1675,7 +1675,7 @@ function playerView(state: SmashUpCore, playerId: PlayerId): Partial<SmashUpCore
 
 function isGameOver(state: SmashUpCore): GameOverResult | undefined {
     if (state.gameResult) return state.gameResult;
-    if (state.turnPhase && state.turnPhase !== 'endTurn') return undefined;
+    if (state.turnPhase && state.turnPhase !== 'draw' && state.turnPhase !== 'endTurn') return undefined;
 
     if (isSmashUpTwoVsTwoMode(state)) {
         const rawTeamTotals = getSmashUpRawTeamVpTotals(state);

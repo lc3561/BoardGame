@@ -1545,7 +1545,7 @@ export function createSummonerWarsInteractionSystem(): EngineSystem<SummonerWars
             newState = queueInteraction(newState, interaction);
           }
 
-          if (actionId === 'withdraw_push_pull' || actionId === 'withdraw') {
+          if (actionId === 'withdraw_push_pull') {
             const hasCharge = normalizeUnitBoosts(sourceUnit.boosts) >= 1;
             const hasMagic = newState.core.players[sourceUnit.owner]?.magic >= 1;
             if (!hasCharge && !hasMagic) continue;

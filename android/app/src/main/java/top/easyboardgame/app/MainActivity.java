@@ -7,6 +7,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 import android.view.Window;
+import android.view.WindowManager;
 import android.webkit.WebView;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -318,6 +319,12 @@ public class MainActivity extends BridgeActivity {
         }
 
         WindowCompat.setDecorFitsSystemWindows(window, !isGamePage);
+        window.setSoftInputMode(
+            WindowManager.LayoutParams.SOFT_INPUT_STATE_UNSPECIFIED
+                | (isGamePage
+                    ? WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
+                    : WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        );
         if (isGamePage) {
             // 游戏页必须进入真正的沉浸式全屏。
             // 之前只隐藏了 status bar，底部 navigation/gesture bar 仍会占用 inset，

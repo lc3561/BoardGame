@@ -276,7 +276,7 @@ const handleAbilityActivated: EventHandler<Extract<DiceThroneEvent, { type: 'ABI
     if (!isDefense || !state.pendingAttack) {
         return { ...state, activatingAbilityId: abilityId };
     }
-    if (state.pendingAttack.defenseAbilityId === abilityId) {
+    if (state.pendingAttack.defenseAbilityId === abilityId && state.rollCount > 0) {
         return { ...state, activatingAbilityId: abilityId };
     }
 

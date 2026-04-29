@@ -8,6 +8,7 @@
  */
 
 
+import type { Page } from '@playwright/test';
 import { test, expect } from '../framework';
 import {
   setupSWOnlineMatch,
@@ -18,10 +19,11 @@ import {
   waitForPhase,
   cloneState,
 } from '../helpers/summonerwars';
+import { getMatchState, type TestMatchAccess } from '../helpers/state-injection';
 import { getEvidenceScreenshotPath } from '../framework/evidenceScreenshots';
 import { isCellEmpty, isValidCoord } from '../../src/games/summonerwars/domain/helpers';
 import { COMMON_UNITS_BARBARIC, SUMMONER_BARBARIC } from '../../src/games/summonerwars/config/factions/barbaric';
-import { SUMMONER_NECROMANCER } from '../../src/games/summonerwars/config/factions/necromancer';
+import { COMMON_UNITS as COMMON_UNITS_NECROMANCER, SUMMONER_NECROMANCER } from '../../src/games/summonerwars/config/factions/necromancer';
 
 
 type __ThreeAxeGameMarker = {
@@ -42,8 +44,16 @@ const cloneInjectedUnitCard = <T extends { abilities?: string[]; deckSymbols?: s
 });
 
 const spiritMageCard = COMMON_UNITS_BARBARIC.find((card) => card.id === 'barbaric-spirit-mage');
+const frontierArcherCard = COMMON_UNITS_BARBARIC.find((card) => card.id === 'barbaric-frontier-archer');
+const necroWarriorCard = COMMON_UNITS_NECROMANCER.find((card) => card.id === 'necro-undead-warrior');
 if (!spiritMageCard) {
   throw new Error('未找到炽原精灵祖灵法师配置（barbaric-spirit-mage）');
+}
+if (!frontierArcherCard) {
+  throw new Error('未找到炽原精灵边境弓箭手配置（barbaric-frontier-archer）');
+}
+if (!necroWarriorCard) {
+  throw new Error('未找到亡灵战士配置（necro-undead-warrior）');
 }
 
 // ============================================================================
@@ -93,6 +103,102 @@ const preparePrepareState = (coreState: any) => {
   }
   if (!prepareUnitPos) throw new Error('无法放置有 prepare 技能的单位');
   return { state: next, prepareUnitPos };
+};
+
+const dismissDiceResultOverlay = async (page: Page) => {
+  const overlay = page.getByTestId('sw-dice-result-overlay');
+  const visible = await overlay.isVisible().catch(() => false);
+  if (!visible) return;
+  await overlay.click({ force: true }).catch(() => {});
+  await expect(overlay).toBeHidden({ timeout: 8000 });
+};
+
+const prepareRapidFireState = (coreState: any) => {
+  const next = cloneState(coreState);
+  next.currentPlayer = '0';
+  next.phase = 'attack';
+  next.selectedUnit = undefined;
+  next.abilityUsage = {};
+  const player = next.players?.['0'];
+  if (!player) throw new Error('无法读取玩家0状态');
+  player.magic = 3;
+  player.attackCount = 0;
+
+  const board = next.board;
+  for (let row = 0; row < 8; row++) {
+    for (let col = 0; col < 6; col++) {
+      board[row][col].unit = null;
+      board[row][col].structure = null;
+    }
+  }
+
+  const archerPos = { row: 5, col: 2 };
+  const enemyOnePos = { row: 5, col: 5 };
+  const enemyTwoPos = { row: 2, col: 2 };
+  const mySummonerPos = { row: 7, col: 2 };
+  const enemySummonerPos = { row: 0, col: 2 };
+
+  board[mySummonerPos.row][mySummonerPos.col].unit = {
+    instanceId: 'rapid-fire-my-summoner',
+    cardId: 'rapid-fire-my-summoner-card',
+    card: cloneInjectedUnitCard(SUMMONER_BARBARIC),
+    owner: '0',
+    position: mySummonerPos,
+    damage: 0,
+    boosts: 0,
+    hasMoved: false,
+    hasAttacked: false,
+  };
+
+  board[enemySummonerPos.row][enemySummonerPos.col].unit = {
+    instanceId: 'rapid-fire-enemy-summoner',
+    cardId: 'rapid-fire-enemy-summoner-card',
+    card: cloneInjectedUnitCard(SUMMONER_NECROMANCER),
+    owner: '1',
+    position: enemySummonerPos,
+    damage: 0,
+    boosts: 0,
+    hasMoved: false,
+    hasAttacked: false,
+  };
+
+  board[archerPos.row][archerPos.col].unit = {
+    instanceId: 'rapid-fire-archer',
+    cardId: frontierArcherCard.id,
+    card: cloneInjectedUnitCard(frontierArcherCard),
+    owner: '0',
+    position: archerPos,
+    damage: 0,
+    boosts: 2,
+    hasMoved: false,
+    hasAttacked: false,
+  };
+
+  board[enemyOnePos.row][enemyOnePos.col].unit = {
+    instanceId: 'rapid-fire-enemy-1',
+    cardId: necroWarriorCard.id,
+    card: { ...cloneInjectedUnitCard(necroWarriorCard), life: 8 },
+    owner: '1',
+    position: enemyOnePos,
+    damage: 0,
+    boosts: 0,
+    hasMoved: false,
+    hasAttacked: false,
+  };
+
+  board[enemyTwoPos.row][enemyTwoPos.col].unit = {
+    instanceId: 'rapid-fire-enemy-2',
+    cardId: necroWarriorCard.id,
+    card: { ...cloneInjectedUnitCard(necroWarriorCard), life: 8 },
+    owner: '1',
+    position: enemyTwoPos,
+    damage: 0,
+    boosts: 0,
+    hasMoved: false,
+    hasAttacked: false,
+  };
+
+  return { state: next, archerPos, enemyOnePos, enemyTwoPos };
 };
 
 const prepareWithdrawState = (coreState: any) => {
@@ -181,6 +287,48 @@ const getWithdrawTargets = (core: any, sourcePosition: { row: number; col: numbe
   }
   return result;
 };
+
+const readVisibleAbilityPromptText = async (page: Page) => page.evaluate(() => {
+  const isVisible = (node: Element | null) => {
+    if (!(node instanceof HTMLElement)) return false;
+    const style = window.getComputedStyle(node);
+    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+    const rect = node.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  };
+  const overlayVisible = isVisible(document.querySelector('[data-testid="sw-dice-result-overlay"]'));
+  if (overlayVisible) return '';
+  const prompt = Array.from(document.querySelectorAll('[data-testid="sw-ability-prompt"]'))
+    .find((node) => isVisible(node));
+  if (!(prompt instanceof HTMLElement)) return '';
+  return (prompt.innerText || prompt.textContent || '').trim();
+}).catch(() => '');
+
+const clickAbilityPromptButton = async (page: Page, pattern: string) => page.evaluate((patternSource) => {
+  const isVisible = (node: Element | null) => {
+    if (!(node instanceof HTMLElement)) return false;
+    const style = window.getComputedStyle(node);
+    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+    const rect = node.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  };
+  const regex = new RegExp(patternSource, 'i');
+  const prompt = Array.from(document.querySelectorAll('[data-testid="sw-ability-prompt"]'))
+    .find((node) => isVisible(node));
+  if (!(prompt instanceof HTMLElement)) {
+    return { clicked: false, reason: 'prompt-not-visible', promptText: '' };
+  }
+  const button = Array.from(prompt.querySelectorAll('button'))
+    .find((node) => regex.test(node.textContent ?? ''));
+  if (!(button instanceof HTMLButtonElement)) {
+    return { clicked: false, reason: 'button-not-found', promptText: prompt.innerText || prompt.textContent || '' };
+  }
+  if (button.disabled) {
+    return { clicked: false, reason: 'button-disabled', promptText: prompt.innerText || prompt.textContent || '' };
+  }
+  button.click();
+  return { clicked: true, reason: 'clicked', promptText: prompt.innerText || prompt.textContent || '' };
+}, pattern).catch(() => ({ clicked: false, reason: 'page-evaluate-failed', promptText: '' }));
 
 const prepareChantOfWeavingState = (coreState: any) => {
   const next = cloneState(coreState);
@@ -605,7 +753,7 @@ test.describe('炽原精灵阵营特色交互', () => {
     const baseURL = testInfo.project.use.baseURL as string | undefined;
     const match = await setupSWOnlineMatch(browser, baseURL, 'barbaric', 'necromancer');
     if (!match) { test.skip(true, 'Game server unavailable or room creation failed.'); return; }
-    const { hostPage, hostContext, guestContext } = match;
+    const { hostPage, hostContext, guestContext, matchId } = match;
     try {
       const coreState = await readCoreState(hostPage);
       const { state: prepareCore, prepareUnitPos } = preparePrepareState(coreState);
@@ -637,7 +785,7 @@ test.describe('炽原精灵阵营特色交互', () => {
     const baseURL = testInfo.project.use.baseURL as string | undefined;
     const match = await setupSWOnlineMatch(browser, baseURL, 'barbaric', 'necromancer');
     if (!match) { test.skip(true, 'Game server unavailable or room creation failed.'); return; }
-    const { hostPage, hostContext, guestContext } = match;
+    const { hostPage, hostContext, guestContext, matchId } = match;
     try {
       const coreState = await readCoreState(hostPage);
       const { state: spiritBondCore, shamanStart, shamanMoveTo, allyTargetPos } =
@@ -719,7 +867,7 @@ test.describe('炽原精灵阵营特色交互', () => {
     const baseURL = testInfo.project.use.baseURL as string | undefined;
     const match = await setupSWOnlineMatch(browser, baseURL, 'barbaric', 'necromancer');
     if (!match) { test.skip(true, 'Game server unavailable or room creation failed.'); return; }
-    const { hostPage, hostContext, guestContext } = match;
+    const { hostPage, hostContext, guestContext, matchId } = match;
     try {
       const coreState = await readCoreState(hostPage);
       const { state: spiritBondCore, shamanStart, shamanMoveTo, allyTargetPos } =
@@ -840,13 +988,157 @@ test.describe('炽原精灵阵营特色交互', () => {
     }
   });
 
-  test('撤退：攻击后消耗充能移动', async ({ browser }, testInfo) => {
-    test.setTimeout(300000);
+  test('连续射击：攻击后确认消耗充能并完成额外攻击', async ({ browser }, testInfo) => {
+    test.setTimeout(240000);
     const baseURL = testInfo.project.use.baseURL as string | undefined;
     const match = await setupSWOnlineMatch(browser, baseURL, 'barbaric', 'necromancer');
     if (!match) { test.skip(true, 'Game server unavailable or room creation failed.'); return; }
     const { hostPage, hostContext, guestContext } = match;
     try {
+      const coreState = await readCoreState(hostPage);
+      const { state: rapidFireCore, archerPos, enemyOnePos, enemyTwoPos } = prepareRapidFireState(coreState);
+      await applyCoreState(hostPage, rapidFireCore);
+      await closeDebugPanelIfOpen(hostPage);
+      await waitForPhase(hostPage, 'attack');
+      await hostPage.waitForTimeout(600);
+
+      await clickBoardElement(hostPage, `[data-testid="sw-unit-${archerPos.row}-${archerPos.col}"][data-owner="0"][data-unit-name="${frontierArcherCard.name}"]`);
+      await clickBoardElement(hostPage, `[data-testid="sw-unit-${enemyOnePos.row}-${enemyOnePos.col}"][data-owner="1"][data-unit-name="${necroWarriorCard.name}"]`);
+
+      let rapidFirePromptText = '';
+      await expect.poll(async () => {
+        rapidFirePromptText = await readVisibleAbilityPromptText(hostPage);
+        return rapidFirePromptText;
+      }, { timeout: 12000 }).not.toBe('');
+      expect(rapidFirePromptText).toMatch(/连续射击|Rapid Fire/i);
+
+      await hostPage.screenshot({
+        path: getEvidenceScreenshotPath(testInfo, 'rapid-fire-prompt-visible', {
+          filename: 'rapid-fire-prompt-visible.png',
+        }),
+        fullPage: false,
+      });
+
+      const confirmResult = await clickAbilityPromptButton(hostPage, '^Confirm(?: Fire)?$|^确认(?:射击)?$');
+      expect(confirmResult.clicked, `rapid_fire 确认点击失败: ${JSON.stringify(confirmResult)}`).toBe(true);
+
+      await expect.poll(async () => {
+        const state = await readCoreState(hostPage);
+        const archer = state?.board?.[archerPos.row]?.[archerPos.col]?.unit;
+        return {
+          boosts: archer?.boosts ?? null,
+          extraAttacks: archer?.extraAttacks ?? 0,
+          hasAttacked: archer?.hasAttacked ?? null,
+        };
+      }, { timeout: 10000 }).toEqual({
+        boosts: 1,
+        extraAttacks: 1,
+        hasAttacked: false,
+      });
+
+      let rapidFireSelectedUnit: { row: number; col: number } | null = null;
+      await expect.poll(async () => {
+        const state = await readCoreState(hostPage);
+        rapidFireSelectedUnit = state?.selectedUnit ?? null;
+        return rapidFireSelectedUnit;
+      }, { timeout: 5000 }).not.toBeNull();
+      if (
+        rapidFireSelectedUnit.row !== archerPos.row
+        || rapidFireSelectedUnit.col !== archerPos.col
+      ) {
+        await clickBoardElement(hostPage, `[data-testid="sw-unit-${archerPos.row}-${archerPos.col}"][data-owner="0"][data-unit-name="${frontierArcherCard.name}"]`);
+      }
+      await clickBoardElement(hostPage, `[data-testid="sw-unit-${enemyTwoPos.row}-${enemyTwoPos.col}"][data-owner="1"][data-unit-name="${necroWarriorCard.name}"]`);
+
+      await dismissDiceResultOverlay(hostPage);
+
+      await expect.poll(async () => {
+        const state = await readCoreState(hostPage);
+        const archer = state?.board?.[archerPos.row]?.[archerPos.col]?.unit;
+        return {
+          attackCount: state?.players?.['0']?.attackCount ?? null,
+          extraAttacks: archer?.extraAttacks ?? 0,
+          hasAttacked: archer?.hasAttacked ?? null,
+        };
+      }, { timeout: 12000 }).toEqual({
+        attackCount: 1,
+        extraAttacks: 0,
+        hasAttacked: true,
+      });
+
+      await expect.poll(async () => {
+        const promptText = await readVisibleAbilityPromptText(hostPage);
+        return /连续射击|Rapid Fire/i.test(promptText);
+      }, { timeout: 5000 }).toBe(false);
+
+      await closeDebugPanelIfOpen(hostPage);
+
+      await hostPage.screenshot({
+        path: getEvidenceScreenshotPath(testInfo, 'rapid-fire-extra-attack-complete', {
+          filename: 'rapid-fire-extra-attack-complete.png',
+        }),
+        fullPage: false,
+      });
+    } finally {
+      void hostContext.close().catch(() => {});
+      void guestContext.close().catch(() => {});
+    }
+  });
+
+  test('撤退：攻击后消耗充能移动', async ({ browser }, testInfo) => {
+    test.setTimeout(300000);
+    const baseURL = testInfo.project.use.baseURL as string | undefined;
+    const match = await setupSWOnlineMatch(browser, baseURL, 'barbaric', 'necromancer');
+    if (!match) { test.skip(true, 'Game server unavailable or room creation failed.'); return; }
+    const { hostPage, guestPage, hostContext, guestContext, matchId } = match;
+    try {
+      browser.on('disconnected', () => {
+        console.log('[WITHDRAW BROWSER DISCONNECTED]');
+      });
+      hostPage.on('console', (msg) => {
+        if (msg.type() === 'error' || msg.type() === 'warning' || msg.text().includes('[SW-ATTACK-DEBUG')) {
+          console.log(`[WITHDRAW HOST ${msg.type().toUpperCase()}]`, msg.text());
+        }
+      });
+      hostPage.on('dialog', async (dialog) => {
+        console.log('[WITHDRAW HOST DIALOG]', dialog.type(), dialog.message());
+        await dialog.dismiss().catch(() => {});
+      });
+      hostPage.on('crash', () => {
+        console.log('[WITHDRAW HOST CRASH]');
+      });
+      hostPage.on('close', () => {
+        console.log('[WITHDRAW HOST CLOSE]');
+      });
+      hostContext.on('close', () => {
+        console.log('[WITHDRAW HOST CONTEXT CLOSE]');
+      });
+      guestPage.on('close', () => {
+        console.log('[WITHDRAW GUEST CLOSE]');
+      });
+      guestContext.on('close', () => {
+        console.log('[WITHDRAW GUEST CONTEXT CLOSE]');
+      });
+      await hostPage.evaluate(() => {
+        window.localStorage.setItem('sw_attack_debug', '1');
+        window.__SW_ATTACK_DEBUG__ = true;
+      });
+      const matchAccess = await hostPage.evaluate((targetMatchId) => {
+        const params = new URLSearchParams(window.location.search);
+        const playerId = params.get('playerID');
+        const raw = localStorage.getItem(`match_creds_${targetMatchId}`);
+        if (!playerId || !raw) return null;
+        try {
+          const parsed = JSON.parse(raw) as { credentials?: string };
+          return typeof parsed.credentials === 'string'
+            ? { playerId, credentials: parsed.credentials }
+            : null;
+        } catch {
+          return null;
+        }
+      }, matchId) as TestMatchAccess | null;
+      expect(matchAccess).toBeTruthy();
+
       const coreState = await readCoreState(hostPage);
       const { state: withdrawCore, kairuPos } = prepareWithdrawState(coreState);
       await applyCoreState(hostPage, withdrawCore);
@@ -872,7 +1164,7 @@ test.describe('炽原精灵阵营特色交互', () => {
             kairuState.board[adj.row][adj.col].unit = {
               instanceId: `enemy-dummy-${adj.row}-${adj.col}`, cardId: 'necro-skeleton-dummy',
               card: { id: 'necro-skeleton', cardType: 'unit', name: '骷髅兵', faction: 'necromancer',
-                cost: 0, life: 1, strength: 1, attackType: 'melee', attackRange: 1,
+                cost: 0, life: 8, strength: 1, attackType: 'melee', attackRange: 1,
                 unitClass: 'common', deckSymbols: [], abilities: [] },
               owner: '1', position: adj, damage: 0, boosts: 0, hasMoved: false, hasAttacked: false,
             };
@@ -888,6 +1180,12 @@ test.describe('炽原精灵阵营特色交互', () => {
       kairuState.selectedUnit = undefined;
       kairuState.players['0'].attackCount = 0;
       await applyCoreState(hostPage, kairuState);
+      await expect.poll(async () => {
+        const serverState = await getMatchState(matchId, undefined, matchAccess ?? undefined) as any;
+        const serverKairu = serverState?.core?.board?.[kairuPos.row]?.[kairuPos.col]?.unit;
+        const serverEnemy = serverState?.core?.board?.[enemyPos.row]?.[enemyPos.col]?.unit;
+        return Boolean(serverKairu?.instanceId === kairu.instanceId && serverEnemy?.owner === '1');
+      }, { timeout: 10000 }).toBe(true);
       await closeDebugPanelIfOpen(hostPage);
       await hostPage.waitForTimeout(500);
       // 选中凯鲁尊者
@@ -896,57 +1194,74 @@ test.describe('炽原精灵阵营特色交互', () => {
       // 点击敌方单位进行攻击
       await clickBoardElement(hostPage, `[data-testid="sw-unit-${enemyPos.row}-${enemyPos.col}"][data-owner="1"]`);
       console.log('[withdraw-e2e] 攻击命令已发出');
-      // 攻击后必须先进入 withdraw 费用选择
-      console.log('[withdraw-e2e] 开始等待 withdraw 费用按钮');
+
+      console.log('[withdraw-e2e] 开始等待 withdraw 费用交互');
       await expect.poll(async () => {
-        return await hostPage.evaluate(() => {
-          return Array.from(document.querySelectorAll('button')).some((button) =>
-            /Spend Charge|消耗充能/i.test(button.textContent ?? '')
-          );
-        });
-      }, { timeout: 15000 }).toBe(true);
-      console.log('[withdraw-e2e] withdraw 费用横幅已出现');
-      const clickedWithdrawCost = await hostPage.evaluate(() => {
-        const button = Array.from(document.querySelectorAll('button')).find((node) =>
-          /Spend Charge|消耗充能/i.test(node.textContent ?? '')
-        ) as HTMLButtonElement | undefined;
-        button?.click();
-        return Boolean(button);
+        const serverState = await getMatchState(matchId, undefined, matchAccess ?? undefined) as any;
+        const serverType = serverState?.sys?.interaction?.current?.data?.sw?.type ?? null;
+        console.log('[withdraw-e2e] server interaction type =', serverType);
+        return serverType;
+      }, { timeout: 15000 }).toBe('after_attack_withdraw_cost');
+      console.log('[withdraw-e2e] 进入费用提示前 closed=', hostPage.isClosed(), 'contextPages=', hostContext.pages().length);
+      console.log('[withdraw-e2e] guest 状态 closed=', guestPage.isClosed(), 'contextPages=', guestContext.pages().length);
+      if (hostPage.isClosed()) {
+        throw new Error(`withdraw 费用提示出现时 hostPage 已关闭，contextPages=${hostContext.pages().length}`);
+      }
+      let withdrawCostPromptText = '';
+      await expect.poll(async () => {
+        withdrawCostPromptText = await readVisibleAbilityPromptText(hostPage);
+        return withdrawCostPromptText;
+      }, { timeout: 10000 }).not.toBe('');
+      console.log('[withdraw-e2e] 当前提示 =', withdrawCostPromptText);
+      await hostPage.screenshot({
+        path: getEvidenceScreenshotPath(testInfo, 'withdraw-cost-visible', {
+          filename: 'withdraw-cost-visible.png',
+        }),
+        fullPage: false,
       });
-      expect(clickedWithdrawCost).toBe(true);
+      const chargeClickResult = await clickAbilityPromptButton(hostPage, 'Spend Charge|消耗充能');
+      expect(chargeClickResult.clicked, `withdraw 费用提示点击失败: ${JSON.stringify(chargeClickResult)}`).toBe(true);
       console.log('[withdraw-e2e] 已点击消耗充能');
+
       await expect.poll(async () => {
-        return await hostPage.evaluate(() => {
-          return document.body.textContent?.includes('撤退：选择移动目标位置') ?? false;
-        });
-      }, { timeout: 10000 }).toBe(true);
-      const targetCell = hostPage.getByTestId(`sw-cell-${withdrawPos.row}-${withdrawPos.col}`);
-      await expect(targetCell).toBeVisible({ timeout: 10000 });
+        const serverState = await getMatchState(matchId, undefined, matchAccess ?? undefined) as any;
+        return serverState?.sys?.interaction?.current?.data?.sw?.type ?? null;
+      }, { timeout: 10000 }).toBe('after_attack_withdraw_position');
+
+      let withdrawPositionPromptText = '';
       await expect.poll(async () => {
-        return await targetCell.evaluate((node) => {
-          const style = window.getComputedStyle(node as HTMLElement);
-          return style.borderColor !== 'transparent' || style.backgroundColor !== 'transparent';
-        });
-      }, { timeout: 10000 }).toBe(true);
+        withdrawPositionPromptText = await readVisibleAbilityPromptText(hostPage);
+        return withdrawPositionPromptText;
+      }, { timeout: 10000 }).not.toBe('');
+      console.log('[withdraw-e2e] 当前位置提示 =', withdrawPositionPromptText);
+      await hostPage.screenshot({
+        path: getEvidenceScreenshotPath(testInfo, 'withdraw-position-visible', {
+          filename: 'withdraw-position-visible.png',
+        }),
+        fullPage: false,
+      });
       await clickBoardElement(hostPage, `[data-testid="sw-cell-${withdrawPos.row}-${withdrawPos.col}"]`);
       console.log('[withdraw-e2e] 已点击撤退目标格');
       await expect.poll(async () => {
-        return await hostPage.evaluate(() => {
-          return Array.from(document.querySelectorAll('button')).some((button) =>
-            /Spend Charge|消耗充能/i.test(button.textContent ?? '')
-          );
-        });
-      }, { timeout: 10000 }).toBe(false);
+        const serverState = await getMatchState(matchId, undefined, matchAccess ?? undefined) as any;
+        return serverState?.sys?.interaction?.current?.data?.sw?.type ?? null;
+      }, { timeout: 10000 }).toBe(null);
       await hostPage.waitForTimeout(1200);
       const afterWithdraw = await readCoreState(hostPage);
       const movedUnit = afterWithdraw.board[withdrawPos.row][withdrawPos.col]?.unit;
       expect(movedUnit?.instanceId).toBe(kairu.instanceId);
       expect(movedUnit?.boosts ?? 0).toBeLessThan(kairu.boosts ?? 0);
       expect(afterWithdraw.board[kairuPos.row][kairuPos.col]?.unit?.instanceId ?? null).not.toBe(kairu.instanceId);
+      await hostPage.screenshot({
+        path: getEvidenceScreenshotPath(testInfo, 'withdraw-after-move', {
+          filename: 'withdraw-after-move.png',
+        }),
+        fullPage: false,
+      });
       console.log('[withdraw-e2e] 核心状态已确认撤退成功');
     } finally {
-      void hostContext.close().catch(() => {});
-      void guestContext.close().catch(() => {});
+      await hostContext.close().catch(() => {});
+      await guestContext.close().catch(() => {});
     }
   });
 

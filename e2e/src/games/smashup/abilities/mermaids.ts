@@ -1048,9 +1048,12 @@ const handleMermaidsCharmedDestination: InteractionHandler = (state, playerId, v
     const continuation = data?.continuationContext as CharmedContinuation | undefined;
     if (!continuation) return { state, events: [] };
 
+    const metadataBaseIndex = selected.skip || selected.baseIndex === undefined
+        ? continuation.fromBaseIndex
+        : selected.baseIndex;
     const metadataEvent = buildMermaidsMetadataUpdatedEvent(
         continuation.minionUid,
-        continuation.fromBaseIndex,
+        metadataBaseIndex,
         { [MERMAIDS_CHARMED_SUPPRESSED_TURN_META]: state.core.turnNumber },
         'mermaids_charmed',
         timestamp,

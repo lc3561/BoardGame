@@ -187,9 +187,13 @@ export const applyRuntimeViewportCssVars = (
         ? Math.max(0, viewport.keyboardInsetBottom)
         : 0;
     const stableLayoutViewportHeight = readStableLayoutViewportHeight();
+    const previousLayoutViewportHeight = parseCssPixels(root.style.getPropertyValue('--layout-viewport-height'));
+    const nextLayoutViewportHeight = keyboardInsetBottom > 0
+        ? Math.max(viewport.height, stableLayoutViewportHeight, previousLayoutViewportHeight)
+        : Math.max(viewport.height, stableLayoutViewportHeight);
     root.style.setProperty('--runtime-viewport-width', `${viewport.width}px`);
     root.style.setProperty('--runtime-viewport-height', `${viewport.height}px`);
-    root.style.setProperty('--layout-viewport-height', `${Math.max(viewport.height, stableLayoutViewportHeight)}px`);
+    root.style.setProperty('--layout-viewport-height', `${nextLayoutViewportHeight}px`);
     root.style.setProperty('--keyboard-inset-height', `${keyboardInsetBottom}px`);
     root.dataset.keyboardVisible = keyboardInsetBottom > 0 ? 'true' : 'false';
 

@@ -813,7 +813,7 @@ test.describe('Smash Up 牌库检索交互', () => {
                 defId: 'base_1',
                 minions: [
                     { uid: 'ally-target', defId: 'robot_microbot_alpha', owner: '0', controller: '0', powerCounters: 0 },
-                    { uid: 'enemy-target', defId: 'robot_microbot_beta', owner: '1', controller: '1', powerCounters: 0 },
+                    { uid: 'enemy-target', defId: 'robot_microbot_guard', owner: '1', controller: '1', powerCounters: 0 },
                 ],
                 ongoingActions: [],
             }],
@@ -890,14 +890,14 @@ test.describe('Smash Up 牌库检索交互', () => {
                     defId: 'base_1',
                     minions: [
                         { uid: 'rainbow-ally-same-base', defId: 'robot_microbot_alpha', owner: '0', controller: '0', tempPowerModifier: 0 },
-                        { uid: 'rainbow-enemy-same-base', defId: 'robot_microbot_beta', owner: '1', controller: '1', tempPowerModifier: 0 },
+                        { uid: 'rainbow-enemy-same-base', defId: 'robot_microbot_guard', owner: '1', controller: '1', tempPowerModifier: 0 },
                     ],
                     ongoingActions: [],
                 },
                 {
                     defId: 'base_2',
                     minions: [
-                        { uid: 'rainbow-ally-other-base', defId: 'robot_microbot_gamma', owner: '0', controller: '0', tempPowerModifier: 0 },
+                        { uid: 'rainbow-ally-other-base', defId: 'robot_microbot_archive', owner: '0', controller: '0', tempPowerModifier: 0 },
                     ],
                     ongoingActions: [],
                 },
@@ -941,7 +941,7 @@ test.describe('Smash Up 牌库检索交互', () => {
             gameId: 'smashup',
             player0: {
                 hand: ['world_champs_akye_the_turtle', 'wizard_summon'],
-                deck: ['robot_microbot_alpha', 'robot_microbot_beta'],
+                deck: ['robot_microbot_alpha', 'robot_microbot_guard'],
                 factions: ['world_champs', 'wizards'],
             },
             player1: {
@@ -1010,7 +1010,7 @@ test.describe('Smash Up 牌库检索交互', () => {
         );
         expect(finalState.core.players['0'].hand.map((card: any) => card.defId)).not.toContain('wizard_summon');
         expect(finalState.core.players['0'].hand.map((card: any) => card.defId)).toEqual(
-            expect.arrayContaining(['robot_microbot_alpha', 'robot_microbot_beta']),
+            expect.arrayContaining(['robot_microbot_alpha', 'robot_microbot_guard']),
         );
         expect(finalState.core.bases[0].minions.some((minion: any) => minion.defId === 'world_champs_akye_the_turtle')).toBe(true);
 
@@ -1030,7 +1030,7 @@ test.describe('Smash Up 牌库检索交互', () => {
             gameId: 'smashup',
             player0: {
                 hand: ['world_champs_samurai_chan'],
-                deck: ['robot_microbot_alpha', 'robot_microbot_beta'],
+                deck: ['robot_microbot_alpha', 'robot_microbot_guard'],
                 discard: [],
                 factions: ['world_champs', 'robots'],
             },
@@ -1166,7 +1166,7 @@ test.describe('Smash Up 牌库检索交互', () => {
                 {
                     defId: 'base_2',
                     minions: [
-                        { uid: 'enemy-minion-1', defId: 'robot_microbot_beta', owner: '1', controller: '1', tempPowerModifier: 0 },
+                        { uid: 'enemy-minion-1', defId: 'robot_microbot_guard', owner: '1', controller: '1', tempPowerModifier: 0 },
                     ],
                     ongoingActions: [],
                 },
@@ -1267,15 +1267,15 @@ test.describe('Smash Up 牌库检索交互', () => {
                     defId: 'base_1',
                     minions: [
                         { uid: 'enemy-minion-1', defId: 'robot_microbot_alpha', owner: '1', controller: '1', tempPowerModifier: 0 },
-                        { uid: 'enemy-minion-2', defId: 'robot_microbot_beta', owner: '1', controller: '1', tempPowerModifier: 0 },
-                        { uid: 'ally-minion-1', defId: 'robot_microbot_gamma', owner: '0', controller: '0', tempPowerModifier: 0 },
+                        { uid: 'enemy-minion-2', defId: 'robot_microbot_guard', owner: '1', controller: '1', tempPowerModifier: 0 },
+                        { uid: 'ally-minion-1', defId: 'robot_microbot_archive', owner: '0', controller: '0', tempPowerModifier: 0 },
                     ],
                     ongoingActions: [],
                 },
                 {
                     defId: 'base_2',
                     minions: [
-                        { uid: 'ally-minion-2', defId: 'robot_microbot_beta', owner: '0', controller: '0', tempPowerModifier: 0 },
+                        { uid: 'ally-minion-2', defId: 'robot_microbot_guard', owner: '0', controller: '0', tempPowerModifier: 0 },
                     ],
                     ongoingActions: [],
                 },
@@ -1301,7 +1301,7 @@ test.describe('Smash Up 牌库检索交互', () => {
 
         expect(promptMeta.sourceId).toBe('mermaids_captive_audience');
         expect(promptMeta.optionValues).toEqual([
-            expect.objectContaining({ minionUid: 'ally-minion-1', defId: 'robot_microbot_gamma', baseIndex: 0 }),
+            expect.objectContaining({ minionUid: 'ally-minion-1', defId: 'robot_microbot_archive', baseIndex: 0 }),
         ]);
 
         await game.screenshot('captive-audience-target-prompt', testInfo);
@@ -1322,6 +1322,535 @@ test.describe('Smash Up 牌库检索交互', () => {
         await game.screenshot('captive-audience-resolved', testInfo);
     });
 
+    test('人鱼女王应可选择移动其他玩家的一个仆从到这里', async ({ page, game }, testInfo) => {
+        test.setTimeout(60000);
+
+        await page.goto('/play/smashup');
+        await page.waitForFunction(
+            () => (window as any).__BG_TEST_HARNESS__?.state?.isRegistered?.() === true,
+            { timeout: 15000 },
+        );
+
+        await game.setupScene({
+            gameId: 'smashup',
+            player0: {
+                hand: ['mermaids_mermaid_queen'],
+                deck: [],
+                factions: ['mermaids', 'robots'],
+            },
+            player1: {
+                hand: [],
+                deck: [],
+                factions: ['pirates', 'dinosaurs'],
+            },
+            currentPlayer: '0',
+            phase: 'playCards',
+            bases: [
+                {
+                    defId: 'base_1',
+                    minions: [
+                        { uid: 'enemy-small', defId: 'robot_microbot_alpha', owner: '1', controller: '1', tempPowerModifier: 0 },
+                    ],
+                    ongoingActions: [],
+                },
+                {
+                    defId: 'base_2',
+                    minions: [
+                        { uid: 'enemy-other', defId: 'robot_microbot_guard', owner: '1', controller: '1', tempPowerModifier: 0 },
+                    ],
+                    ongoingActions: [],
+                },
+            ],
+        });
+
+        await game.playCard('mermaids_mermaid_queen', { targetBaseIndex: 0 });
+        await game.waitForInteraction('mermaids_mermaid_queen_mode');
+
+        const modePromptMeta = await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const current = harness?.state?.get?.()?.sys?.interaction?.current;
+            return {
+                sourceId: current?.data?.sourceId ?? null,
+                options: (current?.data?.options ?? []).map((option: any) => ({
+                    id: option.id,
+                    mode: option.value?.mode ?? null,
+                    label: option.label ?? null,
+                })),
+            };
+        });
+
+        expect(modePromptMeta.sourceId).toBe('mermaids_mermaid_queen_mode');
+        expect(modePromptMeta.options.some((option: any) => option.mode === 'move')).toBe(true);
+        expect(modePromptMeta.options.some((option: any) => option.mode === 'control')).toBe(true);
+
+        await game.selectInteractionOptionBy(
+            (option: any) => option.value?.mode === 'move',
+            '人鱼女王选择移动模式',
+        );
+        await game.waitForInteraction('mermaids_mermaid_queen_move');
+
+        const movePromptMeta = await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const current = harness?.state?.get?.()?.sys?.interaction?.current;
+            return {
+                sourceId: current?.data?.sourceId ?? null,
+                options: (current?.data?.options ?? []).map((option: any) => ({
+                    id: option.id,
+                    minionUid: option.value?.minionUid ?? null,
+                    baseIndex: option.value?.baseIndex ?? null,
+                })),
+            };
+        });
+
+        expect(movePromptMeta.sourceId).toBe('mermaids_mermaid_queen_move');
+        expect(movePromptMeta.options.some((option: any) => option.minionUid === 'enemy-other' && option.baseIndex === 1)).toBe(true);
+        expect(movePromptMeta.options.some((option: any) => option.minionUid === 'enemy-small')).toBe(false);
+
+        await game.screenshot('mermaid-queen-move-prompt', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-mermaids-mermaid-queen-move-prompt-2026-04-29');
+
+        await game.selectInteractionOptionBy(
+            (option: any) => option.value?.minionUid === 'enemy-other',
+            '人鱼女王选择移动敌方仆从到这里',
+        );
+        await game.waitForNoInteraction();
+        await dismissSpotlightQueueIfPresent(page);
+
+        const finalState = await game.getState();
+        expect(finalState.core.bases[0].minions.some((minion: any) => minion.uid === 'enemy-other')).toBe(true);
+        expect(finalState.core.bases[1].minions.some((minion: any) => minion.uid === 'enemy-other')).toBe(false);
+
+        await game.screenshot('mermaid-queen-move-resolved', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-mermaids-mermaid-queen-move-resolved-2026-04-29');
+    });
+
+    test('迷人的人应可先移动自己，再把另一个玩家 3 力或以下的随从移到相同基地', async ({ page, game }, testInfo) => {
+        test.setTimeout(60000);
+
+        await page.goto('/play/smashup');
+        await page.waitForFunction(
+            () => (window as any).__BG_TEST_HARNESS__?.state?.isRegistered?.() === true,
+            { timeout: 15000 },
+        );
+
+        await game.setupScene({
+            gameId: 'smashup',
+            player0: {
+                hand: ['mermaids_charmer'],
+                deck: [],
+                factions: ['mermaids', 'robots'],
+            },
+            player1: {
+                hand: [],
+                deck: [],
+                factions: ['pirates', 'dinosaurs'],
+            },
+            currentPlayer: '0',
+            phase: 'playCards',
+            bases: [
+                { defId: 'base_1', minions: [], ongoingActions: [] },
+                {
+                    defId: 'base_2',
+                    minions: [
+                        { uid: 'enemy-low', defId: 'robot_microbot_alpha', owner: '1', controller: '1', tempPowerModifier: 0 },
+                        { uid: 'enemy-high', defId: 'robot_warbot', owner: '1', controller: '1', tempPowerModifier: 0 },
+                    ],
+                    ongoingActions: [],
+                },
+                { defId: 'base_3', minions: [], ongoingActions: [] },
+            ],
+        });
+
+        await game.playCard('mermaids_charmer', { targetBaseIndex: 0 });
+        await game.waitForNoInteraction();
+        await dismissSpotlightQueueIfPresent(page);
+
+        const charmerUid = await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const state = harness?.state?.get?.();
+            return state?.core?.bases?.[0]?.minions?.find((minion: any) => minion.defId === 'mermaids_charmer')?.uid ?? null;
+        });
+        expect(charmerUid).toBeTruthy();
+
+        await clickMinionOnBoard(page, charmerUid as string);
+        await game.waitForInteraction('mermaids_charmer_move');
+
+        const movePromptMeta = await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const current = harness?.state?.get?.()?.sys?.interaction?.current;
+            return {
+                sourceId: current?.data?.sourceId ?? null,
+                options: (current?.data?.options ?? []).map((option: any) => ({
+                    id: option.id,
+                    baseIndex: option.value?.baseIndex ?? null,
+                })),
+            };
+        });
+
+        expect(movePromptMeta.sourceId).toBe('mermaids_charmer_move');
+        expect(movePromptMeta.options.some((option: any) => option.baseIndex === 2)).toBe(true);
+
+        await game.screenshot('charmer-move-prompt', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-mermaids-charmer-move-prompt-2026-04-29');
+
+        await game.selectInteractionOptionBy(
+            (option: any) => option.value?.baseIndex === 2,
+            '迷人的人先移动到基地 3',
+        );
+        await game.waitForInteraction('mermaids_charmer_target');
+
+        const targetPromptMeta = await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const current = harness?.state?.get?.()?.sys?.interaction?.current;
+            return {
+                sourceId: current?.data?.sourceId ?? null,
+                options: (current?.data?.options ?? []).map((option: any) => ({
+                    id: option.id,
+                    minionUid: option.value?.minionUid ?? null,
+                    baseIndex: option.value?.baseIndex ?? null,
+                })),
+            };
+        });
+
+        expect(targetPromptMeta.sourceId).toBe('mermaids_charmer_target');
+        expect(targetPromptMeta.options.some((option: any) => option.minionUid === 'enemy-low' && option.baseIndex === 1)).toBe(true);
+        expect(targetPromptMeta.options.some((option: any) => option.minionUid === 'enemy-high')).toBe(false);
+
+        await game.screenshot('charmer-target-prompt', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-mermaids-charmer-target-prompt-2026-04-29');
+
+        await game.selectInteractionOptionBy(
+            (option: any) => option.value?.minionUid === 'enemy-low',
+            '迷人的人把敌方低力量随从移到同一基地',
+        );
+        await game.waitForNoInteraction();
+        await dismissSpotlightQueueIfPresent(page);
+
+        const finalState = await game.getState();
+        expect(finalState.core.bases[0].minions.some((minion: any) => minion.uid === charmerUid)).toBe(false);
+        expect(finalState.core.bases[2].minions.some((minion: any) => minion.uid === charmerUid)).toBe(true);
+        expect(finalState.core.bases[2].minions.some((minion: any) => minion.uid === 'enemy-low')).toBe(true);
+        expect(finalState.core.bases[1].minions.some((minion: any) => minion.uid === 'enemy-high')).toBe(true);
+
+        await game.screenshot('charmer-resolved', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-mermaids-charmer-resolved-2026-04-29');
+    });
+
+    test('安静的海岸应可从场上发动天赋并移到另一个基地', async ({ page, game }, testInfo) => {
+        test.setTimeout(60000);
+
+        await page.goto('/play/smashup');
+        await page.waitForFunction(
+            () => (window as any).__BG_TEST_HARNESS__?.state?.isRegistered?.() === true,
+            { timeout: 15000 },
+        );
+
+        await game.setupScene({
+            gameId: 'smashup',
+            player0: {
+                hand: ['mermaids_becalmed_shores'],
+                deck: [],
+                factions: ['mermaids', 'robots'],
+            },
+            player1: {
+                hand: [],
+                deck: [],
+                factions: ['pirates', 'dinosaurs'],
+            },
+            currentPlayer: '0',
+            phase: 'playCards',
+            bases: [
+                {
+                    defId: 'base_1',
+                    minions: [
+                        { uid: 'enemy-base-1', defId: 'robot_microbot_alpha', owner: '1', controller: '1', tempPowerModifier: 0 },
+                    ],
+                    ongoingActions: [],
+                },
+                {
+                    defId: 'base_2',
+                    minions: [
+                        { uid: 'enemy-base-2', defId: 'robot_microbot_guard', owner: '1', controller: '1', tempPowerModifier: 0 },
+                    ],
+                    ongoingActions: [],
+                },
+            ],
+        });
+
+        await game.playCard('mermaids_becalmed_shores', { targetBaseIndex: 0 });
+        await game.waitForNoInteraction();
+        await dismissSpotlightQueueIfPresent(page);
+
+        const attachedOngoingUid = await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const state = harness?.state?.get?.();
+            return state?.core?.bases?.[0]?.ongoingActions?.find((action: any) => action.defId === 'mermaids_becalmed_shores')?.uid ?? null;
+        });
+        expect(attachedOngoingUid).toBeTruthy();
+
+        const ongoingCard = page.locator(`[data-ongoing-uid="${attachedOngoingUid}"]`).first();
+        await expect(ongoingCard).toBeVisible({ timeout: 5000 });
+        await game.screenshot('becalmed-shores-attached', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-mermaids-becalmed-shores-attached-2026-04-29');
+
+        await ongoingCard.click({ force: true });
+        await ongoingCard.click({ force: true });
+        await game.waitForInteraction('mermaids_becalmed_shores');
+
+        const promptMeta = await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const current = harness?.state?.get?.()?.sys?.interaction?.current;
+            return {
+                sourceId: current?.data?.sourceId ?? null,
+                options: (current?.data?.options ?? []).map((option: any) => ({
+                    id: option.id,
+                    baseIndex: option.value?.baseIndex ?? null,
+                })),
+            };
+        });
+
+        expect(promptMeta.sourceId).toBe('mermaids_becalmed_shores');
+        expect(promptMeta.options.some((option: any) => option.baseIndex === 1)).toBe(true);
+
+        await game.screenshot('becalmed-shores-move-prompt', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-mermaids-becalmed-shores-move-prompt-2026-04-29');
+
+        await game.selectInteractionOptionBy(
+            (option: any) => option.value?.baseIndex === 1,
+            '安静的海岸移动到基地 2',
+        );
+        await game.waitForNoInteraction();
+
+        const finalState = await game.getState();
+        expect(finalState.core.bases[0].ongoingActions.some((action: any) => action.uid === attachedOngoingUid)).toBe(false);
+        expect(finalState.core.bases[1].ongoingActions.some((action: any) => action.uid === attachedOngoingUid)).toBe(true);
+        expect(finalState.core.bases[1].ongoingActions.find((action: any) => action.uid === attachedOngoingUid)?.talentUsed).toBe(true);
+
+        await game.screenshot('becalmed-shores-moved', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-mermaids-becalmed-shores-moved-2026-04-29');
+    });
+
+    test('塞壬的歌声应只提供有其他己方基地可去的来源基地，并把目标仆从移到该己方基地', async ({ page, game }, testInfo) => {
+        test.setTimeout(60000);
+
+        await page.goto('/play/smashup');
+        await page.waitForFunction(
+            () => (window as any).__BG_TEST_HARNESS__?.state?.isRegistered?.() === true,
+            { timeout: 15000 },
+        );
+
+        await game.setupScene({
+            gameId: 'smashup',
+            player0: {
+                hand: ['mermaids_siren_song'],
+                deck: [],
+                factions: ['mermaids', 'robots'],
+            },
+            player1: {
+                hand: [],
+                deck: [],
+                factions: ['pirates', 'dinosaurs'],
+            },
+            currentPlayer: '0',
+            phase: 'playCards',
+            bases: [
+                {
+                    defId: 'base_1',
+                    minions: [
+                        { uid: 'ally-anchor', defId: 'robot_microbot_archive', owner: '0', controller: '0', tempPowerModifier: 0 },
+                        { uid: 'enemy-stuck', defId: 'robot_microbot_alpha', owner: '1', controller: '1', tempPowerModifier: 0 },
+                    ],
+                    ongoingActions: [],
+                },
+                {
+                    defId: 'base_2',
+                    minions: [
+                        { uid: 'enemy-movable', defId: 'robot_warbot', owner: '1', controller: '1', tempPowerModifier: 0 },
+                    ],
+                    ongoingActions: [],
+                },
+            ],
+        });
+
+        await game.playCard('mermaids_siren_song');
+        await game.waitForInteraction('mermaids_siren_song_base');
+
+        const sourcePromptMeta = await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const current = harness?.state?.get?.()?.sys?.interaction?.current;
+            return {
+                sourceId: current?.data?.sourceId ?? null,
+                options: (current?.data?.options ?? []).map((option: any) => ({
+                    id: option.id,
+                    baseIndex: option.value?.baseIndex ?? null,
+                })),
+            };
+        });
+
+        expect(sourcePromptMeta.sourceId).toBe('mermaids_siren_song_base');
+        expect(sourcePromptMeta.options.some((option: any) => option.baseIndex === 0)).toBe(false);
+        expect(sourcePromptMeta.options.some((option: any) => option.baseIndex === 1)).toBe(true);
+
+        await game.screenshot('mermaids-siren-song-source-prompt', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-mermaids-siren-song-source-prompt-2026-04-29');
+
+        await game.selectInteractionOptionBy(
+            (option: any) => option.value?.baseIndex === 1,
+            '塞壬的歌声选择基地 2 作为来源',
+        );
+        await game.waitForInteraction('mermaids_siren_song_destination');
+
+        const destinationPromptMeta = await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const current = harness?.state?.get?.()?.sys?.interaction?.current;
+            return {
+                sourceId: current?.data?.sourceId ?? null,
+                options: (current?.data?.options ?? []).map((option: any) => ({
+                    id: option.id,
+                    baseIndex: option.value?.baseIndex ?? null,
+                })),
+            };
+        });
+
+        expect(destinationPromptMeta.sourceId).toBe('mermaids_siren_song_destination');
+        expect(destinationPromptMeta.options).toHaveLength(1);
+        expect(destinationPromptMeta.options[0]?.baseIndex).toBe(0);
+
+        await game.selectInteractionOptionBy(
+            (option: any) => option.value?.baseIndex === 0,
+            '塞壬的歌声选择基地 1 作为目标',
+        );
+        await game.waitForInteraction('mermaids_siren_song_target');
+
+        const targetPromptMeta = await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const current = harness?.state?.get?.()?.sys?.interaction?.current;
+            return {
+                sourceId: current?.data?.sourceId ?? null,
+                options: (current?.data?.options ?? []).map((option: any) => ({
+                    id: option.id,
+                    minionUid: option.value?.minionUid ?? null,
+                    baseIndex: option.value?.baseIndex ?? null,
+                })),
+            };
+        });
+
+        expect(targetPromptMeta.sourceId).toBe('mermaids_siren_song_target');
+        expect(targetPromptMeta.options).toHaveLength(1);
+        expect(targetPromptMeta.options[0]?.minionUid).toBe('enemy-movable');
+        expect(targetPromptMeta.options[0]?.baseIndex).toBe(1);
+
+        await game.screenshot('mermaids-siren-song-target-prompt', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-mermaids-siren-song-target-prompt-2026-04-29');
+
+        await game.selectInteractionOptionBy(
+            (option: any) => option.value?.minionUid === 'enemy-movable',
+            '塞壬的歌声选择基地 2 的敌方仆从',
+        );
+        await game.waitForNoInteraction();
+        await dismissSpotlightQueueIfPresent(page);
+
+        const finalState = await game.getState();
+        expect(finalState.core.bases[0].minions.some((minion: any) => minion.uid === 'enemy-movable')).toBe(true);
+        expect(finalState.core.bases[1].minions.some((minion: any) => minion.uid === 'enemy-movable')).toBe(false);
+
+        await game.screenshot('mermaids-siren-song-resolved', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-mermaids-siren-song-resolved-2026-04-29');
+    });
+
+    test('魅惑应可移动目标、压制其本回合总力量贡献，并允许额外打出另一张行动', async ({ page, game }, testInfo) => {
+        test.setTimeout(60000);
+
+        await page.goto('/play/smashup');
+        await page.waitForFunction(
+            () => (window as any).__BG_TEST_HARNESS__?.state?.isRegistered?.() === true,
+            { timeout: 15000 },
+        );
+
+        await game.setupScene({
+            gameId: 'smashup',
+            player0: {
+                hand: ['mermaids_charmed', 'mermaids_toll_bay'],
+                deck: ['robot_microbot_archive'],
+                factions: ['mermaids', 'robots'],
+            },
+            player1: {
+                hand: [],
+                deck: [],
+                factions: ['pirates', 'dinosaurs'],
+            },
+            currentPlayer: '0',
+            phase: 'playCards',
+            bases: [
+                {
+                    defId: 'base_1',
+                    minions: [
+                        { uid: 'ally-anchor', defId: 'robot_microbot_alpha', owner: '0', controller: '0', tempPowerModifier: 0 },
+                    ],
+                    ongoingActions: [],
+                },
+                {
+                    defId: 'base_2',
+                    minions: [
+                        { uid: 'enemy-target', defId: 'robot_microbot_guard', owner: '1', controller: '1', tempPowerModifier: 0 },
+                    ],
+                    ongoingActions: [],
+                },
+            ],
+        });
+
+        await game.playCard('mermaids_charmed', { targetMinionUid: 'enemy-target' });
+        await game.waitForInteraction('mermaids_charmed_destination');
+
+        const destinationPromptMeta = await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const current = harness?.state?.get?.()?.sys?.interaction?.current;
+            return {
+                sourceId: current?.data?.sourceId ?? null,
+                options: (current?.data?.options ?? []).map((option: any) => ({
+                    id: option.id,
+                    skip: option.value?.skip ?? false,
+                    baseIndex: option.value?.baseIndex ?? null,
+                })),
+            };
+        });
+
+        expect(destinationPromptMeta.sourceId).toBe('mermaids_charmed_destination');
+        expect(destinationPromptMeta.options.some((option: any) => option.baseIndex === 0)).toBe(true);
+
+        await game.screenshot('charmed-destination-prompt', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-mermaids-charmed-destination-prompt-2026-04-29');
+
+        await game.selectInteractionOptionBy(
+            (option: any) => option.value?.baseIndex === 0,
+            '魅惑将目标移动到基地 1',
+        );
+        await game.waitForNoInteraction();
+        await dismissSpotlightQueueIfPresent(page);
+
+        const afterCharmed = await game.getState();
+        const movedTargetAfterCharmed = afterCharmed.core.bases[0].minions.find((minion: any) => minion.uid === 'enemy-target');
+        expect(movedTargetAfterCharmed).toBeTruthy();
+        expect(afterCharmed.core.bases[1].minions.some((minion: any) => minion.uid === 'enemy-target')).toBe(false);
+        expect(movedTargetAfterCharmed?.metadata?.mermaidsCharmedSuppressedTurn).toBe(afterCharmed.core.turnNumber);
+
+        await game.screenshot('charmed-resolved', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-mermaids-charmed-resolved-2026-04-29');
+
+        await game.playCard('mermaids_toll_bay', { targetBaseIndex: 0 });
+        await game.waitForNoInteraction();
+        await dismissSpotlightQueueIfPresent(page);
+
+        const finalState = await game.getState();
+        expect(finalState.core.players['0'].hand.some((card: any) => card.defId === 'robot_microbot_archive')).toBe(true);
+        expect(finalState.core.players['0'].hand.some((card: any) => card.defId === 'mermaids_toll_bay')).toBe(false);
+        expect(finalState.core.players['0'].discard.some((card: any) => card.defId === 'mermaids_toll_bay')).toBe(true);
+        expect(finalState.core.players['0'].actionsPlayed).toBe(2);
+
+        await game.screenshot('charmed-extra-action-used', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-mermaids-charmed-extra-action-used-2026-04-29');
+    });
+
     test('斗志奖杯打出后应抽两张并给两个己方随从各放一个 +1 指示物', async ({ page, game }, testInfo) => {
         test.setTimeout(60000);
 
@@ -1335,7 +1864,7 @@ test.describe('Smash Up 牌库检索交互', () => {
             gameId: 'smashup',
             player0: {
                 hand: ['world_champs_fighting_spirit_prize'],
-                deck: ['robot_microbot_alpha', 'robot_microbot_beta'],
+                deck: ['robot_microbot_alpha', 'robot_microbot_guard'],
                 factions: ['world_champs', 'robots'],
             },
             player1: {
@@ -1349,7 +1878,7 @@ test.describe('Smash Up 牌库检索交互', () => {
                 defId: 'base_1',
                 minions: [
                     { uid: 'ally-1', defId: 'robot_microbot_alpha', ownerId: '0', controllerId: '0', powerCounters: 0 },
-                    { uid: 'ally-2', defId: 'robot_microbot_beta', ownerId: '0', controllerId: '0', powerCounters: 0 },
+                    { uid: 'ally-2', defId: 'robot_microbot_guard', ownerId: '0', controllerId: '0', powerCounters: 0 },
                 ],
             }],
         });
@@ -1391,7 +1920,7 @@ test.describe('Smash Up 牌库检索交互', () => {
 
         const finalState = await game.getState();
         expect(finalState.core.players['0'].hand.map((card: any) => card.defId)).toEqual(
-            expect.arrayContaining(['robot_microbot_alpha', 'robot_microbot_beta']),
+            expect.arrayContaining(['robot_microbot_alpha', 'robot_microbot_guard']),
         );
         const baseMinions = finalState.core.bases[0].minions;
         const ally1 = baseMinions.find((minion: any) => minion.uid === 'ally-1');
@@ -1615,7 +2144,7 @@ test.describe('Smash Up 牌库检索交互', () => {
                     defId: 'base_1',
                     minions: [
                         { uid: 'runner-1', defId: 'robot_microbot_alpha', ownerId: '0', controllerId: '0', tempPowerModifier: 0 },
-                        { uid: 'spectator-1', defId: 'robot_microbot_beta', ownerId: '1', controllerId: '1', tempPowerModifier: 0 },
+                        { uid: 'spectator-1', defId: 'robot_microbot_guard', ownerId: '1', controllerId: '1', tempPowerModifier: 0 },
                     ],
                     ongoingActions: [],
                 },
@@ -1735,7 +2264,7 @@ test.describe('Smash Up 牌库检索交互', () => {
                 },
                 {
                     defId: 'base_2',
-                    minions: [{ uid: 'blitz-ally-2', defId: 'robot_microbot_beta', ownerId: '0', controllerId: '0', tempPowerModifier: 0 }],
+                    minions: [{ uid: 'blitz-ally-2', defId: 'robot_microbot_guard', ownerId: '0', controllerId: '0', tempPowerModifier: 0 }],
                     ongoingActions: [],
                 },
             ],
@@ -1816,7 +2345,7 @@ test.describe('Smash Up 牌库检索交互', () => {
                 {
                     defId: 'base_2',
                     minions: [
-                        { uid: 'kaiju-ally-2', defId: 'robot_microbot_beta', owner: '0', controller: '0', tempPowerModifier: 0 },
+                        { uid: 'kaiju-ally-2', defId: 'robot_microbot_guard', owner: '0', controller: '0', tempPowerModifier: 0 },
                         { uid: 'kaiju-enemy-1', defId: 'pirate_first_mate', owner: '1', controller: '1', tempPowerModifier: 0 },
                     ],
                     ongoingActions: [],
@@ -2012,7 +2541,7 @@ test.describe('Smash Up 牌库检索交互', () => {
             bases: [{
                 defId: 'base_1',
                 minions: [
-                    { uid: 'enemy-host', defId: 'robot_microbot_gamma', ownerId: '1', controllerId: '1', powerCounters: 0 },
+                    { uid: 'enemy-host', defId: 'robot_microbot_archive', ownerId: '1', controllerId: '1', powerCounters: 0 },
                 ],
                 ongoingActions: [],
             }],
@@ -2092,7 +2621,7 @@ test.describe('Smash Up 牌库检索交互', () => {
                 {
                     defId: 'base_2',
                     minions: [
-                        { uid: 'bewitched-target', defId: 'robot_microbot_beta', owner: '0', controller: '0', powerCounters: 0 },
+                        { uid: 'bewitched-target', defId: 'robot_microbot_guard', owner: '0', controller: '0', powerCounters: 0 },
                     ],
                     ongoingActions: [],
                 },
@@ -2201,7 +2730,7 @@ test.describe('Smash Up 牌库检索交互', () => {
                 {
                     defId: 'base_2',
                     minions: [
-                        { uid: 'eh-ally-2', defId: 'robot_microbot_beta', owner: '0', controller: '0', tempPowerModifier: 0 },
+                        { uid: 'eh-ally-2', defId: 'robot_microbot_guard', owner: '0', controller: '0', tempPowerModifier: 0 },
                     ],
                     ongoingActions: [],
                 },
@@ -2480,6 +3009,112 @@ test.describe('Smash Up 牌库检索交互', () => {
         }
     });
 
+    test('沉船湾应在基地计分后可移到另一个基地', async ({ browser, baseURL }, testInfo) => {
+        test.setTimeout(90000);
+
+        const setup = await setupSUOnlineMatch(browser, baseURL, ['mermaids', 'robots', 'pirates', 'dinosaurs']);
+        if (!setup) {
+            test.skip(true, '游戏服务器不可用');
+            return;
+        }
+
+        const { hostPage, guestPage, hostContext, guestContext } = setup;
+        try {
+            await waitForHandArea(hostPage);
+            await waitForHandArea(guestPage);
+
+            const fullState = await readFullState(hostPage);
+            const injectedState = prepareInjectedOnlineState(fullState as Record<string, any>, (core) => {
+                const turnOrder = core.turnOrder as string[];
+                const hostPid = turnOrder[0];
+                const guestPid = turnOrder[1];
+
+                core.currentPlayerIndex = 0;
+                core.currentPlayer = hostPid;
+                core.players[hostPid].hand = [];
+                core.players[guestPid].hand = [];
+                core.players[hostPid].deck = [];
+                core.players[guestPid].deck = [];
+                core.players[hostPid].minionsPlayed = 0;
+                core.players[hostPid].actionsPlayed = 0;
+                core.players[guestPid].actionsPlayed = 0;
+                core.bases[0].defId = 'base_the_jungle';
+                core.bases[0].minions = [
+                    makeMinion('shipwreck-host', 'robot_microbot_alpha', hostPid, hostPid, 4),
+                ];
+                core.bases[0].ongoingActions = [{
+                    uid: 'shipwreck-cove-live',
+                    defId: 'mermaids_shipwreck_cove',
+                    ownerId: hostPid,
+                    talentUsed: false,
+                }];
+                core.bases[1].defId = 'base_tar_pits';
+                core.bases[1].minions = [];
+                core.bases[1].ongoingActions = [];
+                for (let index = 2; index < core.bases.length; index += 1) {
+                    core.bases[index].minions = [];
+                    core.bases[index].ongoingActions = [];
+                }
+            });
+
+            await applyCoreStateDirect(hostPage, injectedState);
+            await closeDebugPanel(hostPage);
+            await closeDebugPanel(guestPage);
+            await hostPage.waitForTimeout(2000);
+
+            await hostPage.getByRole('button', { name: /^(结束回合|Finish Turn|End)$/i }).click({ force: true });
+            await waitForScoreBasesOrReactionEntry(hostPage, 12000);
+            await activateReactionTrigger(
+                hostPage,
+                '0',
+                {
+                    triggerSourceDefId: 'mermaids_shipwreck_cove',
+                    optionLabelIncludes: '沉船湾',
+                    optionIdIncludes: 'mermaids_shipwreck_cove',
+                },
+                'mermaids_shipwreck_cove_after_scoring',
+                12000,
+                guestPage,
+            );
+
+            const promptState = await readAuthoritativeState(hostPage);
+            const prompt = (() => {
+                const current = getCurrentInteraction(promptState);
+                const data = asRecord(current?.data);
+                return {
+                    sourceId: data?.sourceId ?? null,
+                    options: (Array.isArray(data?.options) ? data.options : []).map((option: any) => ({
+                        id: option.id,
+                        baseIndex: option.value?.baseIndex ?? null,
+                    })),
+                };
+            })();
+
+            expect(prompt.sourceId).toBe('mermaids_shipwreck_cove_after_scoring');
+            expect(prompt.options.some((option: any) => option.baseIndex === 1)).toBe(true);
+
+            await hostPage.screenshot({ path: testInfo.outputPath('shipwreck-cove-after-scoring-prompt.png'), fullPage: true });
+            await saveStableScreenshot(hostPage, testInfo, 'smashup-mermaids-shipwreck-cove-after-scoring-prompt-2026-04-29');
+
+            await clickBaseOnBoard(hostPage, 1, 10000);
+            await waitForNoInteraction(hostPage, 10000);
+
+            const finalState = await readFullState(hostPage);
+            const resolvedCore = (finalState.core ?? finalState) as Record<string, any>;
+            const sourceStillHasCard = (resolvedCore.bases[0].ongoingActions ?? []).some((action: any) => action.uid === 'shipwreck-cove-live');
+            const targetHasCard = (resolvedCore.bases[1].ongoingActions ?? []).some((action: any) => action.uid === 'shipwreck-cove-live');
+
+            expect(sourceStillHasCard).toBe(false);
+            expect(targetHasCard).toBe(true);
+
+            await hostPage.screenshot({ path: testInfo.outputPath('shipwreck-cove-moved-to-other-base.png'), fullPage: true });
+            await saveStableScreenshot(hostPage, testInfo, 'smashup-mermaids-shipwreck-cove-moved-2026-04-29');
+        } finally {
+            await hostContext.close().catch(() => {});
+            await guestContext.close().catch(() => {});
+        }
+    });
+
     test('复仇者应可在回合中触发埋葬且同回合不重复触发', async ({ page, game }, testInfo) => {
         test.setTimeout(60000);
 
@@ -2492,7 +3127,7 @@ test.describe('Smash Up 牌库检索交互', () => {
         await game.setupScene({
             gameId: 'smashup',
             player0: {
-                hand: ['robot_microbot_alpha', 'robot_microbot_beta'],
+                hand: ['robot_microbot_alpha', 'robot_microbot_guard'],
                 deck: [],
                 discard: ['skeletons_revenant'],
                 factions: ['skeletons', 'robots'],
@@ -2546,7 +3181,7 @@ test.describe('Smash Up 牌库检索交互', () => {
 
         await game.screenshot('skeletons-revenant-buried-resolved', testInfo);
 
-        await game.playCard('robot_microbot_beta', { targetBaseIndex: 0 });
+        await game.playCard('robot_microbot_guard', { targetBaseIndex: 0 });
         await game.waitForNoInteraction();
         await page.waitForTimeout(250);
 
@@ -2567,6 +3202,189 @@ test.describe('Smash Up 牌库检索交互', () => {
         await game.screenshot('skeletons-revenant-second-card-no-repeat', testInfo);
     });
 
+    test('轮回者打出后应可把自己埋葬到这里', async ({ page, game }, testInfo) => {
+        test.setTimeout(60000);
+
+        await page.goto('/play/smashup');
+        await page.waitForFunction(
+            () => (window as any).__BG_TEST_HARNESS__?.state?.isRegistered?.() === true,
+            { timeout: 15000 },
+        );
+
+        await game.setupScene({
+            gameId: 'smashup',
+            player0: {
+                hand: ['skeletons_returned_one'],
+                deck: [],
+                discard: [],
+                factions: ['skeletons', 'robots'],
+            },
+            player1: {
+                hand: [],
+                deck: [],
+                discard: [],
+                factions: ['pirates', 'dinosaurs'],
+            },
+            currentPlayer: '0',
+            phase: 'playCards',
+            bases: [
+                { defId: 'base_1', minions: [], ongoingActions: [] },
+                { defId: 'base_2', minions: [], ongoingActions: [] },
+            ],
+        });
+
+        await game.playCard('skeletons_returned_one', { targetBaseIndex: 0 });
+        await game.waitForInteraction('skeletons_returned_one');
+
+        const promptMeta = await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const current = harness?.state?.get?.()?.sys?.interaction?.current;
+            return {
+                sourceId: current?.data?.sourceId ?? null,
+                options: (current?.data?.options ?? []).map((option: any) => ({
+                    id: option.id,
+                    defId: option.value?.defId ?? null,
+                    buriedFrom: option.value?.buriedFrom ?? null,
+                    skip: option.value?.skip ?? false,
+                })),
+            };
+        });
+
+        expect(promptMeta.sourceId).toBe('skeletons_returned_one');
+        expect(promptMeta.options.some((option: any) => option.defId === 'skeletons_returned_one' && option.buriedFrom === 'play')).toBe(true);
+
+        await game.screenshot('returned-one-bury-prompt', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-skeletons-returned-one-bury-prompt-2026-04-29');
+
+        await game.selectInteractionOptionBy(
+            (option: any) => option.value?.defId === 'skeletons_returned_one' && option.value?.buriedFrom === 'play',
+            '轮回者选择把自己埋葬到这里',
+        );
+        await game.waitForNoInteraction();
+        await dismissSpotlightQueueIfPresent(page);
+
+        const finalState = await game.getState();
+        expect((finalState.core.bases[0].buriedCards ?? []).some((card: any) => card.defId === 'skeletons_returned_one')).toBe(true);
+        expect(finalState.core.bases[0].minions.some((minion: any) => minion.defId === 'skeletons_returned_one')).toBe(false);
+
+        await game.screenshot('returned-one-buried-resolved', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-skeletons-returned-one-buried-resolved-2026-04-29');
+    });
+
+    test('往下埋应先选基地，再从弃牌堆埋葬至多三张总力量 6 或更少的随从', async ({ page, game }, testInfo) => {
+        test.setTimeout(60000);
+
+        await page.goto('/play/smashup');
+        await page.waitForFunction(
+            () => (window as any).__BG_TEST_HARNESS__?.state?.isRegistered?.() === true,
+            { timeout: 15000 },
+        );
+
+        await game.setupScene({
+            gameId: 'smashup',
+            player0: {
+                hand: ['skeletons_place_em_down'],
+                deck: [],
+                discard: ['robot_microbot_alpha', 'robot_microbot_guard', 'robot_warbot'],
+                factions: ['skeletons', 'robots'],
+            },
+            player1: {
+                hand: [],
+                deck: [],
+                discard: [],
+                factions: ['pirates', 'dinosaurs'],
+            },
+            currentPlayer: '0',
+            phase: 'playCards',
+            bases: [
+                { defId: 'base_1', minions: [], ongoingActions: [] },
+                { defId: 'base_2', minions: [], ongoingActions: [] },
+            ],
+        });
+
+        await game.playCard('skeletons_place_em_down');
+        await game.waitForInteraction('skeletons_place_em_down_base');
+
+        const basePromptMeta = await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const current = harness?.state?.get?.()?.sys?.interaction?.current;
+            return {
+                sourceId: current?.data?.sourceId ?? null,
+                options: (current?.data?.options ?? []).map((option: any) => ({
+                    id: option.id,
+                    baseIndex: option.value?.baseIndex ?? null,
+                })),
+            };
+        });
+
+        expect(basePromptMeta.sourceId).toBe('skeletons_place_em_down_base');
+        expect(basePromptMeta.options.some((option: any) => option.baseIndex === 1)).toBe(true);
+
+        await game.screenshot('place-em-down-base-prompt', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-skeletons-place-em-down-base-prompt-2026-04-29');
+
+        await game.selectInteractionOptionBy(
+            (option: any) => option.value?.baseIndex === 1,
+            '往下埋选择基地 2',
+        );
+        await game.waitForInteraction('skeletons_place_em_down_cards');
+
+        const cardsPromptMeta = await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const current = harness?.state?.get?.()?.sys?.interaction?.current;
+            return {
+                sourceId: current?.data?.sourceId ?? null,
+                multi: current?.data?.multi ?? null,
+                options: (current?.data?.options ?? []).map((option: any) => ({
+                    id: option.id,
+                    cardUid: option.value?.cardUid ?? null,
+                    defId: option.value?.defId ?? null,
+                })),
+            };
+        });
+
+        expect(cardsPromptMeta.sourceId).toBe('skeletons_place_em_down_cards');
+        expect(cardsPromptMeta.multi?.max).toBe(3);
+        expect(cardsPromptMeta.options.map((option: any) => option.defId)).toEqual(
+            expect.arrayContaining(['robot_microbot_alpha', 'robot_microbot_guard', 'robot_warbot']),
+        );
+
+        await game.screenshot('place-em-down-cards-prompt', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-skeletons-place-em-down-cards-prompt-2026-04-29');
+
+        const optionIdAlpha = cardsPromptMeta.options.find((option: any) => option.defId === 'robot_microbot_alpha')?.id;
+        const optionIdBeta = cardsPromptMeta.options.find((option: any) => option.defId === 'robot_microbot_guard')?.id;
+        const optionIdWarbot = cardsPromptMeta.options.find((option: any) => option.defId === 'robot_warbot')?.id;
+        expect(optionIdAlpha).toBeDefined();
+        expect(optionIdBeta).toBeDefined();
+        expect(optionIdWarbot).toBeDefined();
+
+        await page.evaluate(({ optionIds }) => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const state = harness?.state?.get?.();
+            const playerId = state?.sys?.interaction?.current?.playerId;
+            harness.command.dispatch({
+                type: 'SYS_INTERACTION_RESPOND',
+                playerId,
+                payload: { optionIds },
+            });
+        }, { optionIds: [optionIdAlpha, optionIdBeta, optionIdWarbot] });
+        await game.waitForNoInteraction();
+        await dismissSpotlightQueueIfPresent(page);
+
+        const finalState = await game.getState();
+        const buriedOnBase2 = finalState.core.bases[1].buriedCards ?? [];
+        expect(buriedOnBase2.map((card: any) => card.defId)).toEqual(
+            expect.arrayContaining(['robot_microbot_alpha', 'robot_microbot_guard', 'robot_warbot']),
+        );
+        expect(finalState.core.players['0'].discard.some((card: any) => card.defId === 'robot_microbot_alpha')).toBe(false);
+        expect(finalState.core.players['0'].discard.some((card: any) => card.defId === 'robot_microbot_guard')).toBe(false);
+        expect(finalState.core.players['0'].discard.some((card: any) => card.defId === 'robot_warbot')).toBe(false);
+
+        await game.screenshot('place-em-down-resolved', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-skeletons-place-em-down-resolved-2026-04-29');
+    });
+
     test('殉葬品打出后应先强制埋一张，再允许把额外埋葬牌放到不同基地', async ({ page, game }, testInfo) => {
         test.setTimeout(60000);
 
@@ -2579,7 +3397,7 @@ test.describe('Smash Up 牌库检索交互', () => {
         await game.setupScene({
             gameId: 'smashup',
             player0: {
-                hand: ['skeletons_grave_goods', 'robot_microbot_alpha', 'robot_microbot_beta'],
+                hand: ['skeletons_grave_goods', 'robot_microbot_alpha', 'robot_microbot_guard'],
                 deck: [],
                 discard: [],
                 factions: ['skeletons', 'robots'],
@@ -2622,7 +3440,7 @@ test.describe('Smash Up 牌库检索交互', () => {
         await game.waitForInteraction('skeletons_grave_goods_bonus');
 
         await game.selectInteractionOptionBy(
-            (option: any) => option.value?.defId === 'robot_microbot_beta',
+            (option: any) => option.value?.defId === 'robot_microbot_guard',
             '殉葬品选择机器人贝塔作为额外埋葬牌',
         );
         await game.waitForInteraction('skeletons_grave_goods_bonus_base');
@@ -2635,9 +3453,102 @@ test.describe('Smash Up 牌库检索交互', () => {
 
         const stateAfterResolve = await game.getState();
         expect((stateAfterResolve.core.bases[0].buriedCards ?? []).some((card: any) => card.defId === 'robot_microbot_alpha')).toBe(true);
-        expect((stateAfterResolve.core.bases[1].buriedCards ?? []).some((card: any) => card.defId === 'robot_microbot_beta')).toBe(true);
+        expect((stateAfterResolve.core.bases[1].buriedCards ?? []).some((card: any) => card.defId === 'robot_microbot_guard')).toBe(true);
 
         await game.screenshot('grave-goods-resolved', testInfo);
+    });
+
+    test('诡异。可怕。应从弃牌堆埋葬低力量随从并抽一张牌', async ({ page, game }, testInfo) => {
+        test.setTimeout(60000);
+
+        await page.goto('/play/smashup');
+        await page.waitForFunction(
+            () => (window as any).__BG_TEST_HARNESS__?.state?.isRegistered?.() === true,
+            { timeout: 15000 },
+        );
+
+        await game.setupScene({
+            gameId: 'smashup',
+            player0: {
+                hand: ['skeletons_spooky_scary'],
+                deck: ['robot_microbot_archive'],
+                discard: ['robot_microbot_alpha'],
+                factions: ['skeletons', 'robots'],
+            },
+            player1: {
+                hand: [],
+                deck: [],
+                discard: [],
+                factions: ['pirates', 'dinosaurs'],
+            },
+            currentPlayer: '0',
+            phase: 'playCards',
+            bases: [
+                { defId: 'base_1', minions: [], ongoingActions: [] },
+                { defId: 'base_2', minions: [], ongoingActions: [] },
+            ],
+        });
+
+        await game.playCard('skeletons_spooky_scary');
+        await game.waitForInteraction('skeletons_spooky_scary_base');
+
+        const basePromptMeta = await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const current = harness?.state?.get?.()?.sys?.interaction?.current;
+            return {
+                sourceId: current?.data?.sourceId ?? null,
+                options: (current?.data?.options ?? []).map((option: any) => ({
+                    id: option.id,
+                    baseIndex: option.value?.baseIndex ?? null,
+                })),
+            };
+        });
+
+        expect(basePromptMeta.sourceId).toBe('skeletons_spooky_scary_base');
+        expect(basePromptMeta.options.some((option: any) => option.baseIndex === 1)).toBe(true);
+
+        await game.screenshot('spooky-scary-base-prompt', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-skeletons-spooky-scary-base-prompt-2026-04-29');
+
+        await game.selectInteractionOptionBy(
+            (option: any) => option.value?.baseIndex === 1,
+            '诡异。可怕。选择基地 2',
+        );
+        await game.waitForInteraction('skeletons_spooky_scary_card');
+
+        const cardPromptMeta = await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const current = harness?.state?.get?.()?.sys?.interaction?.current;
+            return {
+                sourceId: current?.data?.sourceId ?? null,
+                options: (current?.data?.options ?? []).map((option: any) => ({
+                    id: option.id,
+                    defId: option.value?.defId ?? null,
+                    buriedFrom: option.value?.buriedFrom ?? null,
+                })),
+            };
+        });
+
+        expect(cardPromptMeta.sourceId).toBe('skeletons_spooky_scary_card');
+        expect(cardPromptMeta.options.some((option: any) => option.defId === 'robot_microbot_alpha' && option.buriedFrom === 'discard')).toBe(true);
+
+        await game.screenshot('spooky-scary-card-prompt', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-skeletons-spooky-scary-card-prompt-2026-04-29');
+
+        await game.selectInteractionOptionBy(
+            (option: any) => option.value?.defId === 'robot_microbot_alpha',
+            '诡异。可怕。选择弃牌堆里的微型机阿尔法号',
+        );
+        await game.waitForNoInteraction();
+        await dismissSpotlightQueueIfPresent(page);
+
+        const finalState = await game.getState();
+        expect((finalState.core.bases[1].buriedCards ?? []).some((card: any) => card.defId === 'robot_microbot_alpha')).toBe(true);
+        expect(finalState.core.players['0'].hand.some((card: any) => card.defId === 'robot_microbot_archive')).toBe(true);
+        expect(finalState.core.players['0'].discard.some((card: any) => card.defId === 'robot_microbot_alpha')).toBe(false);
+
+        await game.screenshot('spooky-scary-resolved', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-skeletons-spooky-scary-resolved-2026-04-29');
     });
 
     test('灵车队伍普通打出应可移动其他玩家的埋葬牌', async ({ page, game }, testInfo) => {
@@ -2711,6 +3622,533 @@ test.describe('Smash Up 牌库检索交互', () => {
         expect((stateAfterResolve.core.bases[1].buriedCards ?? []).some((card: any) => card.uid === 'enemy-buried-1')).toBe(true);
 
         await game.screenshot('hearse-fleet-resolved', testInfo);
+    });
+
+    test('他们出来了应只允许选择有己方埋葬牌的基地，并可一次挖掘多张己方埋葬牌', async ({ page, game }, testInfo) => {
+        test.setTimeout(60000);
+
+        await page.goto('/play/smashup');
+        await page.waitForFunction(
+            () => (window as any).__BG_TEST_HARNESS__?.state?.isRegistered?.() === true,
+            { timeout: 15000 },
+        );
+
+        await game.setupScene({
+            gameId: 'smashup',
+            player0: {
+                hand: ['skeletons_dig_em_up'],
+                deck: [],
+                discard: [],
+                factions: ['skeletons', 'robots'],
+            },
+            player1: {
+                hand: [],
+                deck: [],
+                discard: [],
+                factions: ['pirates', 'dinosaurs'],
+            },
+            currentPlayer: '0',
+            phase: 'playCards',
+            bases: [
+                {
+                    defId: 'base_1',
+                    minions: [],
+                    ongoingActions: [],
+                    buriedCards: [
+                        {
+                            uid: 'dig-own-a',
+                            defId: 'robot_microbot_alpha',
+                            trueOwnerId: '0',
+                            controllerId: '0',
+                            buriedFrom: 'discard',
+                        },
+                        {
+                            uid: 'dig-own-b',
+                            defId: 'robot_warbot',
+                            trueOwnerId: '0',
+                            controllerId: '0',
+                            buriedFrom: 'discard',
+                        },
+                    ],
+                },
+                {
+                    defId: 'base_2',
+                    minions: [],
+                    ongoingActions: [],
+                    buriedCards: [
+                        {
+                            uid: 'dig-enemy-only',
+                            defId: 'pirate_first_mate',
+                            trueOwnerId: '1',
+                            controllerId: '1',
+                            buriedFrom: 'discard',
+                        },
+                    ],
+                },
+            ],
+        });
+
+        await game.playCard('skeletons_dig_em_up');
+        await game.waitForInteraction('skeletons_dig_em_up_base');
+
+        const basePromptMeta = await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const current = harness?.state?.get?.()?.sys?.interaction?.current;
+            return {
+                sourceId: current?.data?.sourceId ?? null,
+                options: (current?.data?.options ?? []).map((option: any) => ({
+                    id: option.id,
+                    baseIndex: option.value?.baseIndex ?? null,
+                })),
+            };
+        });
+
+        expect(basePromptMeta.sourceId).toBe('skeletons_dig_em_up_base');
+        expect(basePromptMeta.options.some((option: any) => option.baseIndex === 0)).toBe(true);
+        expect(basePromptMeta.options.some((option: any) => option.baseIndex === 1)).toBe(false);
+
+        await game.selectInteractionOptionBy(
+            (option: any) => option.value?.baseIndex === 0,
+            '他们出来了选择基地 1',
+        );
+        await game.waitForInteraction('skeletons_dig_em_up_cards');
+
+        const cardsPromptMeta = await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const current = harness?.state?.get?.()?.sys?.interaction?.current;
+            return {
+                sourceId: current?.data?.sourceId ?? null,
+                multi: current?.data?.multi ?? null,
+                options: (current?.data?.options ?? []).map((option: any) => ({
+                    id: option.id,
+                    cardUid: option.value?.cardUid ?? null,
+                    baseIndex: option.value?.baseIndex ?? null,
+                })),
+            };
+        });
+
+        expect(cardsPromptMeta.sourceId).toBe('skeletons_dig_em_up_cards');
+        expect(cardsPromptMeta.multi?.max).toBe(2);
+        expect(cardsPromptMeta.options.map((option: any) => option.cardUid)).toEqual(
+            expect.arrayContaining(['dig-own-a', 'dig-own-b']),
+        );
+        expect(cardsPromptMeta.options.map((option: any) => option.cardUid)).not.toContain('dig-enemy-only');
+
+        const buriedCardA = page.locator('[data-buried-card-uid="dig-own-a"]').first();
+        const buriedCardB = page.locator('[data-buried-card-uid="dig-own-b"]').first();
+        await expect(buriedCardA).toBeVisible({ timeout: 5000 });
+        await expect(buriedCardB).toBeVisible({ timeout: 5000 });
+        await expect(buriedCardA).toHaveAttribute('data-buried-face-up', 'true');
+        await expect(buriedCardA).toHaveAttribute('data-buried-selectable', 'true');
+        await expect(buriedCardB).toHaveAttribute('data-buried-selectable', 'true');
+
+        await game.screenshot('skeletons-dig-em-up-cards-prompt', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-skeletons-dig-em-up-cards-prompt-2026-04-29');
+
+        const buriedOptionA = cardsPromptMeta.options.find((option: any) => option.cardUid === 'dig-own-a');
+        const buriedOptionB = cardsPromptMeta.options.find((option: any) => option.cardUid === 'dig-own-b');
+        expect(buriedOptionA?.id).toBeDefined();
+        expect(buriedOptionB?.id).toBeDefined();
+
+        await page.evaluate(({ optionIdA, optionIdB }) => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const state = harness?.state?.get?.();
+            const playerId = state?.sys?.interaction?.current?.playerId;
+            harness.command.dispatch({
+                type: 'SYS_INTERACTION_RESPOND',
+                playerId,
+                payload: { optionIds: [optionIdA, optionIdB] },
+            });
+        }, { optionIdA: buriedOptionA.id, optionIdB: buriedOptionB.id });
+        await game.waitForNoInteraction();
+        await dismissSpotlightQueueIfPresent(page);
+
+        const finalState = await game.getState();
+        expect((finalState.core.bases[0].buriedCards ?? []).some((card: any) => card.uid === 'dig-own-a')).toBe(false);
+        expect((finalState.core.bases[0].buriedCards ?? []).some((card: any) => card.uid === 'dig-own-b')).toBe(false);
+        expect(finalState.core.bases[0].minions.some((minion: any) => minion.uid === 'dig-own-a')).toBe(true);
+        expect(finalState.core.bases[0].minions.some((minion: any) => minion.uid === 'dig-own-b')).toBe(true);
+
+        await game.screenshot('skeletons-dig-em-up-resolved', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-skeletons-dig-em-up-resolved-2026-04-29');
+    });
+
+    test('墓园应可从场上发动天赋挖掘己方埋葬牌，并在挖出随从后可放置 +1 指示物', async ({ page, game }, testInfo) => {
+        test.setTimeout(60000);
+
+        await page.goto('/play/smashup');
+        await page.waitForFunction(
+            () => (window as any).__BG_TEST_HARNESS__?.state?.isRegistered?.() === true,
+            { timeout: 15000 },
+        );
+
+        await game.setupScene({
+            gameId: 'smashup',
+            player0: {
+                hand: ['skeletons_graveyard'],
+                deck: [],
+                discard: [],
+                factions: ['skeletons', 'robots'],
+            },
+            player1: {
+                hand: [],
+                deck: [],
+                discard: [],
+                factions: ['pirates', 'dinosaurs'],
+            },
+            currentPlayer: '0',
+            phase: 'playCards',
+            bases: [
+                {
+                    defId: 'base_1',
+                    minions: [],
+                    ongoingActions: [],
+                    buriedCards: [
+                        {
+                            uid: 'graveyard-own-buried',
+                            defId: 'robot_microbot_alpha',
+                            trueOwnerId: '0',
+                            controllerId: '0',
+                            buriedFrom: 'discard',
+                        },
+                        {
+                            uid: 'graveyard-enemy-buried',
+                            defId: 'pirate_first_mate',
+                            trueOwnerId: '1',
+                            controllerId: '1',
+                            buriedFrom: 'discard',
+                        },
+                    ],
+                },
+                {
+                    defId: 'base_2',
+                    minions: [],
+                    ongoingActions: [],
+                },
+            ],
+        });
+
+        await game.playCard('skeletons_graveyard', { targetBaseIndex: 0 });
+        await game.waitForNoInteraction();
+        await dismissSpotlightQueueIfPresent(page);
+
+        const attachedOngoingUid = await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const state = harness?.state?.get?.();
+            return state?.core?.bases?.[0]?.ongoingActions?.find((action: any) => action.defId === 'skeletons_graveyard')?.uid ?? null;
+        });
+        expect(attachedOngoingUid).toBeTruthy();
+
+        const ongoingCard = page.locator(`[data-ongoing-uid="${attachedOngoingUid}"]`).first();
+        await expect(ongoingCard).toBeVisible({ timeout: 5000 });
+        await ongoingCard.click({ force: true });
+        await ongoingCard.click({ force: true });
+        await game.waitForInteraction('skeletons_graveyard');
+
+        const uncoverPromptMeta = await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const current = harness?.state?.get?.()?.sys?.interaction?.current;
+            return {
+                sourceId: current?.data?.sourceId ?? null,
+                options: (current?.data?.options ?? []).map((option: any) => ({
+                    id: option.id,
+                    cardUid: option.value?.cardUid ?? null,
+                    baseIndex: option.value?.baseIndex ?? null,
+                })),
+            };
+        });
+
+        expect(uncoverPromptMeta.sourceId).toBe('skeletons_graveyard');
+        expect(uncoverPromptMeta.options.some((option: any) => option.cardUid === 'graveyard-own-buried')).toBe(true);
+        expect(uncoverPromptMeta.options.some((option: any) => option.cardUid === 'graveyard-enemy-buried')).toBe(false);
+
+        await game.screenshot('graveyard-uncover-prompt', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-skeletons-graveyard-uncover-prompt-2026-04-29');
+
+        await game.selectInteractionOptionBy(
+            (option: any) => option.value?.cardUid === 'graveyard-own-buried',
+            '墓园选择己方埋葬牌进行挖掘',
+        );
+        await game.waitForInteraction('skeletons_graveyard_counter');
+
+        const counterPromptMeta = await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const current = harness?.state?.get?.()?.sys?.interaction?.current;
+            return {
+                sourceId: current?.data?.sourceId ?? null,
+                options: (current?.data?.options ?? []).map((option: any) => ({
+                    id: option.id,
+                    apply: option.value?.apply ?? null,
+                })),
+            };
+        });
+
+        expect(counterPromptMeta.sourceId).toBe('skeletons_graveyard_counter');
+        expect(counterPromptMeta.options.some((option: any) => option.apply === true)).toBe(true);
+
+        await game.screenshot('graveyard-counter-prompt', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-skeletons-graveyard-counter-prompt-2026-04-29');
+
+        await game.selectInteractionOptionBy(
+            (option: any) => option.value?.apply === true,
+            '墓园选择给挖出的随从放置 +1 指示物',
+        );
+        await game.waitForNoInteraction();
+        await dismissSpotlightQueueIfPresent(page);
+
+        const finalState = await game.getState();
+        expect((finalState.core.bases[0].buriedCards ?? []).some((card: any) => card.uid === 'graveyard-own-buried')).toBe(false);
+        expect((finalState.core.bases[0].buriedCards ?? []).some((card: any) => card.uid === 'graveyard-enemy-buried')).toBe(true);
+        expect(finalState.core.bases[0].minions.some((minion: any) => minion.uid === 'graveyard-own-buried')).toBe(true);
+        expect(finalState.core.bases[0].minions.find((minion: any) => minion.uid === 'graveyard-own-buried')?.powerCounters).toBe(1);
+
+        await game.screenshot('graveyard-resolved', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-skeletons-graveyard-resolved-2026-04-29');
+    });
+
+    test('骸骨之王应可从场上发动天赋挖掘这里任意埋葬牌，并在挖出其他随从后可放置 +1 指示物', async ({ page, game }, testInfo) => {
+        test.setTimeout(60000);
+
+        await page.goto('/play/smashup');
+        await page.waitForFunction(
+            () => (window as any).__BG_TEST_HARNESS__?.state?.isRegistered?.() === true,
+            { timeout: 15000 },
+        );
+
+        await game.setupScene({
+            gameId: 'smashup',
+            player0: {
+                hand: [],
+                deck: [],
+                discard: [],
+                factions: ['skeletons', 'robots'],
+            },
+            player1: {
+                hand: [],
+                deck: [],
+                discard: [],
+                factions: ['pirates', 'dinosaurs'],
+            },
+            currentPlayer: '0',
+            phase: 'playCards',
+            bases: [
+                {
+                    defId: 'base_1',
+                    minions: [
+                        { uid: 'lob-1', defId: 'skeletons_lord_of_bones', owner: '0', controller: '0', tempPowerModifier: 0, powerCounters: 0 },
+                    ],
+                    ongoingActions: [],
+                    buriedCards: [
+                        {
+                            uid: 'lob-enemy-buried',
+                            defId: 'robot_microbot_alpha',
+                            trueOwnerId: '1',
+                            controllerId: '1',
+                            buriedFrom: 'discard',
+                        },
+                    ],
+                },
+                {
+                    defId: 'base_2',
+                    minions: [],
+                    ongoingActions: [],
+                },
+            ],
+        });
+
+        await page.locator('[data-minion-uid="lob-1"]').click({ force: true });
+        await game.waitForInteraction('skeletons_lord_of_bones_uncover');
+
+        const uncoverPromptMeta = await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const current = harness?.state?.get?.()?.sys?.interaction?.current;
+            return {
+                sourceId: current?.data?.sourceId ?? null,
+                options: (current?.data?.options ?? []).map((option: any) => ({
+                    id: option.id,
+                    cardUid: option.value?.cardUid ?? null,
+                    baseIndex: option.value?.baseIndex ?? null,
+                })),
+            };
+        });
+
+        expect(uncoverPromptMeta.sourceId).toBe('skeletons_lord_of_bones_uncover');
+        expect(uncoverPromptMeta.options.some((option: any) => option.cardUid === 'lob-enemy-buried')).toBe(true);
+
+        await game.screenshot('lord-of-bones-uncover-prompt', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-skeletons-lord-of-bones-uncover-prompt-2026-04-29');
+
+        await game.selectInteractionOptionBy(
+            (option: any) => option.value?.cardUid === 'lob-enemy-buried',
+            '骸骨之王选择挖掘这里的其他玩家埋葬牌',
+        );
+        await game.waitForInteraction('smashup_reaction_choose');
+
+        const reactionMeta = await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const state = harness?.state?.get?.();
+            const triggerQueue = new Map((state?.core?.triggerQueue ?? []).map((trigger: any) => [trigger.id, trigger]));
+            return {
+                sourceId: state?.sys?.interaction?.current?.data?.sourceId ?? null,
+                options: (state?.sys?.interaction?.current?.data?.options ?? []).map((option: any) => ({
+                    id: option.id,
+                    label: option.label ?? null,
+                    triggerSourceDefId: option.value?.triggerId
+                        ? (triggerQueue.get(option.value.triggerId)?.sourceDefId ?? null)
+                        : null,
+                })),
+            };
+        });
+
+        expect(reactionMeta.sourceId).toBe('smashup_reaction_choose');
+        const lordOfBonesReactionId = reactionMeta.options.find(
+            (option: any) => option.triggerSourceDefId === 'skeletons_lord_of_bones',
+        )?.id;
+        expect(lordOfBonesReactionId).toBeTruthy();
+
+        await game.screenshot('lord-of-bones-reaction-prompt', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-skeletons-lord-of-bones-reaction-prompt-2026-04-29');
+
+        await game.selectOption(lordOfBonesReactionId);
+        await game.waitForInteraction('skeletons_lord_of_bones_ongoing');
+
+        const counterPromptMeta = await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const current = harness?.state?.get?.()?.sys?.interaction?.current;
+            return {
+                sourceId: current?.data?.sourceId ?? null,
+                options: (current?.data?.options ?? []).map((option: any) => ({
+                    id: option.id,
+                    apply: option.value?.apply ?? null,
+                })),
+            };
+        });
+
+        expect(counterPromptMeta.sourceId).toBe('skeletons_lord_of_bones_ongoing');
+        expect(counterPromptMeta.options.some((option: any) => option.apply === true)).toBe(true);
+
+        await game.screenshot('lord-of-bones-counter-prompt', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-skeletons-lord-of-bones-counter-prompt-2026-04-29');
+
+        await game.selectInteractionOptionBy(
+            (option: any) => option.value?.apply === true,
+            '骸骨之王选择给挖出的随从放置 +1 指示物',
+        );
+        await game.waitForNoInteraction();
+        await dismissSpotlightQueueIfPresent(page);
+
+        const finalState = await game.getState();
+        expect((finalState.core.bases[0].buriedCards ?? []).some((card: any) => card.uid === 'lob-enemy-buried')).toBe(false);
+        expect(finalState.core.bases[0].minions.some((minion: any) => minion.uid === 'lob-enemy-buried')).toBe(true);
+        expect(finalState.core.bases[0].minions.find((minion: any) => minion.uid === 'lob-enemy-buried')?.powerCounters).toBe(1);
+
+        await game.screenshot('lord-of-bones-resolved', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-skeletons-lord-of-bones-resolved-2026-04-29');
+    });
+
+    test('墓碑应在基地计分后可把自己埋葬到另一个基地', async ({ browser, baseURL }, testInfo) => {
+        test.setTimeout(90000);
+
+        const setup = await setupSUOnlineMatch(browser, baseURL, ['skeletons', 'robots', 'pirates', 'dinosaurs']);
+        if (!setup) {
+            test.skip(true, '游戏服务器不可用');
+            return;
+        }
+
+        const { hostPage, guestPage, hostContext, guestContext } = setup;
+        try {
+            await waitForHandArea(hostPage);
+            await waitForHandArea(guestPage);
+
+            const fullState = await readFullState(hostPage);
+            const injectedState = prepareInjectedOnlineState(fullState as Record<string, any>, (core) => {
+                const turnOrder = core.turnOrder as string[];
+                const hostPid = turnOrder[0];
+                const guestPid = turnOrder[1];
+
+                core.currentPlayerIndex = 0;
+                core.currentPlayer = hostPid;
+                core.players[hostPid].hand = [];
+                core.players[guestPid].hand = [];
+                core.players[hostPid].deck = [];
+                core.players[guestPid].deck = [];
+                core.players[hostPid].minionsPlayed = 0;
+                core.players[hostPid].actionsPlayed = 0;
+                core.players[guestPid].actionsPlayed = 0;
+                core.bases[0].defId = 'base_the_jungle';
+                core.bases[0].minions = [
+                    makeMinion('gravestones-host', 'robot_microbot_alpha', hostPid, hostPid, 4),
+                ];
+                core.bases[0].ongoingActions = [{
+                    uid: 'gravestones-live',
+                    defId: 'skeletons_gravestones',
+                    ownerId: hostPid,
+                }];
+                core.bases[1].defId = 'base_tar_pits';
+                core.bases[1].minions = [];
+                core.bases[1].ongoingActions = [];
+                for (let index = 2; index < core.bases.length; index += 1) {
+                    core.bases[index].minions = [];
+                    core.bases[index].ongoingActions = [];
+                }
+            });
+
+            await applyCoreStateDirect(hostPage, injectedState);
+            await closeDebugPanel(hostPage);
+            await closeDebugPanel(guestPage);
+            await hostPage.waitForTimeout(2000);
+
+            await hostPage.getByRole('button', { name: /^(结束回合|Finish Turn|End)$/i }).click({ force: true });
+            await waitForScoreBasesOrReactionEntry(hostPage, 12000);
+            await activateReactionTrigger(
+                hostPage,
+                '0',
+                {
+                    triggerSourceDefId: 'skeletons_gravestones',
+                    optionLabelIncludes: '墓碑',
+                    optionIdIncludes: 'skeletons_gravestones',
+                },
+                'skeletons_gravestones_after_scoring',
+                12000,
+                guestPage,
+            );
+
+            const promptState = await readAuthoritativeState(hostPage);
+            const prompt = (() => {
+                const current = getCurrentInteraction(promptState);
+                const data = asRecord(current?.data);
+                return {
+                    sourceId: data?.sourceId ?? null,
+                    options: (Array.isArray(data?.options) ? data.options : []).map((option: any) => ({
+                        id: option.id,
+                        baseIndex: option.value?.baseIndex ?? null,
+                    })),
+                };
+            })();
+
+            expect(prompt.sourceId).toBe('skeletons_gravestones_after_scoring');
+            expect(prompt.options.some((option: any) => option.baseIndex === 1)).toBe(true);
+
+            await hostPage.screenshot({ path: testInfo.outputPath('gravestones-after-scoring-prompt.png'), fullPage: true });
+            await saveStableScreenshot(hostPage, testInfo, 'smashup-skeletons-gravestones-after-scoring-prompt-2026-04-29');
+
+            await clickBaseOnBoard(hostPage, 1, 10000);
+            await waitForNoInteraction(hostPage, 10000);
+
+            const finalState = await readFullState(hostPage);
+            const resolvedCore = (finalState.core ?? finalState) as Record<string, any>;
+            const buriedOnTargetBase = (resolvedCore.bases[1].buriedCards ?? []).some((card: any) => card.uid === 'gravestones-live');
+            const sourceStillHasCard = (resolvedCore.bases[0].ongoingActions ?? []).some((action: any) => action.uid === 'gravestones-live');
+
+            expect(buriedOnTargetBase).toBe(true);
+            expect(sourceStillHasCard).toBe(false);
+
+            await hostPage.screenshot({ path: testInfo.outputPath('gravestones-buried-on-other-base.png'), fullPage: true });
+            await saveStableScreenshot(hostPage, testInfo, 'smashup-skeletons-gravestones-buried-2026-04-29');
+        } finally {
+            await hostContext.close().catch(() => {});
+            await guestContext.close().catch(() => {});
+        }
     });
 
     test('狮身人面像埋葬牌交互应直接在场景内翻正面并高亮可选牌', async ({ page, game }, testInfo) => {

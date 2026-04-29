@@ -10,14 +10,11 @@ import { AnimatePresence } from 'framer-motion';
 import { CardPreview } from '../../../components/common/media/CardPreview';
 import { OptimizedImage } from '../../../components/common/media/OptimizedImage';
 import { MagnifyOverlay } from '../../../components/common/overlays/MagnifyOverlay';
-import { ConfirmSkipModal } from './ConfirmSkipModal';
-import { ConfirmRemoveKnockdownModal } from './ConfirmRemoveKnockdownModal';
 import { ChoiceModal } from './ChoiceModal';
 import { BonusDieOverlay } from './BonusDieOverlay';
 import { CardSpotlightOverlay } from './CardSpotlightOverlay';
 import { CompareRollOverlay } from './CompareRollOverlay';
 import { TokenResponseModal } from './TokenResponseModal';
-import { PurifyModal } from './PurifyModal';
 import { InteractionOverlay } from './InteractionOverlay';
 import { EndgameOverlay } from '../../../components/game/framework/widgets/EndgameOverlay';
 import { RematchActions } from '../../../components/game/framework/widgets/RematchActions';
@@ -50,19 +47,6 @@ export interface BoardOverlaysProps {
     abilityLevels?: Record<string, number>;
     /** 当前视角玩家的角色 ID */
     viewCharacterId?: string;
-
-    // 弹窗状态
-    isConfirmingSkip: boolean;
-    onConfirmSkip: () => void;
-    onCancelSkip: () => void;
-
-    isPurifyModalOpen: boolean;
-    onConfirmPurify: (statusId: string) => void;
-    onCancelPurify: () => void;
-
-    isConfirmRemoveKnockdownOpen: boolean;
-    onConfirmRemoveKnockdown: () => void;
-    onCancelRemoveKnockdown: () => void;
 
     // 状态选择交互（新增）
     isStatusInteraction: boolean;
@@ -130,14 +114,13 @@ export interface BoardOverlaysProps {
     pendingDamage?: PendingDamage;
     tokenResponsePhase: TokenResponsePhase | null;
     isTokenResponder: boolean;
+    isTokenResponseInteraction: boolean;
     /** 当前阶段可用的 Token 列表（由领域层过滤） */
     usableTokens: TokenDef[];
     /** Token 可用数量覆盖（用于太极回合限制等特殊规则） */
     tokenUsableOverrides?: Record<string, number>;
     onUseToken: (tokenId: string, amount: number) => void;
-    onSkipTokenResponse: () => void;// 净化相关
-    viewPlayer: HeroState;
-    purifiableStatusIds: string[];
+    onSkipTokenResponse: () => void;
 
     // 游戏结束
     isGameOver: boolean;
@@ -218,7 +201,8 @@ export const BoardOverlays: React.FC<BoardOverlaysProps> = (props) => {
     }, [props.bonusDie]);
 
     const shouldRenderTokenResponseModal = Boolean(
-        props.pendingDamage
+        props.isTokenResponseInteraction
+        && props.pendingDamage
         && props.tokenResponsePhase
         && props.isTokenResponder
         && (
@@ -307,26 +291,6 @@ export const BoardOverlays: React.FC<BoardOverlaysProps> = (props) => {
                     </MagnifyOverlay>
                 )}
 
-                {/* 确认跳过弹窗 */}
-                {props.isConfirmingSkip && (
-                    <ConfirmSkipModal
-                        key="confirm-skip"
-                        isOpen={props.isConfirmingSkip}
-                        onCancel={props.onCancelSkip}
-                        onConfirm={props.onConfirmSkip}
-                    />
-                )}
-
-                {/* 击倒移除确认弹窗 */}
-                {props.isConfirmRemoveKnockdownOpen && (
-                    <ConfirmRemoveKnockdownModal
-                        key="confirm-remove-knockdown"
-                        isOpen={props.isConfirmRemoveKnockdownOpen}
-                        onCancel={props.onCancelRemoveKnockdown}
-                        onConfirm={props.onConfirmRemoveKnockdown}
-                    />
-                )}
-
                 {/* Token 响应窗口 */}
                 {(() => {
                     return shouldRenderTokenResponseModal ? (
@@ -345,19 +309,6 @@ export const BoardOverlays: React.FC<BoardOverlaysProps> = (props) => {
                         />
                     ) : null;
                 })()}
-
-                {/* 净化弹窗 */}
-                {props.isPurifyModalOpen && (
-                    <PurifyModal
-                        key="purify"
-                        playerState={props.viewPlayer}
-                        purifiableStatusIds={props.purifiableStatusIds}
-                        onConfirm={props.onConfirmPurify}
-                        onCancel={props.onCancelPurify}
-                        locale={props.locale}
-                        statusIconAtlas={props.statusIconAtlas}
-                    />
-                )}
 
                 {/* 状态选择交互 */}
                 {props.isStatusInteraction && props.pendingInteraction && (

@@ -123,7 +123,7 @@ const prepareMindTransmissionState = (coreState: any) => {
   board[5][2].unit = {
     instanceId: 'mind-target',
     cardId: ENEMY_TARGET.id,
-    card: { ...ENEMY_TARGET },
+    card: { ...ENEMY_TARGET, life: 8 },
     owner: '1',
     position: { row: 5, col: 2 },
     damage: 0,

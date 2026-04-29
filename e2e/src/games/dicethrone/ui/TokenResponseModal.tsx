@@ -255,7 +255,7 @@ export const TokenResponseModal: React.FC<TokenResponseModalProps> = ({
             width="lg"
             closeOnBackdrop={false}
         >
-            <div className="flex flex-col gap-6 w-full">
+            <div className="flex flex-col gap-6 w-full" data-testid="token-response-modal">
                 <p className="text-sm sm:text-base text-slate-400 text-center">
                     {isAttackerPhase ? t('tokenResponse.attackerDesc') : t('tokenResponse.defenderDesc')}
                 </p>

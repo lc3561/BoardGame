@@ -234,6 +234,30 @@ function executeCommand(
             const reactionWindow = getSmashUpReactionWindowContext(workingState);
             const events: SmashUpEvent[] = [];
             let updatedState: MatchState<SmashUpCore> | undefined;
+            const targetBaseIndex = command.payload.targetBaseIndex ?? 0;
+
+            const runActionExecutor = (
+                executor: ReturnType<typeof resolveOnPlay> | ReturnType<typeof resolveSpecial>,
+                baseIndex: number,
+            ) => {
+                if (!executor) return;
+                const ctx: AbilityContext = {
+                    state: workingState.core,
+                    matchState: workingState,
+                    playerId: command.playerId,
+                    cardUid: card.uid,
+                    defId: card.defId,
+                    baseIndex,
+                    targetMinionUid: command.payload.targetMinionUid,
+                    random,
+                    now,
+                };
+                const result = executor(ctx);
+                events.push(...result.events);
+                if (result.matchState) {
+                    updatedState = result.matchState;
+                }
+            };
 
             const event = buildActionPlayedEvent({
                 playerId: command.playerId,
@@ -252,7 +276,6 @@ function executeCommand(
 
             if (subtype === 'ongoing') {
                 // 持续行动卡：附着到目标
-                const targetBase = command.payload.targetBaseIndex ?? 0;
                 const attachEvt: OngoingAttachedEvent = {
                     type: SU_EVENTS.ONGOING_ATTACHED,
                     payload: {
@@ -260,32 +283,14 @@ function executeCommand(
                         defId: card.defId,
                         ownerId: command.playerId,
                         targetType: command.payload.targetMinionUid ? 'minion' : 'base',
-                        targetBaseIndex: targetBase,
+                        targetBaseIndex: targetBaseIndex,
                         targetMinionUid: command.payload.targetMinionUid,
                     },
                     timestamp: now,
                 };
                 events.push(attachEvt);
                 // ongoing 卡的 onPlay 能力（如 block_the_path 阻挡路径）
-                const ongoingExecutor = resolveOnPlay(card.defId);
-                if (ongoingExecutor) {
-                    const ctx: AbilityContext = {
-                        state: workingState.core,
-                        matchState: workingState,
-                        playerId: command.playerId,
-                        cardUid: card.uid,
-                        defId: card.defId,
-                        baseIndex: targetBase,
-                        targetMinionUid: command.payload.targetMinionUid,
-                        random,
-                        now,
-                    };
-                    const result = ongoingExecutor(ctx);
-                    events.push(...result.events);
-                    if (result.matchState) {
-                        updatedState = result.matchState;
-                    }
-                }
+                runActionExecutor(resolveOnPlay(card.defId), targetBaseIndex);
             } else {
                 // standard / special 行动卡：执行效果
                 const isSpecial = subtype === 'special';
@@ -298,50 +303,14 @@ function executeCommand(
                     
                     if (specialTiming === 'beforeScoring') {
                         // beforeScoring：立即执行（当前行为）
-                        const executor = resolveSpecial(card.defId) ?? resolveOnPlay(card.defId);
-                        if (executor) {
-                            const ctx: AbilityContext = {
-                                state: workingState.core,
-                                matchState: workingState,
-                                playerId: command.playerId,
-                                cardUid: card.uid,
-                                defId: card.defId,
-                                baseIndex: command.payload.targetBaseIndex ?? 0,
-                                targetMinionUid: command.payload.targetMinionUid,
-                                random,
-                                now,
-                            };
-                            const result = executor(ctx);
-                            events.push(...result.events);
-                            if (result.matchState) {
-                                updatedState = result.matchState;
-                            }
-                        }
+                        runActionExecutor(resolveSpecial(card.defId) ?? resolveOnPlay(card.defId), targetBaseIndex);
                     } else if (specialTiming === 'afterScoring') {
                         // afterScoring：检查是否在响应窗口中
                         const isInAfterScoringWindow = reactionWindow?.windowType === 'afterScoring';
                         
                         if (isInAfterScoringWindow) {
                             // 在 afterScoring 响应窗口中：立即执行
-                            const executor = resolveSpecial(card.defId) ?? resolveOnPlay(card.defId);
-                            if (executor) {
-                                const ctx: AbilityContext = {
-                                    state: workingState.core,
-                                    matchState: workingState,
-                                    playerId: command.playerId,
-                                    cardUid: card.uid,
-                                    defId: card.defId,
-                                    baseIndex: command.payload.targetBaseIndex ?? 0,
-                                    targetMinionUid: command.payload.targetMinionUid,
-                                    random,
-                                    now,
-                                };
-                                const result = executor(ctx);
-                                events.push(...result.events);
-                                if (result.matchState) {
-                                    updatedState = result.matchState;
-                                }
-                            }
+                            runActionExecutor(resolveSpecial(card.defId) ?? resolveOnPlay(card.defId), targetBaseIndex);
                         } else {
                             // 不在响应窗口中：生成 ARMED 事件，延迟到基地计分后执行
                             const armedEvt: SpecialAfterScoringArmedEvent = {
@@ -349,7 +318,7 @@ function executeCommand(
                                 payload: {
                                     sourceDefId: card.defId,
                                     playerId: command.playerId,
-                                    baseIndex: command.payload.targetBaseIndex ?? 0,
+                                    baseIndex: targetBaseIndex,
                                     cardUid: card.uid,
                                 },
                                 timestamp: now,
@@ -359,25 +328,7 @@ function executeCommand(
                     }
                 } else {
                     // Standard 行动卡：执行 onPlay 效果
-                    const executor = resolveOnPlay(card.defId);
-                    if (executor) {
-                        const ctx: AbilityContext = {
-                            state: workingState.core,
-                            matchState: workingState,
-                            playerId: command.playerId,
-                            cardUid: card.uid,
-                            defId: card.defId,
-                            baseIndex: command.payload.targetBaseIndex ?? 0,
-                            targetMinionUid: command.payload.targetMinionUid,
-                            random,
-                            now,
-                        };
-                        const result = executor(ctx);
-                        events.push(...result.events);
-                        if (result.matchState) {
-                            updatedState = result.matchState;
-                        }
-                    }
+                    runActionExecutor(resolveOnPlay(card.defId), targetBaseIndex);
                 }
             }
 

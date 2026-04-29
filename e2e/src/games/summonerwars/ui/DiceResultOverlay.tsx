@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next';
 import { Swords, Crosshair, Zap } from 'lucide-react';
 import type { DiceFaceResult, DiceMark } from '../config/dice';
 import { getSpriteAtlasSource, getSpriteAtlasStyle, DICE_FACE_SPRITE_MAP } from './cardAtlas';
+import { swAttackDebugLog } from './attackDebug';
 import { UI_Z_INDEX } from '../../../core';
 
 interface DiceResultOverlayProps {
@@ -167,14 +168,23 @@ export const DiceResultOverlay: React.FC<DiceResultOverlayProps> = ({
   const dismissed = dismissedSignature === resultSignature;
   const visible = hasResults && !dismissed;
   const timerRef = useRef<number | null>(null);
+  const resultSignatureRef = useRef(resultSignature);
+  resultSignatureRef.current = resultSignature;
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   const closeNow = useCallback(() => {
+    const latestSignature = resultSignatureRef.current;
+    swAttackDebugLog('dice_overlay_close_now', {
+      resultSignature: latestSignature,
+      duration,
+    });
     if (timerRef.current) {
       window.clearTimeout(timerRef.current);
       timerRef.current = null;
     }
-    setDismissedSignature(resultSignature);
-    onClose?.();
-  }, [onClose, resultSignature]);
+    setDismissedSignature(latestSignature);
+    onCloseRef.current?.();
+  }, [duration]);
 
   useEffect(() => {
     if (!hasResults) {
@@ -183,12 +193,19 @@ export const DiceResultOverlay: React.FC<DiceResultOverlayProps> = ({
   }, [hasResults]);
 
   useEffect(() => {
-    if (results && results.length > 0) {
+    if (visible) {
+      swAttackDebugLog('dice_overlay_timer_scheduled', {
+        resultSignature,
+        duration,
+      });
       if (timerRef.current) {
         window.clearTimeout(timerRef.current);
       }
       timerRef.current = window.setTimeout(closeNow, duration);
       return () => {
+        swAttackDebugLog('dice_overlay_timer_cleared', {
+          resultSignature,
+        });
         if (timerRef.current) {
           window.clearTimeout(timerRef.current);
           timerRef.current = null;
@@ -196,7 +213,7 @@ export const DiceResultOverlay: React.FC<DiceResultOverlayProps> = ({
       };
     }
     return undefined;
-  }, [resultSignature, results, duration, closeNow]);
+  }, [visible, duration, closeNow]);
 
   if (!results || results.length === 0) return null;
 

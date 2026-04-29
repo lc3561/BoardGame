@@ -10,9 +10,17 @@
 
 import type { Page } from '@playwright/test';
 import { test, expect } from './framework';
+import { ALL_TOKEN_DEFINITIONS, initHeroState } from '../src/games/dicethrone/domain/characters';
+import { TOKEN_IDS } from '../src/games/dicethrone/domain/ids';
 
 type MatchState = Record<string, any>;
 type CardInteractionDescriptor = Record<string, any>;
+const FIXED_RANDOM = {
+    random: () => 0.5,
+    d: (max: number) => Math.min(max, 1),
+    range: (min: number) => min,
+    shuffle: <T,>(array: T[]) => [...array],
+};
 
 const readHarnessState = async <T = MatchState>(page: Page): Promise<T> => {
     return page.evaluate(() => (window as any).__BG_TEST_HARNESS__!.state.get());
@@ -72,6 +80,96 @@ const openInteractionHarness = async (page: Page, game: any) => {
             && state?.core?.players?.['0']
             && state?.core?.players?.['1'];
     }, { timeout: 10000 });
+};
+
+const injectSamuraiHonorTokenResponseScene = async (page: Page) => {
+    const currentState = await readHarnessState<MatchState>(page);
+    const samuraiBase = initHeroState('0', 'samurai', FIXED_RANDOM as any);
+    const monkBase = initHeroState('1', 'monk', FIXED_RANDOM as any);
+
+    const nextState = structuredClone(currentState);
+    nextState.sys.phase = 'offensiveRoll';
+    nextState.sys.interaction = {
+        ...(nextState.sys.interaction ?? {}),
+        current: {
+            id: 'dt-token-response-samurai-honor-window',
+            kind: 'dt:token-response',
+            playerId: '0',
+            data: null,
+        },
+        queue: [],
+    };
+    nextState.core.activePlayerId = '0';
+    nextState.core.hostStarted = true;
+    nextState.core.tokenDefinitions = ALL_TOKEN_DEFINITIONS;
+    nextState.core.selectedCharacters = {
+        ...(nextState.core.selectedCharacters ?? {}),
+        '0': 'samurai',
+        '1': 'monk',
+    };
+    nextState.core.rollCount = 1;
+    nextState.core.rollConfirmed = true;
+    nextState.core.dice = [1, 2, 3, 4, 5].map((value, index) => ({
+        id: index,
+        value,
+        isKept: false,
+        playerId: '0',
+    }));
+    nextState.core.players['0'] = {
+        ...samuraiBase,
+        hand: [],
+        discard: [],
+        resources: {
+            ...samuraiBase.resources,
+            cp: 2,
+            hp: 50,
+        },
+        tokens: {
+            ...samuraiBase.tokens,
+            [TOKEN_IDS.HONOR]: 3,
+            [TOKEN_IDS.SHAME]: 0,
+            [TOKEN_IDS.SAMURAI_RETRIBUTION]: 0,
+        },
+    };
+    nextState.core.players['1'] = {
+        ...monkBase,
+        hand: [],
+        discard: [],
+        resources: {
+            ...monkBase.resources,
+            cp: 2,
+            hp: 50,
+        },
+    };
+    nextState.core.pendingAttack = {
+        attackerId: '0',
+        defenderId: '1',
+        isDefendable: true,
+        sourceAbilityId: 'katana-slice-3',
+        damage: 4,
+        bonusDamage: 0,
+        attackModifierBonusDamage: 0,
+        damageResolved: false,
+        resolvedDamage: 0,
+        preDefenseResolved: false,
+        offensiveRollEndTokenResolved: false,
+    };
+    nextState.core.pendingDamage = {
+        id: 'samurai-honor-window',
+        sourcePlayerId: '0',
+        targetPlayerId: '1',
+        originalDamage: 4,
+        currentDamage: 4,
+        sourceAbilityId: 'katana-slice-3',
+        responseType: 'beforeDamageDealt',
+        responderId: '0',
+        isFullyEvaded: false,
+    };
+
+    await page.evaluate((state) => {
+        (window as any).__BG_TEST_HARNESS__!.state.set(state);
+    }, nextState);
+    await page.waitForTimeout(300);
 };
 
 test.describe('DiceThrone - Status Interaction Complete', () => {
@@ -176,7 +274,7 @@ test.describe('DiceThrone - Status Interaction Complete', () => {
         const confirmButton = page.getByRole('button', { name: /确认|Confirm/i }).last();
         await expect(page.getByTestId('dt-player-target-0')).toHaveAttribute('data-team-tone', 'self');
         await expect(page.getByTestId('dt-player-target-1')).toHaveAttribute('data-team-tone', 'enemy');
-        await expect(page.getByTestId('dt-player-target-1').getByText(/无状态|No Status/i)).toBeVisible();
+        await expect(page.getByTestId('dt-player-target-1').getByText(/没有状态效果|No status effects/i)).toBeVisible();
         await expect(confirmButton).toBeDisabled();
 
         await page.getByTestId('dt-player-target-1').click();
@@ -184,6 +282,92 @@ test.describe('DiceThrone - Status Interaction Complete', () => {
 
         await page.getByTestId('dt-player-target-0').click();
         await expect(confirmButton).toBeEnabled();
+    });
+
+    test('selectPlayer 当前台交互存在时，不应再并列弹出 token 响应窗口', async ({ page, game }, testInfo) => {
+        await openInteractionHarness(page, game);
+
+        await applyHarnessState(page, (state) => {
+            state.core.players['0'].statusEffects = { poison: 1 };
+            state.core.players['0'].tokens = { protect: 1 };
+            state.core.players['1'].statusEffects = {};
+            state.core.players['1'].tokens = {};
+            state.core.pendingDamage = {
+                id: 'test-pending-damage-overlap',
+                sourcePlayerId: '1',
+                targetPlayerId: '0',
+                originalDamage: 5,
+                currentDamage: 5,
+                responseType: 'beforeDamageReceived',
+                responderId: '0',
+                tokenUsageTotals: {},
+            };
+            state.sys.interaction = {
+                ...(state.sys.interaction ?? {}),
+                current: wrapCardInteraction({
+                    id: 'test-select-player-overlap',
+                    type: 'selectPlayer',
+                    sourceCardId: 'test-card',
+                    playerId: '0',
+                    titleKey: 'interaction.selectPlayerToRemoveAllStatus',
+                    selectCount: 1,
+                    targetPlayerIds: ['0', '1'],
+                    selected: [],
+                    requiresTargetWithStatus: true,
+                }),
+            };
+            return state;
+        });
+
+        const confirmButton = page.getByRole('button', { name: /确认|Confirm/i }).last();
+        await expect(page.getByTestId('dt-player-target-0')).toBeVisible();
+        await expect(page.getByTestId('token-response-modal')).toHaveCount(0);
+        await expect(confirmButton).toBeDisabled();
+
+        await page.getByTestId('dt-player-target-0').click();
+        await expect(confirmButton).toBeEnabled();
+        await game.screenshot('select-player-foreground-over-token-response', testInfo);
+    });
+
+    test('token 响应窗口在前台时，samurai honor 可连续使用两次并正常收口', async ({ page, game }, testInfo) => {
+        await openInteractionHarness(page, game);
+        await injectSamuraiHonorTokenResponseScene(page);
+
+        const tokenResponseModal = page.getByTestId('token-response-modal');
+        const honorLabel = page.getByText(/^荣誉$|^Honor$/).first();
+        const useButton = page.getByRole('button', { name: /^(使用|Use|Use Token)(?: x\d+)?$/i }).first();
+
+        await expect(tokenResponseModal).toBeVisible();
+        await expect(honorLabel).toBeVisible();
+        await expect(useButton).toBeVisible();
+        await game.screenshot('samurai-honor-token-response-before-first-use', testInfo);
+
+        await useButton.click();
+        await page.waitForFunction(() => {
+            const state = (window as any).__BG_TEST_HARNESS__?.state?.get?.();
+            return state?.core?.pendingDamage?.currentDamage === 5
+                && state?.core?.pendingDamage?.tokenUsageTotals?.honor === 1
+                && state?.core?.players?.['0']?.tokens?.honor === 2;
+        }, { timeout: 10000, polling: 200 });
+        await expect(tokenResponseModal).toContainText(/\b5\b/);
+        await game.screenshot('samurai-honor-token-response-after-first-use', testInfo);
+
+        await useButton.click();
+        await page.waitForFunction(() => {
+            const state = (window as any).__BG_TEST_HARNESS__?.state?.get?.();
+            return !state?.core?.pendingDamage
+                && !state?.sys?.interaction?.current
+                && state?.core?.players?.['0']?.tokens?.honor === 1
+                && state?.core?.players?.['1']?.resources?.hp === 43;
+        }, { timeout: 10000, polling: 200 });
+
+        const finalState = await readHarnessState<MatchState>(page);
+        expect(finalState.core.pendingDamage ?? null).toBeNull();
+        expect(finalState.sys.interaction.current ?? null).toBeNull();
+        expect(finalState.core.players['0'].tokens.honor).toBe(1);
+        expect(finalState.core.players['1'].resources.hp).toBe(43);
+        await expect(tokenResponseModal).toBeHidden();
+        await game.screenshot('samurai-honor-token-response-finalized', testInfo);
     });
 
     test('selectTargetStatus: 第二阶段保留锁定来源卡，只显示真实目标卡', async ({ page, game }) => {

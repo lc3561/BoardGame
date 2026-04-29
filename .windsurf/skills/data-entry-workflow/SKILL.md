@@ -28,6 +28,7 @@ description: "用于本项目里基于图片、规则书、Wiki、PDF、截图�
 7. 发现资源 404、白卡面、CardPreview 异常时，必须按最终请求 URL 排查 `compressed/`、manifest 和 R2，不得只看本地原图。
 8. 录入完成后，只要动到了运行时资源，就默认由 AI 主动完成上传和远端回查；如果没传成，最终必须明确告知用户哪些资源还没上传以及当前影响。
 9. 若任务被标记为“长期任务/持续推进”，默认进入连续执行模式：按 S0→S4 逐层推进，除非遇到不可继续的硬阻塞（权限/环境/真相源缺失），否则不得在中间层提前收口。
+10. 若任务语义是“批量派系重审 / 全部重新录入 / 三个新派系全部对照 / 有差别的都修”，必须先建立**批次清单**（至少到单卡/单基地粒度），并把当前批次剩余项写入 planning；在当前批次未清空前，不得因为“刚补了 1-2 张”就停下汇报。
 
 ## 资源基操清单（强制，不再省略）
 
@@ -77,6 +78,33 @@ description: "用于本项目里基于图片、规则书、Wiki、PDF、截图�
 - 只有当当前层的验收标准达标后，才能进入下一层。
 - 任何“已审计/审计完成”结论都必须有 `evidence/` 文档落地；禁止口头收口。
 - 对“继续/continue”类指令，默认语义是“继续按当前 S 层级推进下一批任务”，而不是重复汇报上一次结果。
+- 对“继续/continue”出现在批量派系重审任务里时，默认语义是“继续处理批次清单中下一个未完成对象”，不是“汇报刚做完的 1-2 项就暂停”。
+
+### 批量派系重审附加门禁（强制）
+
+当任务满足以下任一语义时：
+
+- “三个新派系全部重新对照”
+- “三个新派系全部重新录入”
+- “有差别的要修复并重审”
+- “继续把这批卡都做完”
+
+必须额外执行以下门禁：
+
+1. **先建批次清单**
+   - 至少列到单卡/单基地/单对象粒度
+   - 每项标注当前层级：`L0 卡图/中文名/索引`、`L1 locale/静态数据`、`L2 领域行为`、`L3 真实入口 E2E`、`L4 finalState/triggerQueue/reaction session`
+2. **先做场景 `defId` 真值预检**
+   - 凡是要写 E2E/状态注入，必须先确认测试中用到的 `defId` 在 `src/games/<gameId>/config` 或运行时 card registry 中真实存在
+   - 未通过预检不得启动 E2E
+3. **当前批次未清空不得停**
+   - 除非遇到硬阻塞，否则不得因为“新补了 1-2 条证据”就暂停到下一轮
+   - 若必须暂停，必须在 planning / evidence 中明确写出“剩余哪些对象、卡在哪一层”
+4. **对象证据不得外推整包收口**
+   - 单卡或单对象补证只能提升对象级结论，不能自动把整派系或整批派系改判为“已收口”
+5. **流程维度强制保留**
+   - 至少持续覆盖：`finalState / triggerQueue / reaction session / 真实入口 E2E`
+   - 不能因前面几张卡“看起来只是录入问题”就降级回只查 `卡图 / locale / defId / 注册`
 
 ## Workflow 路由
 
@@ -89,6 +117,12 @@ description: "用于本项目里基于图片、规则书、Wiki、PDF、截图�
   - 适用：用户明确要求“把新派系做进游戏”“继续实现玩法”“从图片一路做到正式可玩”
   - 先读 `docs/games/smashup/workflows/smashup-faction-intake.md`
   - intake 收口后继续读 `docs/games/smashup/workflows/smashup-faction-implementation.md`
+- **Smash Up 旧派系 / 新派系整批重审、重录、补证**
+  - 适用：用户明确要求“全部重新对照 / 全部重新录入 / 有差别就修 / 继续把三派系都做完”
+  - 仍归入现有 Smash Up 派系 workflow，不单开“新增游戏”路线
+  - 先读 `docs/games/smashup/workflows/smashup-faction-intake.md`
+  - 再读 `docs/games/smashup/workflows/smashup-faction-implementation.md`
+  - 并强制套用上面的“批量派系重审附加门禁”
 - **禁止误路由**
   - Smash Up 新派系任务不是“新增游戏”，默认**不要**改走 `.windsurf/skills/create-new-game/SKILL.md`
   - 除非用户真的要新增一个全新的 `gameId`，否则应以 Smash Up 专用 workflow 为准

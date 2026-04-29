@@ -20,6 +20,10 @@
 - 《着魔》《嗯？》也已于 2026-04-28 补齐浏览器级真实入口证据，见 `evidence/smashup/smashup-world-champs-bewitched-eh-e2e-2026-04-28.md`。
 - 《彩虹女孩》《怪兽冲击》也已于 2026-04-28 补齐浏览器级真实入口证据，见 `evidence/smashup/smashup-world-champs-rainbow-kaiju-e2e-2026-04-28.md`。
 - 《快如闪电》《女主角》《阿拉密斯》也已于 2026-04-29 补齐联合反应窗真实入口证据，见 `evidence/smashup/smashup-world-champs-diva-aramis-fast-as-lightning-e2e-2026-04-28.md`。
+- 《人鱼女王》《安静的海岸》也已于 2026-04-29 补齐浏览器级真实入口证据，见 `evidence/smashup/smashup-mermaids-mermaid-queen-becalmed-e2e-2026-04-29.md`。
+- 《塞壬的歌声》《他们出来了》也已于 2026-04-29 补齐浏览器级真实入口证据，见 `evidence/smashup/smashup-mermaids-siren-song-e2e-2026-04-29.md` 与 `evidence/smashup/smashup-skeletons-dig-em-up-e2e-2026-04-29.md`。
+- 《墓园》也已于 2026-04-29 补齐浏览器级真实入口证据，见 `evidence/smashup/smashup-skeletons-graveyard-e2e-2026-04-29.md`。
+- 《骸骨之王》也已于 2026-04-29 补齐浏览器级真实入口证据，见 `evidence/smashup/smashup-skeletons-lord-of-bones-e2e-2026-04-29.md`。
 - 但 `World Champs` 仍缺整派系级真实入口玩法覆盖，不能把 `斯坦福` 单卡证据外推成三派系最终收口。
 - 2026-04-26 22:31 再次补记：
   - `World Champs` 新增《金币猫》《鲨鱼纹身》对象级 L3 证据；
@@ -41,6 +45,22 @@
     - `World Champs` 当前至少已有 `19` 条正路径对象级 L3 证据，新增《快如闪电》《女主角》《阿拉密斯》；
     - 其中《女主角》旧“实现正确”结论已失效，真实根因是 `smashup_reaction_choose` 双 reduce，只有补看 `finalState` 才能发现；
     - 《阿拉密斯》同时暴露出 `onMinionAffected` 触发范围缺口，再次说明 closeout 不能只看卡图/locale/单条 events。
+  - 2026-04-29 再次补记（四）：
+    - `Mermaids` 当前至少已有 `4` 条正路径对象级 L3 证据：`最后的歌声 / 迷倒观众 / 人鱼女王 / 安静的海岸`；
+    - 本轮没有新增实现修复，新增的是浏览器级真实入口补证；
+    - 因而当前 closeout 口径仍旧是“三新派系整包未收口，但对象证据继续扩展”。
+  - 2026-04-29 再次补记（五）：
+    - `Mermaids` 当前至少已有 `5` 条正路径对象级 L3 证据：`最后的歌声 / 迷倒观众 / 人鱼女王 / 安静的海岸 / 塞壬的歌声`；
+    - `Skeletons` 当前至少已有 `4` 条正路径对象级 L3 证据：`殉葬品 / 灵车队伍 / 复仇者 / 他们出来了`；
+    - 这轮新增的仍是对象级浏览器真实入口补证，不是三新派系整包最终收口。
+  - 2026-04-29 再次补记（六）：
+    - `Skeletons` 当前至少已有 `5` 条正路径对象级 L3 证据：`殉葬品 / 灵车队伍 / 复仇者 / 他们出来了 / 墓园`；
+    - 本轮新增的是“场上持续牌天赋 -> 挖掘 -> 可选 +1 指示物”的浏览器级真实入口补证；
+    - 当前 closeout 口径仍旧是“三新派系整包未收口，但对象证据继续扩展”。
+  - 2026-04-29 再次补记（七）：
+    - `Skeletons` 当前至少已有 `6` 条正路径对象级 L3 证据：`殉葬品 / 灵车队伍 / 复仇者 / 他们出来了 / 墓园 / 骸骨之王`；
+    - 《骸骨之王》本轮还额外暴露出一条真实入口流程差异：浏览器里先走 `smashup_reaction_choose`，不能把单测里的直接后续提示当成完整入口真相；
+    - 当前 closeout 口径仍旧是“三新派系整包未收口，但对象证据继续扩展”。
 - 在补齐真实入口玩法证据前，本文档不得再被引用为“三派系玩法已完成最终收口”的证明材料。
 
 ## 范围

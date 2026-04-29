@@ -14,6 +14,7 @@ import {
   seedMatchCredentials,
   joinMatchViaAPI,
 } from './common';
+import { getMatchState, injectMatchState } from './state-injection';
 
 export const GAME_NAME = 'summonerwars';
 export const SUMMONERWARS_FACTION_INDEX: Record<string, number> = {
@@ -403,6 +404,47 @@ export const readCoreState = async (page: Page) => {
 
 /** 写入 core 状态（直接传入对象） */
 export const applyCoreState = async (page: Page, coreState: unknown) => {
+  const onlineMatchId = await page.evaluate(() => {
+    const match = window.location.pathname.match(/\/play\/[^/]+\/match\/([^/?#]+)/i);
+    return match?.[1] ?? null;
+  }).catch(() => null);
+
+  if (onlineMatchId) {
+    const liveState = await getMatchState(onlineMatchId, page);
+    const liveStateRecord = liveState as {
+      core?: { players?: Record<string, unknown>; currentPlayer?: unknown; phase?: unknown; turnOrder?: unknown };
+      sys?: { phase?: unknown; turnOrder?: unknown; currentPlayerIndex?: unknown };
+    };
+    const nextCoreRecord = coreState as {
+      players?: Record<string, unknown>;
+      currentPlayer?: unknown;
+      phase?: unknown;
+      turnOrder?: unknown;
+    };
+    const liveTurnOrder = Array.isArray(liveStateRecord.sys?.turnOrder)
+      ? (liveStateRecord.sys.turnOrder as unknown[]).filter((playerId): playerId is string => typeof playerId === 'string')
+      : Array.isArray(liveStateRecord.core?.turnOrder)
+        ? (liveStateRecord.core.turnOrder as unknown[]).filter((playerId): playerId is string => typeof playerId === 'string')
+        : Object.keys(nextCoreRecord?.players ?? liveStateRecord.core?.players ?? {});
+    const nextCurrentPlayer = typeof nextCoreRecord?.currentPlayer === 'string'
+      ? nextCoreRecord.currentPlayer
+      : typeof liveStateRecord.core?.currentPlayer === 'string'
+        ? liveStateRecord.core.currentPlayer
+        : liveTurnOrder[0] ?? '0';
+    const nextCurrentPlayerIndex = Math.max(0, liveTurnOrder.indexOf(nextCurrentPlayer));
+    await injectMatchState(onlineMatchId, {
+      ...liveState,
+      core: coreState,
+      sys: {
+        ...(liveStateRecord.sys ?? {}),
+        phase: nextCoreRecord?.phase ?? liveStateRecord.sys?.phase,
+        turnOrder: liveTurnOrder,
+        currentPlayerIndex: nextCurrentPlayerIndex,
+      },
+    }, page);
+    return;
+  }
+
   await ensureDebugStateTab(page);
   const toggleBtn = page.getByTestId('debug-state-toggle-input');
   await toggleBtn.click();

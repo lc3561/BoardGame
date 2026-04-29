@@ -431,6 +431,38 @@ const waitForPendingDefender = async (page: Page, defenderId: string, timeout = 
     }, defenderId, { timeout });
 };
 
+const readDefensiveRollLockState = async (page: Page) => {
+    return page.evaluate(() => {
+        const state = (window as any).__BG_TEST_HARNESS__?.state?.get?.();
+        const dice = Array.isArray(state?.core?.dice) ? state.core.dice : [];
+        const dieButtons = Array.from(document.querySelectorAll<HTMLElement>('[data-testid^="die-button-"]'));
+        const lockedLabels = Array.from(document.querySelectorAll<HTMLElement>('[data-testid="die"]'))
+            .map((node) => node.textContent?.includes('锁定') ?? false);
+
+        return {
+            phase: state?.sys?.phase ?? null,
+            defenderId: state?.core?.pendingAttack?.defenderId ?? null,
+            defenseAbilityId: state?.core?.pendingAttack?.defenseAbilityId ?? null,
+            rollDiceCount: state?.core?.rollDiceCount ?? null,
+            rollCount: state?.core?.rollCount ?? null,
+            rollLimit: state?.core?.rollLimit ?? null,
+            diceDefinitionIds: dice.map((die: any) => die?.definitionId ?? null),
+            keptFlags: dice.map((die: any) => Boolean(die?.isKept)),
+            clickableFlags: dieButtons.map((node) => node.getAttribute('data-clickable')),
+            lockedLabelFlags: lockedLabels,
+            rollButtonDisabled: (document.querySelector('[data-tutorial-id="dice-roll-button"]') as HTMLButtonElement | null)?.disabled ?? null,
+        };
+    });
+};
+
+const dismissStartDefenseShowcaseIfPresent = async (page: Page) => {
+    const startDefenseButton = page.getByRole('button', { name: /开始防御|Start Defense/i }).first();
+    if (await startDefenseButton.isVisible({ timeout: 1500 }).catch(() => false)) {
+        await startDefenseButton.click();
+        await expect(startDefenseButton).toBeHidden({ timeout: 5000 }).catch(() => {});
+    }
+};
+
 const waitForSeatingOrder = async (matchId: string, page: Page, expected: string[]) => {
     await expect.poll(async () => {
         const state = await getMatchState(matchId, page);
@@ -4020,6 +4052,7 @@ test.describe('DiceThrone Simple Start', () => {
         }
 
         const { hostPage, matchId, players } = setup;
+        const defenderPage = players[1].page;
         const defenderCaptainPage = players[3].page;
 
         await selectCharacter(players[0].page, 'monk');
@@ -4029,20 +4062,54 @@ test.describe('DiceThrone Simple Start', () => {
         await readyMultiplePlayersAndStartGame(hostPage, players.slice(1).map((player) => player.page));
 
         await waitForGameBoard(hostPage);
-        // 该用例只依赖 host+目标页的 harness；避免因无关玩家页未完成注入导致用例超时
-        await waitForHarnessPages([hostPage, enemyCaptainPage]);
+        // 本用例需要同时验证 host / 敌方队长 / 敌方前排三个视角。
+        await waitForHarnessPages([hostPage, defenderPage, defenderCaptainPage]);
 
         await applyOnlineMatchState(matchId, hostPage, (state) => buildTargetingRollState(state, 2));
         await waitForPhase(hostPage, 'targetingRoll');
         await dispatchHarnessCommand(hostPage, 'ADVANCE_PHASE', '0');
         await waitForPhase(hostPage, 'defensiveRoll');
         await waitForPendingDefender(hostPage, '3');
+        await waitForPhase(defenderCaptainPage, 'defensiveRoll');
+        await dismissStartDefenseShowcaseIfPresent(defenderCaptainPage);
+        await expect(defenderCaptainPage.locator('[data-tutorial-id="dice-roll-button"]')).toBeEnabled({ timeout: 10000 });
+
+        const paladinDefenseState = await readDefensiveRollLockState(defenderCaptainPage);
+        expect(paladinDefenseState.phase).toBe('defensiveRoll');
+        expect(paladinDefenseState.defenderId).toBe('3');
+        expect(paladinDefenseState.defenseAbilityId).toBe('holy-defense');
+        expect(paladinDefenseState.rollLimit).toBe(1);
+        expect(paladinDefenseState.rollCount).toBe(0);
+        expect(paladinDefenseState.rollDiceCount).toBe(3);
+        expect(paladinDefenseState.diceDefinitionIds.every((id: string | null) => id === 'paladin-dice')).toBe(true);
+        expect(paladinDefenseState.keptFlags).toEqual([false, false, false, true, true]);
+        expect(paladinDefenseState.lockedLabelFlags).toEqual([false, false, false, true, true]);
+        expect(paladinDefenseState.rollButtonDisabled).toBe(false);
 
         await applyOnlineMatchState(matchId, hostPage, (state) => buildTargetingRollState(state, 4));
         await waitForPhase(hostPage, 'targetingRoll');
         await dispatchHarnessCommand(hostPage, 'ADVANCE_PHASE', '0');
         await waitForPhase(hostPage, 'defensiveRoll');
         await waitForPendingDefender(hostPage, '1');
+        await waitForPhase(defenderPage, 'defensiveRoll');
+        await dismissStartDefenseShowcaseIfPresent(defenderPage);
+        await expect(defenderPage.locator('[data-tutorial-id="dice-roll-button"]')).toBeEnabled({ timeout: 10000 });
+
+        const barbarianDefenseState = await readDefensiveRollLockState(defenderPage);
+        expect(barbarianDefenseState.phase).toBe('defensiveRoll');
+        expect(barbarianDefenseState.defenderId).toBe('1');
+        expect(barbarianDefenseState.defenseAbilityId).toBe('thick-skin');
+        expect(barbarianDefenseState.rollLimit).toBe(1);
+        expect(barbarianDefenseState.rollCount).toBe(0);
+        expect(barbarianDefenseState.rollDiceCount).toBe(3);
+        expect(barbarianDefenseState.diceDefinitionIds.every((id: string | null) => id === 'barbarian-dice')).toBe(true);
+        expect(barbarianDefenseState.keptFlags).toEqual([false, false, false, true, true]);
+        expect(barbarianDefenseState.lockedLabelFlags).toEqual([false, false, false, true, true]);
+        expect(barbarianDefenseState.rollButtonDisabled).toBe(false);
+
+        await clearEvidenceScreenshotsForTest(testInfo);
+        await saveEvidenceScreenshot(defenderCaptainPage, testInfo, '04-four-player-paladin-defense-unlocked');
+        await saveEvidenceScreenshot(defenderPage, testInfo, '05-four-player-barbarian-defense-unlocked');
 
         await applyOnlineMatchState(matchId, hostPage, (state) => buildTargetingRollState(state, 5));
         await waitForPhase(hostPage, 'targetingRoll');
@@ -4073,8 +4140,7 @@ test.describe('DiceThrone Simple Start', () => {
         await expect(hostPage.getByTestId('dt-target-option-1')).toHaveAttribute('data-team-tone', 'enemy');
         await expect(hostPage.getByTestId('dt-target-option-3')).toHaveAttribute('data-team-tone', 'enemy');
 
-        await clearEvidenceScreenshotsForTest(testInfo);
-        await saveEvidenceScreenshot(hostPage, testInfo, '04-four-player-target-choice-panel-host');
+        await saveEvidenceScreenshot(hostPage, testInfo, '06-four-player-target-choice-panel-host');
 
         await hostPage.getByTestId('dt-target-option-1').click();
         await hostPage.waitForFunction(() => {

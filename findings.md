@@ -766,3 +766,103 @@
 - 结论：
   - 这次不是数据录入错误，而是**reaction/reducer 边界错误 + trigger scope 错误**。
   - 审计维度必须继续保持：`卡图/locale/defId/注册` 之外，再强制覆盖 `finalState / triggerQueue / reaction session / 真实入口 E2E`。
+
+## 2026-04-29 Mermaids《人鱼女王 / 安静的海岸》补证
+- 当前 `Mermaids` 的残余问题已经不是“有没有基础单测”，而是对象级 L3 太少。
+- 本轮新增两条浏览器级真实入口：
+  1. 《人鱼女王》走 `move` 模式，把其他玩家的一个仆从移到“这里”；
+  2. 《安静的海岸》打到基地后，从场上发动持续牌天赋并迁移到另一个基地。
+- 这两条链路都不是新增实现修复，而是把此前只停留在 L2 的行为补到真实入口。
+- 定向复跑结果：
+  - `mermaids_mermaid_queen|mermaids_becalmed_shores`：`3 passed`
+  - `人鱼女王应可选择移动其他玩家的一个仆从到这里`：`1 passed`
+  - `安静的海岸应可从场上发动天赋并移到另一个基地`：`1 passed`
+- 新证据文档：
+  - `evidence/smashup/smashup-mermaids-mermaid-queen-becalmed-e2e-2026-04-29.md`
+- 关键截图绝对路径：
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-mermaids-mermaid-queen-move-prompt-2026-04-29.png`
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-mermaids-mermaid-queen-move-resolved-2026-04-29.png`
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-mermaids-becalmed-shores-attached-2026-04-29.png`
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-mermaids-becalmed-shores-move-prompt-2026-04-29.png`
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-mermaids-becalmed-shores-moved-2026-04-29.png`
+- 结论：
+  - `Mermaids` 当前至少已有 `最后的歌声 / 迷倒观众 / 人鱼女王 / 安静的海岸` 共 `4` 条对象级正路径 L3。
+  - 但三新派系整包仍是 **仍有残余范围**，不能把这 4 条直接外推成整包收口。
+
+## 2026-04-29 Mermaids《塞壬的歌声》+ Skeletons《他们出来了》补证
+- 本轮新增两条浏览器级真实入口：
+  1. 《塞壬的歌声》只允许选择“还有其他己方基地可去”的来源基地，并把目标仆从真实移到该己方基地；
+  2. 《他们出来了》只允许选择有己方埋葬牌的基地，并可一次挖掘多张己方埋葬牌。
+- 定向复跑结果：
+  - `塞壬的歌声应只提供有其他己方基地可去的来源基地，并把目标仆从移到该己方基地`：`1 passed`
+  - `他们出来了应只允许选择有己方埋葬牌的基地，并可一次挖掘多张己方埋葬牌`：`1 passed`
+- 新证据文档：
+  - `evidence/smashup/smashup-mermaids-siren-song-e2e-2026-04-29.md`
+  - `evidence/smashup/smashup-skeletons-dig-em-up-e2e-2026-04-29.md`
+- 关键截图绝对路径：
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-mermaids-siren-song-source-prompt-2026-04-29.png`
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-mermaids-siren-song-target-prompt-2026-04-29.png`
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-mermaids-siren-song-resolved-2026-04-29.png`
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-skeletons-dig-em-up-cards-prompt-2026-04-29.png`
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-skeletons-dig-em-up-resolved-2026-04-29.png`
+- 流程 finding：
+  - 本轮第一次写《他们出来了》场景时，误用了仓库里并不存在的 `robot_microbot_beta`，直接把第二张“被挖掘牌”打成了 `discardWithoutPlay` 假问题。
+  - 这说明 **E2E 场景数据本身也要按卡图/真实 card def 做强约束**；否则测试会制造假阴性或假阳性。
+- 结论：
+  - `Mermaids` 当前至少已有 `5` 条对象级正路径 L3：`最后的歌声 / 迷倒观众 / 人鱼女王 / 安静的海岸 / 塞壬的歌声`。
+  - `Skeletons` 当前至少已有 `4` 条对象级正路径 L3：`殉葬品 / 灵车队伍 / 复仇者 / 他们出来了`。
+  - 三新派系整包仍是 **仍有残余范围**，不能把这些对象级补证直接外推成整包收口。
+
+## 2026-04-29 Skeletons《墓园》补证
+- 本轮新增一条浏览器级真实入口：
+  1. 《墓园》从场上发动天赋，挖掘这里一张你的埋葬牌；若挖出的是随从，则继续进入“是否放置 1 个 +1 指示物”的后续交互。
+- 定向复跑结果：
+  - `skeletons_graveyard 天赋挖掘后若是随从会进入可选 +1 指示物交互`：`1 passed`
+  - `墓园应可从场上发动天赋挖掘己方埋葬牌，并在挖出随从后可放置 \+1 指示物`：`1 passed`
+- 新证据文档：
+  - `evidence/smashup/smashup-skeletons-graveyard-e2e-2026-04-29.md`
+- 关键截图绝对路径：
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-skeletons-graveyard-uncover-prompt-2026-04-29.png`
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-skeletons-graveyard-counter-prompt-2026-04-29.png`
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-skeletons-graveyard-resolved-2026-04-29.png`
+- 结论：
+  - `Skeletons` 当前至少已有 `5` 条对象级正路径 L3：`殉葬品 / 灵车队伍 / 复仇者 / 他们出来了 / 墓园`。
+  - 这轮新增的是**真实入口补证**，不是新增实现修复。
+  - 三新派系整包仍是 **仍有残余范围**。
+
+## 2026-04-29 Skeletons《骸骨之王》补证
+- 本轮新增一条浏览器级真实入口：
+  1. 《骸骨之王》从场上发动天赋，挖掘这里任意埋葬牌；被挖出的“其他随从”需要先经过 `smashup_reaction_choose`，再进入“是否放置 1 个 +1 指示物”的后续交互。
+- 定向复跑结果：
+  - `skeletons_lord_of_bones 天赋可挖掘这里任意埋葬牌而不只限自己`：`1 passed`
+  - `骸骨之王应可从场上发动天赋挖掘这里任意埋葬牌，并在挖出其他随从后可放置 \+1 指示物`：`1 passed`
+- 新证据文档：
+  - `evidence/smashup/smashup-skeletons-lord-of-bones-e2e-2026-04-29.md`
+- 关键截图绝对路径：
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-skeletons-lord-of-bones-uncover-prompt-2026-04-29.png`
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-skeletons-lord-of-bones-reaction-prompt-2026-04-29.png`
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-skeletons-lord-of-bones-counter-prompt-2026-04-29.png`
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-skeletons-lord-of-bones-resolved-2026-04-29.png`
+- 流程 finding：
+  - 单测里这条链路容易被看成“挖出后直接弹 +1 提示”；
+  - 但浏览器真入口里实际先进入 `smashup_reaction_choose`，再选 `骸骨之王` 才会继续到 `skeletons_lord_of_bones_ongoing`。
+  - 这说明 `reaction session` 仍然必须保留在三新派系重审维度里，不能退回只看单测或 `finalState`。
+- 结论：
+  - `Skeletons` 当前至少已有 `6` 条对象级正路径 L3：`殉葬品 / 灵车队伍 / 复仇者 / 他们出来了 / 墓园 / 骸骨之王`。
+  - 这轮新增的是**真实入口补证 + reaction session 流程 finding**，不是新增实现修复。
+  - 三新派系整包仍是 **仍有残余范围**。
+
+## 2026-04-29 Workflow / Skill 修订结论
+- 这轮返工不只是单卡漏测问题，还暴露出两条流程缺口：
+  1. 批量派系重审时，没有把“当前批次未清空不得停”写成项目内硬门禁；
+  2. E2E 场景真值与 `reaction session` 审计维度还没被现有 workflow 明确提升到强制级。
+- 已回写到项目内 skill / workflow：
+  - `.windsurf/skills/data-entry-workflow/SKILL.md`
+  - `docs/games/smashup/workflows/smashup-faction-implementation.md`
+  - `docs/ai-rules/testing-audit.md`
+- 新增的强制点：
+  - 批量派系重审必须先建对象清单，并持续推进到当前批次清空
+  - `continue` 在这类任务里默认表示“继续下一个未完成对象”，不是“补 1-2 张后停下汇报”
+  - E2E 场景必须先做 `defId` 真值预检
+  - Smash Up 对象补证默认按 `L0-L4` 分层验收
+  - 真实入口若出现 `smashup_reaction_choose`，必须单独作为 `reaction session` 证据留档

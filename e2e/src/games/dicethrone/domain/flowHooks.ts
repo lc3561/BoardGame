@@ -234,32 +234,6 @@ function getCoreForPostDamageAfterEvasion(core: DiceThroneCore): DiceThroneCore 
     };
 }
 
-function buildAutoDefenseAbilityEvent(
-    core: DiceThroneCore,
-    commandType: string,
-    timestamp: number
-): AbilityActivatedEvent | undefined {
-    const defenderId = core.pendingAttack?.defenderId;
-    if (!defenderId) return undefined;
-
-    const defender = core.players[defenderId];
-    if (!defender) return undefined;
-
-    const defensiveAbilities = defender.abilities.filter((ability) => ability.type === 'defensive');
-    if (defensiveAbilities.length !== 1) return undefined;
-
-    return {
-        type: 'ABILITY_ACTIVATED',
-        payload: {
-            abilityId: defensiveAbilities[0].id,
-            playerId: defenderId,
-            isDefense: true,
-        },
-        sourceCommandType: commandType,
-        timestamp,
-    };
-}
-
 /**
  * 攻击结算后检查是否需要开响应窗口（如 card-dizzy：造成 ≥8 伤害后打出）
  * 需要先 applyEvents 得到含 lastResolvedAttackDamage 的状态再检查
@@ -786,13 +760,16 @@ export const diceThroneFlowHooks: FlowHooks<DiceThroneCore> = {
                     return { events, halt: true };
                 }
 
+                // 仅在“刚处理完 targeting 选择交互、等待 CHOICE_RESOLVED reduce 落地”的同一拍，
+                // 才跳过重新建 prompt，避免出现交互已丢失却永久不再重开的卡死状态。
+                const awaitingTargetingChoiceReduce = state.sys.flowHalted === true
+                    && state.sys.interaction?.current === undefined
+                    && core.pendingAttack.targetingSelectionPending !== true
+                    && (command.type === 'SYS_INTERACTION_RESPOND' || command.type === 'SYS_INTERACTION_CANCEL');
+
                 if (
                     core.pendingAttack.targetingSelectionResolved !== true
-                    && !(
-                        state.sys.flowHalted === true
-                        && state.sys.interaction?.current === undefined
-                        && core.pendingAttack.targetingSelectionPending !== true
-                    )
+                    && !awaitingTargetingChoiceReduce
                 ) {
                     const choiceOwnerId = getTargetingRollChoiceOwnerId(core, attackerId, targetingValue);
                     if (!choiceOwnerId) {
@@ -1019,10 +996,6 @@ export const diceThroneFlowHooks: FlowHooks<DiceThroneCore> = {
             }
 
             if (coreAfterPreDefense.pendingAttack?.isDefendable) {
-                const autoDefenseAbilityEvent = buildAutoDefenseAbilityEvent(coreAfterPreDefense, command.type, timestamp);
-                if (autoDefenseAbilityEvent) {
-                    events.push(autoDefenseAbilityEvent);
-                }
                 return { events, overrideNextPhase: 'defensiveRoll' };
             }
 
@@ -1443,11 +1416,14 @@ export const diceThroneFlowHooks: FlowHooks<DiceThroneCore> = {
         // 规则 §3.6 步骤 2：如果有多个防御技能，必须在掷骰前选择
         // 如果只有 1 个防御技能，自动选择并设置 rollDiceCount
         if (to === 'defensiveRoll' && core.pendingAttack) {
-            const defenderId = core.pendingAttack.defenderId;
+            const phaseEnterCore = exitEvents?.length
+                ? applyEvents(core, exitEvents as DiceThroneEvent[], reduce)
+                : core;
+            const defenderId = phaseEnterCore.pendingAttack?.defenderId;
             if (!defenderId) {
                 return undefined;
             }
-            const defender = core.players[defenderId];
+            const defender = phaseEnterCore.players[defenderId];
             if (defender) {
                 const defensiveAbilities = defender.abilities.filter(a => a.type === 'defensive');
                 if (defensiveAbilities.length === 1) {

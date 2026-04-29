@@ -399,6 +399,32 @@ describe('MobileTextEntryProxyLayer', () => {
         expect(editable.hasAttribute('data-mobile-text-entry-proxy-source')).toBe(false);
     });
 
+    it('多行代理输入应使用紧凑高度而不是继承源 textarea 的大高度', async () => {
+        const modalRoot = document.getElementById('modal-root');
+        if (!modalRoot) throw new Error('missing modal root');
+
+        const sourceTextarea = document.createElement('textarea');
+        sourceTextarea.value = 'feedback';
+        sourceTextarea.style.height = '240px';
+        sourceTextarea.style.minHeight = '240px';
+        sourceTextarea.style.maxHeight = '240px';
+        modalRoot.appendChild(sourceTextarea);
+
+        render(<MobileTextEntryProxyLayer />);
+
+        await act(async () => {
+            sourceTextarea.focus();
+            fireEvent.focusIn(sourceTextarea);
+            await vi.advanceTimersByTimeAsync(60);
+        });
+
+        const proxyTextarea = screen.getByTestId('mobile-text-entry-proxy-textarea') as HTMLTextAreaElement;
+        expect(proxyTextarea.style.minHeight).toBe('96px');
+        expect(proxyTextarea.style.height).toBe('auto');
+        expect(proxyTextarea.style.maxHeight).not.toBe('240px');
+        expect(proxyTextarea.getAttribute('style')).not.toContain('240px');
+    });
+
     it('会把代理输入同步回 React 受控 input', () => {
         const ControlledInput = () => {
             const [value, setValue] = React.useState('');

@@ -1366,6 +1366,151 @@ describe('王权骰铸流程测试', () => {
             expect(state.core.pendingAttack?.defenderId).toBe('1');
         });
 
+        it('4 人模式进入 defensiveRoll 时应保留唯一防御技的掷骰数量，而不是把骰子全部锁死', () => {
+            const cases = [
+                {
+                    targetRoll: 2,
+                    expectedDefenderId: '3',
+                    expectedDefenseAbilityId: 'holy-defense',
+                    expectedDiceDefinitionId: 'paladin-dice',
+                },
+                {
+                    targetRoll: 4,
+                    expectedDefenderId: '1',
+                    expectedDefenseAbilityId: 'thick-skin',
+                    expectedDiceDefinitionId: 'barbarian-dice',
+                },
+            ] as const;
+
+            for (const testCase of cases) {
+                const playerIds: PlayerId[] = ['0', '1', '2', '3'];
+                const pipelineConfig = {
+                    domain: DiceThroneDomain,
+                    systems: testSystems,
+                };
+                const random = createQueuedRandom([1, 1, 1, 1, 1, testCase.targetRoll]);
+                let state = createInitializedStateWithCharacters(playerIds, random, {
+                    '0': 'monk',
+                    '1': 'barbarian',
+                    '2': 'pyromancer',
+                    '3': 'paladin',
+                });
+
+                for (const pid of playerIds) {
+                    state.core.players[pid].hand = [];
+                    state.core.players[pid].deck = [];
+                }
+
+                const commands: CommandInput[] = [
+                    ...advanceTo('offensiveRoll', '0'),
+                    cmd('ROLL_DICE', '0'),
+                    cmd('CONFIRM_ROLL', '0'),
+                    cmd('SELECT_ABILITY', '0', { abilityId: fistAttackAbilityId }),
+                    cmd('ADVANCE_PHASE', '0'),
+                    cmd('ROLL_DICE', '0'),
+                    cmd('CONFIRM_ROLL', '0'),
+                    cmd('ADVANCE_PHASE', '0'),
+                ];
+
+                for (const input of commands) {
+                    const command = {
+                        type: input.type,
+                        playerId: input.playerId,
+                        payload: input.payload,
+                        timestamp: Date.now(),
+                    } as DiceThroneCommand;
+                    const result = executePipeline(pipelineConfig, state, command, random, playerIds);
+                    expect(result.success).toBe(true);
+                    state = result.state as MatchState<DiceThroneCore>;
+                }
+
+                expect(state.sys.phase).toBe('defensiveRoll');
+                expect(state.core.pendingAttack?.defenderId).toBe(testCase.expectedDefenderId);
+                expect(state.core.pendingAttack?.defenseAbilityId).toBe(testCase.expectedDefenseAbilityId);
+                expect(state.core.rollLimit).toBe(1);
+                expect(state.core.rollCount).toBe(0);
+                expect(state.core.rollDiceCount).toBe(3);
+                expect(state.core.dice.every((die) => die.definitionId === testCase.expectedDiceDefinitionId)).toBe(true);
+                expect(state.core.dice.slice(0, 3).every((die) => die.isKept === false)).toBe(true);
+                expect(state.core.dice.slice(3).every((die) => die.isKept === true)).toBe(true);
+            }
+        });
+
+        it('4 人模式若已卡成“同一防御技已选中但全锁骰”，再次选择同一防御技应恢复掷骰配置', () => {
+            const playerIds: PlayerId[] = ['0', '1', '2', '3'];
+            const pipelineConfig = {
+                domain: DiceThroneDomain,
+                systems: testSystems,
+            };
+            const random = createQueuedRandom([1, 1, 1, 1, 1, 4]);
+            let state = createInitializedStateWithCharacters(playerIds, random, {
+                '0': 'monk',
+                '1': 'barbarian',
+                '2': 'pyromancer',
+                '3': 'paladin',
+            });
+
+            for (const pid of playerIds) {
+                state.core.players[pid].hand = [];
+                state.core.players[pid].deck = [];
+            }
+
+            const commands: CommandInput[] = [
+                ...advanceTo('offensiveRoll', '0'),
+                cmd('ROLL_DICE', '0'),
+                cmd('CONFIRM_ROLL', '0'),
+                cmd('SELECT_ABILITY', '0', { abilityId: fistAttackAbilityId }),
+                cmd('ADVANCE_PHASE', '0'),
+                cmd('ROLL_DICE', '0'),
+                cmd('CONFIRM_ROLL', '0'),
+                cmd('ADVANCE_PHASE', '0'),
+            ];
+
+            for (const input of commands) {
+                const command = {
+                    type: input.type,
+                    playerId: input.playerId,
+                    payload: input.payload,
+                    timestamp: Date.now(),
+                } as DiceThroneCommand;
+                const result = executePipeline(pipelineConfig, state, command, random, playerIds);
+                expect(result.success).toBe(true);
+                state = result.state as MatchState<DiceThroneCore>;
+            }
+
+            state.core.rollDiceCount = 0;
+            state.core.rollCount = 0;
+            state.core.dice = state.core.dice.map((die) => ({ ...die, isKept: true }));
+            state.core.pendingAttack = {
+                ...state.core.pendingAttack!,
+                defenseAbilityId: 'thick-skin',
+            };
+
+            const reselectResult = executePipeline(
+                pipelineConfig,
+                state,
+                {
+                    type: 'SELECT_ABILITY',
+                    playerId: '1',
+                    payload: { abilityId: 'thick-skin' },
+                    timestamp: Date.now(),
+                } as DiceThroneCommand,
+                random,
+                playerIds,
+            );
+
+            expect(reselectResult.success).toBe(true);
+            if (!reselectResult.success) {
+                return;
+            }
+
+            const recoveredState = reselectResult.state as MatchState<DiceThroneCore>;
+            expect(recoveredState.core.rollDiceCount).toBe(3);
+            expect(recoveredState.core.rollCount).toBe(0);
+            expect(recoveredState.core.dice.slice(0, 3).every((die) => die.isKept === false)).toBe(true);
+            expect(recoveredState.core.dice.slice(3).every((die) => die.isKept === true)).toBe(true);
+        });
+
         it('4 人模式 targetingRoll 掷出 5 时由防守队选择目标', () => {
             const playerIds: PlayerId[] = ['0', '1', '2', '3'];
             const pipelineConfig = {
@@ -1484,6 +1629,83 @@ describe('王权骰铸流程测试', () => {
 
             expect(state.sys.phase).toBe('defensiveRoll');
             expect(state.core.pendingAttack?.defenderId).toBe('1');
+        });
+
+        it('4 人模式 targetingRoll 选目标交互意外丢失后，再次推进应重建交互而不是静默卡住', () => {
+            const playerIds: PlayerId[] = ['0', '1', '2', '3'];
+            const pipelineConfig = {
+                domain: DiceThroneDomain,
+                systems: testSystems,
+            };
+            const random = createQueuedRandom([1, 1, 1, 1, 1, 5]);
+            let state = createNoResponseSetup()(playerIds, random);
+
+            const setupCommands: CommandInput[] = [
+                ...advanceTo('offensiveRoll', '0'),
+                cmd('ROLL_DICE', '0'),
+                cmd('CONFIRM_ROLL', '0'),
+                cmd('SELECT_ABILITY', '0', { abilityId: fistAttackAbilityId }),
+                cmd('ADVANCE_PHASE', '0'),
+                cmd('ROLL_DICE', '0'),
+                cmd('CONFIRM_ROLL', '0'),
+                cmd('ADVANCE_PHASE', '0'),
+            ];
+
+            for (const input of setupCommands) {
+                const command = {
+                    type: input.type,
+                    playerId: input.playerId,
+                    payload: input.payload,
+                    timestamp: Date.now(),
+                } as DiceThroneCommand;
+                const result = executePipeline(pipelineConfig, state, command, random, playerIds);
+                expect(result.success).toBe(true);
+                state = result.state as MatchState<DiceThroneCore>;
+            }
+
+            expect(state.sys.phase).toBe('targetingRoll');
+            expect(state.sys.interaction.current?.playerId).toBe('3');
+
+            const corruptedState = {
+                ...state,
+                sys: {
+                    ...state.sys,
+                    flowHalted: true,
+                    interaction: {
+                        ...state.sys.interaction,
+                        current: undefined,
+                    },
+                },
+                core: {
+                    ...state.core,
+                    pendingAttack: {
+                        ...state.core.pendingAttack!,
+                        targetingSelectionPending: false,
+                        targetingSelectionResolved: false,
+                        defenderId: undefined,
+                    },
+                },
+            } as MatchState<DiceThroneCore>;
+
+            const recoverResult = executePipeline(
+                pipelineConfig,
+                corruptedState,
+                {
+                    type: 'ADVANCE_PHASE',
+                    playerId: '0',
+                    payload: {},
+                    timestamp: Date.now(),
+                } as DiceThroneCommand,
+                random,
+                playerIds
+            );
+
+            expect(recoverResult.success).toBe(true);
+            const recoveredState = recoverResult.state as MatchState<DiceThroneCore>;
+            expect(recoveredState.sys.phase).toBe('targetingRoll');
+            expect(recoveredState.sys.interaction.current?.playerId).toBe('3');
+            expect(recoveredState.core.pendingAttack?.targetingSelectionPending).toBe(true);
+            expect(recoveredState.core.pendingAttack?.targetingSelectionResolved).toBe(false);
         });
 
         it('targetingRoll 无可选目标时 emergency skip 会清理 pendingAttack 并推进到 main2', () => {

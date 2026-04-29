@@ -621,6 +621,15 @@ export const SummonerWarsBoard: React.FC<Props> = ({
     }
   };
 
+  useEffect(() => {
+    if (!diceResult || !swInteraction) return;
+    swAttackDebugLog('board_auto_close_dice_for_interaction', {
+      interactionId: swInteraction.id,
+      interactionType: swInteraction.type,
+    });
+    handleCloseDiceResult();
+  }, [diceResult, swInteraction?.id]);
+
   // 近战攻击命中回调（卡牌冲到目标时触发，播放伤害特效）
   const handleAttackHit = () => {
     const pending = pendingAttackRef.current;

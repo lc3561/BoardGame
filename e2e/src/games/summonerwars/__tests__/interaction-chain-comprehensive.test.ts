@@ -297,6 +297,105 @@ function getSwCurrentType(state: MatchState<SummonerWarsCore>): string | undefin
 }
 
 describe('SummonerWars 系统交互桥接回归', () => {
+  it('[withdraw] DECLARE_ATTACK 后应排出费用交互，并可完成两步撤退链', () => {
+    resetInstanceCounter();
+    const core = createInitializedCore(['0', '1'], testRandom(), { faction0: 'barbaric', faction1: 'necromancer' });
+    clearRect(core, [2, 3, 4, 5, 6], [0, 1, 2, 3, 4, 5]);
+    core.phase = 'attack';
+    core.currentPlayer = '0';
+    core.players['0'].magic = 3;
+
+    const kairuPos = { row: 4, col: 2 };
+    const enemyPos = { row: 4, col: 3 };
+    const withdrawPos = { row: 4, col: 1 };
+    const kairu = putUnit(
+      core,
+      kairuPos,
+      mkUnit('barbaric-kairu-test', {
+        faction: 'barbaric',
+        unitClass: 'champion',
+        abilities: ['inspire', 'withdraw'],
+        strength: 3,
+        life: 7,
+        attackType: 'melee',
+        attackRange: 1,
+      }),
+      '0',
+      { boosts: 2, hasAttacked: false },
+    );
+    putUnit(
+      core,
+      enemyPos,
+      mkUnit('withdraw-enemy', {
+        faction: 'necromancer',
+        unitClass: 'common',
+        strength: 1,
+        life: 2,
+        attackType: 'melee',
+        attackRange: 1,
+      }),
+      '1',
+    );
+
+    let state: MatchState<SummonerWarsCore> = {
+      core,
+      sys: createInitialSystemState(['0', '1'], interactionSystems),
+    };
+
+    const requested = runPipeline(state, {
+      type: SW_COMMANDS.DECLARE_ATTACK,
+      playerId: '0',
+      payload: { attacker: kairuPos, target: enemyPos },
+    });
+    expect(requested.success).toBe(true);
+    state = requested.state;
+    expect(getSwCurrentType(state)).toBe('after_attack_withdraw_cost');
+
+    const costCurrent = state.sys.interaction.current;
+    expect(costCurrent?.kind).toBe('simple-choice');
+    const costOptions = ((costCurrent?.data as { options?: PromptOption[] } | undefined)?.options ?? []) as PromptOption[];
+    const chargeOptionId = costOptions.find((option) => {
+      const value = option.value as { action?: string; costType?: string } | undefined;
+      return value?.action === 'after_attack_withdraw_cost' && value.costType === 'charge';
+    })?.id;
+    expect(chargeOptionId).toBeTruthy();
+
+    const pickCost = runPipeline(state, {
+      type: INTERACTION_COMMANDS.RESPOND,
+      playerId: '0',
+      payload: { interactionId: costCurrent!.id, optionId: chargeOptionId },
+    });
+    expect(pickCost.success).toBe(true);
+    state = pickCost.state;
+    expect(getSwCurrentType(state)).toBe('after_attack_withdraw_position');
+
+    const positionCurrent = state.sys.interaction.current;
+    expect(positionCurrent?.kind).toBe('simple-choice');
+    const positionOptions = ((positionCurrent?.data as { options?: PromptOption[] } | undefined)?.options ?? []) as PromptOption[];
+    const positionOptionId = positionOptions.find((option) => {
+      const value = option.value as { action?: string; targetPosition?: CellCoord } | undefined;
+      return value?.action === 'after_attack_withdraw_position'
+        && value.targetPosition?.row === withdrawPos.row
+        && value.targetPosition?.col === withdrawPos.col;
+    })?.id;
+    expect(positionOptionId).toBeTruthy();
+
+    const pickPosition = runPipeline(state, {
+      type: INTERACTION_COMMANDS.RESPOND,
+      playerId: '0',
+      payload: { interactionId: positionCurrent!.id, optionId: positionOptionId },
+    });
+    expect(pickPosition.success).toBe(true);
+    state = pickPosition.state;
+
+    expect(state.sys.interaction.current).toBeUndefined();
+    expect(state.sys.interaction.queue.length).toBe(0);
+    expect(getUnitAt(state.core, kairuPos)).toBeUndefined();
+    const moved = getUnitAt(state.core, withdrawPos);
+    expect(moved?.instanceId).toBe(kairu.instanceId);
+    expect(moved?.boosts).toBe(1);
+  });
+
   it('[fire_sacrifice_summon] 召唤后进入系统交互并可完成牺牲召唤', () => {
     resetInstanceCounter();
     const core = createInitializedCore(['0', '1'], testRandom(), { faction0: 'necromancer', faction1: 'trickster' });

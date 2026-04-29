@@ -180,6 +180,117 @@
   - 但三新派系整体仍只能继续标记为 **仍有残余范围**；
   - 本案例必须作为旧审计失效补充证据保留：**此前漏掉的不是卡图，也不是测试数量，而是“打牌目标契约 + 目标基地准入 + 目标范围语义 + 真实入口”四层没有逐卡锁死。**
 
+## 2026-04-29 继续重审记录：Mermaids《人鱼女王 / 安静的海岸》对象级 L3 补证
+
+- 触发原因：
+  - `Mermaids` 当前已有《最后的歌声》《迷倒观众》两条 L3，但“模式选择”和“场上持续牌天赋迁移”仍只停留在 L2。
+  - 本轮优先补《人鱼女王》《安静的海岸》，把这两种高风险交互链路补到浏览器级真实入口。
+- 本轮实现：
+  - `e2e/smashup/smashup-robot-hoverbot-new.e2e.ts`
+    - 新增 `人鱼女王应可选择移动其他玩家的一个仆从到这里`
+    - 新增 `安静的海岸应可从场上发动天赋并移到另一个基地`
+- 本轮验证：
+  1. `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/newFactionAbilities.test.ts --configLoader native --maxWorkers 1 --testNamePattern "mermaids_mermaid_queen|mermaids_becalmed_shores"`
+     - 结果：`3 passed`
+  2. `npm run test:e2e:ci:file -- e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "人鱼女王应可选择移动其他玩家的一个仆从到这里"`
+     - 结果：`1 passed`
+  3. `node scripts/infra/run-e2e-single.mjs ci e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "安静的海岸应可从场上发动天赋并移到另一个基地"`
+     - 结果：`1 passed`
+- 新增证据文档：
+  - `evidence/smashup/smashup-mermaids-mermaid-queen-becalmed-e2e-2026-04-29.md`
+- 稳定截图绝对路径：
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-mermaids-mermaid-queen-move-prompt-2026-04-29.png`
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-mermaids-mermaid-queen-move-resolved-2026-04-29.png`
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-mermaids-becalmed-shores-attached-2026-04-29.png`
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-mermaids-becalmed-shores-move-prompt-2026-04-29.png`
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-mermaids-becalmed-shores-moved-2026-04-29.png`
+- 结论：
+  - 《人鱼女王》当前已补齐“选择移动模式后，把其他玩家一个仆从移到这里”的 L3 证据。
+  - 《安静的海岸》当前已补齐“打到基地上后，从场上发动持续牌天赋迁移”的 L3 证据。
+  - 这两条本轮没有新增实现 bug，新增的是**真实入口补证**。
+  - 截至本轮，`Mermaids` 当前至少已有 `最后的歌声 / 迷倒观众 / 人鱼女王 / 安静的海岸` 共 `4` 条正路径对象级 L3 证据；但三新派系整包仍维持 **仍有残余范围**。
+
+## 2026-04-29 继续重审记录：Mermaids《塞壬的歌声》+ Skeletons《他们出来了》对象级 L3 补证
+
+- 触发原因：
+  - `Mermaids` 仍缺“来源基地过滤 + 目标仆从移动”这类多段移动链的浏览器级样本；
+  - `Skeletons` 仍缺“选基地后一次挖掘多张己方埋葬牌”这类 buried 真实入口样本。
+- 本轮实现：
+  - `e2e/smashup/smashup-robot-hoverbot-new.e2e.ts`
+    - 新增 `塞壬的歌声应只提供有其他己方基地可去的来源基地，并把目标仆从移到该己方基地`
+    - 新增 `他们出来了应只允许选择有己方埋葬牌的基地，并可一次挖掘多张己方埋葬牌`
+- 本轮验证：
+  1. `node scripts/infra/run-e2e-single.mjs ci e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "塞壬的歌声应只提供有其他己方基地可去的来源基地，并把目标仆从移到该己方基地"`
+     - 结果：`1 passed`
+  2. `node scripts/infra/run-e2e-single.mjs ci e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "他们出来了应只允许选择有己方埋葬牌的基地，并可一次挖掘多张己方埋葬牌"`
+     - 结果：`1 passed`
+- 新增证据文档：
+  - `evidence/smashup/smashup-mermaids-siren-song-e2e-2026-04-29.md`
+  - `evidence/smashup/smashup-skeletons-dig-em-up-e2e-2026-04-29.md`
+- 稳定截图绝对路径：
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-mermaids-siren-song-source-prompt-2026-04-29.png`
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-mermaids-siren-song-target-prompt-2026-04-29.png`
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-mermaids-siren-song-resolved-2026-04-29.png`
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-skeletons-dig-em-up-cards-prompt-2026-04-29.png`
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-skeletons-dig-em-up-resolved-2026-04-29.png`
+- 结论：
+  - `Mermaids` 当前至少已有 `最后的歌声 / 迷倒观众 / 人鱼女王 / 安静的海岸 / 塞壬的歌声` 共 `5` 条正路径对象级 L3 证据；
+  - `Skeletons` 当前至少已有 `殉葬品 / 灵车队伍 / 复仇者 / 他们出来了` 共 `4` 条正路径对象级 L3 证据；
+  - 这两条本轮都没有新增实现修复，新增的是**浏览器级真实入口补证**；
+  - 三新派系整包仍维持 **仍有残余范围**，不能把单卡/单对象补证外推成整包收口。
+
+## 2026-04-29 继续重审记录：Skeletons《墓园》对象级 L3 补证
+
+- 触发原因：
+  - `Skeletons` 仍缺“场上持续牌天赋 -> 挖掘 -> 挖掘后再决定是否放指示物”这类浏览器级样本。
+- 本轮实现：
+  - `e2e/smashup/smashup-robot-hoverbot-new.e2e.ts`
+    - 新增 `墓园应可从场上发动天赋挖掘己方埋葬牌，并在挖出随从后可放置 +1 指示物`
+- 本轮验证：
+  1. `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/newFactionAbilities.test.ts --configLoader native --maxWorkers 1 --testNamePattern "skeletons_graveyard 天赋挖掘后若是随从会进入可选 \+1 指示物交互"`
+     - 结果：`1 passed`
+  2. `node scripts/infra/run-e2e-single.mjs ci e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "墓园应可从场上发动天赋挖掘己方埋葬牌，并在挖出随从后可放置 \+1 指示物"`
+     - 结果：`1 passed`
+- 新增证据文档：
+  - `evidence/smashup/smashup-skeletons-graveyard-e2e-2026-04-29.md`
+- 稳定截图绝对路径：
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-skeletons-graveyard-uncover-prompt-2026-04-29.png`
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-skeletons-graveyard-counter-prompt-2026-04-29.png`
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-skeletons-graveyard-resolved-2026-04-29.png`
+- 结论：
+  - `Skeletons` 当前至少已有 `殉葬品 / 灵车队伍 / 复仇者 / 他们出来了 / 墓园` 共 `5` 条正路径对象级 L3 证据；
+  - 本轮没有新增实现修复，新增的是**浏览器级真实入口补证**；
+  - 三新派系整包仍维持 **仍有残余范围**。
+
+## 2026-04-29 继续重审记录：Skeletons《骸骨之王》对象级 L3 补证
+
+- 触发原因：
+  - `Skeletons` 仍缺“场上 minion 天赋 -> 挖掘任意埋葬牌 -> 通过 reaction session 再进后续提示”这类浏览器级样本；
+  - 《骸骨之王》本身又是此前真实修过“不能只挖自己的埋葬牌”的对象，值得用 L3 再锁一次。
+- 本轮实现：
+  - `e2e/smashup/smashup-robot-hoverbot-new.e2e.ts`
+    - 新增 `骸骨之王应可从场上发动天赋挖掘这里任意埋葬牌，并在挖出其他随从后可放置 +1 指示物`
+- 本轮验证：
+  1. `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/newFactionAbilities.test.ts --configLoader native --maxWorkers 1 --testNamePattern "skeletons_lord_of_bones 天赋可挖掘这里任意埋葬牌而不只限自己"`
+     - 结果：`1 passed`
+  2. `BG_ALLOW_HEAVY_TASK_CONCURRENCY=1 node scripts/infra/run-e2e-single.mjs ci e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "骸骨之王应可从场上发动天赋挖掘这里任意埋葬牌，并在挖出其他随从后可放置 \+1 指示物"`
+     - 结果：`1 passed`
+- 新增证据文档：
+  - `evidence/smashup/smashup-skeletons-lord-of-bones-e2e-2026-04-29.md`
+- 稳定截图绝对路径：
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-skeletons-lord-of-bones-uncover-prompt-2026-04-29.png`
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-skeletons-lord-of-bones-reaction-prompt-2026-04-29.png`
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-skeletons-lord-of-bones-counter-prompt-2026-04-29.png`
+  - `D:\gongzuo\webgame\BoardGame\e2e\evidence\screenshots\smashup-skeletons-lord-of-bones-resolved-2026-04-29.png`
+- 关键 finding：
+  - 单测观察面里，这条链路看起来像“挖掘后直接进 +1 提示”；
+  - 但浏览器真实入口里，实际要先经过 `smashup_reaction_choose`，再选 `骸骨之王` 才会进入 `skeletons_lord_of_bones_ongoing`。
+  - 这再次说明三新派系重审不能只停在 `finalState` 或局部单测，还要补看 `reaction session`。
+- 结论：
+  - `Skeletons` 当前至少已有 `殉葬品 / 灵车队伍 / 复仇者 / 他们出来了 / 墓园 / 骸骨之王` 共 `6` 条正路径对象级 L3 证据；
+  - 本轮没有新增实现修复，新增的是**浏览器级真实入口补证 + reaction session 流程 finding**；
+  - 三新派系整包仍维持 **仍有残余范围**。
+
 - 新确认并已修复的真实问题：
   - `UndoSystem` 只把空 `matchId` 视为本地局，未覆盖实际 `local:${gameId}:${seed}`，导致撤回仍走审批流。
   - `mermaids_siren` / `base_mermaid_reef` 此前被误审成“同一玩家无论几个随从都只减 1 次”；2026-04-26 按卡图复核后确认该结论失效，正确语义是：**其他玩家在这里的每个仆从都各自 -1 力量计入其控制者总力量**。

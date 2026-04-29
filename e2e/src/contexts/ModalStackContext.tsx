@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 
 // 渲染函数由调用方提供，close 与遮罩策略由栈统一注入
@@ -21,6 +21,7 @@ export interface ModalEntry {
 interface ModalStackContextValue {
     stack: ModalEntry[];
     openModal: (entry: Omit<ModalEntry, 'id'> & { id?: string }) => string;
+    updateModal: (id: string, entry: Omit<ModalEntry, 'id'>) => void;
     closeModal: (id: string) => void;
     closeTop: () => void;
     replaceTop: (entry: Omit<ModalEntry, 'id'> & { id?: string }) => string;
@@ -60,7 +61,7 @@ export const ModalStackProvider = ({ children }: { children: ReactNode }) => {
         });
     }, []);
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         stackRef.current = stack;
         if (!pendingOnCloseRef.current.length) return;
         const tasks = pendingOnCloseRef.current;
@@ -74,6 +75,13 @@ export const ModalStackProvider = ({ children }: { children: ReactNode }) => {
         logModalAction('open', { ...entry, id }, stackRef.current.length + 1);
         setStack((prev) => [...prev, { ...entry, id }]);
         return id;
+    }, [logModalAction]);
+
+    const updateModal = useCallback((id: string, entry: Omit<ModalEntry, 'id'>) => {
+        const target = stackRef.current.find((item) => item.id === id);
+        if (!target) return;
+        logModalAction('update', { ...entry, id }, stackRef.current.length);
+        setStack((prev) => prev.map((item) => (item.id === id ? { ...entry, id } : item)));
     }, [logModalAction]);
 
     // 精确关闭某个栈条目
@@ -124,8 +132,8 @@ export const ModalStackProvider = ({ children }: { children: ReactNode }) => {
     }, [enqueueOnClose, logModalAction]);
 
     const value = useMemo(
-        () => ({ stack, openModal, closeModal, closeTop, replaceTop, closeAll, closeByNamespace }),
-        [stack, openModal, closeModal, closeTop, replaceTop, closeAll, closeByNamespace]
+        () => ({ stack, openModal, updateModal, closeModal, closeTop, replaceTop, closeAll, closeByNamespace }),
+        [stack, openModal, updateModal, closeModal, closeTop, replaceTop, closeAll, closeByNamespace]
     );
 
     return <ModalStackContext.Provider value={value}>{children}</ModalStackContext.Provider>;

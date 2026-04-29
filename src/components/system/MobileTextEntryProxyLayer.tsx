@@ -37,6 +37,8 @@ const DEFAULT_PROXY_BOX_SHADOW = '0 18px 40px rgba(15, 23, 42, 0.18)';
 const MOBILE_TEXT_ENTRY_DEBUG = true;
 const POINTER_SWITCH_GRACE_MS = 600;
 const SUBMIT_ENTER_KEY_HINTS = new Set(['enter', 'go', 'search', 'send']);
+const MULTILINE_PROXY_MIN_HEIGHT = '96px';
+const MULTILINE_PROXY_MAX_HEIGHT = 'min(160px, 28vh)';
 
 const debugProxyEvent = (phase: string, details: Record<string, unknown> = {}) => {
     if (!MOBILE_TEXT_ENTRY_DEBUG || typeof console === 'undefined') {
@@ -166,9 +168,9 @@ const buildProxyState = (target: HTMLElement): ProxyState => {
         enterKeyHint: input?.enterKeyHint || target.getAttribute('enterkeyhint') || undefined,
         className: target.className,
         inlineStyle: {
-            minHeight: computed.minHeight,
-            height: multiline ? computed.height : 'auto',
-            maxHeight: computed.maxHeight,
+            minHeight: multiline ? MULTILINE_PROXY_MIN_HEIGHT : computed.minHeight,
+            height: multiline ? 'auto' : 'auto',
+            maxHeight: multiline ? MULTILINE_PROXY_MAX_HEIGHT : computed.maxHeight,
             paddingTop: computed.paddingTop,
             paddingRight: computed.paddingRight,
             paddingBottom: computed.paddingBottom,
@@ -751,7 +753,7 @@ export const MobileTextEntryProxyLayer = () => {
                         {...sharedProps}
                         rows={3}
                         data-testid="mobile-text-entry-proxy-textarea"
-                        className={`${sharedProps.className} min-h-28 resize-none`}
+                        className={`${sharedProps.className} resize-none`}
                     />
                 ) : (
                     <input

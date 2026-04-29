@@ -256,6 +256,26 @@ describe('Runtime viewport css vars', () => {
         document.documentElement.removeAttribute('data-mobile-profile');
         document.documentElement.removeAttribute('data-game-id');
     });
+
+    it('键盘弹出后会保留上一次非键盘 layout viewport 高度', () => {
+        applyRuntimeViewportCssVars({
+            width: 844,
+            height: 844,
+            safeArea: { top: 0, right: 0, bottom: 0, left: 0 },
+            keyboardInsetBottom: 0,
+        });
+
+        applyRuntimeViewportCssVars({
+            width: 844,
+            height: 444,
+            safeArea: { top: 0, right: 0, bottom: 0, left: 0 },
+            keyboardInsetBottom: 400,
+        });
+
+        const rootStyle = document.documentElement.style;
+        expect(rootStyle.getPropertyValue('--runtime-viewport-height')).toBe('444px');
+        expect(rootStyle.getPropertyValue('--layout-viewport-height')).toBe('844px');
+    });
 });
 
 describe('Play route loading fallback helpers', () => {
@@ -458,6 +478,8 @@ describe('Runtime viewport helpers', () => {
     });
 
     it('仅在移动端运行时（coarse pointer 或键盘 inset）启用输入代理', () => {
+        document.documentElement.style.removeProperty('--layout-viewport-height');
+        document.documentElement.style.removeProperty('--keyboard-inset-height');
         const matchMediaMock = vi.fn().mockReturnValue({ matches: true });
         Object.defineProperty(window, 'matchMedia', {
             value: matchMediaMock,

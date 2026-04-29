@@ -24,6 +24,9 @@ import { loadStatusAtlases, type StatusAtlases } from './ui/statusEffects';
 import { ABILITY_SLOT_MAP, getAbilitySlotId } from './ui/abilitySlotMapping';
 import type { AbilityOverlaysHandle } from './ui/AbilityOverlays';
 import { AbilityChoiceModal, type AbilityChoiceOption } from './ui/AbilityChoiceModal';
+import { ConfirmSkipModal } from './ui/ConfirmSkipModal';
+import { ConfirmRemoveKnockdownModal } from './ui/ConfirmRemoveKnockdownModal';
+import { PurifyModal } from './ui/PurifyModal';
 import { findPlayerAbility } from './domain/abilityLookup';
 import { HandArea } from './ui/HandArea';
 // cardAtlas 模块加载时已同步注册所有英雄图集，无需异步加载
@@ -65,6 +68,7 @@ import { AttackShowcaseOverlay } from './ui/AttackShowcaseOverlay';
 import { getPlayerPassiveAbilities, isPassiveActionUsable } from './domain/passiveAbility';
 import { getAutoResponseEnabled } from './ui/AutoResponseToggle';
 import { getAbilityChoiceText } from './ui/abilityChoiceText';
+import { useSyncedModalStackEntry } from '../../hooks/ui/useSyncedModalStackEntry';
 
 type DiceThroneBoardProps = GameBoardProps<DiceThroneCore>;
 
@@ -134,6 +138,7 @@ export const DiceThroneBoard: React.FC<DiceThroneBoardProps> = ({ G: rawG, dispa
     const { isActive: isTutorialActive, currentStep: tutorialStep, nextStep: nextTutorialStep } = useTutorial();
     const toast = useToast();
     const locale = i18n.resolvedLanguage ?? i18n.language;
+    const [autoResponseEnabled, setAutoResponseEnabled] = React.useState(() => getAutoResponseEnabled());
 
     const isGameOver = rawG.sys.gameover;
     const rootPid = playerID || '0';
@@ -271,8 +276,8 @@ export const DiceThroneBoard: React.FC<DiceThroneBoardProps> = ({ G: rawG, dispa
         setMagnifiedCards,
         closeMagnify,
         modals,
-        openModal,
-        closeModal,
+        openModal: openUiModal,
+        closeModal: closeUiModal,
         viewMode: manualViewMode,
         setViewMode,
         toggleViewMode,
@@ -307,9 +312,6 @@ export const DiceThroneBoard: React.FC<DiceThroneBoardProps> = ({ G: rawG, dispa
             setDismissedBonusDiceId(null);
         }
     }, [currentSettlementId, dismissedBonusDiceId]);
-
-    // 自动响应状态
-    const [autoResponseEnabled, setAutoResponseEnabled] = React.useState(() => getAutoResponseEnabled());
 
     // Atlas 配置（状态图标仍需异步加载）
     const [statusIconAtlas, setStatusIconAtlas] = React.useState<StatusAtlases | null>(null);
@@ -481,6 +483,7 @@ export const DiceThroneBoard: React.FC<DiceThroneBoardProps> = ({ G: rawG, dispa
 
     // Token 响应状态
     const pendingDamage = G.pendingDamage;
+    const isTokenResponseInteraction = sysInteraction?.kind === 'dt:token-response';
     const tokenResponsePhase: TokenResponsePhase | null = pendingDamage
         ? (pendingDamage.responderId === pendingDamage.sourcePlayerId ? 'attackerBoost' : 'defenderMitigation')
         : null;
@@ -765,6 +768,124 @@ export const DiceThroneBoard: React.FC<DiceThroneBoardProps> = ({ G: rawG, dispa
         (player.statusEffects?.[STATUS_IDS.KNOCKDOWN] ?? 0) > 0 &&
         (player.resources?.[RESOURCE_IDS.CP] ?? 0) >= 2;
 
+    const handleCloseConfirmSkipModal = React.useCallback(() => {
+        closeUiModal('confirmSkip');
+    }, [closeUiModal]);
+
+    const handleConfirmSkipModal = React.useCallback(() => {
+        closeUiModal('confirmSkip');
+        engineMoves.advancePhase();
+    }, [closeUiModal, engineMoves]);
+
+    const handleCancelPurifyModal = React.useCallback(() => {
+        closeUiModal('purify');
+    }, [closeUiModal]);
+
+    const handleConfirmPurifyModal = React.useCallback((statusId: string) => {
+        engineMoves.usePurify(statusId);
+        closeUiModal('purify');
+    }, [closeUiModal, engineMoves]);
+
+    const handleCancelRemoveKnockdownModal = React.useCallback(() => {
+        closeUiModal('removeKnockdown');
+    }, [closeUiModal]);
+
+    const handleConfirmRemoveKnockdownModal = React.useCallback(() => {
+        closeUiModal('removeKnockdown');
+        engineMoves.payToRemoveKnockdown();
+    }, [closeUiModal, engineMoves]);
+
+    const handleCloseAbilityChoiceModal = React.useCallback(() => {
+        closeUiModal('abilityChoice');
+        setAbilityChoiceOptions([]);
+    }, [closeUiModal]);
+
+    const handleSelectAbilityChoice = React.useCallback((abilityId: string) => {
+        closeUiModal('abilityChoice');
+        setAbilityChoiceOptions([]);
+        engineMoves.selectAbility(abilityId);
+    }, [closeUiModal, engineMoves]);
+
+    const confirmSkipModalEntry = React.useMemo(() => ({
+        onClose: handleCloseConfirmSkipModal,
+        render: () => (
+            <ConfirmSkipModal
+                isOpen
+                onCancel={handleCloseConfirmSkipModal}
+                onConfirm={handleConfirmSkipModal}
+            />
+        ),
+    }), [handleCloseConfirmSkipModal, handleConfirmSkipModal]);
+
+    const purifyModalEntry = React.useMemo(() => ({
+        closeOnBackdrop: false,
+        closeOnEsc: false,
+        onClose: handleCancelPurifyModal,
+        render: () => (
+            <PurifyModal
+                playerState={player}
+                purifiableStatusIds={purifiableStatusIds}
+                onConfirm={handleConfirmPurifyModal}
+                onCancel={handleCancelPurifyModal}
+                locale={locale}
+                statusIconAtlas={statusIconAtlas}
+            />
+        ),
+    }), [
+        handleCancelPurifyModal,
+        handleConfirmPurifyModal,
+        locale,
+        player,
+        purifiableStatusIds,
+        statusIconAtlas,
+    ]);
+
+    const removeKnockdownModalEntry = React.useMemo(() => ({
+        onClose: handleCancelRemoveKnockdownModal,
+        render: () => (
+            <ConfirmRemoveKnockdownModal
+                isOpen
+                onCancel={handleCancelRemoveKnockdownModal}
+                onConfirm={handleConfirmRemoveKnockdownModal}
+            />
+        ),
+    }), [handleCancelRemoveKnockdownModal, handleConfirmRemoveKnockdownModal]);
+
+    const abilityChoiceModalEntry = React.useMemo(() => ({
+        closeOnBackdrop: false,
+        closeOnEsc: false,
+        onClose: handleCloseAbilityChoiceModal,
+        render: () => (
+            <AbilityChoiceModal
+                isOpen
+                options={abilityChoiceOptions}
+                onSelect={handleSelectAbilityChoice}
+                onSkip={handleCloseAbilityChoiceModal}
+            />
+        ),
+    }), [abilityChoiceOptions, handleCloseAbilityChoiceModal, handleSelectAbilityChoice]);
+
+    useSyncedModalStackEntry({
+        enabled: modals.confirmSkip,
+        entryId: 'dicethrone_confirm_skip',
+        entry: confirmSkipModalEntry,
+    });
+    useSyncedModalStackEntry({
+        enabled: modals.purify,
+        entryId: 'dicethrone_purify',
+        entry: purifyModalEntry,
+    });
+    useSyncedModalStackEntry({
+        enabled: modals.removeKnockdown,
+        entryId: 'dicethrone_remove_knockdown',
+        entry: removeKnockdownModalEntry,
+    });
+    useSyncedModalStackEntry({
+        enabled: modals.abilityChoice,
+        entryId: 'dicethrone_ability_choice',
+        entry: abilityChoiceModalEntry,
+    });
+
     // ========== 被动能力（如教皇税）==========
     const [rerollSelectingAction, setRerollSelectingAction] = React.useState<{ passiveId: string; actionIndex: number } | null>(null);
 
@@ -1006,7 +1127,7 @@ export const DiceThroneBoard: React.FC<DiceThroneBoardProps> = ({ G: rawG, dispa
             // 未投骰子时直接跳过（如眩晕状态），不需要确认
             const shouldConfirmSkip = hasRolled && !hasSelectedAbility && (!G.rollConfirmed || hasAvailableAbilities);
             if (shouldConfirmSkip) {
-                openModal('confirmSkip');
+                openUiModal('confirmSkip');
                 return;
             }
         }
@@ -1248,10 +1369,10 @@ export const DiceThroneBoard: React.FC<DiceThroneBoardProps> = ({ G: rawG, dispa
                         hitStopActive={selfImpact.hitStop.isActive}
                         hitStopConfig={selfImpact.hitStop.config}
                         drawDeckRef={drawDeckRef}
-                        onPurifyClick={() => openModal('purify')}
+                        onPurifyClick={() => openUiModal('purify')}
                         canUsePurify={canUsePurify}
                         tokenDefinitions={G.tokenDefinitions}
-                        onKnockdownClick={() => openModal('removeKnockdown')}
+                        onKnockdownClick={() => openUiModal('removeKnockdown')}
                         canRemoveKnockdown={canRemoveKnockdown}
                         isSelfShaking={selfImpact.shake.isShaking}
                         selfDamageFlashActive={selfImpact.flash.isActive}
@@ -1334,7 +1455,7 @@ export const DiceThroneBoard: React.FC<DiceThroneBoardProps> = ({ G: rawG, dispa
                                                 });
 
                                                 setAbilityChoiceOptions(options);
-                                                openModal('abilityChoice');
+                                                openUiModal('abilityChoice');
                                                 advanceTutorialIfNeeded('ability-slots');
                                                 return;
                                             }
@@ -1508,28 +1629,6 @@ export const DiceThroneBoard: React.FC<DiceThroneBoardProps> = ({ G: rawG, dispa
                     abilityLevels={viewPlayer.abilityLevels}
                     viewCharacterId={viewPlayer.characterId}
 
-                    // 弹窗状态
-                    isConfirmingSkip={modals.confirmSkip}
-                    onConfirmSkip={() => {
-                        closeModal('confirmSkip');
-                        engineMoves.advancePhase();
-                    }}
-                    onCancelSkip={() => closeModal('confirmSkip')}
-
-                    isPurifyModalOpen={modals.purify}
-                    onConfirmPurify={(statusId) => {
-                        engineMoves.usePurify(statusId);
-                        closeModal('purify');
-                    }}
-                    onCancelPurify={() => closeModal('purify')}
-
-                    isConfirmRemoveKnockdownOpen={modals.removeKnockdown}
-                    onConfirmRemoveKnockdown={() => {
-                        closeModal('removeKnockdown');
-                        engineMoves.payToRemoveKnockdown();
-                    }}
-                    onCancelRemoveKnockdown={() => closeModal('removeKnockdown')}
-
                     // 选择弹窗
                     choice={choice}
                     compareRoll={compareRollInteraction}
@@ -1594,6 +1693,7 @@ export const DiceThroneBoard: React.FC<DiceThroneBoardProps> = ({ G: rawG, dispa
                     pendingDamage={pendingDamage}
                     tokenResponsePhase={tokenResponsePhase}
                     isTokenResponder={!!isTokenResponder}
+                    isTokenResponseInteraction={isTokenResponseInteraction}
                     usableTokens={usableTokens}
                     tokenUsableOverrides={tokenUsableOverrides}
                     onUseToken={(tokenId, amount) => engineMoves.useToken(tokenId, amount)}
@@ -1611,10 +1711,6 @@ export const DiceThroneBoard: React.FC<DiceThroneBoardProps> = ({ G: rawG, dispa
                     onSelectPlayer={handleSelectPlayer}
                     onConfirmStatusInteraction={handleStatusInteractionConfirm}
                     onCancelInteraction={handleCancelInteraction}
-
-                    // 净化相关（始终作用于自己）
-                    viewPlayer={player}
-                    purifiableStatusIds={purifiableStatusIds}
 
                     // 游戏结束
                     isGameOver={!!isGameOver}
@@ -1635,21 +1731,6 @@ export const DiceThroneBoard: React.FC<DiceThroneBoardProps> = ({ G: rawG, dispa
                     hostPlayerId={G.hostPlayerId}
                     tutorialSpotlightAutoCloseDelayMs={isTutorialMode ? 3000 : undefined}
                     bonusDieManualCloseOnly={!isTutorialMode}
-                />
-
-                {/* 同一 slot 多 variant 选择弹窗：点击 slot 时该 slot 有多个 variant 满足条件 */}
-                <AbilityChoiceModal
-                    isOpen={modals.abilityChoice}
-                    options={abilityChoiceOptions}
-                    onSelect={(abilityId) => {
-                        closeModal('abilityChoice');
-                        setAbilityChoiceOptions([]);
-                        engineMoves.selectAbility(abilityId);
-                    }}
-                    onSkip={() => {
-                        closeModal('abilityChoice');
-                        setAbilityChoiceOptions([]);
-                    }}
                 />
             </div>
         </UndoProvider>

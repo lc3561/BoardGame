@@ -6950,6 +6950,62 @@ describe('Mermaids abilities', () => {
         expect(resolved.finalState.core.bases[1].minions.some(minion => minion.uid === 'enemy-1')).toBe(true);
     });
 
+    it('mermaids_charmed 移动目标后应把压制 metadata 写到新基地上的目标', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0', {
+                    hand: [makeCard('charmed-1', 'mermaids_charmed', 'action', '0')],
+                }),
+                '1': makePlayer('1'),
+            },
+            bases: [
+                {
+                    defId: 'base_a',
+                    minions: [makeMinion('ally-1', 'robot_microbot_alpha', '0', 1, { powerModifier: 0 })],
+                    ongoingActions: [],
+                },
+                {
+                    defId: 'base_b',
+                    minions: [makeMinion('enemy-1', 'robot_microbot_guard', '1', 1, { powerModifier: 0 })],
+                    ongoingActions: [],
+                },
+            ],
+        });
+
+        const played = runCommand(
+            makeMatchState(core),
+            { type: SU_COMMANDS.PLAY_ACTION, playerId: '0', payload: { cardUid: 'charmed-1' } as any },
+            defaultTestRandom,
+        );
+
+        const targetPrompt = getInteractionsFromMS(played.finalState)[0] as any;
+        expect(targetPrompt?.data?.sourceId).toBe('mermaids_charmed');
+        const targetOption = targetPrompt.data.options.find((entry: any) => entry.value?.minionUid === 'enemy-1');
+        expect(targetOption).toBeDefined();
+
+        const afterTarget = runCommand(
+            played.finalState,
+            { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: targetOption.id } } as any,
+            defaultTestRandom,
+        );
+
+        const destinationPrompt = getInteractionsFromMS(afterTarget.finalState)[0] as any;
+        expect(destinationPrompt?.data?.sourceId).toBe('mermaids_charmed_destination');
+        const baseA = destinationPrompt.data.options.find((entry: any) => entry.value?.baseIndex === 0);
+        expect(baseA).toBeDefined();
+
+        const resolved = runCommand(
+            afterTarget.finalState,
+            { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: baseA.id } } as any,
+            defaultTestRandom,
+        );
+
+        const movedTarget = resolved.finalState.core.bases[0].minions.find(minion => minion.uid === 'enemy-1');
+        expect(movedTarget).toBeDefined();
+        expect(resolved.finalState.core.bases[1].minions.some(minion => minion.uid === 'enemy-1')).toBe(false);
+        expect(movedTarget?.metadata?.mermaidsCharmedSuppressedTurn).toBe(resolved.finalState.core.turnNumber);
+    });
+
     it('mermaids_ultimate_song 会强制对手额外打出小随从，并跳过其 onPlay，然后给予施放者额外随从和额外行动', () => {
         const core = makeState({
             players: {
