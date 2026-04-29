@@ -3040,7 +3040,8 @@ test.describe('Smash Up 牌库检索交互', () => {
                 core.players[guestPid].actionsPlayed = 0;
                 core.bases[0].defId = 'base_the_jungle';
                 core.bases[0].minions = [
-                    makeMinion('shipwreck-host', 'robot_microbot_alpha', hostPid, hostPid, 4),
+                    makeMinion('shipwreck-host-rex', 'dino_king_rex', hostPid, hostPid, 7),
+                    makeMinion('shipwreck-host-raptor', 'dino_war_raptor', hostPid, hostPid, 4),
                 ];
                 core.bases[0].ongoingActions = [{
                     uid: 'shipwreck-cove-live',
@@ -3260,6 +3261,40 @@ test.describe('Smash Up 牌库检索交互', () => {
             (option: any) => option.value?.defId === 'skeletons_returned_one' && option.value?.buriedFrom === 'play',
             '轮回者选择把自己埋葬到这里',
         );
+
+        await page.waitForFunction(() => {
+            const sourceId = (window as any).__BG_TEST_HARNESS__?.state?.get?.()?.sys?.interaction?.current?.data?.sourceId ?? null;
+            return sourceId === null || sourceId === 'smashup_reaction_choose';
+        }, { timeout: 5000, polling: 200 });
+
+        const maybeReactionMeta = await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const state = harness?.state?.get?.();
+            const triggerQueue = new Map((state?.core?.triggerQueue ?? []).map((trigger: any) => [trigger.id, trigger]));
+            return {
+                sourceId: state?.sys?.interaction?.current?.data?.sourceId ?? null,
+                options: (state?.sys?.interaction?.current?.data?.options ?? []).map((option: any) => ({
+                    id: option.id,
+                    label: option.label ?? null,
+                    triggerSourceDefId: option.value?.triggerId
+                        ? (triggerQueue.get(option.value.triggerId)?.sourceDefId ?? null)
+                        : null,
+                })),
+            };
+        });
+
+        if (maybeReactionMeta.sourceId === 'smashup_reaction_choose') {
+            const returnedOneReactionId = maybeReactionMeta.options.find(
+                (option: any) => option.triggerSourceDefId === 'skeletons_returned_one',
+            )?.id;
+            expect(returnedOneReactionId).toBeTruthy();
+
+            await game.screenshot('returned-one-reaction-prompt', testInfo);
+            await saveStableScreenshot(page, testInfo, 'smashup-skeletons-returned-one-reaction-prompt-2026-04-29');
+
+            await game.selectOption(returnedOneReactionId);
+        }
+
         await game.waitForNoInteraction();
         await dismissSpotlightQueueIfPresent(page);
 
@@ -4077,7 +4112,9 @@ test.describe('Smash Up 牌库检索交互', () => {
                 core.players[guestPid].actionsPlayed = 0;
                 core.bases[0].defId = 'base_the_jungle';
                 core.bases[0].minions = [
-                    makeMinion('gravestones-host', 'robot_microbot_alpha', hostPid, hostPid, 4),
+                    makeMinion('gravestones-host-rex', 'dino_king_rex', hostPid, hostPid, 7),
+                    makeMinion('gravestones-host-raptor', 'dino_war_raptor', hostPid, hostPid, 4),
+                    makeMinion('gravestones-host-alpha', 'robot_microbot_alpha', hostPid, hostPid, 1),
                 ];
                 core.bases[0].ongoingActions = [{
                     uid: 'gravestones-live',

@@ -139,6 +139,7 @@ export const ModalStackProvider = ({ children }: { children: ReactNode }) => {
     return <ModalStackContext.Provider value={value}>{children}</ModalStackContext.Provider>;
 };
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const useModalStack = () => {
     const context = useContext(ModalStackContext);
     if (!context) {

@@ -157,7 +157,7 @@ export const DiceResultOverlay: React.FC<DiceResultOverlayProps> = ({
   attackType,
   hits,
   damageReduced,
-  isOpponentAttack = false,
+  isOpponentAttack: _isOpponentAttack = false,
   duration = 2500,
   onClose,
 }) => {
@@ -169,9 +169,7 @@ export const DiceResultOverlay: React.FC<DiceResultOverlayProps> = ({
   const visible = hasResults && !dismissed;
   const timerRef = useRef<number | null>(null);
   const resultSignatureRef = useRef(resultSignature);
-  resultSignatureRef.current = resultSignature;
   const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
   const closeNow = useCallback(() => {
     const latestSignature = resultSignatureRef.current;
     swAttackDebugLog('dice_overlay_close_now', {
@@ -187,9 +185,16 @@ export const DiceResultOverlay: React.FC<DiceResultOverlayProps> = ({
   }, [duration]);
 
   useEffect(() => {
+    resultSignatureRef.current = resultSignature;
+    onCloseRef.current = onClose;
+  }, [onClose, resultSignature]);
+
+  useEffect(() => {
     if (!hasResults) {
-      setDismissedSignature(null);
+      const timer = window.setTimeout(() => setDismissedSignature(null), 0);
+      return () => window.clearTimeout(timer);
     }
+    return undefined;
   }, [hasResults]);
 
   useEffect(() => {
@@ -213,7 +218,7 @@ export const DiceResultOverlay: React.FC<DiceResultOverlayProps> = ({
       };
     }
     return undefined;
-  }, [visible, duration, closeNow]);
+  }, [visible, duration, closeNow, resultSignature]);
 
   if (!results || results.length === 0) return null;
 

@@ -69,6 +69,9 @@ import { getPlayerPassiveAbilities, isPassiveActionUsable } from './domain/passi
 import { getAutoResponseEnabled } from './ui/AutoResponseToggle';
 import { getAbilityChoiceText } from './ui/abilityChoiceText';
 import { useSyncedModalStackEntry } from '../../hooks/ui/useSyncedModalStackEntry';
+import { TokenResponseModal } from './ui/TokenResponseModal';
+import { InteractionOverlay } from './ui/InteractionOverlay';
+import { ChoiceModal } from './ui/ChoiceModal';
 
 type DiceThroneBoardProps = GameBoardProps<DiceThroneCore>;
 
@@ -1004,7 +1007,7 @@ export const DiceThroneBoard: React.FC<DiceThroneBoardProps> = ({ G: rawG, dispa
         localInteraction.selectedStatus,
     ]);
 
-    const handleStatusInteractionConfirm = () => {
+    const handleStatusInteractionConfirm = React.useCallback(() => {
         const activeInteraction = statusInteraction ?? pendingInteraction;
         if (!activeInteraction) return;
 
@@ -1036,7 +1039,127 @@ export const DiceThroneBoard: React.FC<DiceThroneBoardProps> = ({ G: rawG, dispa
             }
         }
         // 交互命令执行后，systems.ts 会在状态/指示物事件到达时自动清理当前交互
-    };
+    }, [
+        engineMoves,
+        localInteraction.selectedPlayers,
+        localInteraction.selectedStatus,
+        pendingInteraction,
+        statusInteraction,
+    ]);
+
+    const tokenResponseModalEntry = React.useMemo(() => ({
+        closeOnBackdrop: false,
+        closeOnEsc: false,
+        onClose: () => undefined,
+        render: () => (
+            <TokenResponseModal
+                pendingDamage={pendingDamage!}
+                responsePhase={tokenResponsePhase!}
+                responderState={G.players[pendingDamage!.responderId]}
+                usableTokens={usableTokens}
+                tokenUsableOverrides={tokenUsableOverrides}
+                onUseToken={(tokenId, amount) => engineMoves.useToken(tokenId, amount)}
+                onSkip={() => engineMoves.skipTokenResponse()}
+                locale={locale}
+                lastEvasionRoll={pendingDamage!.lastEvasionRoll}
+                statusIconAtlas={statusIconAtlas}
+            />
+        ),
+    }), [G.players, engineMoves, locale, pendingDamage, statusIconAtlas, tokenResponsePhase, tokenUsableOverrides, usableTokens]);
+
+    const statusInteractionModalEntry = React.useMemo(() => ({
+        closeOnBackdrop: false,
+        closeOnEsc: false,
+        onClose: () => undefined,
+        render: () => (
+            <InteractionOverlay
+                interaction={statusInteraction!}
+                players={G.players}
+                currentPlayerId={rootPid}
+                playerNames={playerNames}
+                seatingOrder={G.seatingOrder}
+                teamIdByPlayerId={G.teamIdByPlayerId}
+                onSelectStatus={handleSelectStatus}
+                onSelectPlayer={handleSelectPlayer}
+                onConfirm={handleStatusInteractionConfirm}
+                onCancel={handleCancelInteraction}
+                statusIconAtlas={statusIconAtlas}
+                locale={locale}
+            />
+        ),
+    }), [
+        G.players,
+        G.seatingOrder,
+        G.teamIdByPlayerId,
+        handleCancelInteraction,
+        handleStatusInteractionConfirm,
+        handleSelectPlayer,
+        handleSelectStatus,
+        locale,
+        playerNames,
+        rootPid,
+        statusIconAtlas,
+        statusInteraction,
+    ]);
+
+    const choiceModalEntry = React.useMemo(() => ({
+        closeOnBackdrop: false,
+        closeOnEsc: false,
+        onClose: () => undefined,
+        render: () => (
+            <ChoiceModal
+                choice={choice.hasChoice
+                    ? {
+                        title: choice.title ?? '',
+                        options: choice.options,
+                        slider: choice.slider,
+                        sourceAbilityId: choice.sourceAbilityId,
+                    }
+                    : null}
+                canResolve={canResolveChoice}
+                onResolve={(optionId) => {
+                    dispatch(INTERACTION_COMMANDS.RESPOND, { optionId });
+                }}
+                onResolveWithValue={(optionId, mergedValue) => {
+                    dispatch(INTERACTION_COMMANDS.RESPOND, { optionId, mergedValue });
+                }}
+                locale={locale}
+                statusIconAtlas={statusIconAtlas}
+                currentPlayerId={rootPid}
+                players={G.players}
+                playerNames={playerNames}
+                teamIdByPlayerId={G.teamIdByPlayerId}
+            />
+        ),
+    }), [G.players, G.teamIdByPlayerId, canResolveChoice, choice, dispatch, locale, playerNames, rootPid, statusIconAtlas]);
+
+    useSyncedModalStackEntry({
+        enabled: Boolean(
+            isTokenResponseInteraction
+            && pendingDamage
+            && tokenResponsePhase
+            && isTokenResponder
+            && (
+                usableTokens.length > 0
+                || !!pendingDamage.lastEvasionRoll
+                || Object.keys(pendingDamage.tokenUsageTotals ?? {}).length > 0
+            ),
+        ),
+        entryId: 'dicethrone_token_response',
+        entry: tokenResponseModalEntry,
+    });
+
+    useSyncedModalStackEntry({
+        enabled: Boolean(isStatusInteraction && statusInteraction),
+        entryId: 'dicethrone_status_interaction',
+        entry: statusInteractionModalEntry,
+    });
+
+    useSyncedModalStackEntry({
+        enabled: Boolean(choice.hasChoice),
+        entryId: 'dicethrone_choice',
+        entry: choiceModalEntry,
+    });
 
     const getAbilityStartPos = React.useCallback((abilityId?: string) => {
         if (!abilityId) return getElementCenter(opponentHeaderRef.current);
@@ -1629,13 +1752,7 @@ export const DiceThroneBoard: React.FC<DiceThroneBoardProps> = ({ G: rawG, dispa
                     abilityLevels={viewPlayer.abilityLevels}
                     viewCharacterId={viewPlayer.characterId}
 
-                    // 选择弹窗
-                    choice={choice}
                     compareRoll={compareRollInteraction}
-                    canResolveChoice={canResolveChoice}
-                    onResolveChoice={(optionId) => {
-                        dispatch(INTERACTION_COMMANDS.RESPOND, { optionId });
-                    }}
 
                     // 卡牌特写
                     cardSpotlightQueue={cardSpotlightQueue}
@@ -1690,28 +1807,6 @@ export const DiceThroneBoard: React.FC<DiceThroneBoardProps> = ({ G: rawG, dispa
                         : undefined}
 
                     // Token 响应
-                    pendingDamage={pendingDamage}
-                    tokenResponsePhase={tokenResponsePhase}
-                    isTokenResponder={!!isTokenResponder}
-                    isTokenResponseInteraction={isTokenResponseInteraction}
-                    usableTokens={usableTokens}
-                    tokenUsableOverrides={tokenUsableOverrides}
-                    onUseToken={(tokenId, amount) => engineMoves.useToken(tokenId, amount)}
-                    onSkipTokenResponse={() => engineMoves.skipTokenResponse()}
-
-                    // 交互覆盖层
-                    isStatusInteraction={!!isStatusInteraction}
-                    pendingInteraction={statusInteraction}
-                    players={G.players}
-                    currentPlayerId={rootPid}
-                    playerNames={playerNames}
-                    seatingOrder={G.seatingOrder}
-                    teamIdByPlayerId={G.teamIdByPlayerId}
-                    onSelectStatus={handleSelectStatus}
-                    onSelectPlayer={handleSelectPlayer}
-                    onConfirmStatusInteraction={handleStatusInteractionConfirm}
-                    onCancelInteraction={handleCancelInteraction}
-
                     // 游戏结束
                     isGameOver={!!isGameOver}
                     gameoverResult={isGameOver}
@@ -1721,6 +1816,11 @@ export const DiceThroneBoard: React.FC<DiceThroneBoardProps> = ({ G: rawG, dispa
                     onRematchVote={handleRematchVote}
 
                     // 其他
+                    players={G.players}
+                    currentPlayerId={rootPid}
+                    playerNames={playerNames}
+                    seatingOrder={G.seatingOrder}
+                    teamIdByPlayerId={G.teamIdByPlayerId}
                     statusIconAtlas={statusIconAtlas}
                     locale={locale}
                     dispatch={dispatch}

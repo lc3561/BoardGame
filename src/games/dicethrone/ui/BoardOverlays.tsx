@@ -10,21 +10,16 @@ import { AnimatePresence } from 'framer-motion';
 import { CardPreview } from '../../../components/common/media/CardPreview';
 import { OptimizedImage } from '../../../components/common/media/OptimizedImage';
 import { MagnifyOverlay } from '../../../components/common/overlays/MagnifyOverlay';
-import { ChoiceModal } from './ChoiceModal';
 import { BonusDieOverlay } from './BonusDieOverlay';
 import { CardSpotlightOverlay } from './CardSpotlightOverlay';
 import { CompareRollOverlay } from './CompareRollOverlay';
-import { TokenResponseModal } from './TokenResponseModal';
-import { InteractionOverlay } from './InteractionOverlay';
 import { EndgameOverlay } from '../../../components/game/framework/widgets/EndgameOverlay';
 import { RematchActions } from '../../../components/game/framework/widgets/RematchActions';
 import { DiceThroneEndgameContent, renderDiceThroneButton } from './DiceThroneEndgame';
 import type { StatusAtlases } from './statusEffects';
-import type { AbilityCard, DieFace, HeroState, InteractionDescriptor, TokenResponsePhase, PendingBonusDiceSettlement, CharacterId, TurnPhase } from '../domain/types';
+import type { AbilityCard, DieFace, HeroState, PendingBonusDiceSettlement, CharacterId, TurnPhase } from '../domain/types';
 import type { PlayerId } from '../../../engine/types';
 import type { CardSpotlightItem } from './CardSpotlightOverlay';
-import type { PendingDamage } from '../domain/types';
-import type { TokenDef } from '../domain/tokenTypes';
 import { INTERACTION_COMMANDS, type CompareRollChoiceData } from '../../../engine/systems/InteractionSystem';
 import {
     getAbilitySlotLayoutForCharacter,
@@ -48,28 +43,11 @@ export interface BoardOverlaysProps {
     /** 当前视角玩家的角色 ID */
     viewCharacterId?: string;
 
-    // 状态选择交互（新增）
-    isStatusInteraction: boolean;
-    pendingInteraction?: InteractionDescriptor;
     players: Record<PlayerId, HeroState>;
     currentPlayerId: PlayerId;
     playerNames: Record<PlayerId, string>;
     seatingOrder?: PlayerId[];
     teamIdByPlayerId?: Record<PlayerId, string>;
-    onSelectStatus: (playerId: PlayerId, statusId: string) => void;
-    onSelectPlayer: (playerId: PlayerId) => void;
-    onConfirmStatusInteraction: () => void;
-    onCancelInteraction: () => void;
-
-    // 选择弹窗
-    choice: {
-        hasChoice: boolean;
-        title?: string;
-        options: Array<{ id: string; label: string; statusId?: string; tokenId?: string; customId?: string; value?: number; disabled?: boolean }>;
-        sourceAbilityId?: string;
-        /** slider 模式配置（存在时渲染滑动条） */
-        slider?: { confirmLabelKey: string; hintKey?: string; skipLabelKey?: string };
-    };
     // 对比掷骰特写（compare-roll-choice）
     compareRoll?: CompareRollChoiceData<{
         statusId?: string;
@@ -77,8 +55,6 @@ export interface BoardOverlaysProps {
         value: number;
         customId?: string;
     }> & { id: string; playerId: string };
-    canResolveChoice: boolean;
-    onResolveChoice: (optionId: string) => void;
 
     // 卡牌特写
     cardSpotlightQueue: CardSpotlightItem[];
@@ -109,18 +85,6 @@ export interface BoardOverlaysProps {
     onRerollBonusDie?: (dieIndex: number) => void;
     onSkipBonusDiceReroll?: () => void;
 
-
-    // Token 响应
-    pendingDamage?: PendingDamage;
-    tokenResponsePhase: TokenResponsePhase | null;
-    isTokenResponder: boolean;
-    isTokenResponseInteraction: boolean;
-    /** 当前阶段可用的 Token 列表（由领域层过滤） */
-    usableTokens: TokenDef[];
-    /** Token 可用数量覆盖（用于太极回合限制等特殊规则） */
-    tokenUsableOverrides?: Record<string, number>;
-    onUseToken: (tokenId: string, amount: number) => void;
-    onSkipTokenResponse: () => void;
 
     // 游戏结束
     isGameOver: boolean;
@@ -200,30 +164,6 @@ export const BoardOverlays: React.FC<BoardOverlaysProps> = (props) => {
         });
     }, [props.bonusDie]);
 
-    const shouldRenderTokenResponseModal = Boolean(
-        props.isTokenResponseInteraction
-        && props.pendingDamage
-        && props.tokenResponsePhase
-        && props.isTokenResponder
-        && (
-            (props.usableTokens?.length ?? 0) > 0
-            || !!props.pendingDamage.lastEvasionRoll
-            || Object.keys(props.pendingDamage.tokenUsageTotals ?? {}).length > 0
-        )
-    );
-
-    React.useEffect(() => {
-        boardOverlaysLogger.info('token-modal-check', {
-            hasPendingDamage: !!props.pendingDamage,
-            hasTokenResponsePhase: !!props.tokenResponsePhase,
-            isTokenResponder: props.isTokenResponder,
-            shouldRender: shouldRenderTokenResponseModal,
-            usableTokensCount: props.usableTokens?.length ?? 0,
-            hasLastEvasionRoll: !!props.pendingDamage?.lastEvasionRoll,
-            tokenUsageTotalsCount: Object.keys(props.pendingDamage?.tokenUsageTotals ?? {}).length,
-        });
-    }, [props.pendingDamage, props.tokenResponsePhase, props.isTokenResponder, props.usableTokens, shouldRenderTokenResponseModal]);
-
     const isPlayerBoardPreview = Boolean(props.magnifiedImage?.includes('player-board'));
     const isMultiCardPreview = props.magnifiedCards.length > 0;
     const playerBoardAspectRatio = getPlayerBoardAspectRatio(props.viewCharacterId);
@@ -291,44 +231,6 @@ export const BoardOverlays: React.FC<BoardOverlaysProps> = (props) => {
                     </MagnifyOverlay>
                 )}
 
-                {/* Token 响应窗口 */}
-                {(() => {
-                    return shouldRenderTokenResponseModal ? (
-                        <TokenResponseModal
-                            key="token-response"
-                            pendingDamage={props.pendingDamage!}
-                            responsePhase={props.tokenResponsePhase!}
-                            responderState={props.players[props.pendingDamage!.responderId]}
-                            usableTokens={props.usableTokens}
-                            tokenUsableOverrides={props.tokenUsableOverrides}
-                            onUseToken={props.onUseToken}
-                            onSkip={props.onSkipTokenResponse}
-                            locale={props.locale}
-                            lastEvasionRoll={props.pendingDamage!.lastEvasionRoll}
-                            statusIconAtlas={props.statusIconAtlas}
-                        />
-                    ) : null;
-                })()}
-
-                {/* 状态选择交互 */}
-                {props.isStatusInteraction && props.pendingInteraction && (
-                    <InteractionOverlay
-                        key="status-interaction"
-                        interaction={props.pendingInteraction}
-                        players={props.players}
-                        currentPlayerId={props.currentPlayerId}
-                        playerNames={props.playerNames}
-                        seatingOrder={props.seatingOrder}
-                        teamIdByPlayerId={props.teamIdByPlayerId}
-                        onSelectStatus={props.onSelectStatus}
-                        onSelectPlayer={props.onSelectPlayer}
-                        onConfirm={props.onConfirmStatusInteraction}
-                        onCancel={props.onCancelInteraction}
-                        statusIconAtlas={props.statusIconAtlas}
-                        locale={props.locale}
-                    />
-                )}
-
                 {/* 对比掷骰特写（如枪手对决） */}
                 {props.compareRoll && (
                     <CompareRollOverlay
@@ -345,33 +247,7 @@ export const BoardOverlays: React.FC<BoardOverlaysProps> = (props) => {
                     />
                 )}
 
-                {/* 选择弹窗 */}
-                {props.choice.hasChoice && (
-                    <ChoiceModal
-                        key="choice"
-                        choice={props.choice.hasChoice
-                            ? {
-                                title: props.choice.title ?? '',
-                                options: props.choice.options,
-                                slider: props.choice.slider,
-                                sourceAbilityId: props.choice.sourceAbilityId,
-                            }
-                            : null}
-                        canResolve={props.canResolveChoice}
-                    onResolve={(optionId) => {
-                            props.dispatch(INTERACTION_COMMANDS.RESPOND, { optionId });
-                        }}
-                        onResolveWithValue={(optionId, mergedValue) => {
-                            props.dispatch(INTERACTION_COMMANDS.RESPOND, { optionId, mergedValue });
-                        }}
-                        locale={props.locale}
-                        statusIconAtlas={props.statusIconAtlas}
-                        currentPlayerId={props.currentPlayerId}
-                        players={props.players}
-                        playerNames={props.playerNames}
-                        teamIdByPlayerId={props.teamIdByPlayerId}
-                    />
-                )}{/* 额外骰子特写 / 重掷交互 */}
+                {/* 额外骰子特写 / 重掷交互 */}
                 {(props.bonusDie.show || props.pendingBonusDiceSettlement) && (
                     <BonusDieOverlay
                         key="bonus-die"

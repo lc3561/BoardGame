@@ -560,7 +560,6 @@ export const MobileTextEntryProxyLayer = () => {
     }
 
     // 代理层显示期间需要读取当前运行时键盘 inset；这里读取 ref 支撑的运行时值是有意设计。
-    // eslint-disable-next-line react-hooks/refs
     const keyboardInset = readKeyboardInset();
     const resolvedEnterKeyHint = proxyState.enterKeyHint
         ?? (proxyState.multiline
