@@ -173,17 +173,18 @@ export const FeedbackModal = ({ onClose, actionLogText, stateSnapshot, runtimeCo
         };
         const handleViewportResize = () => emitLayoutSnapshot('visualViewport-resize');
         const handleWindowResize = () => emitLayoutSnapshot('window-resize');
+        const contentTextarea = contentTextareaRef.current;
 
         emitLayoutSnapshot('mount');
         window.setTimeout(() => emitLayoutSnapshot('mount+120ms'), 120);
         document.addEventListener('focusin', handleFocusIn, true);
-        contentTextareaRef.current?.addEventListener('input', handleInput);
+        contentTextarea?.addEventListener('input', handleInput);
         window.visualViewport?.addEventListener('resize', handleViewportResize);
         window.addEventListener('resize', handleWindowResize);
 
         return () => {
             document.removeEventListener('focusin', handleFocusIn, true);
-            contentTextareaRef.current?.removeEventListener('input', handleInput);
+            contentTextarea?.removeEventListener('input', handleInput);
             window.visualViewport?.removeEventListener('resize', handleViewportResize);
             window.removeEventListener('resize', handleWindowResize);
         };

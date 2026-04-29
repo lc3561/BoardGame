@@ -326,6 +326,8 @@ export const AuthModal = ({ isOpen, onClose, initialMode = 'login', closeOnBackd
         if (!resetEmail.trim() && preferredResetEmail) {
             setResetEmail(preferredResetEmail);
         }
+        // 这里只在弹窗开启与模式切换时回填 remembered fields，故刻意不跟随输入态联动。
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen, mode]);
 
     useEffect(() => {
