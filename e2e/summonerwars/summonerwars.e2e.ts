@@ -8,7 +8,14 @@
 import { test, expect } from '../framework';
 import type { BrowserContext, Locator, Page, TestInfo } from '@playwright/test';
 import { waitForState, waitForPhaseChange } from '../helpers/waitForState';
-import { cloneState, createSWRoomViaAPI } from '../helpers/summonerwars';
+import {
+  applyCoreState as applyCoreStateViaServer,
+  cloneState,
+  closeDebugPanelIfOpen as closeDebugPanelIfOpenViaHelper,
+  createSWRoomViaAPI,
+  readCoreState as readCoreStateViaServer,
+  waitForPhase as waitForPhaseViaHelper,
+} from '../helpers/summonerwars';
 import { setChineseLocale } from '../helpers/common';
 import { getMatchState, injectMatchState } from '../helpers/state-injection';
 import { clearEvidenceScreenshotsForTest, getEvidenceScreenshotPath } from '../framework/evidenceScreenshots';
@@ -3716,6 +3723,7 @@ test.describe('SummonerWars', () => {
 
   test('主动技能：火祀召唤和吸取生命 UI 元素验证', async ({ browser }, testInfo) => {
     test.setTimeout(90000);
+    await clearEvidenceScreenshotsForTest(testInfo);
     const baseURL = testInfo.project.use.baseURL as string | undefined;
 
     const hostContext = await browser.newContext({ baseURL });
@@ -3753,12 +3761,12 @@ test.describe('SummonerWars', () => {
     await waitForSummonerWarsUI(guestPage);
 
     // 测试1：火祀召唤（onSummon 交互）- 召唤后进入牺牲品选择
-    let coreState = await readCoreState(hostPage);
+    let coreState = await readCoreStateViaServer(hostPage);
     const { core: fireSacrificeCore, handCardId: fireSacrificeCardId } = prepareFireSacrificeState(coreState);
-    await applyCoreState(hostPage, fireSacrificeCore);
-    await closeDebugPanelIfOpen(hostPage);
+    await applyCoreStateViaServer(hostPage, fireSacrificeCore);
+    await closeDebugPanelIfOpenViaHelper(hostPage);
 
-    await waitForPhase(hostPage, 'summon');
+    await waitForPhaseViaHelper(hostPage, 'summon');
     await waitForMyTurn(hostPage);
 
     // 先从手牌打出伊路特-巴尔
@@ -3778,40 +3786,85 @@ test.describe('SummonerWars', () => {
     await expect(fireSacrificeBanner).toBeVisible({ timeout: 5000 });
     const fireSacrificeTargets = hostPage.locator('[data-valid-ability-unit="true"]');
     await expect.poll(async () => fireSacrificeTargets.count()).toBeGreaterThan(0);
-    await clickBoardElement(hostPage, '[data-valid-ability-unit="true"]');
+    const fireSacrificeTarget = fireSacrificeTargets.first();
+    const fireSacrificeTargetId = await fireSacrificeTarget.getAttribute('data-testid');
+    if (!fireSacrificeTargetId) {
+      throw new Error('火祀召唤测试：无法解析牺牲目标');
+    }
+    await hostPage.screenshot({
+      path: getEvidenceScreenshotPath(testInfo, 'fire-sacrifice-prompt-visible', {
+        subdir: 'summonerwars/summonerwars.e2e/主动技能：火祀召唤和吸取生命 UI 元素验证',
+      }),
+    });
+    await clickBoardElement(hostPage, `[data-testid="${fireSacrificeTargetId}"]`);
     await expect(fireSacrificeBanner).toHaveCount(0, { timeout: 8000 });
+    const summonMatch = summonTargetId.match(/sw-cell-(\d+)-(\d+)/);
+    const sacrificeMatch = fireSacrificeTargetId.match(/sw-(?:unit|cell)-(\d+)-(\d+)/);
+    if (!summonMatch || !sacrificeMatch) {
+      throw new Error(`火祀召唤测试：无法解析结果坐标 summon=${summonTargetId} sacrifice=${fireSacrificeTargetId}`);
+    }
+    const [, summonRow, summonCol] = summonMatch;
+    const [, sacrificeRow, sacrificeCol] = sacrificeMatch;
+    await expect.poll(async () => {
+      const latestCore = await readCoreStateViaServer(hostPage);
+      return {
+        summonCellEmpty: !latestCore.board?.[Number(summonRow)]?.[Number(summonCol)]?.unit,
+        summonedAtSacrifice:
+          latestCore.board?.[Number(sacrificeRow)]?.[Number(sacrificeCol)]?.unit?.card?.name === '伊路特-巴尔',
+      };
+    }, { timeout: 8000 }).toEqual({
+      summonCellEmpty: true,
+      summonedAtSacrifice: true,
+    });
+    await hostPage.screenshot({
+      path: getEvidenceScreenshotPath(testInfo, 'fire-sacrifice-complete', {
+        subdir: 'summonerwars/summonerwars.e2e/主动技能：火祀召唤和吸取生命 UI 元素验证',
+      }),
+    });
 
     // 测试2：吸取生命（beforeAttack 交互）- 宣告攻击后选择牺牲目标
-    coreState = await readCoreState(hostPage);
-    const { core: lifeDrainCore } = prepareLifeDrainState(coreState);
-    await applyCoreState(hostPage, lifeDrainCore);
-    await closeDebugPanelIfOpen(hostPage);
+    coreState = await readCoreStateViaServer(hostPage);
+    const { core: lifeDrainCore, dragosPosition, allyPosition, enemyPosition } = prepareLifeDrainState(coreState);
+    await applyCoreStateViaServer(hostPage, lifeDrainCore);
+    await closeDebugPanelIfOpenViaHelper(hostPage);
 
-    await waitForPhase(hostPage, 'attack');
+    await waitForPhaseViaHelper(hostPage, 'attack');
     await waitForMyTurn(hostPage);
 
     // 选中德拉戈斯并宣告一次可攻击目标
-    const dragos = hostPage.locator('[data-testid^="sw-unit-"][data-owner="0"][data-unit-name*="德拉戈斯"]').first();
+    const dragos = hostPage.locator(`[data-testid="sw-unit-${dragosPosition.row}-${dragosPosition.col}"][data-owner="0"]`).first();
     await expect(dragos).toBeVisible({ timeout: 5000 });
-    await clickBoardElement(hostPage, '[data-testid^="sw-unit-"][data-owner="0"][data-unit-name*="德拉戈斯"]');
-    const attackTarget = hostPage.locator('[data-valid-attack="true"]').first();
-    await expect(attackTarget).toBeVisible({ timeout: 5000 });
-    const attackTargetId = await attackTarget.getAttribute('data-testid');
-    if (!attackTargetId) {
-      throw new Error('吸取生命测试：无法解析攻击目标');
-    }
-    await clickBoardElement(hostPage, `[data-testid="${attackTargetId}"]`);
+    await clickBoardElement(hostPage, `[data-testid="sw-unit-${dragosPosition.row}-${dragosPosition.col}"][data-owner="0"]`);
+    const enemyTarget = hostPage.locator(`[data-testid="sw-unit-${enemyPosition.row}-${enemyPosition.col}"][data-owner="1"]`).first();
+    await expect(enemyTarget).toBeVisible({ timeout: 5000 });
+    await clickBoardElement(hostPage, `[data-testid="sw-unit-${enemyPosition.row}-${enemyPosition.col}"][data-owner="1"]`);
 
     const lifeDrainBanner = hostPage.getByText(/吸取生命|Life Drain/i).first();
-    const lifeDrainVisible = await lifeDrainBanner.isVisible({ timeout: 2500 }).catch(() => false);
-    if (lifeDrainVisible) {
-      const lifeDrainTargets = hostPage.locator('[data-valid-ability-unit="true"]');
-      await expect.poll(async () => lifeDrainTargets.count()).toBeGreaterThan(0);
-      await clickBoardElement(hostPage, '[data-valid-ability-unit="true"]');
-      await expect(lifeDrainBanner).toHaveCount(0, { timeout: 8000 });
-    } else {
-      await expect(hostPage.getByTestId('sw-end-phase')).toBeVisible({ timeout: 5000 });
+    await expect(lifeDrainBanner).toBeVisible({ timeout: 5000 });
+    const lifeDrainTargets = hostPage.locator('[data-valid-ability-unit="true"]');
+    await expect.poll(async () => lifeDrainTargets.count()).toBeGreaterThan(0);
+    const lifeDrainTarget = lifeDrainTargets.first();
+    const lifeDrainTargetId = await lifeDrainTarget.getAttribute('data-testid');
+    if (!lifeDrainTargetId) {
+      throw new Error('吸取生命测试：无法解析牺牲目标');
     }
+    await hostPage.screenshot({
+      path: getEvidenceScreenshotPath(testInfo, 'life-drain-prompt-visible', {
+        subdir: 'summonerwars/summonerwars.e2e/主动技能：火祀召唤和吸取生命 UI 元素验证',
+      }),
+    });
+    await clickBoardElement(hostPage, `[data-testid="${lifeDrainTargetId}"]`);
+    await expect(lifeDrainBanner).toHaveCount(0, { timeout: 8000 });
+    await expect.poll(async () => {
+      const latestCore = await readCoreStateViaServer(hostPage);
+      return !latestCore.board?.[allyPosition.row]?.[allyPosition.col]?.unit;
+    }, { timeout: 8000 }).toBe(true);
+    await expect(hostPage.getByTestId('sw-dice-result-overlay')).toBeVisible({ timeout: 8000 });
+    await hostPage.screenshot({
+      path: getEvidenceScreenshotPath(testInfo, 'life-drain-complete', {
+        subdir: 'summonerwars/summonerwars.e2e/主动技能：火祀召唤和吸取生命 UI 元素验证',
+      }),
+    });
 
     await hostContext.close();
     await guestContext.close();
@@ -6247,6 +6300,7 @@ const prepareLifeDrainState = (coreState: any) => {
   let allyPlaced = false;
   let dragosPosition: { row: number; col: number } | null = null;
   let allyPosition: { row: number; col: number } | null = null;
+  let enemyPosition: { row: number; col: number } | null = null;
 
   for (let row = 5; row < 8 && !dragosPlaced; row++) {
     for (let col = 0; col < 6 && !dragosPlaced; col++) {
@@ -6339,7 +6393,11 @@ const prepareLifeDrainState = (coreState: any) => {
   ];
   const hasEnemyMeleeTarget = meleeTargets.some((pos) => {
     if (pos.row < 0 || pos.row >= 8 || pos.col < 0 || pos.col >= 6) return false;
-    return board[pos.row][pos.col]?.unit?.owner === '1';
+    const isEnemy = board[pos.row][pos.col]?.unit?.owner === '1';
+    if (isEnemy && !enemyPosition) {
+      enemyPosition = { ...pos };
+    }
+    return isEnemy;
   });
 
   if (!hasEnemyMeleeTarget) {
@@ -6370,6 +6428,7 @@ const prepareLifeDrainState = (coreState: any) => {
         hasAttacked: false,
       };
       enemyPlaced = true;
+      enemyPosition = { ...pos };
       break;
     }
     if (!enemyPlaced) {
@@ -6377,7 +6436,11 @@ const prepareLifeDrainState = (coreState: any) => {
     }
   }
 
-  return { core: next, dragosPosition, allyPosition };
+  if (!enemyPosition) {
+    throw new Error('无法确定吸取生命攻击目标');
+  }
+
+  return { core: next, dragosPosition, allyPosition, enemyPosition };
 };
 
 

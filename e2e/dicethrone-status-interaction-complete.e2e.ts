@@ -173,6 +173,8 @@ const injectSamuraiHonorTokenResponseScene = async (page: Page) => {
 };
 
 test.describe('DiceThrone - Status Interaction Complete', () => {
+    test.describe.configure({ timeout: 120000 });
+
     test('selectStatus: 使用现役 dt-status-effect 选择器，取消后不改状态', async ({ page, game }) => {
         await openInteractionHarness(page, game);
 

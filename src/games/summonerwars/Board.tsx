@@ -30,6 +30,7 @@ import { BoardLayoutEditor } from '../../components/game/framework/BoardLayoutEd
 import { TutorialSelectionGate } from '../../components/game/framework';
 import { saveSummonerWarsLayout } from '../../api/layout';
 import type { BoardLayoutConfig, GridConfig } from '../../core/ui/board-layout.types';
+import { SUMMONER_WARS_MANIFEST } from './manifest';
 import { initSpriteAtlases, resolveCardAtlasId } from './ui/cardAtlas';
 import { EnergyBar } from './ui/EnergyBar';
 import { DeckPile } from './ui/DeckPile';
@@ -84,7 +85,6 @@ import {
 } from './ui/layoutConstants';
 import { getEventStreamEntries } from '../../engine/systems/EventStreamSystem';
 import { SUMMONER_WARS_AUDIO_CONFIG, resolveDiceRollSound, resolveAttackSoundKey, resolveDamageSoundKey } from './audio.config';
-import { SUMMONER_WARS_MANIFEST } from './manifest';
 import { useRuntimeViewport } from '../../hooks/ui/useRuntimeViewport';
 import type { InteractionDescriptor, PromptOption } from '../../engine/systems/InteractionSystem';
 import { INTERACTION_COMMANDS } from '../../engine/systems/InteractionSystem';
@@ -986,7 +986,14 @@ export const SummonerWarsBoard: React.FC<Props> = ({
   const handleSaveLayout = useCallback(async (config: BoardLayoutConfig) => saveSummonerWarsLayout(config), []);
 
   const debugPanel = !isSpectator ? (
-    <GameDebugPanel G={G} dispatch={dispatch} playerID={playerID} autoSwitch={!isMultiplayer}>
+    <GameDebugPanel
+      G={G}
+      dispatch={dispatch}
+      playerID={playerID}
+      autoSwitch={!isMultiplayer}
+      aiSupport={SUMMONER_WARS_MANIFEST.ai}
+      playerOptions={SUMMONER_WARS_MANIFEST.playerOptions}
+    >
       <SummonerWarsDebugConfig G={G} dispatch={dispatch} />
       <button
         onClick={() => { if (isEditingLayout) { void handleExitLayoutEditor(); return; } setIsEditingLayout(true); }}

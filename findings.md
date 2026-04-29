@@ -866,3 +866,29 @@
   - E2E 场景必须先做 `defId` 真值预检
   - Smash Up 对象补证默认按 `L0-L4` 分层验收
   - 真实入口若出现 `smashup_reaction_choose`，必须单独作为 `reaction session` 证据留档
+## Session: 2026-04-29 《沉船湾 / 轮回者 / 诡异。可怕。 / 墓碑》L3 补证
+- **Status:** in_progress
+- Findings:
+  - 《轮回者》旧 E2E 的失败根因不是实现 bug，而是旧测试把“自埋后直接无交互”当成事实；真实入口会先进入 `smashup_reaction_choose`，再由《轮回者》触发项收口。
+  - 《沉船湾》《墓碑》旧在线场景都没有把《绿洲丛林》推到 `12` 点计分阈值，因此“没进计分后的触发窗”属于 E2E 注入错误，不属于业务实现错误。
+  - 这类错误说明当前重审必须继续坚持两条门禁：
+    1. `reaction session` 不能靠单测观察面代替，浏览器级必须真看 prompt；
+    2. online afterScoring 场景必须先核对原基地是否真的达到 breakpoint，再判断实现是否失效。
+- Evidence:
+  - `evidence/smashup/smashup-mermaids-shipwreck-cove-e2e-2026-04-29.md`
+  - `evidence/smashup/smashup-skeletons-returned-one-spooky-scary-gravestones-e2e-2026-04-29.md`
+
+## Session: 2026-04-29 《守墓人 / 墓地爆发》续推
+- **Status:** in_progress
+- Findings:
+  - 《守墓人》浏览器级正路径已通过，说明“你的其他牌被埋葬后抽 1 张”在真实入口里没有漏掉。
+  - 《墓地爆发》不是业务语义没出来；失败截图已经证明：
+    1. 真实链路能进入 `skeletons_burst_forth` prompt；
+    2. 目标埋葬牌会在基地旁翻正；
+    3. 目标埋葬牌带 `data-buried-card-uid` / `data-buried-face-up` / `data-buried-selectable` 这条真实 DOM 出口。
+  - 当前阻塞点是测试基础设施，不是业务实现：
+    1. 在线房间误用了本地 harness dispatch；
+    2. 隔离 runtime 被其他 worktree 占端口；
+    3. legacy single-worker 又会偶发卡在 `setupSUOnlineMatch`。
+- Evidence:
+  - `evidence/smashup/smashup-skeletons-gravetender-e2e-2026-04-29.md`

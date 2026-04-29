@@ -1130,3 +1130,36 @@
   - 《阿拉密斯》当前已补齐“自己被标准行动影响后提供额外行动，并被真实消费”的 L3 证据。
   - 这次进一步证明：三新派系重审不能只看 `卡图 / locale / defId / 注册 / 单条 events`，还必须强制补 `finalState / triggerQueue / reaction session / 真实入口 E2E`。
   - 截至本轮，`World Champs` 已累计补到 `19` 条正路径对象级 L3 证据；但三新派系整包仍维持 **仍有残余范围**。
+## 2026-04-29 补证（六）：《沉船湾 / 轮回者 / 诡异。可怕。 / 墓碑》L3 与场景错误回写
+
+- 本轮新增证据：
+  - `evidence/smashup/smashup-mermaids-shipwreck-cove-e2e-2026-04-29.md`
+  - `evidence/smashup/smashup-skeletons-returned-one-spooky-scary-gravestones-e2e-2026-04-29.md`
+- 本轮命中的低级错误，不再保留旧口径：
+  1. 《轮回者》旧 E2E 错把“自埋后立即无交互”当成真相；真实浏览器入口先进入 `smashup_reaction_choose`，再由《轮回者》收口。
+  2. 《沉船湾》《墓碑》旧在线场景没有满足 `base_the_jungle (12)` 的计分阈值，导致“没进 afterScoring”其实是测试注入错误，不是实现错误。
+- 本轮新增 L3 对象：
+  - `mermaids_shipwreck_cove`
+  - `skeletons_returned_one`
+  - `skeletons_spooky_scary`
+  - `skeletons_gravestones`
+- 本轮浏览器级验证命令：
+  1. `node scripts/infra/run-e2e-single.mjs ci e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "轮回者打出后应可把自己埋葬到这里"`
+  2. `$env:BG_ALLOW_HEAVY_TASK_CONCURRENCY='1'; $env:NODE_OPTIONS='--max-old-space-size=4096'; node scripts/infra/run-e2e-single.mjs ci e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "沉船湾应在基地计分后可移到另一个基地"`
+  3. `$env:BG_ALLOW_HEAVY_TASK_CONCURRENCY='1'; $env:NODE_OPTIONS='--max-old-space-size=4096'; node scripts/infra/run-e2e-single.mjs ci e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "诡异。可怕。应从弃牌堆埋葬低力量随从并抽一张牌"`
+  4. `$env:BG_ALLOW_HEAVY_TASK_CONCURRENCY='1'; $env:BG_BYPASS_GLOBAL_HEAVY_BUDGET='1'; $env:NODE_OPTIONS='--max-old-space-size=4096'; node scripts/infra/run-e2e-single.mjs ci e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "墓碑应在基地计分后可把自己埋葬到另一个基地"`
+
+## 2026-04-29 补证（七）：《守墓人》L3，和《墓地爆发》当前阻塞点
+
+- 本轮新增证据：
+  - `evidence/smashup/smashup-skeletons-gravetender-e2e-2026-04-29.md`
+- 当前新增 L3 对象：
+  - `skeletons_gravetender`
+- 已通过命令：
+  - `$env:BG_ALLOW_HEAVY_TASK_CONCURRENCY='1'; $env:BG_BYPASS_GLOBAL_HEAVY_BUDGET='1'; $env:NODE_OPTIONS='--max-old-space-size=4096'; node scripts/infra/run-e2e-single.mjs ci e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "守墓人应在你的其他牌被埋葬后抽一张牌"`
+- 新暴露的未收口项：
+  - `skeletons_burst_forth` 已新增浏览器级测试草案，并且失败截图已证明真实入口确实能进入 `skeletons_burst_forth` prompt、且目标埋葬牌会翻面并变成可点对象；
+  - 但当前还没拿到稳定通过结果，失败原因在测试入口：
+    1. 先误用本地 harness `dispatch` 到在线房间；
+    2. 随后命中多 runtime / 端口占用抖动，legacy 入口又反复卡在 `setupSUOnlineMatch`。
+  - 这条目前只能记为：**真实入口已看到，浏览器级通过结果待下一轮稳定重跑**，不能提前宣称通过。

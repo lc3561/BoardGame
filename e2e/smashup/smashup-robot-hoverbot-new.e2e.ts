@@ -8,6 +8,7 @@ import {
     readFullState,
     setupSUOnlineMatch,
     waitForHandArea,
+    makeCard,
     makeMinion,
     type SUMatchSetup,
 } from './smashup-debug-helpers';
@@ -3306,6 +3307,92 @@ test.describe('Smash Up 牌库检索交互', () => {
         await saveStableScreenshot(page, testInfo, 'smashup-skeletons-returned-one-buried-resolved-2026-04-29');
     });
 
+    test('守墓人应在你的其他牌被埋葬后抽一张牌', async ({ page, game }, testInfo) => {
+        test.setTimeout(60000);
+
+        await page.goto('/play/smashup');
+        await page.waitForFunction(
+            () => (window as any).__BG_TEST_HARNESS__?.state?.isRegistered?.() === true,
+            { timeout: 15000 },
+        );
+
+        await game.setupScene({
+            gameId: 'smashup',
+            player0: {
+                hand: ['skeletons_returned_one'],
+                deck: ['robot_microbot_archive'],
+                discard: [],
+                factions: ['skeletons', 'robots'],
+            },
+            player1: {
+                hand: [],
+                deck: [],
+                discard: [],
+                factions: ['pirates', 'dinosaurs'],
+            },
+            currentPlayer: '0',
+            phase: 'playCards',
+            bases: [
+                {
+                    defId: 'base_1',
+                    minions: [
+                        { uid: 'gravetender-live', defId: 'skeletons_gravetender', owner: '0', controller: '0', tempPowerModifier: 0 },
+                    ],
+                    ongoingActions: [],
+                },
+                { defId: 'base_2', minions: [], ongoingActions: [] },
+            ],
+        });
+
+        await game.playCard('skeletons_returned_one', { targetBaseIndex: 0 });
+        await game.waitForInteraction('skeletons_returned_one');
+
+        await game.selectInteractionOptionBy(
+            (option: any) => option.value?.defId === 'skeletons_returned_one' && option.value?.buriedFrom === 'play',
+            '轮回者选择把自己埋葬到这里，触发守墓人抽牌',
+        );
+
+        await page.waitForFunction(() => {
+            const sourceId = (window as any).__BG_TEST_HARNESS__?.state?.get?.()?.sys?.interaction?.current?.data?.sourceId ?? null;
+            return sourceId === null || sourceId === 'smashup_reaction_choose';
+        }, { timeout: 5000, polling: 200 });
+
+        const maybeReactionMeta = await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const state = harness?.state?.get?.();
+            const triggerQueue = new Map((state?.core?.triggerQueue ?? []).map((trigger: any) => [trigger.id, trigger]));
+            return {
+                sourceId: state?.sys?.interaction?.current?.data?.sourceId ?? null,
+                options: (state?.sys?.interaction?.current?.data?.options ?? []).map((option: any) => ({
+                    id: option.id,
+                    triggerSourceDefId: option.value?.triggerId
+                        ? (triggerQueue.get(option.value.triggerId)?.sourceDefId ?? null)
+                        : null,
+                })),
+            };
+        });
+
+        if (maybeReactionMeta.sourceId === 'smashup_reaction_choose') {
+            const returnedOneReactionId = maybeReactionMeta.options.find(
+                (option: any) => option.triggerSourceDefId === 'skeletons_returned_one',
+            )?.id;
+            expect(returnedOneReactionId).toBeTruthy();
+            await game.selectOption(returnedOneReactionId);
+        }
+
+        await game.waitForNoInteraction();
+        await dismissSpotlightQueueIfPresent(page);
+
+        const finalState = await game.getState();
+        expect(finalState.core.players['0'].hand.some((card: any) => card.defId === 'robot_microbot_archive')).toBe(true);
+        expect(finalState.core.players['0'].deck.some((card: any) => card.defId === 'robot_microbot_archive')).toBe(false);
+        expect((finalState.core.bases[0].buriedCards ?? []).some((card: any) => card.defId === 'skeletons_returned_one')).toBe(true);
+        expect(finalState.core.bases[0].minions.find((minion: any) => minion.uid === 'gravetender-live')?.metadata?.skeletonsGravetenderTriggeredTurn).toBe(finalState.core.turnNumber);
+
+        await game.screenshot('gravetender-bury-draw-resolved', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-skeletons-gravetender-bury-draw-resolved-2026-04-29');
+    });
+
     test('往下埋应先选基地，再从弃牌堆埋葬至多三张总力量 6 或更少的随从', async ({ page, game }, testInfo) => {
         test.setTimeout(60000);
 
@@ -4182,6 +4269,119 @@ test.describe('Smash Up 牌库检索交互', () => {
 
             await hostPage.screenshot({ path: testInfo.outputPath('gravestones-buried-on-other-base.png'), fullPage: true });
             await saveStableScreenshot(hostPage, testInfo, 'smashup-skeletons-gravestones-buried-2026-04-29');
+        } finally {
+            await hostContext.close().catch(() => {});
+            await guestContext.close().catch(() => {});
+        }
+    });
+
+    test('墓地爆发应在基地计分前可挖掘你埋葬在那里的牌', async ({ browser, baseURL }, testInfo) => {
+        test.setTimeout(90000);
+
+        const setup = await setupSUOnlineMatch(browser, baseURL, ['skeletons', 'robots', 'pirates', 'dinosaurs']);
+        if (!setup) {
+            test.skip(true, '游戏服务器不可用');
+            return;
+        }
+
+        const { hostPage, guestPage, hostContext, guestContext } = setup;
+        try {
+            await waitForHandArea(hostPage);
+            await waitForHandArea(guestPage);
+
+            const fullState = await readFullState(hostPage);
+            const injectedState = prepareInjectedOnlineState(fullState as Record<string, any>, (core) => {
+                const turnOrder = core.turnOrder as string[];
+                const hostPid = turnOrder[0];
+                const guestPid = turnOrder[1];
+
+                core.currentPlayerIndex = 0;
+                core.currentPlayer = hostPid;
+                core.players[hostPid].hand = [
+                    makeCard('burst-forth-live', 'skeletons_burst_forth', 'action', hostPid),
+                ];
+                core.players[guestPid].hand = [];
+                core.players[hostPid].deck = [];
+                core.players[guestPid].deck = [];
+                core.players[hostPid].minionsPlayed = 0;
+                core.players[hostPid].actionsPlayed = 0;
+                core.players[guestPid].actionsPlayed = 0;
+                core.bases[0].defId = 'base_the_jungle';
+                core.bases[0].minions = [
+                    makeMinion('burst-host-rex', 'dino_king_rex', hostPid, hostPid, 7),
+                    makeMinion('burst-host-raptor', 'dino_war_raptor', hostPid, hostPid, 4),
+                    makeMinion('burst-host-alpha', 'robot_microbot_alpha', hostPid, hostPid, 1),
+                ];
+                core.bases[0].ongoingActions = [];
+                core.bases[0].buriedCards = [
+                    { uid: 'burst-buried', defId: 'robot_microbot_guard', trueOwnerId: hostPid, controllerId: hostPid, buriedFrom: 'discard' },
+                ];
+                core.bases[1].defId = 'base_tar_pits';
+                core.bases[1].minions = [];
+                core.bases[1].ongoingActions = [];
+                core.bases[1].buriedCards = [];
+                for (let index = 2; index < core.bases.length; index += 1) {
+                    core.bases[index].minions = [];
+                    core.bases[index].ongoingActions = [];
+                    core.bases[index].buriedCards = [];
+                }
+            });
+
+            await applyCoreStateDirect(hostPage, injectedState);
+            await closeDebugPanel(hostPage);
+            await closeDebugPanel(guestPage);
+            await hostPage.waitForTimeout(2000);
+
+            await hostPage.getByRole('button', { name: /^(结束回合|Finish Turn|End)$/i }).click({ force: true });
+            await waitForScoreBasesOrReactionEntry(hostPage, 12000);
+            await activateReactionTrigger(
+                hostPage,
+                '0',
+                {
+                    optionLabelIncludes: '墓地爆发',
+                    optionIdIncludes: 'skeletons_burst_forth',
+                },
+                'skeletons_burst_forth',
+                12000,
+                guestPage,
+            );
+
+            const promptState = await readAuthoritativeState(hostPage);
+            const prompt = (() => {
+                const current = getCurrentInteraction(promptState);
+                const data = asRecord(current?.data);
+                return {
+                    sourceId: data?.sourceId ?? null,
+                    options: (Array.isArray(data?.options) ? data.options : []).map((option: any) => ({
+                        id: option.id,
+                        cardUid: option.value?.cardUid ?? null,
+                        defId: option.value?.defId ?? null,
+                        baseIndex: option.value?.baseIndex ?? null,
+                    })),
+                };
+            })();
+
+            expect(prompt.sourceId).toBe('skeletons_burst_forth');
+            expect(prompt.options.some((option: any) => option.cardUid === 'burst-buried' && option.baseIndex === 0)).toBe(true);
+
+            await hostPage.screenshot({ path: testInfo.outputPath('burst-forth-prompt.png'), fullPage: true });
+            await saveStableScreenshot(hostPage, testInfo, 'smashup-skeletons-burst-forth-prompt-2026-04-29');
+
+            const buriedCard = hostPage.locator('[data-buried-card-uid="burst-buried"]').first();
+            await expect(buriedCard).toBeVisible({ timeout: 5000 });
+            await expect(buriedCard).toHaveAttribute('data-buried-face-up', 'true');
+            await expect(buriedCard).toHaveAttribute('data-buried-selectable', 'true');
+
+            await buriedCard.click();
+            await waitForNoInteraction(hostPage, 10000);
+
+            const finalState = await readFullState(hostPage);
+            const resolvedCore = (finalState.core ?? finalState) as Record<string, any>;
+            expect((resolvedCore.bases[0].buriedCards ?? []).some((card: any) => card.uid === 'burst-buried')).toBe(false);
+            expect((resolvedCore.bases[0].minions ?? []).some((minion: any) => minion.uid === 'burst-buried')).toBe(true);
+
+            await hostPage.screenshot({ path: testInfo.outputPath('burst-forth-resolved.png'), fullPage: true });
+            await saveStableScreenshot(hostPage, testInfo, 'smashup-skeletons-burst-forth-resolved-2026-04-29');
         } finally {
             await hostContext.close().catch(() => {});
             await guestContext.close().catch(() => {});

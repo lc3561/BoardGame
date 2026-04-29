@@ -111,6 +111,18 @@ describe('聊天选择逻辑', () => {
         expect(FRIENDS_CHAT_DETAIL_CONTENT_CLASS).toContain('min-h-0');
         expect(FRIENDS_CHAT_DETAIL_CONTENT_CLASS).toContain('overflow-hidden');
     });
+
+    it('FriendList 与 FriendsChatModal 可同时导入，不应通过常量互相形成初始化环', async () => {
+        const [{ FriendList }, { FriendsChatModal }, { SYSTEM_NOTIFICATION_ID }] = await Promise.all([
+            import('../FriendList'),
+            import('../FriendsChatModal'),
+            import('../constants'),
+        ]);
+
+        expect(FriendList).toBeTypeOf('function');
+        expect(FriendsChatModal).toBeTypeOf('function');
+        expect(SYSTEM_NOTIFICATION_ID).toBe('__system_notification__');
+    });
 });
 
 /**

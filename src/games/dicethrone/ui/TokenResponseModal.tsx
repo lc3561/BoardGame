@@ -150,18 +150,46 @@ export const TokenResponseModal: React.FC<TokenResponseModalProps> = ({
     });
     const evasiveTokens = usableTokens.filter(def => getTokenCategory(def, responsePhase) === 'evasive');
 
-    const hasAnyAction = usableTokens.length > 0 && !pendingDamage.isFullyEvaded;
+    const hasAnyAction = usableTokens.some((tokenDef) => {
+        const actualTokenCount = tokenUsableOverrides?.[tokenDef.id] ?? (responderState.tokens[tokenDef.id] ?? 0);
+        if (actualTokenCount <= 0) return false;
+        return getTokenUseOptions(tokenDef, actualTokenCount).length > 0;
+    }) && !pendingDamage.isFullyEvaded;
     const hadAnyActionRef = React.useRef(hasAnyAction);
+    const autoSkipTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+    const latestOnSkipRef = React.useRef(onSkip);
+
+    React.useEffect(() => {
+        latestOnSkipRef.current = onSkip;
+    }, [onSkip]);
+
+    React.useEffect(() => {
+        return () => {
+            if (autoSkipTimerRef.current !== null) {
+                clearTimeout(autoSkipTimerRef.current);
+                autoSkipTimerRef.current = null;
+            }
+        };
+    }, []);
 
     React.useEffect(() => {
         const hadAnyAction = hadAnyActionRef.current;
-        if (hadAnyAction && !hasAnyAction) {
-            const timer = setTimeout(() => onSkip(), 150);
-            return () => clearTimeout(timer);
-        }
         hadAnyActionRef.current = hasAnyAction;
-        return;
-    }, [hasAnyAction, onSkip, pendingDamage.id, responsePhase]);
+
+        if (hasAnyAction && autoSkipTimerRef.current !== null) {
+            clearTimeout(autoSkipTimerRef.current);
+            autoSkipTimerRef.current = null;
+        }
+
+        if (hadAnyAction && !hasAnyAction) {
+            if (autoSkipTimerRef.current === null) {
+                autoSkipTimerRef.current = setTimeout(() => {
+                    autoSkipTimerRef.current = null;
+                    latestOnSkipRef.current();
+                }, 150);
+            }
+        }
+    }, [hasAnyAction, pendingDamage.id, responsePhase]);
 
     const isOpen = Boolean(pendingDamage && responsePhase);
 

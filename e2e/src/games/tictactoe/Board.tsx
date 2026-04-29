@@ -470,7 +470,14 @@ export const TicTacToeBoard: React.FC<Props> = ({ G, dispatch, playerID, reset, 
                 {/* 统一结束页面遮罩 */}
                 <EndgameOverlay {...endgameProps} />
                 {!isSpectator && (
-                    <GameDebugPanel G={G} dispatch={dispatch} playerID={playerID} autoSwitch={!isMultiplayer} />
+                    <GameDebugPanel
+                        G={G}
+                        dispatch={dispatch}
+                        playerID={playerID}
+                        autoSwitch={!isMultiplayer}
+                        aiSupport={TIC_TAC_TOE_MANIFEST.ai}
+                        playerOptions={TIC_TAC_TOE_MANIFEST.playerOptions}
+                    />
                 )}
             </div>
         </UndoProvider>

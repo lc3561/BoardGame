@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useSocial } from '../../contexts/SocialContext';
 import { User, Search, UserPlus, Inbox, Check, X, MessageSquare, Bell } from 'lucide-react';
-import { SYSTEM_NOTIFICATION_ID } from './FriendsChatModal';
+import { SYSTEM_NOTIFICATION_ID } from './constants';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 

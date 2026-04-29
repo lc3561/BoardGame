@@ -1063,7 +1063,13 @@ export const CardiaBoard: React.FC<Props> = ({ G, dispatch, playerID, reset, mat
                 />
                 
                 {isGameOver && <EndgameOverlay {...endgameProps} />}
-                <GameDebugPanel G={G} dispatch={dispatch} playerID={myPlayerId} />
+                <GameDebugPanel
+                    G={G}
+                    dispatch={dispatch}
+                    playerID={myPlayerId}
+                    aiSupport={CARDIA_MANIFEST.ai}
+                    playerOptions={CARDIA_MANIFEST.playerOptions}
+                />
                 
                 {/* 动画层 */}
                 <AbilityAnimationsLayer

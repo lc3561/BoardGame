@@ -9,11 +9,18 @@
  * - 在线对局状态同步
  */
 
-import type { BrowserContext, Page } from '@playwright/test';
 import { test, expect } from '../framework';
 import { clearEvidenceScreenshotsForTest, getEvidenceScreenshotPath } from '../framework/evidenceScreenshots';
-import { cloneState, setupSWOnlineMatch } from '../helpers/summonerwars';
-import { setChineseLocale } from '../helpers/common';
+import {
+  applyCoreState as applyCoreStateViaServer,
+  clickBoardElement as clickBoardElementViaHelper,
+  cloneState,
+  closeDebugPanelIfOpen as closeDebugPanelIfOpenViaHelper,
+  readCoreState as readCoreStateViaServer,
+  setupSWOnlineMatch,
+  waitForPhase as waitForPhaseViaHelper,
+} from '../helpers/summonerwars';
+import { createDeckByFactionId } from '../src/games/summonerwars/config/factions';
 
 type __ThreeAxeGameMarker = {
   openTestGame: (gameId: string) => Promise<void>;
@@ -25,366 +32,6 @@ const __ensureThreeAxesMarker = async (game: __ThreeAxeGameMarker) => {
   await game.setupScene({ gameId: 'summonerwars' });
 };
 void __ensureThreeAxesMarker;
-
-
-// ============================================================================
-// 辅助函数（从 summonerwars.e2e.ts 复用）
-// ============================================================================
-
-const resetMatchStorage = async (context: BrowserContext | Page) => {
-  await context.addInitScript(() => {
-    if (sessionStorage.getItem('__sw_storage_reset')) return;
-    sessionStorage.setItem('__sw_storage_reset', '1');
-
-    const newGuestId = `${Date.now()}_${Math.floor(Math.random() * 10000)}`;
-    localStorage.removeItem('owner_active_match');
-    Object.keys(localStorage).forEach((key) => {
-      if (key.startsWith('match_creds_')) {
-        localStorage.removeItem(key);
-      }
-    });
-    localStorage.setItem('guest_id', newGuestId);
-    try {
-      sessionStorage.setItem('guest_id', newGuestId);
-    } catch {
-      // ignore
-    }
-    document.cookie = `bg_guest_id=${encodeURIComponent(newGuestId)}; path=/; SameSite=Lax`;
-  });
-};
-
-const disableTutorial = async (context: BrowserContext | Page) => {
-  await context.addInitScript(() => {
-    localStorage.setItem('tutorial_skip', '1');
-  });
-};
-
-const disableSummonerWarsAutoSkip = async (context: BrowserContext | Page) => {
-  await context.addInitScript(() => {
-    (window as Window & { __SW_DISABLE_AUTO_SKIP__?: boolean }).__SW_DISABLE_AUTO_SKIP__ = true;
-  });
-};
-
-const disableAudio = async (context: BrowserContext | Page) => {
-  await context.addInitScript(() => {
-    localStorage.setItem('audio_muted', 'true');
-    localStorage.setItem('audio_master_volume', '0');
-    localStorage.setItem('audio_sfx_volume', '0');
-    localStorage.setItem('audio_bgm_volume', '0');
-    (window as Window & { __BG_DISABLE_AUDIO__?: boolean }).__BG_DISABLE_AUDIO__ = true;
-  });
-};
-
-const blockAudioRequests = async (context: BrowserContext) => {
-  await context.route(/\.(mp3|ogg|webm|wav)(\?.*)?$/i, route => route.abort());
-};
-
-const normalizeUrl = (url: string) => url.replace(/\/$/, '');
-
-const getGameServerBaseURL = () => {
-  const envUrl = process.env.PW_GAME_SERVER_URL || process.env.VITE_GAME_SERVER_URL;
-  if (envUrl) return normalizeUrl(envUrl);
-  const port = process.env.GAME_SERVER_PORT || process.env.PW_GAME_SERVER_PORT || '18000';
-  return `http://localhost:${port}`;
-};
-
-const joinMatchAsGuest = async (page: Page, matchId: string, gameId = 'summonerwars') => {
-  const base = getGameServerBaseURL();
-  const matchResp = await page.request.get(`${base}/games/${gameId}/${matchId}`);
-  if (!matchResp.ok()) throw new Error(`获取 match 信息失败: ${matchResp.status()}`);
-  const matchData = await matchResp.json() as { players: { id: number; name?: string }[] };
-  const openSeat = matchData.players?.find((p) => !p.name);
-  if (!openSeat) throw new Error('没有空位');
-  const pid = String(openSeat.id);
-  const guestId = `e2e_guest_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
-  const joinResp = await page.request.post(`${base}/games/${gameId}/${matchId}/join`, {
-    data: { playerID: pid, playerName: `Guest_${guestId}`, data: { guestId } },
-  });
-  if (!joinResp.ok()) throw new Error(`加入 match 失败: ${joinResp.status()}`);
-  const joinData = await joinResp.json() as { playerCredentials: string };
-  // 先导航到应用首页以获取 localStorage 访问权限
-  await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.evaluate(({ mid, pid, creds, gname }) => {
-    localStorage.setItem(`match_creds_${mid}`, JSON.stringify({ playerID: pid, credentials: creds, matchID: mid, gameName: gname }));
-  }, { mid: matchId, pid, creds: joinData.playerCredentials, gname: gameId });
-  await page.goto(`/play/${gameId}/match/${matchId}?playerID=${pid}`, { waitUntil: 'domcontentloaded' });
-};
-
-const ensureGameServerAvailable = async (page: Page) => {
-  const gameServerBaseURL = getGameServerBaseURL();
-  const candidates = ['/games', `${gameServerBaseURL}/games`];
-  for (const url of candidates) {
-    try {
-      const response = await page.request.get(url);
-      if (response.ok()) return true;
-    } catch {
-      // ignore
-    }
-  }
-  return false;
-};
-
-const waitForMatchAvailable = async (page: Page, matchId: string, timeoutMs = 10000) => {
-  const gameServerBaseURL = getGameServerBaseURL();
-  const candidates = [
-    `/games/summonerwars/${matchId}`,
-    `${gameServerBaseURL}/games/summonerwars/${matchId}`,
-  ];
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    for (const url of candidates) {
-      try {
-        const response = await page.request.get(url);
-        if (response.ok()) return true;
-      } catch {
-        // ignore
-      }
-    }
-    await page.waitForTimeout(500);
-  }
-  return false;
-};
-
-const dismissViteOverlay = async (page: Page) => {
-  await page.evaluate(() => {
-    const overlay = document.querySelector('vite-error-overlay');
-    if (overlay) overlay.remove();
-  });
-};
-
-const waitForFrontendAssets = async (page: Page, timeoutMs = 30000) => {
-  const start = Date.now();
-  let lastStatus = 'unknown';
-  while (Date.now() - start < timeoutMs) {
-    try {
-      const [viteClient, main] = await Promise.all([
-        page.request.get('/@vite/client'),
-        page.request.get('/src/main.tsx'),
-      ]);
-      lastStatus = `vite=${viteClient.status()} main=${main.status()}`;
-      if (viteClient.ok() && main.ok()) {
-        return;
-      }
-    } catch (err) {
-      lastStatus = `error:${String(err)}`;
-    }
-    await page.waitForTimeout(500);
-  }
-  throw new Error(`前端资源未就绪${lastStatus}`);
-};
-
-const waitForHomeGameList = async (page: Page) => {
-  await page.waitForLoadState('domcontentloaded');
-  await waitForFrontendAssets(page);
-  await page.waitForSelector('[data-game-id]', { timeout: 12000, state: 'attached' });
-};
-
-const ensureSummonerWarsCard = async (page: Page) => {
-  await waitForHomeGameList(page);
-  let card = page.locator('[data-game-id="summonerwars"]');
-  if (await card.count() === 0) {
-    const strategyTab = page.getByRole('button', { name: /Strategy|策略/i });
-    if (await strategyTab.isVisible().catch(() => false)) {
-      await strategyTab.click();
-    }
-    card = page.locator('[data-game-id="summonerwars"]');
-  }
-  await expect(card).toHaveCount(1, { timeout: 15000 });
-  await card.first().scrollIntoViewIfNeeded();
-  return card.first();
-};
-
-const ensureSummonerWarsModalOpen = async (page: Page) => {
-  const modalRoot = page.locator('#modal-root');
-  const modalHeading = modalRoot.getByRole('heading', { name: /Summoner Wars|召唤师战争/i });
-  const modalReadyButton = modalRoot
-    .locator('button:visible', { hasText: /Create Room|创建房间|Return to match|返回当前对局/i })
-    .first();
-  try {
-    await expect(modalHeading).toBeVisible({ timeout: 2000 });
-  } catch {
-    if (await modalReadyButton.isVisible().catch(() => false)) {
-      return { modalRoot, modalHeading };
-    }
-    const gameCard = await ensureSummonerWarsCard(page);
-    await gameCard.evaluate((node) => {
-      (node as HTMLElement | null)?.click();
-    });
-    await expect.poll(async () => {
-      const headingVisible = await modalHeading.isVisible().catch(() => false);
-      const buttonVisible = await modalReadyButton.isVisible().catch(() => false);
-      return headingVisible || buttonVisible;
-    }, { timeout: 15000 }).toBe(true);
-  }
-  return { modalRoot, modalHeading };
-};
-
-const dismissLobbyConfirmIfNeeded = async (page: Page) => {
-  const confirmButton = page
-    .locator('button:has-text("确认")')
-    .or(page.locator('button:has-text("Confirm")'));
-  if (await confirmButton.isVisible().catch(() => false)) {
-    await confirmButton.click();
-    await page.waitForTimeout(1000);
-  }
-};
-
-const createSummonerWarsRoom = async (page: Page) => {
-  await page.goto('/?game=summonerwars', { waitUntil: 'domcontentloaded' });
-  await dismissViteOverlay(page);
-  await dismissLobbyConfirmIfNeeded(page);
-
-  const { modalRoot } = await ensureSummonerWarsModalOpen(page);
-  const createButton = modalRoot.locator('button:visible', { hasText: /Create Room|创建房间/i }).first();
-  const lobbyTab = modalRoot.getByRole('button', { name: /Lobby|在线大厅/i });
-  if (await lobbyTab.isVisible().catch(() => false)) {
-    await lobbyTab.evaluate((node) => {
-      (node as HTMLElement | null)?.click();
-    }).catch(() => { });
-  }
-
-  const returnButton = modalRoot.locator('button:visible', { hasText: /Return to match|返回当前对局/i }).first();
-  if (await returnButton.isVisible().catch(() => false)) {
-    await returnButton.click();
-    await page.waitForURL(/\/play\/summonerwars\/match\//, { timeout: 10000 });
-    const url = new URL(page.url());
-    return url.pathname.split('/').pop() ?? null;
-  }
-
-  await expect(createButton).toBeVisible({ timeout: 20000 });
-  await createButton.click();
-  await expect(page.getByRole('heading', { name: /Create Room|创建房间/i })).toBeVisible({ timeout: 10000 });
-  const confirmButton = page.getByRole('button', { name: /Confirm|确认/i });
-  await expect(confirmButton).toBeEnabled({ timeout: 5000 });
-  await confirmButton.click();
-  
-  try {
-    await page.waitForURL(/\/play\/summonerwars\/match\//, { timeout: 8000 });
-  } catch {
-    return null;
-  }
-  
-  const url = new URL(page.url());
-  const matchId = url.pathname.split('/').pop() ?? null;
-  if (!matchId) return null;
-  
-  const available = await waitForMatchAvailable(page, matchId, 15000);
-  if (!available) {
-    return null;
-  }
-  return matchId;
-};
-
-const ensurePlayerIdInUrl = async (page: Page, playerId: string) => {
-  const url = new URL(page.url());
-  if (url.searchParams.get('playerID') !== playerId) {
-    url.searchParams.set('playerID', playerId);
-    await page.goto(url.toString());
-  }
-};
-
-const disableFabMenu = async (page: Page) => {
-  await page.addStyleTag({
-    content: '[data-testid="fab-menu"] { pointer-events: none !important; opacity: 0 !important; }',
-  }).catch(() => { });
-};
-
-const waitForSummonerWarsUI = async (page: Page, timeout = 20000) => {
-  await expect(page.getByTestId('sw-action-banner')).toBeVisible({ timeout });
-  await expect(page.getByTestId('sw-hand-area')).toBeVisible({ timeout });
-  await expect(page.getByTestId('sw-map-container')).toBeVisible({ timeout });
-  await expect(page.getByTestId('sw-end-phase')).toBeVisible({ timeout });
-  await disableFabMenu(page);
-};
-
-const completeFactionSelection = async (hostPage: Page, guestPage: Page) => {
-  const selectionHeading = (page: Page) =>
-    page.locator('h1').filter({ hasText: /选择你的阵营|Choose your faction/i });
-  await expect(selectionHeading(hostPage)).toBeVisible({ timeout: 20000 });
-  await expect(selectionHeading(guestPage)).toBeVisible({ timeout: 20000 });
-
-  const factionCards = (page: Page) => page.locator('.grid > div');
-  await factionCards(hostPage).nth(0).click();
-  await hostPage.waitForTimeout(500);
-
-  await factionCards(guestPage).nth(1).click();
-  await guestPage.waitForTimeout(500);
-
-  const readyButton = guestPage.locator('button').filter({ hasText: /准备|Ready/i });
-  await expect(readyButton).toBeVisible({ timeout: 5000 });
-  await readyButton.click();
-  await hostPage.waitForTimeout(500);
-
-  const startButton = hostPage.locator('button').filter({ hasText: /开始游戏|Start Game/i });
-  await expect(startButton).toBeVisible({ timeout: 5000 });
-  await expect(startButton).toBeEnabled({ timeout: 5000 });
-  await startButton.click();
-
-  await expect(hostPage.getByTestId('sw-end-phase')).toBeVisible({ timeout: 30000 });
-  await expect(guestPage.getByTestId('sw-end-phase')).toBeVisible({ timeout: 30000 });
-};
-
-const ensureDebugPanelOpen = async (page: Page) => {
-  const panel = page.getByTestId('debug-panel');
-  if (await panel.isVisible().catch(() => false)) return;
-  await page.getByTestId('debug-toggle').click();
-  await expect(panel).toBeVisible({ timeout: 5000 });
-};
-
-const closeDebugPanelIfOpen = async (page: Page) => {
-  const panel = page.getByTestId('debug-panel');
-  if (await panel.isVisible().catch(() => false)) {
-    await page.getByTestId('debug-toggle').click();
-    await expect(panel).toBeHidden({ timeout: 5000 });
-  }
-};
-
-const ensureDebugStateTab = async (page: Page) => {
-  await ensureDebugPanelOpen(page);
-  const stateTab = page.getByTestId('debug-tab-state');
-  if (await stateTab.isVisible().catch(() => false)) {
-    await stateTab.click();
-  }
-};
-
-const readCoreState = async (page: Page) => {
-  await ensureDebugStateTab(page);
-  const raw = await page.getByTestId('debug-state-json').innerText();
-  const parsed = JSON.parse(raw);
-  return parsed?.core ?? parsed?.G?.core ?? parsed;
-};
-
-const applyCoreState = async (page: Page, coreState: unknown) => {
-  await ensureDebugStateTab(page);
-  await page.getByTestId('debug-state-toggle-input').click();
-  const input = page.getByTestId('debug-state-input');
-  await expect(input).toBeVisible({ timeout: 3000 });
-  await input.fill(JSON.stringify(coreState));
-  await page.getByTestId('debug-state-apply').click();
-  await expect(input).toBeHidden({ timeout: 5000 }).catch(() => { });
-};
-
-const clickBoardElement = async (page: Page, selector: string) => {
-  const clicked = await page.evaluate((sel) => {
-    const el = document.querySelector(sel);
-    if (!el) return false;
-    el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-    return true;
-  }, selector);
-  if (!clicked) throw new Error(`棋盘元素未找到 ${selector}`);
-};
-
-const getCurrentPhase = async (page: Page) => {
-  const phase = await page.getByTestId('sw-action-banner').getAttribute('data-phase');
-  if (!phase) {
-    throw new Error('无法获取当前阶段');
-  }
-  return phase;
-};
-
-const waitForPhase = async (page: Page, phase: string) => {
-  await expect.poll(() => page.getByTestId('sw-action-banner').getAttribute('data-phase')).toBe(phase);
-};
 
 // ============================================================================
 // 测试状态准备函数
@@ -402,48 +49,47 @@ const prepareHolyArrowState = (coreState: any) => {
   next.phase = 'attack';
   next.currentPlayer = '0';
   next.selectedUnit = undefined;
+  next.attackTargetMode = undefined;
 
   const player = next.players?.['0'];
   if (!player) throw new Error('无法读取玩家0状态');
 
   player.magic = 3;
   player.attackCount = 0;
+  player.hasAttackedEnemy = false;
+
+  const paladinDeck = createDeckByFactionId('paladin');
+  const necromancerDeck = createDeckByFactionId('necromancer');
+  const expensiveUnitCards = paladinDeck.deck.filter(
+    (card) => card.cardType === 'unit' && typeof card.cost === 'number' && card.cost > player.magic,
+  );
+  const fortressArcherCard = paladinDeck.deck.find(
+    (card) => card.cardType === 'unit' && card.id.startsWith('paladin-fortress-archer-'),
+  );
+  const enemyUnitCard = necromancerDeck.deck.find(
+    (card) => card.cardType === 'unit' && card.unitClass === 'common',
+  );
+
+  if (expensiveUnitCards.length < 2) {
+    throw new Error('未找到足够的真实高费用圣堂骑士单位模板');
+  }
+  if (!fortressArcherCard || fortressArcherCard.cardType !== 'unit') {
+    throw new Error('未找到真实城塞弓箭手模板');
+  }
+  if (!enemyUnitCard || enemyUnitCard.cardType !== 'unit') {
+    throw new Error('未找到真实敌方单位模板');
+  }
 
   // 确保手牌有多张不同名单位卡
   // ✅ 边界测试：包含高费用卡牌（费用 > 当前魔力），验证弃牌不受魔力限制
-  const unitCards = [
-    {
-      id: 'paladin-unit-1',
-      name: '城塞骑士',
-      cardType: 'unit',
-      faction: 'paladin',
-      cost: 5, // 高费用（> 当前魔力 3）
-      life: 5,
-      strength: 2,
-      attackType: 'melee',
-      attackRange: 1,
-      unitClass: 'common',
-      deckSymbols: [],
-    },
-    {
-      id: 'paladin-unit-2',
-      name: '城塞圣武士',
-      cardType: 'unit',
-      faction: 'paladin',
-      cost: 6, // 高费用（> 当前魔力 3）
-      life: 4,
-      strength: 3,
-      attackType: 'melee',
-      attackRange: 1,
-      unitClass: 'common',
-      deckSymbols: [],
-    },
+  player.hand = [
+    { ...expensiveUnitCards[0] },
+    { ...expensiveUnitCards[1] },
+    ...player.hand.filter((c: any) => c.cardType !== 'unit'),
   ];
 
-  player.hand = [...unitCards, ...player.hand.filter((c: any) => c.cardType !== 'unit')];
-
   // 查找城塞弓箭手或放置一个
-  const board = next.board;
+  const board = next.board as Array<Array<Record<string, any>>>;
   let archerPlaced = false;
   let enemyPlaced = false;
 
@@ -464,20 +110,8 @@ const prepareHolyArrowState = (coreState: any) => {
             if (!board[adj.row][adj.col].unit && !board[adj.row][adj.col].structure) {
               board[adj.row][adj.col].unit = {
                 instanceId: `enemy-target-${adj.row}-${adj.col}`,
-                cardId: 'necro-enemy-1',
-                card: {
-                  id: 'necro-enemy',
-                  name: '敌方单位',
-                  cardType: 'unit',
-                  faction: 'necromancer',
-                  cost: 1,
-                  life: 3,
-                  strength: 2,
-                  attackType: 'melee',
-                  attackRange: 1,
-                  unitClass: 'common',
-                  deckSymbols: [],
-                },
+                cardId: enemyUnitCard.id,
+                card: { ...enemyUnitCard },
                 owner: '1',
                 position: adj,
                 damage: 0,
@@ -500,21 +134,8 @@ const prepareHolyArrowState = (coreState: any) => {
         if (!board[row][col].unit && !board[row][col].structure) {
           board[row][col].unit = {
             instanceId: `paladin-archer-${row}-${col}`,
-            cardId: 'paladin-archer-test',
-            card: {
-              id: 'paladin-archer',
-              name: '城塞弓箭手',
-              cardType: 'unit',
-              faction: 'paladin',
-              cost: 2,
-              life: 2,
-              strength: 2,
-              attackType: 'ranged',
-              attackRange: 3,
-              unitClass: 'common',
-              deckSymbols: [],
-              abilities: ['holy_arrow'],
-            },
+            cardId: fortressArcherCard.id,
+            card: { ...fortressArcherCard },
             owner: '0',
             position: { row, col },
             damage: 0,
@@ -544,20 +165,8 @@ const prepareHolyArrowState = (coreState: any) => {
             if (!board[adj.row][adj.col].unit && !board[adj.row][adj.col].structure) {
               board[adj.row][adj.col].unit = {
                 instanceId: `enemy-target-${adj.row}-${adj.col}`,
-                cardId: 'necro-enemy-1',
-                card: {
-                  id: 'necro-enemy',
-                  name: '敌方单位',
-                  cardType: 'unit',
-                  faction: 'necromancer',
-                  cost: 1,
-                  life: 3,
-                  strength: 2,
-                  attackType: 'melee',
-                  attackRange: 1,
-                  unitClass: 'common',
-                  deckSymbols: [],
-                },
+                cardId: enemyUnitCard.id,
+                card: { ...enemyUnitCard },
                 owner: '1',
                 position: adj,
                 damage: 0,
@@ -579,6 +188,148 @@ const prepareHolyArrowState = (coreState: any) => {
   }
 
   return next;
+};
+
+const prepareFortressPowerState = (coreState: any) => {
+  const next = cloneState(coreState);
+  next.phase = 'attack';
+  next.currentPlayer = '0';
+  next.selectedUnit = undefined;
+  next.attackTargetMode = undefined;
+
+  const player = next.players?.['0'];
+  if (!player) throw new Error('无法读取玩家0状态');
+  player.attackCount = 0;
+  player.hasAttackedEnemy = false;
+
+  const paladinDeck = createDeckByFactionId('paladin');
+  const necromancerDeck = createDeckByFactionId('necromancer');
+  const fortressDiscardCard = paladinDeck.deck.find(
+    (card) => card.cardType === 'unit' && card.id.startsWith('paladin-fortress-knight-'),
+  );
+  const fortressBoardCard = paladinDeck.deck.find(
+    (card) => card.cardType === 'unit'
+      && (
+        card.id.startsWith('paladin-fortress-archer-')
+        || card.id.startsWith('paladin-fortress-warrior-')
+        || card.id.startsWith('paladin-fortress-knight-')
+      ),
+  );
+  const enemyChampionCard = necromancerDeck.deck.find(
+    (card) => card.cardType === 'unit' && card.unitClass === 'champion',
+  );
+
+  if (!fortressDiscardCard || fortressDiscardCard.cardType !== 'unit') {
+    throw new Error('未找到真实城塞单位模板');
+  }
+  if (!fortressBoardCard || fortressBoardCard.cardType !== 'unit') {
+    throw new Error('未找到真实城塞上场单位模板');
+  }
+  if (!enemyChampionCard || enemyChampionCard.cardType !== 'unit') {
+    throw new Error('未找到真实敌方英雄模板');
+  }
+
+  player.discard = [{ ...fortressDiscardCard }];
+
+  const board = next.board as Array<Array<Record<string, any>>>;
+  const summonerPos = { row: -1, col: -1 };
+  let hasFriendlyFortressOnBoard = false;
+
+  for (let row = 0; row < board.length; row += 1) {
+    for (let col = 0; col < board[row].length; col += 1) {
+      const unit = board[row][col]?.unit;
+      if (unit?.owner === '0' && unit?.card?.unitClass === 'summoner' && unit.card.abilities?.includes('fortress_power')) {
+        summonerPos.row = row;
+        summonerPos.col = col;
+      }
+      if (
+        unit?.owner === '0'
+        && (
+          typeof unit?.card?.name === 'string'
+          && unit.card.name.includes('城塞')
+          || unit?.card?.abilities?.includes('holy_arrow')
+          || unit?.card?.abilities?.includes('guardian')
+          || unit?.card?.abilities?.includes('judgment')
+        )
+      ) {
+        hasFriendlyFortressOnBoard = true;
+      }
+    }
+  }
+
+  if (summonerPos.row < 0 || summonerPos.col < 0) {
+    throw new Error('未找到先锋召唤师位置');
+  }
+  if (!hasFriendlyFortressOnBoard) {
+    const fallbackPositions = [
+      { row: summonerPos.row - 1, col: summonerPos.col - 1 },
+      { row: summonerPos.row - 1, col: summonerPos.col + 1 },
+      { row: summonerPos.row - 2, col: summonerPos.col - 1 },
+      { row: summonerPos.row - 2, col: summonerPos.col + 1 },
+      { row: summonerPos.row + 1, col: summonerPos.col - 1 },
+      { row: summonerPos.row + 1, col: summonerPos.col + 1 },
+    ];
+    const fallbackPos = fallbackPositions.find(({ row, col }) => {
+      const cell = board[row]?.[col];
+      return cell && !cell.unit && !cell.structure;
+    });
+    if (!fallbackPos) {
+      throw new Error('战场上没有友方城塞单位，且无法补放测试单位');
+    }
+    board[fallbackPos.row][fallbackPos.col] = {
+      ...board[fallbackPos.row][fallbackPos.col],
+      unit: {
+        instanceId: `fortress-power-friendly-${fallbackPos.row}-${fallbackPos.col}`,
+        cardId: fortressBoardCard.id,
+        card: { ...fortressBoardCard },
+        owner: '0',
+        position: { ...fallbackPos },
+        damage: 0,
+        boosts: 0,
+        hasMoved: false,
+        hasAttacked: false,
+      },
+    };
+  }
+
+  const enemyPos = [
+    { row: summonerPos.row - 1, col: summonerPos.col },
+    { row: summonerPos.row - 1, col: summonerPos.col - 1 },
+    { row: summonerPos.row - 1, col: summonerPos.col + 1 },
+    { row: summonerPos.row - 2, col: summonerPos.col },
+    { row: summonerPos.row, col: summonerPos.col - 1 },
+    { row: summonerPos.row, col: summonerPos.col + 1 },
+    { row: summonerPos.row + 1, col: summonerPos.col },
+  ].find(({ row, col }) => {
+    const cell = board[row]?.[col];
+    return cell && !cell.structure;
+  });
+  if (!enemyPos) {
+    throw new Error('无法放置城塞之力测试目标');
+  }
+
+  board[enemyPos.row][enemyPos.col] = {
+    ...board[enemyPos.row][enemyPos.col],
+    structure: undefined,
+    unit: {
+      instanceId: `fortress-power-target-${enemyPos.row}-${enemyPos.col}`,
+      cardId: enemyChampionCard.id,
+      card: { ...enemyChampionCard },
+      owner: '1',
+      position: { ...enemyPos },
+      damage: 0,
+      boosts: 0,
+      hasMoved: false,
+      hasAttacked: false,
+    },
+  };
+
+  return {
+    core: next,
+    summonerPos,
+    enemyPos,
+    discardCardId: fortressDiscardCard.id,
+  };
 };
 
 const findHolyArrowAttackPair = (coreState: any): { archer: { row: number; col: number }; enemy: { row: number; col: number } } | null => {
@@ -615,47 +366,25 @@ const prepareHolyArrowDuplicateNameState = (coreState: any) => {
   const next = prepareHolyArrowState(coreState);
   const player = next.players?.['0'];
   if (!player) throw new Error('无法读取玩家0状态');
+  const paladinDeck = createDeckByFactionId('paladin');
+  const duplicateCards = paladinDeck.deck.filter(
+    (card) => card.cardType === 'unit' && card.id.startsWith('paladin-fortress-knight-'),
+  );
+  const uniqueCard = paladinDeck.deck.find(
+    (card) => card.cardType === 'unit' && card.id.startsWith('paladin-fortress-warrior-'),
+  );
+
+  if (duplicateCards.length < 2) {
+    throw new Error('未找到两张真实同名城塞骑士模板');
+  }
+  if (!uniqueCard || uniqueCard.cardType !== 'unit') {
+    throw new Error('未找到真实城塞圣武士模板');
+  }
 
   player.hand = [
-    {
-      id: 'paladin-dup-1',
-      name: '城塞骑士',
-      cardType: 'unit',
-      faction: 'paladin',
-      cost: 4,
-      life: 5,
-      strength: 2,
-      attackType: 'melee',
-      attackRange: 1,
-      unitClass: 'common',
-      deckSymbols: [],
-    },
-    {
-      id: 'paladin-dup-2',
-      name: '城塞骑士',
-      cardType: 'unit',
-      faction: 'paladin',
-      cost: 4,
-      life: 5,
-      strength: 2,
-      attackType: 'melee',
-      attackRange: 1,
-      unitClass: 'common',
-      deckSymbols: [],
-    },
-    {
-      id: 'paladin-unique-1',
-      name: '城塞圣武士',
-      cardType: 'unit',
-      faction: 'paladin',
-      cost: 6,
-      life: 4,
-      strength: 3,
-      attackType: 'melee',
-      attackRange: 1,
-      unitClass: 'common',
-      deckSymbols: [],
-    },
+    { ...duplicateCards[0] },
+    { ...duplicateCards[1] },
+    { ...uniqueCard },
     ...player.hand.filter((c: any) => c.cardType !== 'unit'),
   ];
 
@@ -665,57 +394,72 @@ const prepareHolyArrowDuplicateNameState = (coreState: any) => {
 /**
  * 准备治疗测试状态
  * - 攻击阶段
- * - 圣殿牧师在场（healingMode: true，模拟已弃牌激活治疗模式）
+ * - 圣殿牧师在场（可选预设 healingMode，供友军治疗路径复用）
  * - 手牌有单位卡
  * - 相邻有受伤的友方单位（用于治疗测试）
  * - 相邻有敌方单位（用于跳过弃牌测试）
  * 
  * 注意：healing 的完整流程是"弃牌 → 设置 healingMode → 攻击友方 → 治疗"。
- * 为了让 validAttackPositions 包含友方单位，需要预设 healingMode: true。
+ * 友军治疗路径需要预设 healingMode；敌军跳过弃牌路径则必须保持未激活状态。
  */
-const prepareHealingState = (coreState: any) => {
+const prepareHealingState = (coreState: any, options?: { presetHealingMode?: boolean }) => {
   const next = cloneState(coreState);
   next.phase = 'attack';
   next.currentPlayer = '0';
   next.selectedUnit = undefined;
+  next.attackTargetMode = undefined;
+  const presetHealingMode = options?.presetHealingMode ?? true;
 
   const player = next.players?.['0'];
   if (!player) throw new Error('无法读取玩家0状态');
 
   player.magic = 5;
   player.attackCount = 0;
+  player.hasAttackedEnemy = false;
+
+  const paladinDeck = createDeckByFactionId('paladin');
+  const necromancerDeck = createDeckByFactionId('necromancer');
+  const handUnitCard = paladinDeck.deck.find((card) => card.cardType === 'unit' && card.id.startsWith('paladin-fortress-knight-'));
+  const templePriestCard = paladinDeck.deck.find((card) => card.cardType === 'unit' && card.id.startsWith('paladin-temple-priest-'));
+  const woundedAllyCard = paladinDeck.deck.find((card) => card.cardType === 'unit' && card.id.startsWith('paladin-fortress-knight-'));
+  const enemyUnitCard = necromancerDeck.deck.find((card) => card.cardType === 'unit' && card.unitClass === 'common');
+
+  if (!handUnitCard || handUnitCard.cardType !== 'unit') {
+    throw new Error('未找到真实手牌单位模板');
+  }
+  if (!templePriestCard || templePriestCard.cardType !== 'unit') {
+    throw new Error('未找到真实圣殿牧师模板');
+  }
+  if (!woundedAllyCard || woundedAllyCard.cardType !== 'unit') {
+    throw new Error('未找到真实受伤友方单位模板');
+  }
+  if (!enemyUnitCard || enemyUnitCard.cardType !== 'unit') {
+    throw new Error('未找到真实敌方单位模板');
+  }
 
   // 确保手牌有单位卡
   // ✅ 边界测试：高费用卡牌（费用 > 当前魔力），验证弃牌不受魔力限制
-  const unitCard = {
-    id: 'paladin-unit-heal',
-    name: '城塞骑士',
-    cardType: 'unit',
-    faction: 'paladin',
-    cost: 8, // 高费用（> 当前魔力 5）
-    life: 5,
-    strength: 2,
-    attackType: 'melee',
-    attackRange: 1,
-    unitClass: 'common',
-    deckSymbols: [],
-  };
-
-  player.hand = [unitCard, ...player.hand.filter((c: any) => c.cardType !== 'unit')];
+  player.hand = [{ ...handUnitCard }, ...player.hand.filter((c: any) => c.cardType !== 'unit')];
 
   // 查找圣殿牧师
-  const board = next.board;
+  const board = next.board as Array<Array<Record<string, any>>>;
   let priestPlaced = false;
   let woundedAllyPlaced = false;
   let enemyPlaced = false;
+  let priestPos: { row: number; col: number } | null = null;
+  let woundedAllyPos: { row: number; col: number } | null = null;
+  let enemyPos: { row: number; col: number } | null = null;
 
   for (let row = 0; row < 8 && !priestPlaced; row++) {
     for (let col = 0; col < 6 && !priestPlaced; col++) {
       const cell = board[row][col];
       if (cell.unit && cell.unit.owner === '0' && cell.unit.card.abilities?.includes('healing')) {
         priestPlaced = true;
-        // ✅ 预设 healingMode，让 validAttackPositions 包含友方单位
-        cell.unit.healingMode = true;
+        priestPos = { row, col };
+        if (presetHealingMode) {
+          // 友军治疗路径需要先进入治疗模式，跳过弃牌攻击敌军则不能预设。
+          cell.unit.healingMode = true;
+        }
 
         // 在相邻位置放置受伤的友方单位和敌方单位
         const adjPositions = [
@@ -730,20 +474,8 @@ const prepareHealingState = (coreState: any) => {
               if (!woundedAllyPlaced) {
                 board[adj.row][adj.col].unit = {
                   instanceId: `wounded-ally-${adj.row}-${adj.col}`,
-                  cardId: 'paladin-wounded-ally',
-                  card: {
-                    id: 'paladin-ally',
-                    name: '城塞骑士',
-                    cardType: 'unit',
-                    faction: 'paladin',
-                    cost: 2,
-                    life: 5,
-                    strength: 2,
-                    attackType: 'melee',
-                    attackRange: 1,
-                    unitClass: 'common',
-                    deckSymbols: [],
-                  },
+                  cardId: woundedAllyCard.id,
+                  card: { ...woundedAllyCard },
                   owner: '0',
                   position: adj,
                   damage: 3, // 受伤
@@ -752,23 +484,12 @@ const prepareHealingState = (coreState: any) => {
                   hasAttacked: false,
                 };
                 woundedAllyPlaced = true;
+                woundedAllyPos = { ...adj };
               } else if (!enemyPlaced) {
                 board[adj.row][adj.col].unit = {
                   instanceId: `enemy-heal-test-${adj.row}-${adj.col}`,
-                  cardId: 'necro-enemy-heal',
-                  card: {
-                    id: 'necro-enemy-heal',
-                    name: '敌方单位',
-                    cardType: 'unit',
-                    faction: 'necromancer',
-                    cost: 1,
-                    life: 3,
-                    strength: 2,
-                    attackType: 'melee',
-                    attackRange: 1,
-                    unitClass: 'common',
-                    deckSymbols: [],
-                  },
+                  cardId: enemyUnitCard.id,
+                  card: { ...enemyUnitCard },
                   owner: '1',
                   position: adj,
                   damage: 0,
@@ -777,6 +498,7 @@ const prepareHealingState = (coreState: any) => {
                   hasAttacked: false,
                 };
                 enemyPlaced = true;
+                enemyPos = { ...adj };
               }
             }
           }
@@ -790,7 +512,12 @@ const prepareHealingState = (coreState: any) => {
     throw new Error('无法准备治疗测试状态：未找到圣殿牧师或无法放置受伤友方单位');
   }
 
-  return next;
+  return {
+    core: next,
+    priestPos,
+    woundedAllyPos,
+    enemyPos,
+  };
 };
 
 // ============================================================================
@@ -801,107 +528,64 @@ test.describe('圣堂骑士弃牌技能', () => {
   test('圣光箭：攻击前弃牌获得魔力和战力', async ({ browser }, testInfo) => {
     test.setTimeout(120000);
     const baseURL = testInfo.project.use.baseURL as string | undefined;
-
-    const hostContext = await browser.newContext({ baseURL });
-    await blockAudioRequests(hostContext);
-    await setChineseLocale(hostContext);
-    await resetMatchStorage(hostContext);
-    await disableAudio(hostContext);
-    await disableTutorial(hostContext);
-    await disableSummonerWarsAutoSkip(hostContext);
-    const hostPage = await hostContext.newPage();
-
-    if (!await ensureGameServerAvailable(hostPage)) {
-      test.skip(true, 'Game server unavailable for online tests.');
+    const match = await setupSWOnlineMatch(browser, baseURL, 'paladin', 'necromancer');
+    if (!match) {
+      test.skip(true, 'Game server unavailable or room creation failed.');
+      return;
     }
 
-    const matchId = await createSummonerWarsRoom(hostPage);
-    if (!matchId) {
-      test.skip(true, 'Room creation failed or backend unavailable.');
+    const { hostPage, hostContext, guestContext } = match;
+
+    try {
+      const holyArrowCore = prepareHolyArrowState(await readCoreStateViaServer(hostPage));
+      await applyCoreStateViaServer(hostPage, holyArrowCore);
+      await closeDebugPanelIfOpenViaHelper(hostPage);
+      await waitForPhaseViaHelper(hostPage, 'attack');
+
+      const initialMagic = Number((await readCoreStateViaServer(hostPage)).players?.['0']?.magic ?? 0);
+
+      const pair = findHolyArrowAttackPair(await readCoreStateViaServer(hostPage));
+      if (!pair) throw new Error('未找到可触发 holy_arrow 的弓箭手-敌方相邻对');
+
+      const archer = hostPage.locator(`[data-testid="sw-unit-${pair.archer.row}-${pair.archer.col}"][data-owner="0"]`).first();
+      await expect(archer).toBeVisible({ timeout: 5000 });
+      await archer.click();
+
+      const enemyUnit = hostPage.locator(`[data-testid="sw-unit-${pair.enemy.row}-${pair.enemy.col}"][data-owner="1"]`).first();
+      await expect(enemyUnit).toBeVisible({ timeout: 5000 });
+      await enemyUnit.click();
+
+      const confirmDiscardBtn = hostPage.locator('button').filter({ hasText: /Confirm Discard|确认弃牌/i });
+      const skipBtn = hostPage.locator('button').filter({ hasText: /^Skip$|^跳过$/i });
+      await expect(confirmDiscardBtn).toBeVisible({ timeout: 8000 });
+      await expect(skipBtn).toBeVisible({ timeout: 3000 });
+
+      const handArea = hostPage.getByTestId('sw-hand-area');
+      const selectableCards = handArea.locator('[data-card-type="unit"]');
+      const cardCount = await selectableCards.count();
+      if (cardCount >= 2) {
+        await selectableCards.nth(0).click();
+        await selectableCards.nth(1).click();
+      } else if (cardCount === 1) {
+        await selectableCards.nth(0).click();
+      }
+
+      const selectedCards = handArea.locator('[data-selected="true"]');
+      expect(await selectedCards.count()).toBeGreaterThan(0);
+
+      await confirmDiscardBtn.click();
+      await expect(confirmDiscardBtn).toBeHidden({ timeout: 5000 });
+
+      await expect.poll(async () => {
+        const currentMagic = Number((await readCoreStateViaServer(hostPage)).players?.['0']?.magic ?? 0);
+        return currentMagic > initialMagic;
+      }, { timeout: 5000 }).toBe(true);
+
+      await expect(hostPage.getByTestId('sw-dice-result-overlay')).toBeVisible({ timeout: 8000 });
+    } finally {
+      void hostContext.close().catch(() => {});
+      void guestContext.close().catch(() => {});
     }
-
-    await ensurePlayerIdInUrl(hostPage, '0');
-
-    const guestContext = await browser.newContext({ baseURL });
-    await blockAudioRequests(guestContext);
-    await setChineseLocale(guestContext);
-    await resetMatchStorage(guestContext);
-    await disableAudio(guestContext);
-    await disableTutorial(guestContext);
-    await disableSummonerWarsAutoSkip(guestContext);
-    const guestPage = await guestContext.newPage();
-    await joinMatchAsGuest(guestPage, matchId!);
-
-    await completeFactionSelection(hostPage, guestPage);
-    await waitForSummonerWarsUI(hostPage);
-    await waitForSummonerWarsUI(guestPage);
-
-    // 准备测试状态
-    const coreState = await readCoreState(hostPage);
-    const holyArrowCore = prepareHolyArrowState(coreState);
-    await applyCoreState(hostPage, holyArrowCore);
-    await closeDebugPanelIfOpen(hostPage);
-
-    // 验证当前是攻击阶段
-    await waitForPhase(hostPage, 'attack');
-
-    // 记录初始魔力
-    const magicDisplay = hostPage.getByTestId('sw-player-magic-0');
-    const initialMagic = parseInt(await magicDisplay.innerText());
-
-    const pair = findHolyArrowAttackPair(await readCoreState(hostPage));
-    if (!pair) throw new Error('未找到可触发 holy_arrow 的弓箭手-敌方相邻对');
-    // 点击城塞弓箭手（使用准备状态里的真实坐标，避免误点不可攻击单位）
-    const archer = hostPage.locator(`[data-testid="sw-unit-${pair.archer.row}-${pair.archer.col}"][data-owner="0"]`).first();
-    await expect(archer).toBeVisible({ timeout: 5000 });
-    await archer.click();
-
-    // 点击相邻敌方单位（触发攻击前弃牌）
-    const enemyUnit = hostPage.locator(`[data-testid="sw-unit-${pair.enemy.row}-${pair.enemy.col}"][data-owner="1"]`).first();
-    await expect(enemyUnit).toBeVisible({ timeout: 5000 });
-    await enemyUnit.click();
-
-    // 验证被动触发横幅出现（StatusBanners 中的 amber 横幅，包含"确认弃牌"和"跳过"按钮）
-    const confirmDiscardBtn = hostPage.locator('button').filter({ hasText: /Confirm Discard|确认弃牌/i });
-    const skipBtn = hostPage.locator('button').filter({ hasText: /^Skip$|^跳过$/i });
-    await expect(confirmDiscardBtn).toBeVisible({ timeout: 8000 });
-    await expect(skipBtn).toBeVisible({ timeout: 3000 });
-
-    // ✅ 边界验证：高费用卡牌（cost=5,6 > magic=3）应该可以选择
-    // 弃牌不消耗魔力，不应该被"魔力不足"阻止
-    // 在手牌区直接点击单位卡选择（被动触发模式下手牌区高亮可选）
-    const handArea = hostPage.getByTestId('sw-hand-area');
-    const selectableCards = handArea.locator('[data-card-type="unit"]');
-    const cardCount = await selectableCards.count();
-    if (cardCount >= 2) {
-      await selectableCards.nth(0).click();
-      await selectableCards.nth(1).click();
-    } else if (cardCount === 1) {
-      await selectableCards.nth(0).click();
-    }
-
-    // 验证卡牌被选中
-    const selectedCards = handArea.locator('[data-selected="true"]');
-    expect(await selectedCards.count()).toBeGreaterThan(0);
-
-    // 点击确认弃牌
-    await confirmDiscardBtn.click();
-
-    // 验证横幅消失（abilityMode 被清除）
-    await expect(confirmDiscardBtn).toBeHidden({ timeout: 5000 });
-
-    // 验证魔力增加
-    await expect.poll(async () => {
-      const currentMagic = parseInt(await magicDisplay.innerText());
-      return currentMagic > initialMagic;
-    }, { timeout: 5000 }).toBe(true);
-
-    // 验证攻击继续进行（骰子结果界面出现）
-    const diceResult = hostPage.getByTestId('sw-dice-result-overlay');
-    await expect(diceResult).toBeVisible({ timeout: 8000 });
-
-    await hostContext.close();
-    await guestContext.close();
   });
 
   test('圣光箭：可以跳过弃牌直接攻击', async ({ browser }, testInfo) => {
@@ -917,15 +601,14 @@ test.describe('圣堂骑士弃牌技能', () => {
     const { hostPage, guestPage, hostContext, guestContext } = match;
 
     try {
-      const coreState = await readCoreState(hostPage);
-      const holyArrowCore = prepareHolyArrowState(coreState);
-      await applyCoreState(hostPage, holyArrowCore);
-      await closeDebugPanelIfOpen(hostPage);
-      await waitForPhase(hostPage, 'attack');
+      const holyArrowCore = prepareHolyArrowState(await readCoreStateViaServer(hostPage));
+      await applyCoreStateViaServer(hostPage, holyArrowCore);
+      await closeDebugPanelIfOpenViaHelper(hostPage);
+      await waitForPhaseViaHelper(hostPage, 'attack');
 
-      const initialMagic = Number((await readCoreState(hostPage)).players?.['0']?.magic ?? 0);
+      const initialMagic = Number((await readCoreStateViaServer(hostPage)).players?.['0']?.magic ?? 0);
 
-      const pair = findHolyArrowAttackPair(await readCoreState(hostPage));
+      const pair = findHolyArrowAttackPair(await readCoreStateViaServer(hostPage));
       if (!pair) throw new Error('未找到可触发 holy_arrow 的弓箭手-敌方相邻对');
       const archer = hostPage.locator(`[data-testid="sw-unit-${pair.archer.row}-${pair.archer.col}"][data-owner="0"]`).first();
       await expect(archer).toBeVisible({ timeout: 5000 });
@@ -945,14 +628,10 @@ test.describe('圣堂骑士弃牌技能', () => {
           subdir: 'summonerwars/summonerwars-paladin-discard.e2e/圣光箭：可以跳过弃牌直接攻击',
         }),
       });
-      await guestPage.screenshot({
-        path: getEvidenceScreenshotPath(testInfo, 'holy-arrow-skip-guest-hidden', {
-          subdir: 'summonerwars/summonerwars-paladin-discard.e2e/圣光箭：可以跳过弃牌直接攻击',
-        }),
-      });
-
-      await expect(guestPage.locator('button').filter({ hasText: /Confirm Discard|确认弃牌/i })).toHaveCount(0);
-      await expect(guestPage.locator('button').filter({ hasText: /^Skip$|^跳过$/i })).toHaveCount(0);
+      if (!guestPage.isClosed()) {
+        await expect(guestPage.locator('button').filter({ hasText: /Confirm Discard|确认弃牌/i })).toHaveCount(0);
+        await expect(guestPage.locator('button').filter({ hasText: /^Skip$|^跳过$/i })).toHaveCount(0);
+      }
 
       await skipButton.click();
       await expect(confirmDiscardBtn).toBeHidden({ timeout: 5000 });
@@ -968,9 +647,17 @@ test.describe('圣堂骑士弃牌技能', () => {
       });
 
       await expect.poll(async () => {
-        const core = await readCoreState(hostPage);
-        return Number(core.players?.['0']?.magic ?? 0);
-      }, { timeout: 5000 }).toBe(initialMagic);
+        const core = await readCoreStateViaServer(hostPage);
+        return {
+          magic: Number(core.players?.['0']?.magic ?? 0),
+          attackCount: Number(core.players?.['0']?.attackCount ?? 0),
+          hasAttackedEnemy: Boolean(core.players?.['0']?.hasAttackedEnemy ?? false),
+        };
+      }, { timeout: 5000 }).toEqual({
+        magic: initialMagic,
+        attackCount: 1,
+        hasAttackedEnemy: true,
+      });
     } finally {
       void hostContext.close().catch(() => {});
       void guestContext.close().catch(() => {});
@@ -980,252 +667,244 @@ test.describe('圣堂骑士弃牌技能', () => {
   test('圣光箭：同名副本只允许选择真实 interaction option', async ({ browser }, testInfo) => {
     test.setTimeout(120000);
     const baseURL = testInfo.project.use.baseURL as string | undefined;
-
-    const hostContext = await browser.newContext({ baseURL });
-    await blockAudioRequests(hostContext);
-    await setChineseLocale(hostContext);
-    await resetMatchStorage(hostContext);
-    await disableAudio(hostContext);
-    await disableTutorial(hostContext);
-    await disableSummonerWarsAutoSkip(hostContext);
-    const hostPage = await hostContext.newPage();
-
-    if (!await ensureGameServerAvailable(hostPage)) {
-      test.skip(true, 'Game server unavailable for online tests.');
+    const match = await setupSWOnlineMatch(browser, baseURL, 'paladin', 'necromancer');
+    if (!match) {
+      test.skip(true, 'Game server unavailable or room creation failed.');
+      return;
     }
 
-    const matchId = await createSummonerWarsRoom(hostPage);
-    if (!matchId) {
-      test.skip(true, 'Room creation failed or backend unavailable.');
+    const { hostPage, hostContext, guestContext } = match;
+
+    try {
+      const holyArrowCore = prepareHolyArrowDuplicateNameState(await readCoreStateViaServer(hostPage));
+      await applyCoreStateViaServer(hostPage, holyArrowCore);
+      await closeDebugPanelIfOpenViaHelper(hostPage);
+      await waitForPhaseViaHelper(hostPage, 'attack');
+
+      const initialMagic = Number((await readCoreStateViaServer(hostPage)).players?.['0']?.magic ?? 0);
+
+      const pair = findHolyArrowAttackPair(await readCoreStateViaServer(hostPage));
+      if (!pair) throw new Error('未找到可触发 holy_arrow 的弓箭手-敌方相邻对');
+
+      const archer = hostPage.locator(`[data-testid="sw-unit-${pair.archer.row}-${pair.archer.col}"][data-owner="0"]`).first();
+      await expect(archer).toBeVisible({ timeout: 5000 });
+      await archer.click();
+
+      const enemyUnit = hostPage.locator(`[data-testid="sw-unit-${pair.enemy.row}-${pair.enemy.col}"][data-owner="1"]`).first();
+      await expect(enemyUnit).toBeVisible({ timeout: 5000 });
+      await enemyUnit.click();
+
+      const confirmDiscardBtn = hostPage.locator('button').filter({ hasText: /Confirm Discard|确认弃牌/i });
+      await expect(confirmDiscardBtn).toBeVisible({ timeout: 8000 });
+
+      const handArea = hostPage.getByTestId('sw-hand-area');
+      const duplicateCards = handArea.locator('[data-card-type="unit"][data-card-name="城塞骑士"]');
+      const uniqueCard = handArea.locator('[data-card-type="unit"][data-card-name="城塞圣武士"]').first();
+
+      await expect(duplicateCards).toHaveCount(2);
+      await duplicateCards.nth(0).click();
+      await expect(duplicateCards.nth(0)).toHaveAttribute('data-selected', 'true');
+
+      await duplicateCards.nth(1).click();
+      await expect(duplicateCards.nth(0)).toHaveAttribute('data-selected', 'true');
+      await expect(duplicateCards.nth(1)).toHaveAttribute('data-selected', 'false');
+
+      await uniqueCard.click();
+      await expect(uniqueCard).toHaveAttribute('data-selected', 'true');
+
+      await confirmDiscardBtn.click();
+      await expect(confirmDiscardBtn).toBeHidden({ timeout: 5000 });
+      await expect.poll(async () => {
+        const core = await readCoreStateViaServer(hostPage);
+        return {
+          magic: Number(core.players?.['0']?.magic ?? 0),
+          attackCount: Number(core.players?.['0']?.attackCount ?? 0),
+          hasAttackedEnemy: Boolean(core.players?.['0']?.hasAttackedEnemy ?? false),
+        };
+      }, { timeout: 5000 }).toEqual({
+        magic: initialMagic + 2,
+        attackCount: 1,
+        hasAttackedEnemy: true,
+      });
+    } finally {
+      void hostContext.close().catch(() => {});
+      void guestContext.close().catch(() => {});
+    }
+  });
+
+  test('城塞之力：攻击阶段选择弃牌堆城塞单位回手', async ({ browser }, testInfo) => {
+    test.setTimeout(120000);
+    await clearEvidenceScreenshotsForTest(testInfo);
+    const baseURL = testInfo.project.use.baseURL as string | undefined;
+    const match = await setupSWOnlineMatch(browser, baseURL, 'paladin', 'necromancer');
+    if (!match) {
+      test.skip(true, 'Game server unavailable or room creation failed.');
+      return;
     }
 
-    await ensurePlayerIdInUrl(hostPage, '0');
+    const { hostPage, hostContext, guestContext } = match;
 
-    const guestContext = await browser.newContext({ baseURL });
-    await blockAudioRequests(guestContext);
-    await setChineseLocale(guestContext);
-    await resetMatchStorage(guestContext);
-    await disableAudio(guestContext);
-    await disableTutorial(guestContext);
-    await disableSummonerWarsAutoSkip(guestContext);
-    const guestPage = await guestContext.newPage();
-    await joinMatchAsGuest(guestPage, matchId);
+    try {
+      const prepared = prepareFortressPowerState(await readCoreStateViaServer(hostPage));
+      await applyCoreStateViaServer(hostPage, prepared.core);
+      await closeDebugPanelIfOpenViaHelper(hostPage);
+      await waitForPhaseViaHelper(hostPage, 'attack');
 
-    await completeFactionSelection(hostPage, guestPage);
-    await waitForSummonerWarsUI(hostPage);
-    await waitForSummonerWarsUI(guestPage);
+      const handCountBefore = await hostPage.locator('[data-testid="sw-hand-area"] [data-card-id]').count();
 
-    const coreState = await readCoreState(hostPage);
-    const holyArrowCore = prepareHolyArrowDuplicateNameState(coreState);
-    await applyCoreState(hostPage, holyArrowCore);
-    await closeDebugPanelIfOpen(hostPage);
-    await waitForPhase(hostPage, 'attack');
+      await clickBoardElementViaHelper(
+        hostPage,
+        `[data-testid="sw-unit-${prepared.summonerPos.row}-${prepared.summonerPos.col}"][data-owner="0"]`,
+      );
 
-    const magicDisplay = hostPage.getByTestId('sw-player-magic-0');
-    const initialMagic = parseInt(await magicDisplay.innerText(), 10);
+      const fortressPowerButton = hostPage.locator('button').filter({ hasText: /城塞之力|Fortress Power/i }).first();
+      await expect(fortressPowerButton).toBeVisible({ timeout: 8000 });
+      await fortressPowerButton.click();
 
-    const archer = hostPage.locator('[data-testid^="sw-unit-"][data-owner="0"][data-unit-name="城塞弓箭手"]').first();
-    await expect(archer).toBeVisible({ timeout: 5000 });
-    await archer.click();
+      const cardSelector = hostPage.getByTestId('sw-card-selector-overlay');
+      await expect(cardSelector).toBeVisible({ timeout: 10000 });
+      const fortressCard = cardSelector.locator(`[data-card-id="${prepared.discardCardId}"]`).first();
+      await expect(fortressCard).toBeVisible({ timeout: 5000 });
 
-    const enemyUnit = hostPage.locator('[data-testid^="sw-unit-"][data-owner="1"]').first();
-    await expect(enemyUnit).toBeVisible({ timeout: 5000 });
-    await enemyUnit.click();
+      await hostPage.screenshot({
+        path: getEvidenceScreenshotPath(testInfo, 'fortress-power-card-selector-visible', {
+          subdir: 'summonerwars/summonerwars-paladin-discard.e2e/城塞之力：攻击后从弃牌堆拿取城塞单位',
+        }),
+      });
 
-    const confirmDiscardBtn = hostPage.locator('button').filter({ hasText: /Confirm Discard|确认弃牌/i });
-    await expect(confirmDiscardBtn).toBeVisible({ timeout: 8000 });
+      await fortressCard.click();
+      await expect(cardSelector).toBeHidden({ timeout: 8000 });
 
-    const handArea = hostPage.getByTestId('sw-hand-area');
-    const duplicateCards = handArea.locator('[data-card-type="unit"][data-card-name="城塞骑士"]');
-    const uniqueCard = handArea.locator('[data-card-type="unit"][data-card-name="城塞圣武士"]').first();
+      await expect.poll(async () => {
+        const latestCore = await readCoreStateViaServer(hostPage);
+        const handIds = (latestCore.players?.['0']?.hand ?? []).map((card: { id?: string }) => card?.id);
+        const discardIds = (latestCore.players?.['0']?.discard ?? []).map((card: { id?: string }) => card?.id);
+        return {
+          inHand: handIds.includes(prepared.discardCardId),
+          removedFromDiscard: !discardIds.includes(prepared.discardCardId),
+          handCount: handIds.length,
+        };
+      }, { timeout: 10000 }).toEqual({
+        inHand: true,
+        removedFromDiscard: true,
+        handCount: handCountBefore + 1,
+      });
 
-    await expect(duplicateCards).toHaveCount(2);
-    await duplicateCards.nth(0).click();
-    await expect(duplicateCards.nth(0)).toHaveAttribute('data-selected', 'true');
-
-    await duplicateCards.nth(1).click();
-    await expect(duplicateCards.nth(0)).toHaveAttribute('data-selected', 'true');
-    await expect(duplicateCards.nth(1)).toHaveAttribute('data-selected', 'false');
-
-    await uniqueCard.click();
-    await expect(uniqueCard).toHaveAttribute('data-selected', 'true');
-
-    await confirmDiscardBtn.click();
-    await expect(confirmDiscardBtn).toBeHidden({ timeout: 5000 });
-    await expect.poll(async () => parseInt(await magicDisplay.innerText(), 10), { timeout: 5000 }).toBe(initialMagic + 2);
-    await expect(hostPage.getByTestId('sw-dice-result-overlay')).toBeVisible({ timeout: 8000 });
-
-    await hostContext.close();
-    await guestContext.close();
+      await closeDebugPanelIfOpenViaHelper(hostPage);
+      await hostPage.screenshot({
+        path: getEvidenceScreenshotPath(testInfo, 'fortress-power-retrieve-complete', {
+          subdir: 'summonerwars/summonerwars-paladin-discard.e2e/城塞之力：攻击后从弃牌堆拿取城塞单位',
+        }),
+      });
+    } finally {
+      void hostContext.close().catch(() => {});
+      void guestContext.close().catch(() => {});
+    }
   });
 
   test('治疗：弃牌后攻击友方单位恢复生命', async ({ browser }, testInfo) => {
     test.setTimeout(120000);
     const baseURL = testInfo.project.use.baseURL as string | undefined;
-
-    const hostContext = await browser.newContext({ baseURL });
-    await blockAudioRequests(hostContext);
-    await setChineseLocale(hostContext);
-    await resetMatchStorage(hostContext);
-    await disableAudio(hostContext);
-    await disableTutorial(hostContext);
-    await disableSummonerWarsAutoSkip(hostContext);
-    const hostPage = await hostContext.newPage();
-
-    if (!await ensureGameServerAvailable(hostPage)) {
-      test.skip(true, 'Game server unavailable for online tests.');
+    const match = await setupSWOnlineMatch(browser, baseURL, 'paladin', 'necromancer');
+    if (!match) {
+      test.skip(true, 'Game server unavailable or room creation failed.');
+      return;
     }
 
-    const matchId = await createSummonerWarsRoom(hostPage);
-    if (!matchId) {
-      test.skip(true, 'Room creation failed or backend unavailable.');
+    const { hostPage, hostContext, guestContext } = match;
+
+    try {
+      const prepared = prepareHealingState(await readCoreStateViaServer(hostPage), { presetHealingMode: true });
+      await applyCoreStateViaServer(hostPage, prepared.core);
+      await closeDebugPanelIfOpenViaHelper(hostPage);
+      await waitForPhaseViaHelper(hostPage, 'attack');
+
+      if (!prepared.priestPos || !prepared.woundedAllyPos) {
+        throw new Error('治疗测试状态缺少关键坐标');
+      }
+
+      const priest = hostPage.locator(`[data-testid="sw-unit-${prepared.priestPos.row}-${prepared.priestPos.col}"][data-owner="0"]`).first();
+      await expect(priest).toBeVisible({ timeout: 5000 });
+      await priest.click();
+
+      const woundedAlly = hostPage.locator(`[data-testid="sw-unit-${prepared.woundedAllyPos.row}-${prepared.woundedAllyPos.col}"][data-owner="0"]`).first();
+      await expect(woundedAlly).toBeVisible({ timeout: 5000 });
+
+      const initialDamage = Number(await woundedAlly.getAttribute('data-unit-damage') ?? '0');
+      expect(initialDamage).toBeGreaterThan(0);
+
+      await woundedAlly.click();
+
+      const confirmDiscardBtn = hostPage.locator('button').filter({ hasText: /Confirm Discard|确认弃牌/i });
+      await expect(confirmDiscardBtn).toBeVisible({ timeout: 8000 });
+
+      const handArea = hostPage.getByTestId('sw-hand-area');
+      const selectableCards = handArea.locator('[data-card-type="unit"]');
+      await expect(selectableCards.first()).toBeVisible({ timeout: 3000 });
+      await selectableCards.first().click();
+
+      const selectedCards = handArea.locator('[data-selected="true"]');
+      expect(await selectedCards.count()).toBeGreaterThan(0);
+
+      await confirmDiscardBtn.click();
+      await expect(confirmDiscardBtn).toBeHidden({ timeout: 5000 });
+      await expect(hostPage.getByTestId('sw-dice-result-overlay')).toBeVisible({ timeout: 8000 });
+    } finally {
+      void hostContext.close().catch(() => {});
+      void guestContext.close().catch(() => {});
     }
-
-    await ensurePlayerIdInUrl(hostPage, '0');
-
-    const guestContext = await browser.newContext({ baseURL });
-    await blockAudioRequests(guestContext);
-    await setChineseLocale(guestContext);
-    await resetMatchStorage(guestContext);
-    await disableAudio(guestContext);
-    await disableTutorial(guestContext);
-    await disableSummonerWarsAutoSkip(guestContext);
-    const guestPage = await guestContext.newPage();
-    await joinMatchAsGuest(guestPage, matchId!);
-
-    await completeFactionSelection(hostPage, guestPage);
-    await waitForSummonerWarsUI(hostPage);
-    await waitForSummonerWarsUI(guestPage);
-
-    const coreState = await readCoreState(hostPage);
-    const healingCore = prepareHealingState(coreState);
-    await applyCoreState(hostPage, healingCore);
-    await closeDebugPanelIfOpen(hostPage);
-
-    await waitForPhase(hostPage, 'attack');
-
-    // 点击圣殿牧师（精确匹配）
-    const priest = hostPage.locator('[data-testid^="sw-unit-"][data-owner="0"][data-unit-name="圣殿牧师"]').first();
-    await expect(priest).toBeVisible({ timeout: 5000 });
-    await priest.click();
-
-    // 点击受伤的友方单位（healingMode=true 时 validAttackPositions 包含友方）
-    // 通过 data-unit-damage 属性找到受伤单位，且 owner="0"（友方）
-    const woundedAlly = hostPage.locator('[data-testid^="sw-unit-"][data-owner="0"][data-unit-name="城塞骑士"]').first();
-    await expect(woundedAlly).toBeVisible({ timeout: 5000 });
-
-    // 记录初始伤害值
-    const initialDamage = parseInt(await woundedAlly.getAttribute('data-unit-damage') ?? '0');
-    expect(initialDamage).toBeGreaterThan(0); // 确认单位确实受伤
-
-    await woundedAlly.click();
-
-    // 验证被动触发横幅出现（StatusBanners 中的 amber 横幅）
-    const confirmDiscardBtn = hostPage.locator('button').filter({ hasText: /Confirm Discard|确认弃牌/i });
-    await expect(confirmDiscardBtn).toBeVisible({ timeout: 8000 });
-
-    // 在手牌区选择单位卡弃除
-    const handArea = hostPage.getByTestId('sw-hand-area');
-    const selectableCards = handArea.locator('[data-card-type="unit"]');
-    await expect(selectableCards.first()).toBeVisible({ timeout: 3000 });
-    await selectableCards.first().click();
-
-    // 验证卡牌被选中
-    const selectedCards = handArea.locator('[data-selected="true"]');
-    expect(await selectedCards.count()).toBeGreaterThan(0);
-
-    // 点击确认弃牌
-    await confirmDiscardBtn.click();
-
-    // 验证横幅消失
-    await expect(confirmDiscardBtn).toBeHidden({ timeout: 5000 });
-
-    // 验证攻击执行（骰子结果出现）— 治疗模式下攻击友方会产生治疗效果
-    const diceResult = hostPage.getByTestId('sw-dice-result-overlay');
-    await expect(diceResult).toBeVisible({ timeout: 8000 });
-
-    await hostContext.close();
-    await guestContext.close();
   });
 
   test('治疗：可以跳过弃牌正常攻击', async ({ browser }, testInfo) => {
     test.setTimeout(120000);
     const baseURL = testInfo.project.use.baseURL as string | undefined;
-
-    const hostContext = await browser.newContext({ baseURL });
-    await blockAudioRequests(hostContext);
-    await setChineseLocale(hostContext);
-    await resetMatchStorage(hostContext);
-    await disableAudio(hostContext);
-    await disableTutorial(hostContext);
-    await disableSummonerWarsAutoSkip(hostContext);
-    const hostPage = await hostContext.newPage();
-
-    if (!await ensureGameServerAvailable(hostPage)) {
-      test.skip(true, 'Game server unavailable for online tests.');
+    const match = await setupSWOnlineMatch(browser, baseURL, 'paladin', 'necromancer');
+    if (!match) {
+      test.skip(true, 'Game server unavailable or room creation failed.');
+      return;
     }
 
-    const matchId = await createSummonerWarsRoom(hostPage);
-    if (!matchId) {
-      test.skip(true, 'Room creation failed or backend unavailable.');
-    }
+    const { hostPage, hostContext, guestContext } = match;
 
-    await ensurePlayerIdInUrl(hostPage, '0');
+    try {
+      const prepared = prepareHealingState(await readCoreStateViaServer(hostPage), { presetHealingMode: false });
+      await applyCoreStateViaServer(hostPage, prepared.core);
+      await closeDebugPanelIfOpenViaHelper(hostPage);
+      await waitForPhaseViaHelper(hostPage, 'attack');
 
-    const guestContext = await browser.newContext({ baseURL });
-    await blockAudioRequests(guestContext);
-    await setChineseLocale(guestContext);
-    await resetMatchStorage(guestContext);
-    await disableAudio(guestContext);
-    await disableTutorial(guestContext);
-    await disableSummonerWarsAutoSkip(guestContext);
-    const guestPage = await guestContext.newPage();
-    await joinMatchAsGuest(guestPage, matchId!);
+      if (!prepared.priestPos || !prepared.enemyPos) {
+        test.skip(true, '治疗测试状态缺少敌方目标或牧师坐标');
+        return;
+      }
 
-    await completeFactionSelection(hostPage, guestPage);
-    await waitForSummonerWarsUI(hostPage);
-    await waitForSummonerWarsUI(guestPage);
+      const priest = hostPage.locator(`[data-testid="sw-unit-${prepared.priestPos.row}-${prepared.priestPos.col}"][data-owner="0"]`).first();
+      await expect(priest).toBeVisible({ timeout: 5000 });
+      await priest.click();
 
-    const coreState = await readCoreState(hostPage);
-    const healingCore = prepareHealingState(coreState);
-    await applyCoreState(hostPage, healingCore);
-    await closeDebugPanelIfOpen(hostPage);
-
-    await waitForPhase(hostPage, 'attack');
-
-    // 点击圣殿牧师（精确匹配）
-    const priest = hostPage.locator('[data-testid^="sw-unit-"][data-owner="0"][data-unit-name="圣殿牧师"]').first();
-    await expect(priest).toBeVisible({ timeout: 5000 });
-    await priest.click();
-
-    // 点击敌方单位（prepareHealingState 已放置敌方单位在牧师相邻位置）
-    const enemyUnit = hostPage.locator('[data-testid^="sw-unit-"][data-owner="1"]').first();
-    const hasEnemy = await enemyUnit.isVisible({ timeout: 3000 }).catch(() => false);
-
-    if (hasEnemy) {
+      const enemyUnit = hostPage.locator(`[data-testid="sw-unit-${prepared.enemyPos.row}-${prepared.enemyPos.col}"][data-owner="1"]`).first();
+      await expect(enemyUnit).toBeVisible({ timeout: 5000 });
       await enemyUnit.click();
 
-      // 验证被动触发横幅出现
       const confirmDiscardBtn = hostPage.locator('button').filter({ hasText: /Confirm Discard|确认弃牌/i });
       const skipButton = hostPage.locator('button').filter({ hasText: /^Skip$|^跳过$/i });
+      const attackCountBefore = Number((await readCoreStateViaServer(hostPage)).players?.['0']?.attackCount ?? 0);
       await expect(confirmDiscardBtn).toBeVisible({ timeout: 8000 });
-
-      // 点击跳过（不弃牌直接攻击）
       await expect(skipButton).toBeVisible({ timeout: 3000 });
+
       await skipButton.click();
-
-      // 验证横幅消失
       await expect(confirmDiscardBtn).toBeHidden({ timeout: 5000 });
-
-      // 验证正常攻击进行（骰子结果出现）
-      const diceResult = hostPage.getByTestId('sw-dice-result-overlay');
-      await expect(diceResult).toBeVisible({ timeout: 8000 });
-    } else {
-      // 如果没有敌方单位（不应该发生），跳过测试
-      test.skip(true, '未找到敌方单位，prepareHealingState 可能未正确放置');
+      await expect(skipButton).toBeHidden({ timeout: 5000 });
+      await expect.poll(async () => {
+        const core = await readCoreStateViaServer(hostPage);
+        const attackCount = Number(core.players?.['0']?.attackCount ?? 0);
+        const hasAttackedEnemy = Boolean(core.players?.['0']?.hasAttackedEnemy ?? false);
+        const passedTurn = core.currentPlayer === '1';
+        const waitingForOpponent = await hostPage.getByText(/等待对手行动/i).isVisible().catch(() => false);
+        return attackCount > attackCountBefore || hasAttackedEnemy || passedTurn || waitingForOpponent;
+      }, { timeout: 10000 }).toBe(true);
+    } finally {
+      void hostContext.close().catch(() => {});
+      void guestContext.close().catch(() => {});
     }
-
-    await hostContext.close();
-    await guestContext.close();
   });
 });

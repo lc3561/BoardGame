@@ -22,6 +22,19 @@ import { clearEvidenceScreenshotsForTest, getEvidenceScreenshotPath, sanitizeEvi
 
 type SceneQueryValue = string | number | boolean | null | undefined;
 
+const DEFAULT_OPEN_TEST_GAME_TIMEOUT_MS = 15000;
+const OPEN_TEST_GAME_TIMEOUT_OVERRIDES_MS: Partial<Record<string, number>> = {
+    dicethrone: 45000,
+};
+
+function resolveOpenTestGameTimeoutMs(gameId: string, timeout: number): number {
+    if (timeout !== DEFAULT_OPEN_TEST_GAME_TIMEOUT_MS) {
+        return timeout;
+    }
+
+    return OPEN_TEST_GAME_TIMEOUT_OVERRIDES_MS[gameId] ?? timeout;
+}
+
 type SmashUpCardType = 'minion' | 'action';
 
 interface SmashUpCardSceneConfig {
@@ -363,8 +376,9 @@ export class GameTestContext {
     async openTestGame(
         gameId: string,
         query: Record<string, SceneQueryValue> = {},
-        timeout = 15000,
+        timeout = DEFAULT_OPEN_TEST_GAME_TIMEOUT_MS,
     ): Promise<void> {
+        const effectiveTimeout = resolveOpenTestGameTimeoutMs(gameId, timeout);
         const params = new URLSearchParams();
         for (const [key, value] of Object.entries(query)) {
             if (value === undefined || value === null) continue;
@@ -374,7 +388,7 @@ export class GameTestContext {
         const search = params.toString();
         const url = `/play/${gameId}${search ? `?${search}` : ''}`;
         const maxAttempts = 3;
-        const deadline = Date.now() + timeout;
+        const deadline = Date.now() + effectiveTimeout;
         let lastError: unknown;
 
         for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -384,20 +398,21 @@ export class GameTestContext {
             }
 
             // 总预算拆分为“每次尝试预算”，保证有限重试在测试超时内真正发生。
-            const attemptTimeout = Math.max(
+            const navigationTimeout = Math.max(
                 8000,
                 Math.min(
                     remaining,
-                    Math.ceil(timeout / maxAttempts),
+                    Math.ceil(effectiveTimeout / maxAttempts),
                 ),
             );
 
             try {
-                await this.gotoWithRetry(url, attemptTimeout);
-                await this.waitForTestHarness(attemptTimeout);
+                await this.gotoWithRetry(url, navigationTimeout);
+                const readyTimeout = Math.max(1000, deadline - Date.now());
+                await this.waitForTestHarness(readyTimeout);
                 await this.page.waitForFunction(
                     () => (window as any).__BG_TEST_HARNESS__?.state?.isRegistered?.() === true,
-                    { timeout: attemptTimeout, polling: 200 },
+                    { timeout: readyTimeout, polling: 200 },
                 );
                 await this.page.waitForTimeout(200);
                 const loadError = await this.detectGameLoadError(600);

@@ -119,8 +119,9 @@ const PRE_PUSH_CACHE_FILE = path.join(CACHE_DIR, 'pre-push.json');
 const COMMAND_CACHE_FILE = path.join(CACHE_DIR, 'command-results.json');
 const QUALITY_GATE_TYPECHECK_BUILD_INFO = path.join('temp', 'quality-gate-cache', 'typecheck.tsbuildinfo');
 const STABLE_VITEST_NODE_OPTIONS = '--max-old-space-size=8192';
-const STABLE_ESLINT_NODE_OPTIONS = '--max-old-space-size=4096';
+const STABLE_ESLINT_NODE_OPTIONS = '--max-old-space-size=8192';
 const ESLINT_CHUNK_LIMIT = 2;
+const ESLINT_WARNING_DELTA_CHUNK_SIZE = 2;
 const CORE_VITEST_TARGETS = ['src/core', 'src/components', 'src/hooks', 'src/lib', 'src/shared', 'src/engine', 'src/pages'];
 
 function runGit(args, options = {}) {
@@ -828,7 +829,7 @@ function collectCommands(files, baseRef, affectsTypecheck) {
     // 不需要强制跑 esbuild minify（它在 Windows + 大 bundle 时更容易触发内存峰值导致 gate 失败）。
     // CI 会兜底 full build（含 minify），因此这里默认在 pre-push 下关闭 minify 来提高稳定性。
     if (isPrePushMode) {
-      buildArgs.push('--', '--minify', 'false');
+      buildArgs.push('--', '--minify', 'false', '--configLoader', 'native');
     }
     commands.push({
       label: 'Build',
@@ -1170,7 +1171,7 @@ async function summarizeCurrentLint(filesToCheck) {
     errorCount: 0,
     fatalErrorCount: 0,
   };
-  const chunks = chunkValues(filesToCheck, 40);
+  const chunks = chunkValues(filesToCheck, ESLINT_WARNING_DELTA_CHUNK_SIZE);
 
   for (const chunk of chunks) {
     const eslint = new ESLint({
@@ -1210,7 +1211,7 @@ async function summarizeBaselineLint(filesToCheck, baselineFileMap) {
     }))
     .filter((item) => item.baselineFile);
 
-  const concurrency = 12;
+  const concurrency = 4;
   for (let index = 0; index < queue.length; index += concurrency) {
     const slice = queue.slice(index, index + concurrency);
     const batchResults = await Promise.all(slice.map(async ({ baselineFile }) => {
@@ -1252,10 +1253,13 @@ async function runEslintWarningDeltaCommand({ label, reason, args }) {
       cwd: repoRoot,
     });
     const formatter = await eslint.loadFormatter('stylish');
-    const currentResults = await eslint.lintFiles(currentFiles);
-    const output = formatter.format(currentResults).trim();
-    if (output) {
-      console.error(output);
+    const resultChunks = chunkValues(currentFiles, ESLINT_WARNING_DELTA_CHUNK_SIZE);
+    for (const chunk of resultChunks) {
+      const currentResults = await eslint.lintFiles(chunk);
+      const output = formatter.format(currentResults).trim();
+      if (output) {
+        console.error(output);
+      }
     }
     console.error(
       `[changed-quality-gate] 新增 ESLint warning：${currentSummary.warningCount - baselineSummary.warningCount} `

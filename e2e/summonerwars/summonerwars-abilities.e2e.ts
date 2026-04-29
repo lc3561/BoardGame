@@ -17,9 +17,18 @@
 
 import { type BrowserContext, type Page } from '@playwright/test';
 import { test, expect } from '../framework';
+import { clearEvidenceScreenshotsForTest, getEvidenceScreenshotPath } from '../framework/evidenceScreenshots';
 import { createDeckByFactionId } from '../src/games/summonerwars/config/factions';
 import { BOARD_COLS, BOARD_ROWS, HAND_SIZE } from '../src/games/summonerwars/domain/helpers';
-import { cloneState } from '../helpers/summonerwars';
+import {
+  applyCoreState as applyCoreStateViaServer,
+  clickBoardElement as clickBoardElementViaHelper,
+  cloneState,
+  closeDebugPanelIfOpen as closeDebugPanelIfOpenViaHelper,
+  readCoreState as readCoreStateViaServer,
+  setupSWOnlineMatch,
+  waitForPhase as waitForPhaseViaHelper,
+} from '../helpers/summonerwars';
 import { setChineseLocale } from '../helpers/common';
 import type { GameTestContext as __ThreeAxeFrameworkMarker } from '../framework';
 
@@ -563,3 +572,295 @@ const prepareHolyArrowBeforeAttackState = (coreState: any) => {
 
   return next;
 };
+
+const makeInjectedInstanceId = (prefix: string) => `${prefix}-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+
+const prepareFireSacrificeOnlineState = (coreState: any) => {
+  const next = cloneState(coreState);
+  next.phase = 'summon';
+  next.currentPlayer = '0';
+  next.selectedUnit = undefined;
+  next.attackTargetMode = undefined;
+  next.summonTargetMode = undefined;
+
+  const player = next.players?.['0'];
+  if (!player) throw new Error('无法读取玩家0状态');
+
+  const necromancerDeck = createDeckByFactionId('necromancer');
+  const elutBarCard = necromancerDeck.deck.find(
+    (card) => card.cardType === 'unit' && card.id === 'necro-elut-bar',
+  );
+  const sacrificeCard = necromancerDeck.deck.find(
+    (card) => card.cardType === 'unit' && card.id.startsWith('necro-undead-warrior-'),
+  );
+
+  if (!elutBarCard || elutBarCard.cardType !== 'unit') {
+    throw new Error('未找到真实伊路特-巴尔卡牌模板');
+  }
+  if (!sacrificeCard || sacrificeCard.cardType !== 'unit') {
+    throw new Error('未找到真实亡灵战士卡牌模板');
+  }
+
+  const handCardId = makeInjectedInstanceId('e2e-fire-sacrifice-hand');
+  player.magic = Math.max(Number(player.magic ?? 0), Number(elutBarCard.cost ?? 0));
+  player.hand = [
+    { ...elutBarCard, id: handCardId },
+    ...(player.hand ?? []).filter((card: any) => card.id !== handCardId),
+  ];
+
+  const board = next.board as Array<Array<Record<string, any>>>;
+  let sacrificePosition: { row: number; col: number } | null = null;
+
+  for (let row = 0; row < board.length && !sacrificePosition; row += 1) {
+    for (let col = 0; col < (board[row]?.length ?? 0) && !sacrificePosition; col += 1) {
+      const unit = board[row]?.[col]?.unit;
+      if (unit?.owner === '0' && unit?.card?.unitClass !== 'summoner' && unit?.instanceId) {
+        sacrificePosition = { row, col };
+      }
+    }
+  }
+
+  if (!sacrificePosition) {
+    for (let row = board.length - 1; row >= 0 && !sacrificePosition; row -= 1) {
+      for (let col = 0; col < (board[row]?.length ?? 0) && !sacrificePosition; col += 1) {
+        const cell = board[row]?.[col];
+        if (!cell || cell.unit || cell.structure) continue;
+        board[row][col] = {
+          ...cell,
+          unit: {
+            instanceId: makeInjectedInstanceId('e2e-fire-sacrifice-target'),
+            cardId: sacrificeCard.id,
+            card: { ...sacrificeCard },
+            owner: '0',
+            position: { row, col },
+            damage: 0,
+            boosts: 0,
+            hasMoved: false,
+            hasAttacked: false,
+          },
+        };
+        sacrificePosition = { row, col };
+      }
+    }
+  }
+
+  if (!sacrificePosition) {
+    throw new Error('无法准备火祀召唤所需的可牺牲友军');
+  }
+
+  return { core: next, handCardId, sacrificePosition };
+};
+
+const prepareLifeDrainOnlineState = (coreState: any) => {
+  const next = cloneState(coreState);
+  next.phase = 'attack';
+  next.currentPlayer = '0';
+  next.selectedUnit = undefined;
+  next.attackTargetMode = undefined;
+
+  const player = next.players?.['0'];
+  if (!player) throw new Error('无法读取玩家0状态');
+  player.attackCount = 0;
+  player.hasAttackedEnemy = false;
+
+  const necromancerDeck = createDeckByFactionId('necromancer');
+  const paladinDeck = createDeckByFactionId('paladin');
+  const dragosCard = necromancerDeck.deck.find(
+    (card) => card.cardType === 'unit' && card.id === 'necro-dragos',
+  );
+  const allyCard = necromancerDeck.deck.find(
+    (card) => card.cardType === 'unit' && card.id.startsWith('necro-undead-warrior-'),
+  );
+  const enemyCard = paladinDeck.deck.find(
+    (card) => card.cardType === 'unit' && card.unitClass === 'common',
+  );
+
+  if (!dragosCard || dragosCard.cardType !== 'unit') {
+    throw new Error('未找到真实德拉戈斯卡牌模板');
+  }
+  if (!allyCard || allyCard.cardType !== 'unit') {
+    throw new Error('未找到真实亡灵战士卡牌模板');
+  }
+  if (!enemyCard || enemyCard.cardType !== 'unit') {
+    throw new Error('未找到真实敌方士兵卡牌模板');
+  }
+
+  const board = next.board as Array<Array<Record<string, any>>>;
+  const dragosPosition = { row: 5, col: 2 };
+  const allyPosition = { row: 4, col: 2 };
+  const enemyPosition = { row: 5, col: 3 };
+
+  clearArea(board, [dragosPosition, allyPosition, enemyPosition]);
+
+  placeUnit(board, dragosPosition, {
+    instanceId: makeInjectedInstanceId('e2e-life-drain-dragos'),
+    cardId: dragosCard.id,
+    card: { ...dragosCard },
+    owner: '0',
+    damage: 0,
+    boosts: 0,
+    hasMoved: false,
+    hasAttacked: false,
+  });
+
+  placeUnit(board, allyPosition, {
+    instanceId: makeInjectedInstanceId('e2e-life-drain-ally'),
+    cardId: allyCard.id,
+    card: { ...allyCard },
+    owner: '0',
+    damage: 0,
+    boosts: 0,
+    hasMoved: false,
+    hasAttacked: false,
+  });
+
+  placeUnit(board, enemyPosition, {
+    instanceId: makeInjectedInstanceId('e2e-life-drain-enemy'),
+    cardId: enemyCard.id,
+    card: { ...enemyCard },
+    owner: '1',
+    damage: 0,
+    boosts: 0,
+    hasMoved: false,
+    hasAttacked: false,
+  });
+
+  return { core: next, dragosPosition, allyPosition, enemyPosition };
+};
+
+test.describe('亡灵交互技能', () => {
+  test('火祀召唤：召唤后选择牺牲友军并移动到牺牲位置', async ({ browser }, testInfo) => {
+    test.setTimeout(120000);
+    await clearEvidenceScreenshotsForTest(testInfo);
+    const baseURL = testInfo.project.use.baseURL as string | undefined;
+    const match = await setupSWOnlineMatch(browser, baseURL, 'necromancer', 'paladin');
+    if (!match) {
+      test.skip(true, 'Game server unavailable or room creation failed.');
+      return;
+    }
+
+    const { hostPage, hostContext, guestContext } = match;
+
+    try {
+      const prepared = prepareFireSacrificeOnlineState(await readCoreStateViaServer(hostPage));
+      await applyCoreStateViaServer(hostPage, prepared.core);
+      await closeDebugPanelIfOpenViaHelper(hostPage);
+      await waitForPhaseViaHelper(hostPage, 'summon');
+
+      const elutBarInHand = hostPage
+        .getByTestId('sw-hand-area')
+        .locator(`[data-card-id="${prepared.handCardId}"]`)
+        .first();
+      await expect(elutBarInHand).toBeVisible({ timeout: 5000 });
+      await elutBarInHand.click();
+
+      const summonTarget = hostPage.locator('[data-valid-summon="true"]').first();
+      await expect(summonTarget).toBeVisible({ timeout: 5000 });
+      const summonTargetId = await summonTarget.getAttribute('data-testid');
+      if (!summonTargetId) {
+        throw new Error('火祀召唤测试：无法解析召唤落点');
+      }
+      await clickBoardElementViaHelper(hostPage, `[data-testid="${summonTargetId}"]`);
+
+      const prompt = hostPage.getByTestId('sw-ability-prompt');
+      await expect(prompt).toBeVisible({ timeout: 5000 });
+      await expect(prompt).toContainText(/火祀召唤|火祭召唤|Fire Sacrifice/i);
+
+      await hostPage.screenshot({
+        path: getEvidenceScreenshotPath(testInfo, 'fire-sacrifice-prompt-visible', {
+          subdir: 'summonerwars/summonerwars-abilities.e2e/火祀召唤：召唤后选择牺牲友军并移动到牺牲位置',
+        }),
+      });
+
+      const sacrificeSelector = `[data-testid="sw-unit-${prepared.sacrificePosition.row}-${prepared.sacrificePosition.col}"][data-owner="0"]`;
+      await expect(hostPage.locator(sacrificeSelector).first()).toBeVisible({ timeout: 5000 });
+      await clickBoardElementViaHelper(hostPage, sacrificeSelector);
+      await expect(prompt).toBeHidden({ timeout: 8000 });
+
+      const summonMatch = summonTargetId.match(/sw-cell-(\d+)-(\d+)/);
+      if (!summonMatch) {
+        throw new Error(`火祀召唤测试：无法解析召唤落点坐标 ${summonTargetId}`);
+      }
+      const summonRow = Number(summonMatch[1]);
+      const summonCol = Number(summonMatch[2]);
+
+      await expect.poll(async () => {
+        const latestCore = await readCoreStateViaServer(hostPage);
+        return {
+          summonCellEmpty: !latestCore.board?.[summonRow]?.[summonCol]?.unit,
+          summonedUnitName: latestCore.board?.[prepared.sacrificePosition.row]?.[prepared.sacrificePosition.col]?.unit?.card?.name ?? null,
+        };
+      }, { timeout: 8000 }).toEqual({
+        summonCellEmpty: true,
+        summonedUnitName: '伊路特-巴尔',
+      });
+
+      await hostPage.screenshot({
+        path: getEvidenceScreenshotPath(testInfo, 'fire-sacrifice-complete', {
+          subdir: 'summonerwars/summonerwars-abilities.e2e/火祀召唤：召唤后选择牺牲友军并移动到牺牲位置',
+        }),
+      });
+    } finally {
+      void hostContext.close().catch(() => {});
+      void guestContext.close().catch(() => {});
+    }
+  });
+
+  test('吸取生命：宣告攻击后出现牺牲友军提示并完成牺牲', async ({ browser }, testInfo) => {
+    test.setTimeout(120000);
+    await clearEvidenceScreenshotsForTest(testInfo);
+    const baseURL = testInfo.project.use.baseURL as string | undefined;
+    const match = await setupSWOnlineMatch(browser, baseURL, 'necromancer', 'paladin');
+    if (!match) {
+      test.skip(true, 'Game server unavailable or room creation failed.');
+      return;
+    }
+
+    const { hostPage, hostContext, guestContext } = match;
+
+    try {
+      const prepared = prepareLifeDrainOnlineState(await readCoreStateViaServer(hostPage));
+      await applyCoreStateViaServer(hostPage, prepared.core);
+      await closeDebugPanelIfOpenViaHelper(hostPage);
+      await waitForPhaseViaHelper(hostPage, 'attack');
+
+      const dragosSelector = `[data-testid="sw-unit-${prepared.dragosPosition.row}-${prepared.dragosPosition.col}"][data-owner="0"]`;
+      const enemySelector = `[data-testid="sw-unit-${prepared.enemyPosition.row}-${prepared.enemyPosition.col}"][data-owner="1"]`;
+      const allySelector = `[data-testid="sw-unit-${prepared.allyPosition.row}-${prepared.allyPosition.col}"][data-owner="0"]`;
+
+      await expect(hostPage.locator(dragosSelector).first()).toBeVisible({ timeout: 5000 });
+      await clickBoardElementViaHelper(hostPage, dragosSelector);
+      await expect(hostPage.locator(enemySelector).first()).toBeVisible({ timeout: 5000 });
+      await clickBoardElementViaHelper(hostPage, enemySelector);
+
+      const prompt = hostPage.getByTestId('sw-ability-prompt');
+      await expect(prompt).toBeVisible({ timeout: 5000 });
+      await expect(prompt).toContainText(/吸取生命|Life Drain/i);
+
+      await hostPage.screenshot({
+        path: getEvidenceScreenshotPath(testInfo, 'life-drain-prompt-visible', {
+          subdir: 'summonerwars/summonerwars-abilities.e2e/吸取生命：宣告攻击后出现牺牲友军提示并完成牺牲',
+        }),
+      });
+
+      await expect(hostPage.locator(allySelector).first()).toBeVisible({ timeout: 5000 });
+      await clickBoardElementViaHelper(hostPage, allySelector);
+      await expect(prompt).toBeHidden({ timeout: 8000 });
+
+      await expect.poll(async () => {
+        const latestCore = await readCoreStateViaServer(hostPage);
+        return !latestCore.board?.[prepared.allyPosition.row]?.[prepared.allyPosition.col]?.unit;
+      }, { timeout: 8000 }).toBe(true);
+      await expect(hostPage.getByTestId('sw-dice-result-overlay')).toBeVisible({ timeout: 8000 });
+
+      await hostPage.screenshot({
+        path: getEvidenceScreenshotPath(testInfo, 'life-drain-complete', {
+          subdir: 'summonerwars/summonerwars-abilities.e2e/吸取生命：宣告攻击后出现牺牲友军提示并完成牺牲',
+        }),
+      });
+    } finally {
+      void hostContext.close().catch(() => {});
+      void guestContext.close().catch(() => {});
+    }
+  });
+});

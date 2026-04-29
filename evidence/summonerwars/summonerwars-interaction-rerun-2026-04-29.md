@@ -232,10 +232,30 @@
 - 验收判断：
   - 达标。伤害分支已完成“攻击命中 -> 选择伤害 -> 目标死亡 -> 横幅收口”的完整闭环。
 
+### 18. `fortress_power` 选卡提示真实出现
+
+- 路径：`D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\summonerwars\summonerwars-paladin-discard.e2e\城塞之力：攻击后从弃牌堆拿取城塞单位\城塞之力：攻击阶段选择弃牌堆城塞单位回手-fortress-power-card-selector-visible.png`
+- 我实际看到：
+  - 棋盘中央已经弹出弃牌堆卡牌选择浮层，不是只剩按钮无内容。
+  - 浮层里能直接看到城塞单位卡本体，属于真实 `card-selector` 路线，不是日志或隐藏状态。
+  - 画面里仍能看到先锋召唤师本体与攻击阶段 HUD，说明这条链发生在真实对局上下文内。
+- 验收判断：
+  - 达标。`fortress_power` 的系统选卡提示已经在真实在线 E2E 中重新证明可见。
+
+### 19. `fortress_power` 选卡回手后正常收口
+
+- 路径：`D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\summonerwars\summonerwars-paladin-discard.e2e\城塞之力：攻击后从弃牌堆拿取城塞单位\城塞之力：攻击阶段选择弃牌堆城塞单位回手-fortress-power-retrieve-complete.png`
+- 我实际看到：
+  - 弃牌堆选卡浮层已经关闭，没有残留 selector 或卡死遮罩。
+  - 被选择的城塞单位卡已经回到我方手牌区域，说明 `CARD_RETRIEVED` 的结果写回了真实 UI。
+  - 棋盘与阶段 HUD 仍保持正常显示，流程没有因为系统交互而卡在半完成状态。
+- 验收判断：
+  - 达标。`fortress_power` 已形成“进入选卡 -> 选择弃牌堆城塞单位 -> 回手收口”的完整正向闭环。
+
 ## 本轮未完全补齐的证据缺口
 
 - `structure_shift` 当前仍缺一张“第二步位置高亮已经出现”的专门截图；现有证据是“第一步 prompt 可见”直接跳到“结果已落地”。
-- `fortress_power / soul_transfer / infection / funeral_pyre / fire_sacrifice_summon / life_drain` 仍缺真实成功 E2E 证据链，不能据此宣称 SummonerWars 交互迁移已全面验收。
+- `soul_transfer / infection / funeral_pyre / fire_sacrifice_summon / life_drain` 仍缺真实成功 E2E 证据链，不能据此宣称 SummonerWars 交互迁移已全面验收。
 - `StatusBanners.tsx` 的主要横幅分支现已统一挂上 `data-testid="sw-ability-prompt"`；后续新增 interaction 若继续扩展到新横幅分支，仍需保持这条约束，避免再次退回“按文案找横幅”的脆弱断言。
 - 英文 locale 下的真实提示截图仍缺；现阶段更多是中英双语断言，不是英文界面肉眼证据。
 - 已确认一个独立残留风险：当测试场景把目标设成会被攻击直接击杀时，headless Chromium 可能在 destroy/shatter 特效链后整 browser 断开；当前 `withdraw / mind_transmission` 的正向证据通过“非致死目标”绕开以验证交互链，产品级根因仍未正式修复。
@@ -252,6 +272,7 @@
   - `feed_beast`
   - `rapid_fire`
   - `mind_capture`
+  - `fortress_power`
 - 这说明交互迁移主链已经不只是“流程可点”，而是多条真实 prompt 与二段点击链都已重新打通。
 - 但从“全面验收”口径看，任务仍未结束；剩余 blockers 已经收敛成两类：
   - 仍缺正向 E2E 证据的 interaction 分支。

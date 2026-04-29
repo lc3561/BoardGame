@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next';
 import { OptimizedImage } from '../../components/common/media/OptimizedImage';
 import { GameDebugPanel } from '../../components/game/framework/widgets/GameDebugPanel';
 import { DiceThroneDebugConfig } from './debug-config';
+import { DICETHRONE_MANIFEST } from './manifest';
 import { getElementCenter } from '../../components/common/animations/FlyingEffect';
 import { usePulseGlow } from '../../components/common/animations/PulseGlow';
 import { useImpactFeedback } from '../../components/common/animations';
@@ -1369,7 +1370,13 @@ export const DiceThroneBoard: React.FC<DiceThroneBoardProps> = ({ G: rawG, dispa
         <UndoProvider value={{ G: rawG, dispatch, playerID, isGameOver: !!isGameOver, isLocalMode: !isMultiplayer }}>
             <div className="relative w-full h-full bg-black overflow-hidden font-sans select-none text-slate-200">
                 {!isSpectator && (
-                    <GameDebugPanel G={rawG} dispatch={dispatch} playerID={playerID}>
+                    <GameDebugPanel
+                        G={rawG}
+                        dispatch={dispatch}
+                        playerID={playerID}
+                        aiSupport={DICETHRONE_MANIFEST.ai}
+                        playerOptions={DICETHRONE_MANIFEST.playerOptions}
+                    >
                         {/* DiceThrone 专属作弊工具 */}
                         <DiceThroneDebugConfig G={rawG} dispatch={dispatch} playerNames={playerNames} />
 
