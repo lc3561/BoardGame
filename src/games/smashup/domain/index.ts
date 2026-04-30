@@ -71,7 +71,7 @@ import {
 } from './teamMode';
 import { triggerBaseAbility, triggerExtendedBaseAbility, hasBaseAbility } from './baseAbilities';
 import { collectBaseAbilityTriggers, collectExtendedBaseAbilityTriggers } from './baseAbilityQueue';
-import { buildBaseTargetOptions, isSpecialLimitBlocked } from './abilityHelpers';
+import { buildBaseTargetOptions, createSkipOption, isSpecialLimitBlocked } from './abilityHelpers';
 import type { PhaseExitResult } from '../../../engine/systems/FlowSystem';
 import { registerInteractionHandler } from './abilityInteractionHandlers';
 import { createSimpleChoice, queueInteraction } from '../../../engine/systems/InteractionSystem';
@@ -1714,6 +1714,39 @@ function isGameOver(state: SmashUpCore): GameOverResult | undefined {
         return undefined;
     }
 
+    if (isSmashUpTwoVsTwoMode(state)) {
+        const rawTeamTotals = getSmashUpRawTeamVpTotals(state);
+        const candidateTeams = Object.entries(rawTeamTotals)
+            .filter(([, total]) => total >= TEAM_VP_TO_WIN_2V2)
+            .map(([teamId]) => teamId as import('./types').SmashUpTeamId);
+        if (candidateTeams.length === 0) {
+            return undefined;
+        }
+
+        const scores = getScores(state);
+        const teamScores = getSmashUpTeamScores(state, scores);
+
+        if (candidateTeams.length === 1) {
+            const winners = getSmashUpTeamMembers(state, candidateTeams[0]);
+            return {
+                winner: winners[0],
+                winners,
+                scores,
+            };
+        }
+
+        const sortedTeams = [...candidateTeams].sort((left, right) => teamScores[right] - teamScores[left]);
+        if (teamScores[sortedTeams[0]] > teamScores[sortedTeams[1]]) {
+            const winners = getSmashUpTeamMembers(state, sortedTeams[0]);
+            return {
+                winner: winners[0],
+                winners,
+                scores,
+            };
+        }
+
+        return undefined;
+    }
     const winners = state.turnOrder.filter(pid => state.players[pid]?.vp >= VP_TO_WIN);
     if (winners.length === 0) return undefined;
 
@@ -1773,28 +1806,70 @@ function resolveTitanClashEventsOnBase(
     baseIndex: number,
     now: number,
     challengerTitanUid?: string,
-): SmashUpEvent[] {
+    matchState?: MatchState<SmashUpCore>,
+): { events: SmashUpEvent[]; matchState?: MatchState<SmashUpCore> } {
     const base = state.bases[baseIndex];
     const baseDef = base ? getBaseDef(base.defId) : undefined;
-    if (!base || baseDef?.allowMultipleTitans) return [];
+    if (!base || baseDef?.allowMultipleTitans) return { events: [], matchState };
 
     const titansOnBase = getTitansOnBase(state, baseIndex);
-    if (titansOnBase.length <= 1) return [];
+    if (titansOnBase.length <= 1) return { events: [], matchState };
 
     const challenger = challengerTitanUid
         ? titansOnBase.find(titan => titan.uid === challengerTitanUid)
         : titansOnBase[titansOnBase.length - 1];
-    if (!challenger) return [];
+    if (!challenger) return { events: [], matchState };
 
     const defender = titansOnBase.find(titan => titan.uid !== challenger.uid);
-    if (!defender) return [];
+    if (!defender) return { events: [], matchState };
 
     const challengerPower = getPlayerEffectivePowerOnBase(state, base, baseIndex, challenger.controllerId);
     const defenderPower = getPlayerEffectivePowerOnBase(state, base, baseIndex, defender.controllerId);
+    const loser = challengerPower > defenderPower ? defender : challenger;
 
-    return challengerPower > defenderPower
-        ? [removeTitanFromPlay(defender, 'titan_clash', now)]
-        : [removeTitanFromPlay(challenger, 'titan_clash', now)];
+    if (
+        loser.defId === 'fairies_spirit_of_the_forest'
+        && loser.location.zone === 'base'
+        && matchState
+    ) {
+        const otherBases = state.bases
+            .map((candidateBase, index) => ({ baseIndex: index, label: getBaseDef(candidateBase.defId)?.name ?? `基地 ${index + 1}` }))
+            .filter(candidate => candidate.baseIndex !== loser.location.baseIndex);
+        if (otherBases.length > 0) {
+            const interaction = createSimpleChoice(
+                `titan_fairies_spirit_of_the_forest_clash_move_${now}`,
+                loser.controllerId,
+                '丛林之灵：你可以改为将其移动到另一个基地',
+                [
+                    createSkipOption('照常移除'),
+                    ...buildBaseTargetOptions(otherBases, state),
+                ],
+                {
+                    sourceId: 'titan_fairies_spirit_of_the_forest_clash_move',
+                    targetType: 'base',
+                    autoResolveIfSingle: false,
+                },
+            );
+            return {
+                events: [],
+                matchState: queueInteraction(matchState, {
+                    ...interaction,
+                    data: {
+                        ...interaction.data,
+                        continuationContext: {
+                            titanUid: loser.uid,
+                            fromBaseIndex: loser.location.baseIndex,
+                        },
+                    },
+                }),
+            };
+        }
+    }
+
+    return {
+        events: [removeTitanFromPlay(loser, 'titan_clash', now)],
+        matchState,
+    };
 }
 
 function shouldDeferTitanClashForEvent(
@@ -1815,29 +1890,32 @@ function shouldDeferTitanClashForEvent(
 function resolveTitanClashEvents(
     state: SmashUpCore,
     event: SmashUpEvent,
-): SmashUpEvent[] {
+    matchState?: MatchState<SmashUpCore>,
+): { events: SmashUpEvent[]; matchState?: MatchState<SmashUpCore> } {
     if (event.type !== SU_EVENT_TYPES.TITAN_PLAYED && event.type !== SU_EVENT_TYPES.TITAN_MOVED) {
-        return [];
+        return { events: [], matchState };
     }
 
     const baseIndex = event.type === SU_EVENT_TYPES.TITAN_PLAYED
         ? event.payload.baseIndex
         : event.payload.toBaseIndex;
     if (shouldDeferTitanClashForEvent(state, event, baseIndex)) {
-        return [];
+        return { events: [], matchState };
     }
 
-    return resolveTitanClashEventsOnBase(state, baseIndex, event.timestamp ?? 0, event.payload.titanUid);
+    return resolveTitanClashEventsOnBase(state, baseIndex, event.timestamp ?? 0, event.payload.titanUid, matchState);
 }
 
 function resolveDeferredPecosBillClashEvents(
     state: SmashUpCore,
     now: number,
-): SmashUpEvent[] {
-    if (state.activeDuel) return [];
+    matchState?: MatchState<SmashUpCore>,
+): { events: SmashUpEvent[]; matchState?: MatchState<SmashUpCore> } {
+    if (state.activeDuel) return { events: [], matchState };
 
     const events: SmashUpEvent[] = [];
     let workingState = state;
+    let workingMatchState = matchState;
     const processedBases = new Set<number>();
     const deferredTitans = (state.titans ?? []).filter((titan) =>
         titan.defId === 'pecos_bill'
@@ -1849,10 +1927,19 @@ function resolveDeferredPecosBillClashEvents(
         if (titan.location.zone !== 'base' || processedBases.has(titan.location.baseIndex)) continue;
         processedBases.add(titan.location.baseIndex);
 
-        const clashEvents = resolveTitanClashEventsOnBase(workingState, titan.location.baseIndex, now, titan.uid);
-        if (clashEvents.length > 0) {
-            events.push(...clashEvents);
-            for (const clashEvent of clashEvents) {
+        const clashResult = resolveTitanClashEventsOnBase(
+            workingState,
+            titan.location.baseIndex,
+            now,
+            titan.uid,
+            workingMatchState,
+        );
+        if (clashResult.matchState) {
+            workingMatchState = clashResult.matchState;
+        }
+        if (clashResult.events.length > 0) {
+            events.push(...clashResult.events);
+            for (const clashEvent of clashResult.events) {
                 workingState = reduce(workingState, clashEvent);
             }
         }
@@ -1873,7 +1960,7 @@ function resolveDeferredPecosBillClashEvents(
         }
     }
 
-    return events;
+    return { events, matchState: workingMatchState };
 }
 
 // ============================================================================
@@ -2156,10 +2243,17 @@ function postProcessSystemEvents(
         if (processedTitanPositionEvents.has(eventKey)) continue;
         processedTitanPositionEvents.add(eventKey);
 
-        const clashEvents = resolveTitanClashEvents(titanCore, event);
-        if (clashEvents.length > 0) {
-            titanDerived.push(...clashEvents);
-            for (const clashEvent of clashEvents) {
+        const clashResult = resolveTitanClashEvents(
+            titanCore,
+            event,
+            titanCore === ms.core ? ms : { ...ms, core: titanCore },
+        );
+        if (clashResult.matchState) {
+            ms = clashResult.matchState;
+        }
+        if (clashResult.events.length > 0) {
+            titanDerived.push(...clashResult.events);
+            for (const clashEvent of clashResult.events) {
                 titanCore = reduce(titanCore, clashEvent);
             }
         }
@@ -2184,10 +2278,17 @@ function postProcessSystemEvents(
         }
     }
 
-    const deferredClashEvents = resolveDeferredPecosBillClashEvents(titanCore, now);
-    if (deferredClashEvents.length > 0) {
-        titanDerived.push(...deferredClashEvents);
-        for (const deferredEvent of deferredClashEvents) {
+    const deferredClashResult = resolveDeferredPecosBillClashEvents(
+        titanCore,
+        now,
+        titanCore === ms.core ? ms : { ...ms, core: titanCore },
+    );
+    if (deferredClashResult.matchState) {
+        ms = deferredClashResult.matchState;
+    }
+    if (deferredClashResult.events.length > 0) {
+        titanDerived.push(...deferredClashResult.events);
+        for (const deferredEvent of deferredClashResult.events) {
             titanCore = reduce(titanCore, deferredEvent);
         }
     }

@@ -846,6 +846,10 @@ function ghostsCreampuffManSpecial(ctx: AbilityContext): AbilityResult {
     return playTitanFromSetAside(ctx, 'ghosts_creampuff_man_special');
 }
 
+function fairiesSpiritOfTheForestSpecial(ctx: AbilityContext): AbilityResult {
+    return playTitanFromSetAside(ctx, 'fairies_spirit_of_the_forest_special');
+}
+
 function ghostsCreampuffManTalent(ctx: AbilityContext): AbilityResult {
     const titan = getTitanByUid(ctx.state, ctx.cardUid);
     if (!titan || titan.location.zone !== 'base' || titan.controllerId !== ctx.playerId) {
@@ -3670,6 +3674,10 @@ export function registerTitanAbilities(): void {
         return Math.max(0, 5 - handSize);
     });
 
+    registerAbility('fairies_spirit_of_the_forest', 'special', fairiesSpiritOfTheForestSpecial);
+    registerTitanSpecialValidator('fairies_spirit_of_the_forest', ({ titan }) =>
+        titan.location.zone === 'setaside' ? null : '该泰坦当前不在牌库旁');
+
     registerAbility('innsmouth_dagon', 'special', innsmouthDagonSpecial);
     registerAbility('innsmouth_dagon', 'talent', innsmouthDagonTalent);
     registerTitanSpecialValidator('innsmouth_dagon', ({ state, playerId, baseIndex }) =>
@@ -5655,6 +5663,42 @@ export function registerTitanInteractionHandlers(): void {
         return result;
     });
 
+    registerInteractionHandler('titan_fairies_spirit_of_the_forest_clash_move', (state, _playerId, value, data, _random, timestamp) => {
+        const selected = value as { skip?: boolean; baseIndex?: number; baseDefId?: string } | undefined;
+        const continuation = (data as {
+            continuationContext?: { titanUid?: string; fromBaseIndex?: number };
+        } | undefined)?.continuationContext;
+        const titan = continuation?.titanUid ? getTitanByUid(state.core, continuation.titanUid) : undefined;
+        if (!titan || titan.defId !== 'fairies_spirit_of_the_forest' || titan.location.zone !== 'base') {
+            return { state, events: [] };
+        }
+
+        if (
+            selected?.baseIndex !== undefined
+            && continuation?.fromBaseIndex !== undefined
+            && selected.baseIndex !== continuation.fromBaseIndex
+        ) {
+            return {
+                state,
+                events: [
+                    moveTitan(
+                        titan.uid,
+                        titan.defId,
+                        continuation.fromBaseIndex,
+                        selected.baseIndex,
+                        'fairies_spirit_of_the_forest_clash_move',
+                        timestamp,
+                        selected.baseDefId,
+                    ),
+                ],
+            };
+        }
+
+        return {
+            state,
+            events: [removeTitanFromPlay(titan, 'titan_clash', timestamp)],
+        };
+    });
     registerInteractionHandler('titan_vampires_ancient_lord_special', (state, playerId, value, _data, _random, timestamp) => {
         const selected = value as {
             mode?: 'skip' | 'store' | 'storeAndPlay';

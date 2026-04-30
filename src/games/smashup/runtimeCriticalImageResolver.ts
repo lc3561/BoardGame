@@ -186,7 +186,7 @@ export const smashUpRuntimeCriticalImageResolver: CriticalImageResolver = (
 
     if (!state?.core) {
         return {
-            critical: [...ALL_CARD_ATLAS, ...ALL_BASE_ATLAS],
+            critical: [],
             warm: [],
             phaseKey: `init:${perspectiveKey}`,
         };

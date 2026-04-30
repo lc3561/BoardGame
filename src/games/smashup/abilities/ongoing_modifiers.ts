@@ -286,6 +286,35 @@ function registerWorldChampsModifiers(): void {
     // 蛊惑附体：附着随从 +2 力量
     registerOngoingPowerModifier('world_champs_bewitched', 'minion', 'self', 2);
 }
+
+function registerFairiesModifiers(): void {
+    // 叶之甲：附着随从 +1 力量
+    registerOngoingPowerModifier('fairies_leaf_armor', 'minion', 'self', 1);
+
+    // 雏菊花环：你控制则 +2，否则 -2。需要按每张附着牌的 owner 动态判断。
+    registerPowerModifier('fairies_daisy_chain', (ctx: PowerModifierContext) => {
+        return ctx.minion.attachedActions.reduce((total, action) => {
+            if (action.defId !== 'fairies_daisy_chain' && action.defId !== 'fairies_daisy_chain_pod') {
+                return total;
+            }
+            return total + (action.ownerId === ctx.minion.controller ? 2 : -2);
+        }, 0);
+    }, { handlesPodInternally: true });
+
+    // 结果：根据交互选择为整座基地提供 +1 / -1 / both(净 0)。
+    registerPowerModifier('fairies_enchantment', (ctx: PowerModifierContext) => {
+        return ctx.base.ongoingActions.reduce((total, action) => {
+            if (action.defId !== 'fairies_enchantment' && action.defId !== 'fairies_enchantment_pod') {
+                return total;
+            }
+
+            const mode = action.metadata?.fairiesEnchantmentMode;
+            if (mode === 'plus') return total + 1;
+            if (mode === 'minus') return total - 1;
+            return total;
+        }, 0);
+    }, { handlesPodInternally: true });
+}
 // ============================================================================
 // 基地持续力量修正
 // ============================================================================
@@ -326,5 +355,6 @@ export function registerAllOngoingModifiers(): void {
     registerSkeletonsModifiers();
     registerMermaidsModifiers();
     registerWorldChampsModifiers();
+    registerFairiesModifiers();
     registerWerewolfModifiers();
 }

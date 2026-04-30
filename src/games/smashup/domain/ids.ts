@@ -16,6 +16,7 @@ export const SMASHUP_ATLAS_IDS = {
     CARDS5: 'smashup:cards5',
     CARDS6: 'smashup:cards6',
     CARDS7: 'smashup:cards7',
+    CARDS8: 'smashup:cards8',
     TITANS: 'smashup:titans',
 } as const;
 

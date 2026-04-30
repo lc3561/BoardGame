@@ -53,6 +53,10 @@ const FULL_DRAFT_COMMANDS = [
 ] as const;
 
 describe('派系选择系统', () => {
+    it('fairies 会暴露对应的泰坦定义', () => {
+        expect(getFactionTitans(SMASHUP_FACTION_IDS.FAIRIES).map(card => card.id)).toContain('fairies_spirit_of_the_forest');
+    });
+
     // Property 1: 派系互斥选择
     describe('Property 1: 派系互斥选择', () => {
         it('已选派系不可被其他玩家选择', () => {

@@ -457,7 +457,11 @@
     "world_champs": {
       "name": "世界冠军",
       "description": "由冠军卡牌混编，擅长额外行动、指示物与高机动爆发。"
-    }
+      },
+      "fairies": {
+        "name": "仙灵",
+        "description": "通过持续行动转移、临时力量修正和战术封锁灵活掌控基地节奏。"
+      }
   },
   "tutorial": {
     "title": "大杀四方教学",
@@ -1366,12 +1370,12 @@
       "abilityText": "如果一个随从在另一个基地被消灭，它的拥有者可以将它移动到这以代替。"
     },
     "base_enchanted_glade": {
-      "name": "迷人峡谷",
+      "name": "结界谷",
       "abilityText": "在你打出一张战术到这里的一个随从上后，抽取一张卡牌。"
     },
     "base_fairy_ring": {
-      "name": "仙灵圈",
-      "abilityText": "每回合你第一次打出一个随从到这后，你可以打出一张额外的随从到这，或打出一张额外的战术。"
+      "name": "精灵之环",
+      "abilityText": "每回合你第一次打出一个随从到这后，你可以额外打出一个随从到这，或额外打出一张战术。"
     },
     "base_beautiful_castle": {
       "name": "美丽城堡",
@@ -3612,7 +3616,55 @@
     "base_hall_of_fame": {
       "name": "名人堂",
       "abilityText": "你每回合首次在此打出的随从在本回合结束前力量 +2。"
-    }
+      },
+      "fairies_titania": {
+        "name": "Titania",
+        "abilityText": "你可以将一个随从移回其拥有者的手牌，或打出一个额外的随从。"
+    },
+    "fairies_glymmer": {
+      "name": "Glymmer",
+      "abilityText": "天赋：选择另一个随从直到你的下个回合开始时具有 -4 力量，或让本随从直到你的下个回合开始时具有 +1 力量。"
+    },
+    "fairies_puck": {
+      "name": "Puck",
+      "abilityText": "你可以打出一张额外的战术，或抽取一张卡牌。"
+    },
+    "fairies_tinx": {
+      "name": "tinx",
+      "abilityText": "你可以将打在另一个随从上的一张战术移到这张牌上。"
+    },
+    "fairies_playful_tricks": {
+      "name": "有趣的把戏",
+      "effectText": "消灭至多两张打在基地和/或随从上的战术，或者打出丛林之灵。"
+    },
+    "fairies_ladybug": {
+      "name": "甲虫夫人",
+      "effectText": "打在一个随从上。持续：该随从不能被消灭。天赋：将这张牌转移到另一个随从上。"
+    },
+    "fairies_magic_ward": {
+      "name": "魔法守护",
+      "effectText": "打在一个基地上。持续：其他玩家不能在这个基地上，或在这里的随从上打出战术。"
+    },
+    "fairies_leaf_armor": {
+      "name": "叶之甲",
+      "effectText": "打在一个随从上。持续：该随从具有 +1 力量。天赋：将这张牌转移到另一个随从上。"
+    },
+    "fairies_magic_acorns": {
+      "name": "魔法橡子",
+      "effectText": "选择一项：每位其他玩家随机弃掉一张手牌；或抽取一张卡牌并打出一张额外的战术。"
+    },
+    "fairies_daisy_chain": {
+      "name": "雏菊花环",
+      "effectText": "打在一个随从上。持续：如果你控制该随从，它具有 +2 力量；否则它具有 -2 力量。"
+    },
+    "fairies_enchantment": {
+      "name": "结果",
+      "effectText": "打在一个基地上。选择一项：持续，这里的所有随从具有 +1 力量；或持续，这里的所有随从具有 -1 力量。"
+    },
+      "fairies_fairy_ballet": {
+        "name": "精灵芭蕾",
+        "effectText": "选择一项：抽取两张卡牌；或抽取一张卡牌并打出一张额外的战术。"
+      }
   },
   "endgame": {
     "victory": "胜利",
