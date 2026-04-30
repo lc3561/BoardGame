@@ -8,6 +8,7 @@ import {
     Eye,
     Fish,
     FlaskConical,
+    Flower2,
     Ghost,
     GraduationCap,
     Medal,
