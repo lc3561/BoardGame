@@ -101,10 +101,19 @@
 > 核对并最小修复 7 条线上 human open 反馈：世界冠军/美人鱼效果、436-1337工厂计分、疯狂山脉抽牌、缅怀先祖、天守阁决斗、武士进弃牌堆加攻击力链路；补测试、运行验证，并产出 vidence/smashup/2026-04-22 逐条证据。
 
 ### Phase
-- [ ] Phase A: 读取规范、锁权威基线与现有实现
-- [ ] Phase B: 最小修复反馈相关实现与文本
-- [ ] Phase C: 补现有测试文件中的回归用例并运行验证
-- [ ] Phase D: 写 evidence/smashup/2026-04-22 逐条结论与最终汇报
+- [x] Phase A: 读取规范、锁权威基线与现有实现
+- [x] Phase B: 最小修复反馈相关实现与文本
+- [x] Phase C: 补现有测试文件中的回归用例并运行验证
+- [x] Phase D: 写 evidence/smashup/2026-04-22 逐条结论与最终汇报
+
+### 2026-04-30 复核结论
+- 本 Addendum 实际已完成，原未勾选属于 planning 回填遗漏，不再代表“仍未做完”。
+- 对应证据并非只落在单一 `evidence/smashup/2026-04-22/*` 路径，而是分布在：
+  - `evidence/feedback-closeout/smashup-human-open14-closeout-2026-04-22.md`
+  - `evidence/smashup/smashup-feedback-69e61a97-world-champs-card-index-fix-2026-04-25.md`
+  - `evidence/smashup/smashup-10th-anniversary-factions-audit-20260419.md`
+  - `evidence/smashup/smashup-10th-anniversary-final-closeout-20260419.md`
+- 其中 `69e61a97` 旧关闭结论曾在 2026-04-25 被判定失效，但同日已按“世界冠军 cards7 图集索引错位”根因重新修复并补齐新证据；截至 2026-04-30，lane-S2R 范围内 7 条反馈已具备重新收口依据。
 
 ### Scope Control
 - 只改 SmashUp 反馈相关文件和 evidence。

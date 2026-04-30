@@ -254,6 +254,43 @@ export const getCombatOpponentId = (
 };
 
 /**
+ * 获取当前战斗中“已确定或可直接推导”的对手。
+ * - 常规阶段：直接跟随 pendingAttack 中已落地的 attacker/defender
+ * - 4 人 targetingRoll：若当前攻击方尚未写回 defenderId，但目标骰 1-4 已自动决定方向，
+ *   则允许在本阶段把该自动目标视为已确定对手，供攻击修正卡等即时效果使用。
+ */
+export const getSelectedCombatOpponentId = (
+    state: DiceThroneCore,
+    playerId: PlayerId,
+    phase?: TurnPhase
+): PlayerId | undefined => {
+    const pendingAttack = state.pendingAttack;
+    if (!pendingAttack) return undefined;
+
+    if (pendingAttack.attackerId === playerId) {
+        if (pendingAttack.defenderId !== undefined) {
+            return pendingAttack.defenderId;
+        }
+
+        const effectivePhase = phase ?? state.turnPhase;
+        if (effectivePhase === 'targetingRoll') {
+            const targetingValue = state.dice[0]?.value;
+            if (typeof targetingValue === 'number') {
+                return getTargetingRollAutoDefenderId(state, playerId, targetingValue);
+            }
+        }
+
+        return undefined;
+    }
+
+    if (pendingAttack.defenderId === playerId) {
+        return pendingAttack.attackerId;
+    }
+
+    return undefined;
+};
+
+/**
  * 获取当前命令/效果应使用的对手。
  * 优先跟随当前战斗上下文，其次才回退到默认对手。
  */
@@ -664,7 +701,8 @@ export type CardPlayFailReason =
 const getAttackModifierPlayFailureReason = (
     state: DiceThroneCore,
     playerId: PlayerId,
-    card: AbilityCard
+    card: AbilityCard,
+    phase?: TurnPhase
 ): CardPlayFailReason | null => {
     if (!card.isAttackModifier) return null;
     const pendingAttack = state.pendingAttack;
@@ -674,7 +712,8 @@ const getAttackModifierPlayFailureReason = (
     if (pendingAttack.attackerId !== playerId) {
         return 'wrongPhaseForCard';
     }
-    if (isTeamMode(state) && pendingAttack.defenderId === undefined && cardNeedsSelectedDefender(card)) {
+    const selectedOpponentId = getSelectedCombatOpponentId(state, playerId, phase);
+    if (isTeamMode(state) && selectedOpponentId === undefined && cardNeedsSelectedDefender(card)) {
         return 'attackModifierRequiresSelectedDefender';
     }
     return null;
@@ -817,7 +856,7 @@ export const checkPlayCard = (
         return { ok: false, reason: 'notEnoughCp' };
     }
 
-    const attackModifierFailureReason = getAttackModifierPlayFailureReason(state, playerId, card);
+    const attackModifierFailureReason = getAttackModifierPlayFailureReason(state, playerId, card, phase);
     if (attackModifierFailureReason) {
         return { ok: false, reason: attackModifierFailureReason };
     }

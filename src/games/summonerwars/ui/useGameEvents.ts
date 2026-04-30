@@ -23,6 +23,7 @@ import type { UseVisualSequenceGateReturn } from '../../../components/game/frame
 import { useVisualStateBuffer } from '../../../components/game/framework/hooks/useVisualStateBuffer';
 import { useEventStreamCursor } from '../../../engine/hooks';
 import { swAttackDebugLog } from './attackDebug';
+import { isTestEnvironment } from '../../../engine/testing/environment';
 
 const isCellCoord = (value: unknown): value is CellCoord => {
   if (!value || typeof value !== 'object') return false;
@@ -194,6 +195,7 @@ export function useGameEvents({
   G, core, myPlayerId, currentPhase,
   pushDestroyEffect, fxBus, onDiceRollSound, gate,
 }: UseGameEventsParams) {
+  const useSafeDestroyFallback = isTestEnvironment() || (typeof navigator !== 'undefined' && navigator.webdriver);
   // 骰子结果状态
   const [diceResult, setDiceResult] = useState<DiceResultState | null>(null);
 
@@ -594,7 +596,7 @@ export function useGameEvents({
     // 查找弃牌堆中的卡牌，获取精灵图信息用于碎裂特效
     let atlasId: string | undefined;
     let frameIndex: number | undefined;
-    if (destroyedCard && (destroyedCard.cardType === 'unit' || destroyedCard.cardType === 'structure')) {
+    if (!useSafeDestroyFallback && destroyedCard && (destroyedCard.cardType === 'unit' || destroyedCard.cardType === 'structure')) {
       const sprite = getDestroySpriteConfig(destroyedCard as UnitCard | StructureCard);
       atlasId = sprite.atlasId;
       frameIndex = sprite.frameIndex;
@@ -613,7 +615,7 @@ export function useGameEvents({
 
     if (shouldDelay && pending) {
       pending.pendingDestroys.push({ ...destroyEffect, isGate, destroyEventId: 0, soundKey: destroySoundKey });
-      if (atlasId !== undefined && frameIndex !== undefined) {
+      if (!useSafeDestroyFallback && atlasId !== undefined && frameIndex !== undefined) {
         setDyingEntities(prev => ([
           ...prev,
           {

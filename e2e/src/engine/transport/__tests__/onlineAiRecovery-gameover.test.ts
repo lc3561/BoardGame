@@ -13,6 +13,7 @@ import {
     resolveForceAdvancePhaseAfterRecovery,
     resolveForceEndTurnForStalledAi,
     resolveManualForceEndAiPhase,
+    resolveUnsatisfiableReasonFromInteraction,
     shouldUseOnlineAiEmergencyOverlayFallback,
 } from '../onlineAiRecovery';
 import type { MatchState } from '../../types';
@@ -107,6 +108,40 @@ describe('onlineAiRecovery - 游戏结束检查', () => {
             sys: {
                 gameover: undefined,
                 phase: 'factionSelect',
+                interaction: {
+                    current: null,
+                    isBlocked: false,
+                },
+            },
+        };
+
+        const seatControllers: Record<string, AiSeatController> = {
+            '0': { type: 'human' },
+            '1': { type: 'local-ai', policyId: 'baseline' },
+        };
+
+        const result = resolveForceEndTurnForStalledAi({
+            sharedState,
+            seatControllers,
+            seatStates: {},
+        });
+
+        expect(result).toMatchObject({
+            playerId: '1',
+            reason: 'active-turn-legal-only',
+            legalActionOnly: true,
+        });
+        expect(result?.resolution.action.commands).toEqual([]);
+    });
+
+    it('DiceThrone targetingRoll 阶段即使当前玩家是 AI，也只允许 legal-action recovery，不得走裸 ADVANCE_PHASE fallback', () => {
+        const sharedState: MatchState<unknown> = {
+            core: {
+                activePlayerId: '1',
+            },
+            sys: {
+                gameover: undefined,
+                phase: 'targetingRoll',
                 interaction: {
                     current: null,
                     isBlocked: false,
@@ -331,6 +366,10 @@ describe('onlineAiRecovery - 游戏结束检查', () => {
             type: 'SYS_INTERACTION_RESPOND',
             payload: { optionId: 'pass' },
         });
+    });
+
+    it('未提供 interaction 时，不应把自动反馈诊断误记成 empty-options', () => {
+        expect(resolveUnsatisfiableReasonFromInteraction(undefined, undefined)).toBeNull();
     });
 });
 

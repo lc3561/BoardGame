@@ -53,7 +53,7 @@ import type {
 import type { PlayerId } from '../../../engine/types';
 import { SU_EVENTS, SU_EVENT_TYPES, MADNESS_CARD_DEF_ID, MADNESS_DECK_SIZE } from './types';
 import { getBaseDef, getMinionDef, getCardDef, getFactionTitan } from '../data/cards';
-import { hasCthulhuExpansionFaction } from './abilityHelpers';
+import { canControllerPlayTitan, hasCthulhuExpansionFaction } from './abilityHelpers';
 import { normalizeScoringEligibleBaseIndices } from './ongoingModifiers';
 import {
     getBestMatchingBaseLimitedPowerQuota,
@@ -635,6 +635,9 @@ export function reduce(state: SmashUpCore, event: SmashUpEvent): SmashUpCore {
                         extraMinionPowerMax: quotaResolution.extraMinionPowerMax,
                         sameNameMinionRemaining: quotaResolution.sameNameMinionRemaining,
                         sameNameMinionDefId: quotaResolution.sameNameMinionDefId,
+                        extraCardsPlayedThisTurn: quotaResolution.usedExtraCard
+                            ? (player.extraCardsPlayedThisTurn ?? 0) + 1
+                            : player.extraCardsPlayedThisTurn,
                     },
                 },
                 bases: newBases,
@@ -659,6 +662,7 @@ export function reduce(state: SmashUpCore, event: SmashUpEvent): SmashUpCore {
             const def = defId ? getCardDef(defId) : undefined;
             const isOngoing = def && def.type === 'action' && (def as ActionCardDef).subtype === 'ongoing';
             const isSpecial = def && def.type === 'action' && (def as ActionCardDef).subtype === 'special';
+            const wasExtraActionPlay = isExtraAction === true || player.actionsPlayed >= 1;
 
             const newHand = fromBuried ? player.hand : player.hand.filter(c => c.uid !== cardUid);
             // ongoing 行动卡不进弃牌堆（由 ONGOING_ATTACHED 处理）
@@ -685,6 +689,9 @@ export function reduce(state: SmashUpCore, event: SmashUpEvent): SmashUpCore {
                         discard: newDiscard,
                         // Special 卡和额外行动不消耗行动额度
                         actionsPlayed: (isSpecial || isExtraAction) ? player.actionsPlayed : player.actionsPlayed + 1,
+                        extraCardsPlayedThisTurn: wasExtraActionPlay
+                            ? (player.extraCardsPlayedThisTurn ?? 0) + 1
+                            : player.extraCardsPlayedThisTurn,
                     },
                 },
                 cardsPlayedThisTurn: (state.cardsPlayedThisTurn ?? 0) + 1,
@@ -706,8 +713,16 @@ export function reduce(state: SmashUpCore, event: SmashUpEvent): SmashUpCore {
             const titans = state.titans ?? [];
             const titanIndex = titans.findIndex(titan => titan.uid === titanUid);
             if (titanIndex === -1) return state;
+            const titan = titans[titanIndex];
             const player = state.players[controllerId];
             if (!player) return state;
+            if (
+                !canControllerPlayTitan(state, controllerId, titanUid, {
+                    allowConcurrentOwnTitan: titan.metadata?.deferClashUntilDuelEnds === true,
+                })
+            ) {
+                return state;
+            }
             const consumedKinds = new Set(
                 [
                     ...(consumesRegularPlayKinds ?? []),
@@ -1530,6 +1545,7 @@ export function reduce(state: SmashUpCore, event: SmashUpEvent): SmashUpCore {
                         extraMinionPowerMax: undefined,
                         sameNameMinionRemaining: undefined,
                         sameNameMinionDefId: null,
+                        extraCardsPlayedThisTurn: undefined,
                         pendingMinionPlayEffects: undefined,
                         extraTalentUsesConsumed: undefined,
                     };

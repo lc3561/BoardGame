@@ -60,7 +60,7 @@
   - 当前收敛出的 4 条存疑项：DiceThrone 黑屏、DiceThrone 获得 3cp 后伤害不对、DiceThrone 波纹造成伤害但没有掉血、SummonerWars 撤回特别慢 / 放大镜功能没了。
 
 ## Session: 2026-04-07 Android 本地素材包图片加载故障
-- **Status:** in_progress
+- **Status:** completed
 - Actions taken:
   - 复核 `GamePackagePlugin` / `GamePackageForegroundRuntime` / `packageManagerService` / `AssetLoader` / `OptimizedImage` 链路，确认原生素材包会安装到 `.../current/assets`，问题不在下载落盘本身。
   - 修复 `src/features/mobile-packages/packageManagerService.ts`：`hydrateInstalledNativeGamePackages()` 在没有预注册 `fallbackCache` 时也会构造兜底 state，确保已安装包仍能把 `assetBaseUrl` 注入到 AssetLoader override。
@@ -69,6 +69,11 @@
   - 补回归测试：`src/components/common/media/__tests__/CardPreview.i18n.test.tsx` 与 `src/components/lobby/__tests__/GameDetailsModalJoinConfirm.test.ts`。
   - 将包含修复的 `dist/` 覆盖到真机 `top.easyboardgame.app.debug` 当前 OTA 目录 `/data/user/0/top.easyboardgame.app.debug/files/versions/mhvPgIYOyN`，重启后确认加载新 bundle `index-wN3ZSRu0.js`。
   - 真机打开 `王权骰铸` 详情弹窗后，`安装游戏包` 按钮已恢复为可点击态；截图路径：`D:\\gongzuo\\webgame\\BoardGame\\temp\\mobile-debug\\dicethrone-modal-after-open.png`。
+  - 后续补齐了 atlas fallback 误判修复与 Android 模拟器复核：
+    - 证据文档：`evidence/android-app-local-package-image-fallback-fix.md`
+    - 结果：`smashup` 选派系页 24/24 个派系列表项最终背景图 URL 均返回 `200`；其中 4 个命中本地 `_capacitor_file_`，20 个正确回退远端 CDN。
+  - Next:
+    - 无；该条 Android 本地素材包图片加载故障已完成收口。
 
 ### Test Results
 | Test | Input | Expected | Actual | Status |
@@ -312,11 +317,15 @@
 ## Session: 2026-04-22 lane-S2R SmashUp 反馈修复
 
 ### Phase: 初始化与基线锁定
-**Status**: In Progress
+**Status**: Complete
 
 - **[2026-04-22 00:21:34] Action**: 读取 AGENTS、planning-with-files、数据录入、测试/审计、引擎系统规范，并检查工作区状态。
   - Result: 确认本轮需要 Wiki/实现/测试/evidence 闭环；发现工作区存在非本轮改动，将避开无关文件。
   - Next: 运行 SmashUp Wiki 抓取/对比并审查 7 条反馈的实现入口。
+
+- **[2026-04-30 16:40:00] Action**: 复核 lane-S2R Addendum 与后续 evidence / closeout 的一致性，确认是否只是 planning 未回填。
+  - Result: `task_plan.md` 中 Phase A-D 原先未勾选，但实际执行链已完成：`smashup-human-open14-closeout-2026-04-22.md` 已覆盖工厂/疯人院/疯狂山脉/天守阁/先祖/世界冠军/美人鱼等链路；其中 `69e61a97` 旧关闭结论虽在 2026-04-25 被判失效，但同日已通过 `smashup-feedback-69e61a97-world-champs-card-index-fix-2026-04-25.md` 与后续《武士 陈》负路径/正路径证据重新补齐。按 2026-04-30 当前证据口径，lane-S2R 范围内 7 条反馈已具备最终收口依据。
+  - Next: 无；该 Addendum 已完成，后续只需避免再把“未回填的旧勾选状态”误读为任务未完成。
 
 ### Phase: SmashUp 三派系审计复审（Mermaids / Skeletons / World Champs）
 **Status**: In Progress

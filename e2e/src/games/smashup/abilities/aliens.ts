@@ -19,7 +19,7 @@ import type {
 import {
     buildActionMinionTargetOptions, buildBaseTargetOptions, buildMinionTargetOptions, buildPlayerTargetOptions, getMinionPower,
     grantContextualExtraMinion, grantExtraMinion, moveMinion, shuffleBaseDeck,
-    resolveOrPrompt, buildAbilityFeedback, getSetAsideTitansPlayableAs, playTitan,
+    resolveOrPrompt, buildAbilityFeedback, canControllerPlayTitan, getSetAsideTitansPlayableAs, playTitan,
 } from '../domain/abilityHelpers';
 import { getBaseDef, getCardDef, getMinionDef } from '../data/cards';
 import { createSimpleChoice, queueInteraction } from '../../../engine/systems/InteractionSystem';
@@ -887,7 +887,7 @@ export function registerAlienInteractionHandlers(): void {
                 && titan.ownerId === playerId
                 && titan.location.zone === 'setaside',
             );
-            if (!selectedTitan) return { state, events: [] };
+            if (!selectedTitan || !canControllerPlayTitan(state.core, playerId, selectedTitan.uid)) return { state, events: [] };
 
             return {
                 state,

@@ -140,6 +140,18 @@ export function getTitanByController(
     );
 }
 
+export function canControllerPlayTitan(
+    state: SmashUpCore | MatchState<SmashUpCore>,
+    controllerId: PlayerId,
+    titanUid: string,
+    options?: { allowConcurrentOwnTitan?: boolean },
+): boolean {
+    const activeTitan = getTitanByController(state, controllerId);
+    if (!activeTitan) return true;
+    if (activeTitan.uid === titanUid) return true;
+    return options?.allowConcurrentOwnTitan === true;
+}
+
 export function getSpiritOfTheForestByController(
     state: SmashUpCore | MatchState<SmashUpCore>,
     controllerId: PlayerId,

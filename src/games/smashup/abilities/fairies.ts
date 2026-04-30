@@ -12,6 +12,7 @@ import {
     buildStandardDrawEvents,
     buildValidatedReturnEvents,
     buildAbilityFeedback,
+    canControllerPlayTitan,
     createSkipOption,
     findMinionOnBases,
     getAvailableSpiritOfTheForestOrTitan,
@@ -892,7 +893,7 @@ const handleFairiesPlayfulTricksSpiritBase: InteractionHandler = (state, playerI
         && candidate.ownerId === playerId
         && candidate.location.zone === 'setaside',
     );
-    if (!titan) return { state, events: [] };
+    if (!titan || !canControllerPlayTitan(state.core, playerId, titan.uid)) return { state, events: [] };
     return {
         state,
         events: [

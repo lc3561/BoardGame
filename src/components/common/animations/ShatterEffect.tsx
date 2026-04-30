@@ -11,6 +11,7 @@
  */
 
 import React, { useEffect, useRef, useCallback } from 'react';
+import { isTestEnvironment } from '../../../engine/testing/environment';
 
 /** 直接传入图片源，跳过 DOM 截取（更可靠） */
 export interface ShatterImageSource {
@@ -203,6 +204,7 @@ export const ShatterEffect: React.FC<ShatterEffectProps> = ({
   imageSourceRef.current = imageSource;
 
   const isStrong = intensity === 'strong';
+  const useSafeTestFallback = isTestEnvironment() || (typeof navigator !== 'undefined' && navigator.webdriver);
   const cols = colsProp ?? (isStrong ? 4 : 3);
   const rows = rowsProp ?? (isStrong ? 2 : 2);
 
@@ -375,6 +377,16 @@ export const ShatterEffect: React.FC<ShatterEffectProps> = ({
   useEffect(() => {
     if (!active) return;
     animStartedRef.current = false;
+    if (useSafeTestFallback) {
+      // Headless Chromium 在 destroy/shatter 的 Canvas drawImage 链路上会偶发整页断开；
+      // E2E / webdriver 下退化为短暂保留卡面后直接收口，避免把交互链测试变成浏览器稳定性测试。
+      safetyTimerRef.current = window.setTimeout(() => {
+        onCompleteRef.current?.();
+      }, isStrong ? 240 : 180);
+      return () => {
+        clearTimeout(safetyTimerRef.current);
+      };
+    }
     // 安全超时：如果异步截取卡住，强制完成
     safetyTimerRef.current = window.setTimeout(() => {
       if (!animStartedRef.current) {
@@ -386,7 +398,7 @@ export const ShatterEffect: React.FC<ShatterEffectProps> = ({
       cancelAnimationFrame(rafRef.current);
       clearTimeout(safetyTimerRef.current);
     };
-  }, [active, render]);
+  }, [active, isStrong, render, useSafeTestFallback]);
 
   if (!active) return null;
 

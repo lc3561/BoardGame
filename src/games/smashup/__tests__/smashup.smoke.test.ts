@@ -389,6 +389,117 @@ describe('smashup', () => {
         expect(secondAfter?.location.zone).toBe('setaside');
     });
 
+    it('同一玩家已有泰坦在场时，普通 TITAN_PLAYED 事件不会让第二个己方泰坦进场', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0', {
+                    factions: [SMASHUP_FACTION_IDS.WIZARDS, SMASHUP_FACTION_IDS.PENGUINS],
+                }),
+                '1': makePlayer('1', {
+                    factions: [SMASHUP_FACTION_IDS.ALIENS, SMASHUP_FACTION_IDS.GHOSTS],
+                }),
+            },
+            titans: [
+                {
+                    uid: 'arcane-live',
+                    defId: 'wizards_arcane_protector',
+                    faction: SMASHUP_FACTION_IDS.WIZARDS,
+                    ownerId: '0',
+                    controllerId: '0',
+                    powerCounters: 0,
+                    talentUsed: false,
+                    location: { zone: 'base', baseIndex: 0, enteredAt: 1 },
+                } satisfies TitanState,
+                {
+                    uid: 'emperor-setaside',
+                    defId: 'penguins_emperor_penguin',
+                    faction: SMASHUP_FACTION_IDS.PENGUINS,
+                    ownerId: '0',
+                    controllerId: '0',
+                    powerCounters: 0,
+                    talentUsed: false,
+                    location: { zone: 'setaside' },
+                } satisfies TitanState,
+            ],
+        });
+
+        const next = SmashUpDomain.reduce(core, {
+            type: SU_EVENTS.TITAN_PLAYED,
+            payload: {
+                titanUid: 'emperor-setaside',
+                defId: 'penguins_emperor_penguin',
+                ownerId: '0',
+                controllerId: '0',
+                baseIndex: 0,
+                baseDefId: core.bases[0].defId,
+                reason: 'test_illegal_second_owned_titan',
+            },
+            timestamp: 30,
+        } as SmashUpEvent);
+
+        const arcane = next.titans?.find(candidate => candidate.uid === 'arcane-live');
+        const emperor = next.titans?.find(candidate => candidate.uid === 'emperor-setaside');
+        expect(arcane?.location).toMatchObject({ zone: 'base', baseIndex: 0 });
+        expect(emperor?.location.zone).toBe('setaside');
+        expect(next.players['0'].minionsPlayed).toBe(core.players['0'].minionsPlayed);
+        expect(next.players['0'].actionsPlayed).toBe(core.players['0'].actionsPlayed);
+    });
+
+    it('泰坦进场交互在 resolve 时会再次检查己方是否已有泰坦在场', () => {
+        const handler = getInteractionHandler('titan_penguins_emperor_penguin_play');
+        expect(handler).toBeDefined();
+
+        const state = makeMatchState(makeState({
+            players: {
+                '0': makePlayer('0', {
+                    factions: [SMASHUP_FACTION_IDS.WIZARDS, SMASHUP_FACTION_IDS.PENGUINS],
+                }),
+                '1': makePlayer('1', {
+                    factions: [SMASHUP_FACTION_IDS.ALIENS, SMASHUP_FACTION_IDS.GHOSTS],
+                }),
+            },
+            titans: [
+                {
+                    uid: 'arcane-live',
+                    defId: 'wizards_arcane_protector',
+                    faction: SMASHUP_FACTION_IDS.WIZARDS,
+                    ownerId: '0',
+                    controllerId: '0',
+                    powerCounters: 0,
+                    talentUsed: false,
+                    location: { zone: 'base', baseIndex: 0, enteredAt: 1 },
+                } satisfies TitanState,
+                {
+                    uid: 'emperor-setaside',
+                    defId: 'penguins_emperor_penguin',
+                    faction: SMASHUP_FACTION_IDS.PENGUINS,
+                    ownerId: '0',
+                    controllerId: '0',
+                    powerCounters: 0,
+                    talentUsed: false,
+                    location: { zone: 'setaside' },
+                } satisfies TitanState,
+            ],
+        }));
+
+        const result = handler!(
+            state,
+            '0',
+            { baseIndex: 0, baseDefId: state.core.bases[0].defId },
+            {
+                continuationContext: {
+                    titanUid: 'emperor-setaside',
+                    titanDefId: 'penguins_emperor_penguin',
+                },
+            },
+            FIXED_RANDOM,
+            31,
+        );
+
+        expect(result.events).toEqual([]);
+        expect(result.state).toBe(state);
+    });
+
     it('丛林之灵输掉 titan clash 时可以改为移动到另一个基地', () => {
         const core = makeState({
             bases: [

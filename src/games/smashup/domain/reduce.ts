@@ -53,7 +53,7 @@ import type {
 import type { PlayerId } from '../../../engine/types';
 import { SU_EVENTS, SU_EVENT_TYPES, MADNESS_CARD_DEF_ID, MADNESS_DECK_SIZE } from './types';
 import { getBaseDef, getMinionDef, getCardDef, getFactionTitan } from '../data/cards';
-import { hasCthulhuExpansionFaction } from './abilityHelpers';
+import { canControllerPlayTitan, hasCthulhuExpansionFaction } from './abilityHelpers';
 import { normalizeScoringEligibleBaseIndices } from './ongoingModifiers';
 import {
     getBestMatchingBaseLimitedPowerQuota,
@@ -713,8 +713,16 @@ export function reduce(state: SmashUpCore, event: SmashUpEvent): SmashUpCore {
             const titans = state.titans ?? [];
             const titanIndex = titans.findIndex(titan => titan.uid === titanUid);
             if (titanIndex === -1) return state;
+            const titan = titans[titanIndex];
             const player = state.players[controllerId];
             if (!player) return state;
+            if (
+                !canControllerPlayTitan(state, controllerId, titanUid, {
+                    allowConcurrentOwnTitan: titan.metadata?.deferClashUntilDuelEnds === true,
+                })
+            ) {
+                return state;
+            }
             const consumedKinds = new Set(
                 [
                     ...(consumesRegularPlayKinds ?? []),

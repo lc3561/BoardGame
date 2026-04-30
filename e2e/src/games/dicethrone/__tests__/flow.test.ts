@@ -1330,6 +1330,66 @@ describe('王权骰铸流程测试', () => {
             expect(state.core.pendingAttack?.defenderId).toBe('3');
         });
 
+        it('4 人模式 targetingRoll 掷出 1/2 后，攻击修正卡可在 defenderId 写回前直接结算到自动目标', () => {
+            const playerIds: PlayerId[] = ['0', '1', '2', '3'];
+            const pipelineConfig = {
+                domain: DiceThroneDomain,
+                systems: testSystems,
+            };
+            let state = createInitializedStateWithCharacters(playerIds, fixedRandom, {
+                '0': 'barbarian',
+                '1': 'monk',
+                '2': 'samurai',
+                '3': 'shadow_thief',
+            });
+
+            for (const pid of playerIds) {
+                state.core.players[pid].hand = [];
+                state.core.players[pid].deck = [];
+                state.core.players[pid].discard = [];
+                state.core.players[pid].statusEffects = {};
+            }
+
+            state.core.players['0'].resources[RESOURCE_IDS.CP] = 10;
+            state.core.players['0'].hand = [getCardById('card-more-please')];
+            state.core.activePlayerId = '0';
+            state.core.turnPhase = 'targetingRoll';
+            state.core.dice = [{ id: 0, value: 2, locked: true, ownerId: '0' }] as any;
+            state.core.rollCount = 1;
+            state.core.rollConfirmed = true;
+            state.core.rollsRemaining = 0;
+            state.core.pendingAttack = {
+                attackerId: '0',
+                defenderId: undefined,
+                isDefendable: true,
+                sourceAbilityId: 'barbarian-offense',
+                damageResolved: false,
+                resolvedDamage: 0,
+                attackDiceFaceCounts: {},
+            } as any;
+            state.sys.phase = 'targetingRoll';
+
+            const result = executePipeline(
+                pipelineConfig,
+                state,
+                {
+                    type: 'PLAY_CARD',
+                    playerId: '0',
+                    payload: { cardId: 'card-more-please' },
+                    timestamp: Date.now(),
+                } as DiceThroneCommand,
+                fixedRandom,
+                playerIds,
+            );
+
+            expect(result.success).toBe(true);
+
+            const nextState = result.state as MatchState<DiceThroneCore>;
+            expect(nextState.core.players['3'].statusEffects[STATUS_IDS.CONCUSSION]).toBe(1);
+            expect(nextState.core.players['1'].statusEffects[STATUS_IDS.CONCUSSION] ?? 0).toBe(0);
+            expect(nextState.sys.interaction.current).toBeUndefined();
+        });
+
         it('4 人模式 targetingRoll 掷出 3/4 时自动锁定右侧对手', () => {
             const playerIds: PlayerId[] = ['0', '1', '2', '3'];
             const pipelineConfig = {

@@ -23,10 +23,10 @@ import {
     getUpgradeTargetAbilityId,
     cardNeedsSelectedDefender,
     hasOpponentTargetEffect,
-    getCombatOpponentId,
     getContextualOpponentId,
     getOpponents,
     getResponderQueue,
+    getSelectedCombatOpponentId,
     isTeamMode,
 } from './rules';
 import { reduce } from './reducer';
@@ -201,9 +201,12 @@ export function executeCardCommand(
             events.push(event);
             
             // 通过效果系统执行卡牌效果（数据驱动）
-            const opponentId = getContextualOpponentId(state, actingPlayerId) ?? actingPlayerId;
+            const selectedOpponentId = getSelectedCombatOpponentId(state, actingPlayerId, phase);
+            const opponentId = selectedOpponentId
+                ?? getContextualOpponentId(state, actingPlayerId)
+                ?? actingPlayerId;
             const needsSelectedOpponent = isTeamMode(state)
-                && getCombatOpponentId(state, actingPlayerId) === undefined
+                && selectedOpponentId === undefined
                 && getOpponents(state, actingPlayerId).length > 1
                 && cardNeedsSelectedDefender(card);
             if (card.effects && card.effects.length > 0) {

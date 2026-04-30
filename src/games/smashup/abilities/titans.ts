@@ -35,6 +35,7 @@ import {
     peekDeckTop,
     findCardInPlayerZone,
     findMinionOnBases,
+    canControllerPlayTitan,
     getTitanByController,
     getTitanByUid,
     destroyMinion,
@@ -3861,7 +3862,7 @@ export function registerTitanInteractionHandlers(): void {
         const titan = getTitanByUid(state.core, continuation.titanUid);
         const base = state.core.bases[continuation.baseIndex];
         const minion = base?.minions.find(candidate => candidate.uid === selected.minionUid && candidate.controller === playerId);
-        if (!titan || !base || !minion) {
+        if (!titan || !base || !minion || !canControllerPlayTitan(state.core, playerId, titan.uid)) {
             return { state, events: [] };
         }
 
@@ -3944,7 +3945,7 @@ export function registerTitanInteractionHandlers(): void {
         const player = state.core.players[playerId];
         const titan = getTitanByUid(state.core, continuation.titanUid);
         const discardCard = player?.hand.find(card => card.uid === selected.cardUid && card.defId === selected.defId);
-        if (!player || !titan || !discardCard) {
+        if (!player || !titan || !discardCard || !canControllerPlayTitan(state.core, playerId, titan.uid)) {
             return { state, events: [] };
         }
 
@@ -3973,7 +3974,7 @@ export function registerTitanInteractionHandlers(): void {
         const player = state.core.players[playerId];
         const titan = getTitanByUid(state.core, continuation.titanUid);
         const discardCard = player?.hand.find(card => card.uid === selected.cardUid && card.defId === selected.defId);
-        if (!player || !titan || !discardCard) {
+        if (!player || !titan || !discardCard || !canControllerPlayTitan(state.core, playerId, titan.uid)) {
             return { state, events: [] };
         }
 
@@ -4291,7 +4292,7 @@ export function registerTitanInteractionHandlers(): void {
         }
 
         const titan = getTitanByUid(state.core, continuation.titanUid);
-        if (!titan) return { state, events: [] };
+        if (!titan || !canControllerPlayTitan(state.core, playerId, titan.uid)) return { state, events: [] };
 
         return {
             state,
@@ -4876,7 +4877,7 @@ export function registerTitanInteractionHandlers(): void {
             continuationContext?: { titanUid?: string; titanDefId?: string };
         } | undefined)?.continuationContext;
         const titan = continuation?.titanUid ? getTitanByUid(state.core, continuation.titanUid) : undefined;
-        if (selected?.baseIndex === undefined || !continuation?.titanDefId || !titan) {
+        if (selected?.baseIndex === undefined || !continuation?.titanDefId || !titan || !canControllerPlayTitan(state.core, playerId, titan.uid)) {
             return { state, events: [] };
         }
 
@@ -4905,7 +4906,7 @@ export function registerTitanInteractionHandlers(): void {
             continuationContext?: { titanUid?: string; titanDefId?: string };
         } | undefined)?.continuationContext;
         const titan = continuation?.titanUid ? getTitanByUid(state.core, continuation.titanUid) : undefined;
-        if (selected?.baseIndex === undefined || !continuation?.titanDefId || !titan) {
+        if (selected?.baseIndex === undefined || !continuation?.titanDefId || !titan || !canControllerPlayTitan(state.core, playerId, titan.uid)) {
             return { state, events: [] };
         }
 
@@ -4934,7 +4935,7 @@ export function registerTitanInteractionHandlers(): void {
             continuationContext?: { titanUid?: string; titanDefId?: string };
         } | undefined)?.continuationContext;
         const titan = continuation?.titanUid ? getTitanByUid(state.core, continuation.titanUid) : undefined;
-        if (selected?.baseIndex === undefined || !titan) {
+        if (selected?.baseIndex === undefined || !titan || !canControllerPlayTitan(state.core, playerId, titan.uid)) {
             return { state, events: [] };
         }
 
@@ -4971,7 +4972,12 @@ export function registerTitanInteractionHandlers(): void {
         const titan = getTitanByUid(state.core, continuation.titanUid);
         const player = state.core.players[playerId];
         const discardedCard = player?.hand.find((card) => card.uid === selected.cardUid);
-        if (!titan || !player || !discardedCard) {
+        if (
+            !titan
+            || !player
+            || !discardedCard
+            || !canControllerPlayTitan(state.core, playerId, titan.uid, { allowConcurrentOwnTitan: true })
+        ) {
             return { state: continueActiveDuel(state, timestamp), events: [] };
         }
 
@@ -5031,7 +5037,7 @@ export function registerTitanInteractionHandlers(): void {
             source: 'sphinx-start-turn',
             now: timestamp,
         });
-        if (!titan || !returnEvent) {
+        if (!titan || !returnEvent || !canControllerPlayTitan(state.core, playerId, titan.uid)) {
             return { state, events: [] };
         }
 

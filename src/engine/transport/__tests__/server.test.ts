@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { GameTransportServer, type GameEngineConfig } from '../server';
-import { buildAiProgressMarker, resolveCurrentPlayerId, resolveForceEndTurnForStalledAi } from '../onlineAiRecovery';
+import {
+    buildAiProgressMarker,
+    resolveCurrentPlayerId,
+    resolveForceEndTurnForStalledAi,
+    resolveUnsatisfiableReasonFromInteraction,
+} from '../onlineAiRecovery';
 import { createInteractionSystem, createSimpleChoice, INTERACTION_COMMANDS } from '../../systems/InteractionSystem';
 import { createSimpleChoiceSystem } from '../../systems/SimpleChoiceSystem';
 import { createResponseWindowSystem, RESPONSE_WINDOW_EVENTS } from '../../systems/ResponseWindowSystem';
@@ -1148,6 +1153,38 @@ describe('resolveForceEndTurnForStalledAi（action-loop）', () => {
             type: 'SYS_INTERACTION_RESPOND',
             payload: { optionId: 'trigger-base-arena' },
         });
+    });
+
+    it('DiceThrone targetingRoll 应标记为 legal-only，而不是裸 ADVANCE_PHASE 兜底', () => {
+        const sharedState = createOnlineAiRecoveryState({
+            activePlayerId: '1',
+            phase: 'targetingRoll',
+        }).G as any;
+
+        sharedState.core = {
+            ...sharedState.core,
+            rollCount: 0,
+            rollConfirmed: false,
+        };
+
+        const candidate = resolveForceEndTurnForStalledAi({
+            sharedState,
+            seatControllers: {
+                '0': { type: 'human' },
+                '1': { type: 'local-ai' },
+            },
+            seatStates: {},
+        });
+
+        expect(candidate?.reason).toBe('active-turn-legal-only');
+        expect(candidate?.legalActionOnly).toBe(true);
+        expect(candidate?.resolution.action.commands).toEqual([]);
+    });
+});
+
+describe('resolveUnsatisfiableReasonFromInteraction（诊断口径）', () => {
+    it('没有 interaction 时不应误报 empty-options', () => {
+        expect(resolveUnsatisfiableReasonFromInteraction(undefined, undefined)).toBeNull();
     });
 });
 
@@ -4651,6 +4688,101 @@ describe('GameTransportServer（离座与重连）', () => {
         }
     });
 
+    it('online AI watchdog 在 AI active 的 targetingRoll 且 legalActions 为空时，不得 fallback 到裸 ADVANCE_PHASE', async () => {
+        const io = new MockIO();
+        const storage = new InMemoryStorage();
+        const feedbackReporter = vi.fn(async () => undefined);
+        const gameId = 'test-watchdog-active-targeting-legal-only-no-fallback';
+
+        aiModule.registerGameAiRuntime({
+            gameId,
+            buildLegalActions: () => [],
+            localPolicies: {
+                idlePolicy: {
+                    id: 'idlePolicy',
+                    decide: () => null,
+                },
+            },
+            defaultLocalPolicyId: 'idlePolicy',
+        });
+
+        await storage.createMatch('match-watchdog-active-targeting-legal-only-no-fallback', {
+            initialState: {
+                G: {
+                    core: {
+                        activePlayerId: '1',
+                        currentPlayerIndex: 1,
+                        turnOrder: ['0', '1'],
+                        rollCount: 1,
+                        rollLimit: 1,
+                        rollConfirmed: true,
+                    },
+                    sys: {
+                        phase: 'targetingRoll',
+                        turnNumber: 7,
+                        eventStream: { nextId: 1 },
+                        interaction: {
+                            current: undefined,
+                            queue: [],
+                            isBlocked: false,
+                        },
+                        responseWindow: {
+                            current: undefined,
+                        },
+                    },
+                },
+                _stateID: 0,
+                randomSeed: 'seed',
+                randomCursor: 0,
+            },
+            metadata: createOnlineAiRecoveryMetadata({
+                gameName: gameId,
+                seatControllers: {
+                    '0': { type: 'human' },
+                    '1': { type: 'local-ai', policyId: 'idlePolicy' },
+                },
+            }),
+        });
+
+        const server = new GameTransportServer({
+            io: io as unknown as any,
+            storage,
+            games: [createEngineConfigWithId(gameId)],
+            onlineAiRecoveryTickMs: 0,
+            onlineAiRecoveryTimeoutMs: 0,
+            onlineAiRecoveryFailureReportThreshold: 1,
+            onlineAiFeedbackReporter: feedbackReporter,
+        });
+
+        const serverInternal = server as unknown as {
+            loadMatch: (matchID: string) => Promise<any>;
+            runOnlineAiRecoveryTick: () => Promise<void>;
+            executeCommandInternal: (
+                match: any,
+                playerID: string,
+                commandType: string,
+                payload: unknown,
+                options?: { suppressBroadcast?: boolean },
+            ) => Promise<boolean>;
+        };
+
+        await serverInternal.loadMatch('match-watchdog-active-targeting-legal-only-no-fallback');
+        const executeSpy = vi.spyOn(serverInternal, 'executeCommandInternal');
+
+        await serverInternal.runOnlineAiRecoveryTick();
+        await serverInternal.runOnlineAiRecoveryTick();
+        await nextTick();
+
+        expect(executeSpy).not.toHaveBeenCalled();
+        expect(feedbackReporter).toHaveBeenCalledWith(expect.objectContaining({
+            matchId: 'match-watchdog-active-targeting-legal-only-no-fallback',
+            gameId,
+            playerId: '1',
+            incidentKind: 'force-end-turn-failed',
+            reason: expect.stringContaining('active-turn-legal-only:follow-up-advance:legal_action_unavailable'),
+        }));
+    });
+
     it('dicethrone: defensiveRoll 存在 displayOnly pendingBonusDiceSettlement 时，watchdog 仍应按防御合法动作推进，而不是误打 bonus-die 命令', async () => {
         const io = new MockIO();
         const storage = new InMemoryStorage();
@@ -4675,6 +4807,7 @@ describe('GameTransportServer（离座与重连）', () => {
                         rollCount: 0,
                         rollLimit: 1,
                         rollDiceCount: 0,
+                        dice: [],
                         rollConfirmed: false,
                         pendingAttack: {
                             attackerId: '0',
@@ -4716,6 +4849,55 @@ describe('GameTransportServer（离座与重连）', () => {
                 },
             }),
         });
+
+        const resolutionSpy = vi.spyOn(aiModule, 'resolveNextAiDispatch');
+        resolutionSpy
+            .mockResolvedValueOnce({
+                kind: 'action',
+                resolution: {
+                    playerId: '1',
+                    attemptKey: 'dt-displayonly-bonus-settlement-step-1',
+                    source: 'local-ai',
+                    action: {
+                        actionId: 'roll:dice',
+                        kind: 'roll-dice',
+                        label: '掷骰',
+                        commands: [{ type: 'ROLL_DICE', payload: {} }],
+                    },
+                },
+            })
+            .mockResolvedValueOnce({
+                kind: 'action',
+                resolution: {
+                    playerId: '1',
+                    attemptKey: 'dt-displayonly-bonus-settlement-step-2',
+                    source: 'local-ai',
+                    action: {
+                        actionId: 'roll:confirm',
+                        kind: 'confirm-roll',
+                        label: '确认骰面',
+                        commands: [{ type: 'CONFIRM_ROLL', payload: {} }],
+                    },
+                },
+            })
+            .mockResolvedValueOnce({
+                kind: 'action',
+                resolution: {
+                    playerId: '1',
+                    attemptKey: 'dt-displayonly-bonus-settlement-step-3',
+                    source: 'local-ai',
+                    action: {
+                        actionId: 'phase:advance',
+                        kind: 'advance-phase',
+                        label: '结束防御阶段',
+                        commands: [{ type: 'ADVANCE_PHASE', payload: {} }],
+                    },
+                },
+            })
+            .mockResolvedValue({
+                kind: 'idle' as const,
+                idleReason: 'no-action',
+            });
 
         const server = new GameTransportServer({
             io: io as unknown as any,
@@ -4818,6 +5000,7 @@ describe('GameTransportServer（离座与重连）', () => {
             }));
         } finally {
             executeSpy.mockRestore();
+            resolutionSpy.mockRestore();
         }
     });
 

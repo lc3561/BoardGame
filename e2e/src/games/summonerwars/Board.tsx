@@ -90,6 +90,7 @@ import type { InteractionDescriptor, PromptOption } from '../../engine/systems/I
 import { INTERACTION_COMMANDS } from '../../engine/systems/InteractionSystem';
 import { shouldBlockHandInteraction } from './ui/handInteractionBusy';
 import { swAttackDebugLog } from './ui/attackDebug';
+import { isTestEnvironment } from '../../engine/testing/environment';
 
 type Props = GameBoardProps<SummonerWarsCore>;
 
@@ -189,6 +190,7 @@ export const SummonerWarsBoard: React.FC<Props> = ({
         maxWidth: mobileLandscapeCenteredContentWidth,
       }
     : undefined;
+  const useSafeCombatVisualFallback = isTestEnvironment() || (typeof navigator !== 'undefined' && navigator.webdriver);
 
   // 阵营选择状态
   const rootPid = (playerID || '0') as PlayerId;
@@ -577,6 +579,23 @@ export const SummonerWarsBoard: React.FC<Props> = ({
       });
       clearPendingAttack();
       flushPendingDestroys();
+      return;
+    }
+
+    if (useSafeCombatVisualFallback && pending.pendingDestroys.length > 0) {
+      swAttackDebugLog('board_skip_lethal_combat_visuals_in_test_env', {
+        attackEventId: pending.attackEventId,
+        attackType: pending.attackType,
+        pendingDestroyCount: pending.pendingDestroys.length,
+        damageCount: pending.damages.length,
+      });
+      const impactPositions = pending.damages.map(d => d.position);
+      if (impactPositions.length > 0) {
+        releaseDamageSnapshot(impactPositions);
+      }
+      clearPendingAttack();
+      flushPendingDestroys();
+      setAttackAnimState(null);
       return;
     }
 

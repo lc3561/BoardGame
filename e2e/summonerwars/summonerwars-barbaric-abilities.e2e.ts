@@ -330,6 +330,18 @@ const clickAbilityPromptButton = async (page: Page, pattern: string) => page.eva
   return { clicked: true, reason: 'clicked', promptText: prompt.innerText || prompt.textContent || '' };
 }, pattern).catch(() => ({ clicked: false, reason: 'page-evaluate-failed', promptText: '' }));
 
+const setHarnessDiceValues = async (page: Page, values: number[]) => {
+  await page.evaluate((diceValues) => {
+    const harness = (window as Window & {
+      __BG_TEST_HARNESS__?: { dice?: { setValues?: (items: number[]) => void } };
+    }).__BG_TEST_HARNESS__;
+    if (typeof harness?.dice?.setValues !== 'function') {
+      throw new Error('__BG_TEST_HARNESS__.dice.setValues not found');
+    }
+    harness.dice.setValues(diceValues);
+  }, values);
+};
+
 const prepareChantOfWeavingState = (coreState: any) => {
   const next = cloneState(coreState);
   next.currentPlayer = '0';
@@ -1164,7 +1176,7 @@ test.describe('炽原精灵阵营特色交互', () => {
             kairuState.board[adj.row][adj.col].unit = {
               instanceId: `enemy-dummy-${adj.row}-${adj.col}`, cardId: 'necro-skeleton-dummy',
               card: { id: 'necro-skeleton', cardType: 'unit', name: '骷髅兵', faction: 'necromancer',
-                cost: 0, life: 8, strength: 1, attackType: 'melee', attackRange: 1,
+                cost: 0, life: 1, strength: 1, attackType: 'melee', attackRange: 1,
                 unitClass: 'common', deckSymbols: [], abilities: [] },
               owner: '1', position: adj, damage: 0, boosts: 0, hasMoved: false, hasAttacked: false,
             };
@@ -1188,6 +1200,7 @@ test.describe('炽原精灵阵营特色交互', () => {
       }, { timeout: 10000 }).toBe(true);
       await closeDebugPanelIfOpen(hostPage);
       await hostPage.waitForTimeout(500);
+      await setHarnessDiceValues(hostPage, [1, 1, 1]);
       // 选中凯鲁尊者
       await clickBoardElement(hostPage, `[data-testid="sw-unit-${kairuPos.row}-${kairuPos.col}"][data-owner="0"]`);
       await hostPage.waitForTimeout(1000);

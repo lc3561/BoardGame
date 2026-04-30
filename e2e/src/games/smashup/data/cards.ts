@@ -55,6 +55,7 @@ import { MERMAIDS_CARDS } from './factions/mermaids';
 import { SKELETONS_CARDS } from './factions/skeletons';
 import { WORLD_CHAMPS_CARDS } from './factions/world_champs';
 import { FAIRIES_CARDS } from './factions/fairies';
+import { PRINCESSES_CARDS } from './factions/princesses';
 
 // ============================================================================
 // 注册表
@@ -180,6 +181,7 @@ registerCards(MERMAIDS_CARDS);
 registerCards(SKELETONS_CARDS);
 registerCards(WORLD_CHAMPS_CARDS);
 registerCards(FAIRIES_CARDS);
+registerCards(PRINCESSES_CARDS);
 // POD 版本阵营（最新英文 POD 版本）
 registerCards(NINJA_POD_CARDS);
 registerCards(TITAN_CARD_DEFS);
@@ -478,7 +480,7 @@ export const BASE_CARDS_PRETTY_PRETTY: BaseCardDef[] = [
     {
         id: 'base_castle_of_ice',
         name: '冰之城堡',
-        nameEn: 'Castle of Ice',
+        nameEn: 'Ice Castle',
         breakpoint: 15,
         vpAwards: [3, 2, 2],
         faction: 'princesses',
