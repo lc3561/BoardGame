@@ -133,6 +133,17 @@ function hasActiveBearNecessitiesPodRestriction(core: SmashUpCore, playerId: str
     return false;
 }
 
+function hasActivePrincessesElizaRestriction(core: SmashUpCore, playerId: string): boolean {
+    for (const base of core.bases) {
+        const hasOpponentEliza = base.minions.some(minion =>
+            (minion.defId === 'princesses_eliza' || minion.defId === 'princesses_eliza_pod')
+            && minion.controller !== playerId,
+        );
+        if (hasOpponentEliza) return true;
+    }
+    return false;
+}
+
 function isExtraMinionPlayAttempt(
     core: SmashUpCore,
     playerId: string,
@@ -257,6 +268,20 @@ export function validate(
                 if (blockedByBearNecessitiesPod) {
                     return { valid: false, error: '受黑熊口粮POD限制：你不能打出额外牌' };
                 }
+                const blockedByEliza = hasActivePrincessesElizaRestriction(core, command.playerId)
+                    && (player.extraCardsPlayedThisTurn ?? 0) >= 1
+                    && isExtraMinionPlayAttempt(
+                        core,
+                        command.playerId,
+                        baseIndex,
+                        discardCard.defId,
+                        basePower,
+                        true,
+                        discardCheck.consumesNormalLimit,
+                    );
+                if (blockedByEliza) {
+                    return { valid: false, error: '受伊莱莎限制：你本回合不能再打出额外牌' };
+                }
                 const usesBaseLimitedMinionQuota = discardCheck.consumesNormalLimit
                     && mustUseBaseLimitedMinionQuota(core, player, baseIndex, discardCard.defId, basePower);
                 if (isOperationRestricted(core, baseIndex, command.playerId, 'play_minion', {
@@ -296,6 +321,20 @@ export function validate(
                 );
             if (blockedByBearNecessitiesPod) {
                 return { valid: false, error: '受黑熊口粮POD限制：你不能打出额外牌' };
+            }
+            const blockedByEliza = hasActivePrincessesElizaRestriction(core, command.playerId)
+                && (player.extraCardsPlayedThisTurn ?? 0) >= 1
+                && isExtraMinionPlayAttempt(
+                    core,
+                    command.playerId,
+                    baseIndex,
+                    card.defId,
+                    basePower,
+                    false,
+                    true,
+                );
+            if (blockedByEliza) {
+                return { valid: false, error: '受伊莱莎限制：你本回合不能再打出额外牌' };
             }
             const usesBaseLimitedMinionQuota = mustUseBaseLimitedMinionQuota(core, player, baseIndex, card.defId, basePower);
             // 同名额度检查：全局额度用完后，如果只剩同名额度，必须匹配已锁定的 defId
@@ -520,6 +559,13 @@ export function validate(
             if (!player) return { valid: false, error: '玩家不存在' };
             if (hasActiveBearNecessitiesPodRestriction(core, command.playerId) && isExtraActionPlayAttempt(core, command.playerId)) {
                 return { valid: false, error: '受黑熊口粮POD限制：你不能打出额外牌' };
+            }
+            if (
+                hasActivePrincessesElizaRestriction(core, command.playerId)
+                && (player.extraCardsPlayedThisTurn ?? 0) >= 1
+                && isExtraActionPlayAttempt(core, command.playerId)
+            ) {
+                return { valid: false, error: '受伊莱莎限制：你本回合不能再打出额外牌' };
             }
             if (player.actionsPlayed >= player.actionLimit) {
                 return { valid: false, error: '本回合行动额度已用完' };

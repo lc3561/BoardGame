@@ -8790,3 +8790,328 @@ describe('Fairies abilities', () => {
         expect(resolved.finalState.core.titans?.find(titan => titan.uid === 'spirit-1')?.metadata?.spiritOfTheForestUsedTurn).toBe(1);
     });
 });
+
+describe('Princesses abilities', () => {
+    it('princesses_direct_to_dvd_sequel 会把弃牌堆随从洗回牌库并抽 1', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0', {
+                    hand: [makeCard('dvd-1', 'princesses_direct_to_dvd_sequel', 'action', '0')],
+                    discard: [makeCard('discard-minion', 'robot_microbot_alpha', 'minion', '0')],
+                }),
+                '1': makePlayer('1'),
+            },
+        });
+
+        const played = runCommand(
+            makeMatchState(core),
+            { type: SU_COMMANDS.PLAY_ACTION, playerId: '0', payload: { cardUid: 'dvd-1' } },
+            defaultTestRandom,
+        );
+        expect(played.success).toBe(true);
+
+        const prompt = getInteractionsFromMS(played.finalState)[0] as any;
+        expect(prompt?.data?.sourceId).toBe('princesses_direct_to_dvd_sequel');
+        const option = prompt.data.options.find((entry: any) => entry.value?.cardUid === 'discard-minion');
+        expect(option).toBeDefined();
+
+        const resolved = runCommand(
+            played.finalState,
+            { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: option.id } } as any,
+            defaultTestRandom,
+        );
+
+        expect(resolved.finalState.core.players['0'].hand.map(card => card.uid)).toEqual(['discard-minion']);
+        expect(resolved.finalState.core.players['0'].deck).toHaveLength(0);
+        expect(resolved.finalState.core.players['0'].discard.map(card => card.uid)).toContain('dvd-1');
+    });
+
+    it('princesses_woodland_helpers 会把刚打出的行动放到牌库底', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0', {
+                    deck: [makeCard('deck-1', 'robot_microbot_alpha', 'minion', '0')],
+                    discard: [makeCard('spell-1', 'wizard_summon', 'action', '0')],
+                }),
+                '1': makePlayer('1'),
+            },
+            bases: [{
+                defId: 'base_a',
+                minions: [],
+                ongoingActions: [{ uid: 'woodland-1', defId: 'princesses_woodland_helpers', ownerId: '0' }],
+            }],
+        });
+
+        const triggerResult = fireTriggers(core, 'onActionPlayed', {
+            state: core,
+            matchState: makeMatchState(core),
+            playerId: '0',
+            sourceEventId: 'action-played:spell-1:0',
+            random: defaultTestRandom,
+            now: 1000,
+        });
+
+        const prompt = getInteractionsFromMS(triggerResult.matchState!)[0] as any;
+        expect(prompt?.data?.sourceId).toBe('princesses_woodland_helpers');
+        const option = prompt.data.options.find((entry: any) => entry.value?.choice === 'move_to_bottom');
+        expect(option).toBeDefined();
+
+        const resolved = runCommand(
+            triggerResult.matchState!,
+            { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: option.id } } as any,
+            defaultTestRandom,
+        );
+
+        expect(resolved.finalState.core.players['0'].discard.map(card => card.uid)).not.toContain('spell-1');
+        expect(resolved.finalState.core.players['0'].deck.map(card => card.uid)).toEqual(['deck-1', 'spell-1']);
+    });
+
+    it('princesses_skillet 会消灭低力量随从并抽三张牌', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0', {
+                    hand: [makeCard('skillet-1', 'princesses_skillet', 'action', '0')],
+                    deck: [
+                        makeCard('draw-1', 'robot_microbot_alpha', 'minion', '0'),
+                        makeCard('draw-2', 'robot_microbot_beta', 'minion', '0'),
+                        makeCard('draw-3', 'wizard_summon', 'action', '0'),
+                    ],
+                }),
+                '1': makePlayer('1'),
+            },
+            bases: [{
+                defId: 'base_a',
+                minions: [makeMinion('enemy-1', 'robot_microbot_alpha', '1', 2)],
+                ongoingActions: [],
+            }],
+        });
+
+        const played = runCommand(
+            makeMatchState(core),
+            { type: SU_COMMANDS.PLAY_ACTION, playerId: '0', payload: { cardUid: 'skillet-1' } },
+            defaultTestRandom,
+        );
+        const prompt = getInteractionsFromMS(played.finalState)[0] as any;
+        expect(prompt?.data?.sourceId).toBe('princesses_skillet');
+
+        const option = prompt.data.options.find((entry: any) => entry.value?.minionUid === 'enemy-1');
+        expect(option).toBeDefined();
+
+        const resolved = runCommand(
+            played.finalState,
+            { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: option.id } } as any,
+            defaultTestRandom,
+        );
+
+        expect(resolved.finalState.core.bases[0].minions.map(minion => minion.uid)).not.toContain('enemy-1');
+        expect(resolved.finalState.core.players['0'].hand.map(card => card.uid)).toEqual(['draw-1', 'draw-2', 'draw-3']);
+    });
+
+    it('princesses_snow_white 会把另一个基地上的仆从移动到这里', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0'),
+                '1': makePlayer('1'),
+            },
+            bases: [
+                {
+                    defId: 'base_a',
+                    minions: [makeMinion('snow-1', 'princesses_snow_white', '0', 5)],
+                    ongoingActions: [],
+                },
+                {
+                    defId: 'base_b',
+                    minions: [makeMinion('enemy-1', 'robot_microbot_alpha', '1', 2)],
+                    ongoingActions: [],
+                },
+            ],
+        });
+
+        const talent = runCommand(
+            makeMatchState(core),
+            { type: SU_COMMANDS.USE_TALENT, playerId: '0', payload: { minionUid: 'snow-1', baseIndex: 0 } },
+            defaultTestRandom,
+        );
+        const prompt = getInteractionsFromMS(talent.finalState)[0] as any;
+        expect(prompt?.data?.sourceId).toBe('princesses_snow_white');
+
+        const option = prompt.data.options.find((entry: any) => entry.value?.minionUid === 'enemy-1');
+        expect(option).toBeDefined();
+
+        const resolved = runCommand(
+            talent.finalState,
+            { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: option.id } } as any,
+            defaultTestRandom,
+        );
+
+        expect(resolved.finalState.core.bases[0].minions.map(minion => minion.uid)).toContain('enemy-1');
+        expect(resolved.finalState.core.bases[1].minions.map(minion => minion.uid)).not.toContain('enemy-1');
+    });
+
+    it('princesses_tale_as_old_as_time 会把你的所有仆从移动到选定基地', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0', {
+                    hand: [makeCard('tale-1', 'princesses_tale_as_old_as_time', 'action', '0')],
+                }),
+                '1': makePlayer('1'),
+            },
+            bases: [
+                {
+                    defId: 'base_a',
+                    minions: [makeMinion('ally-1', 'robot_microbot_alpha', '0', 2)],
+                    ongoingActions: [],
+                },
+                {
+                    defId: 'base_b',
+                    minions: [makeMinion('enemy-1', 'robot_microbot_beta', '1', 3)],
+                    ongoingActions: [],
+                },
+                {
+                    defId: 'base_c',
+                    minions: [makeMinion('ally-2', 'wizard_apprentice', '0', 2)],
+                    ongoingActions: [],
+                },
+            ],
+        });
+
+        const played = runCommand(
+            makeMatchState(core),
+            { type: SU_COMMANDS.PLAY_ACTION, playerId: '0', payload: { cardUid: 'tale-1', targetBaseIndex: 1 } },
+            defaultTestRandom,
+        );
+        expect(played.success).toBe(true);
+        expect(getInteractionsFromMS(played.finalState)).toHaveLength(0);
+
+        expect(played.finalState.core.bases[1].minions.map(minion => minion.uid)).toEqual(
+            expect.arrayContaining(['ally-1', 'ally-2', 'enemy-1']),
+        );
+        expect(played.finalState.core.bases[0].minions.map(minion => minion.uid)).not.toContain('ally-1');
+        expect(played.finalState.core.bases[2].minions.map(minion => minion.uid)).not.toContain('ally-2');
+    });
+
+    it('princesses_griselda 可以把传家宝从弃牌堆回到手牌', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0', {
+                    discard: [makeCard('heirloom-1', 'princesses_heirloom', 'action', '0')],
+                }),
+                '1': makePlayer('1'),
+            },
+            bases: [{
+                defId: 'base_a',
+                minions: [makeMinion('griselda-1', 'princesses_griselda', '0', 5)],
+                ongoingActions: [],
+            }],
+        });
+
+        const talent = runCommand(
+            makeMatchState(core),
+            { type: SU_COMMANDS.USE_TALENT, playerId: '0', payload: { minionUid: 'griselda-1', baseIndex: 0 } },
+            defaultTestRandom,
+        );
+        const prompt = getInteractionsFromMS(talent.finalState)[0] as any;
+        expect(prompt?.data?.sourceId).toBe('princesses_griselda');
+
+        const option = prompt.data.options.find((entry: any) => entry.value?.cardUid === 'heirloom-1');
+        expect(option).toBeDefined();
+
+        const resolved = runCommand(
+            talent.finalState,
+            { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: option.id } } as any,
+            defaultTestRandom,
+        );
+
+        expect(resolved.finalState.core.players['0'].hand.map(card => card.uid)).toContain('heirloom-1');
+        expect(resolved.finalState.core.players['0'].discard).toHaveLength(0);
+    });
+
+    it('princesses_happily_ever_after 会在你于该基地得分时额外给 1 VP', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0'),
+                '1': makePlayer('1'),
+            },
+            bases: [{
+                defId: 'base_a',
+                minions: [],
+                ongoingActions: [{ uid: 'hea-1', defId: 'princesses_happily_ever_after', ownerId: '0' }],
+            }],
+        });
+
+        const triggered = fireTriggers(core, 'afterScoring', {
+            state: core,
+            matchState: makeMatchState(core),
+            playerId: '0',
+            baseIndex: 0,
+            rankings: [{ playerId: '0', power: 5, vp: 3 }],
+            random: defaultTestRandom,
+            now: 1000,
+        });
+
+        expect(triggered.events.some(event =>
+            event.type === SU_EVENTS.VP_AWARDED
+            && (event as any).payload.playerId === '0'
+            && (event as any).payload.amount === 1,
+        )).toBe(true);
+    });
+
+    it('princesses_sleeping_beauty 被消灭时会洗回牌库而不是进弃牌堆', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0'),
+                '1': makePlayer('1'),
+            },
+            bases: [{
+                defId: 'base_a',
+                minions: [makeMinion('sleep-1', 'princesses_sleeping_beauty', '0', 5)],
+                ongoingActions: [],
+            }],
+        });
+        const ms = makeMatchState(core);
+
+        const triggerResult = processDestroyTriggers([{
+            type: SU_EVENTS.MINION_DESTROYED,
+            payload: {
+                minionUid: 'sleep-1',
+                minionDefId: 'princesses_sleeping_beauty',
+                fromBaseIndex: 0,
+                ownerId: '0',
+                reason: 'test_destroy',
+            },
+            timestamp: 1000,
+        } as any], ms, '1' as any, defaultTestRandom, 1000);
+
+        expect(triggerResult.events.some(event => event.type === SU_EVENTS.MINION_DESTROYED)).toBe(false);
+        const finalCore = triggerResult.events.reduce((current, event) => reduce(current, event as any), core);
+        expect(finalCore.players['0'].discard.map(card => card.uid)).not.toContain('sleep-1');
+        expect(finalCore.players['0'].deck.map(card => card.uid)).toContain('sleep-1');
+    });
+
+    it('princesses_eliza 会阻止对手在同回合打出第二张额外牌', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0', {
+                    hand: [makeCard('extra-action-1', 'princesses_direct_to_dvd_sequel', 'action', '0')],
+                    actionsPlayed: 1,
+                    actionLimit: 2,
+                    extraCardsPlayedThisTurn: 1,
+                }),
+                '1': makePlayer('1'),
+            },
+            bases: [{
+                defId: 'base_a',
+                minions: [makeMinion('eliza-1', 'princesses_eliza', '1', 5)],
+                ongoingActions: [],
+            }],
+        });
+
+        const result = validate(
+            makeMatchState(core),
+            { type: SU_COMMANDS.PLAY_ACTION, playerId: '0', payload: { cardUid: 'extra-action-1' } } as any,
+        );
+
+        expect(result.valid).toBe(false);
+        expect(result.error).toBe('受伊莱莎限制：你本回合不能再打出额外牌');
+    });
+});

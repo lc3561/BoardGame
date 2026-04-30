@@ -175,9 +175,11 @@ describe('afterScoring 延迟清场回归', () => {
             SU_EVENTS.ABILITY_FEEDBACK,
         ]);
 
+        // PPSE 里的 matchState.core 是用于派生计算的预览态；真正落地仍以补发事件为准。
+        // 这里需要从原始 core 重放事件，避免把 BASE_CLEARED / BASE_REPLACED 二次叠加到预览态上。
         const finalCore = processedEvents.reduce(
             (core, event) => reduce(core, event),
-            (processed.matchState?.core ?? state.core) as SmashUpCore,
+            state.core as SmashUpCore,
         );
         expect(finalCore?.bases[0].defId).toBe('base_secret_garden');
         expect(finalCore?.bases[0].minions.map(minion => minion.uid)).toEqual(['dk1']);

@@ -635,6 +635,9 @@ export function reduce(state: SmashUpCore, event: SmashUpEvent): SmashUpCore {
                         extraMinionPowerMax: quotaResolution.extraMinionPowerMax,
                         sameNameMinionRemaining: quotaResolution.sameNameMinionRemaining,
                         sameNameMinionDefId: quotaResolution.sameNameMinionDefId,
+                        extraCardsPlayedThisTurn: quotaResolution.usedExtraCard
+                            ? (player.extraCardsPlayedThisTurn ?? 0) + 1
+                            : player.extraCardsPlayedThisTurn,
                     },
                 },
                 bases: newBases,
@@ -659,6 +662,7 @@ export function reduce(state: SmashUpCore, event: SmashUpEvent): SmashUpCore {
             const def = defId ? getCardDef(defId) : undefined;
             const isOngoing = def && def.type === 'action' && (def as ActionCardDef).subtype === 'ongoing';
             const isSpecial = def && def.type === 'action' && (def as ActionCardDef).subtype === 'special';
+            const wasExtraActionPlay = isExtraAction === true || player.actionsPlayed >= 1;
 
             const newHand = fromBuried ? player.hand : player.hand.filter(c => c.uid !== cardUid);
             // ongoing 行动卡不进弃牌堆（由 ONGOING_ATTACHED 处理）
@@ -685,6 +689,9 @@ export function reduce(state: SmashUpCore, event: SmashUpEvent): SmashUpCore {
                         discard: newDiscard,
                         // Special 卡和额外行动不消耗行动额度
                         actionsPlayed: (isSpecial || isExtraAction) ? player.actionsPlayed : player.actionsPlayed + 1,
+                        extraCardsPlayedThisTurn: wasExtraActionPlay
+                            ? (player.extraCardsPlayedThisTurn ?? 0) + 1
+                            : player.extraCardsPlayedThisTurn,
                     },
                 },
                 cardsPlayedThisTurn: (state.cardsPlayedThisTurn ?? 0) + 1,
@@ -1530,6 +1537,7 @@ export function reduce(state: SmashUpCore, event: SmashUpEvent): SmashUpCore {
                         extraMinionPowerMax: undefined,
                         sameNameMinionRemaining: undefined,
                         sameNameMinionDefId: null,
+                        extraCardsPlayedThisTurn: undefined,
                         pendingMinionPlayEffects: undefined,
                         extraTalentUsesConsumed: undefined,
                     };
