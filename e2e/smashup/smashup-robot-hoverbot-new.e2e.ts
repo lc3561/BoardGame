@@ -643,6 +643,10 @@ const cleanSmashUpTransientState = {
     },
 };
 
+async function expectBaseScore(page: Page, baseIndex: number, playerId: '0' | '1', expected: string): Promise<void> {
+    await expect(page.getByTestId(`su-base-score-${baseIndex}-${playerId}`)).toHaveText(new RegExp(`^\\s*${escapeRegex(expected)}\\s*$`));
+}
+
 test.describe('Smash Up 牌库检索交互', () => {
     test('悬浮机器人应显示可选卡牌并允许打出', async ({ page, game }, testInfo) => {
         test.setTimeout(60000);
@@ -1757,6 +1761,211 @@ test.describe('Smash Up 牌库检索交互', () => {
 
         await game.screenshot('mermaids-siren-song-resolved', testInfo);
         await saveStableScreenshot(page, testInfo, 'smashup-mermaids-siren-song-resolved-2026-04-29');
+    });
+
+    test('塞壬应只压低其他玩家在这里的总力量贡献而不改变基地总力量', async ({ page, game }, testInfo) => {
+        test.setTimeout(60000);
+
+        await page.goto('/play/smashup');
+        await page.waitForFunction(
+            () => (window as any).__BG_TEST_HARNESS__?.state?.isRegistered?.() === true,
+            { timeout: 15000 },
+        );
+
+        await game.setupScene({
+            gameId: 'smashup',
+            player0: {
+                hand: ['mermaids_siren'],
+                deck: [],
+                factions: ['mermaids', 'robots'],
+            },
+            player1: {
+                hand: [],
+                deck: [],
+                factions: ['mermaids', 'dinosaurs'],
+            },
+            currentPlayer: '0',
+            phase: 'playCards',
+            bases: [{
+                defId: 'base_1',
+                minions: [
+                    { uid: 'enemy-charmer', defId: 'mermaids_charmer', owner: '1', controller: '1', tempPowerModifier: 0 },
+                    { uid: 'enemy-temptress', defId: 'mermaids_temptress', owner: '1', controller: '1', tempPowerModifier: 0 },
+                ],
+                ongoingActions: [],
+            }],
+        });
+
+        await game.playCard('mermaids_siren', { targetBaseIndex: 0 });
+        await game.waitForNoInteraction();
+        await dismissSpotlightQueueIfPresent(page);
+
+        const afterPlay = await game.getState();
+        expect(afterPlay.core.bases[0].minions.some((minion: any) => minion.defId === 'mermaids_siren')).toBe(true);
+
+        await expectBaseScore(page, 0, '0', '2');
+        await expectBaseScore(page, 0, '1', '5');
+        await expect(page.getByTestId('base-zone-0').getByText(/^9$/).first()).toBeVisible();
+
+        await game.screenshot('mermaids-siren-score-suppression', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-mermaids-siren-score-suppression-2026-04-30');
+    });
+
+    test('诱惑者应在其他玩家的仆从本回合移动到这里后获得 +2 力量', async ({ page, game }, testInfo) => {
+        test.setTimeout(60000);
+
+        await page.goto('/play/smashup');
+        await page.waitForFunction(
+            () => (window as any).__BG_TEST_HARNESS__?.state?.isRegistered?.() === true,
+            { timeout: 15000 },
+        );
+
+        await game.setupScene({
+            gameId: 'smashup',
+            player0: {
+                hand: [],
+                deck: [],
+                factions: ['mermaids', 'robots'],
+            },
+            player1: {
+                hand: [],
+                deck: [],
+                factions: ['mermaids', 'dinosaurs'],
+            },
+            currentPlayer: '0',
+            phase: 'playCards',
+            bases: [
+                {
+                    defId: 'base_1',
+                    minions: [
+                        { uid: 'charmer-1', defId: 'mermaids_charmer', owner: '0', controller: '0', tempPowerModifier: 0 },
+                    ],
+                    ongoingActions: [],
+                },
+                {
+                    defId: 'base_2',
+                    minions: [
+                        { uid: 'temptress-1', defId: 'mermaids_temptress', owner: '1', controller: '1', tempPowerModifier: 0 },
+                    ],
+                    ongoingActions: [],
+                },
+            ],
+        });
+
+        await clickMinionOnBoard(page, 'charmer-1');
+        await game.waitForInteraction('mermaids_charmer_move');
+
+        const movePromptMeta = await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const current = harness?.state?.get?.()?.sys?.interaction?.current;
+            return {
+                sourceId: current?.data?.sourceId ?? null,
+                options: (current?.data?.options ?? []).map((option: any) => ({
+                    id: option.id,
+                    baseIndex: option.value?.baseIndex ?? null,
+                })),
+            };
+        });
+
+        expect(movePromptMeta.sourceId).toBe('mermaids_charmer_move');
+        expect(movePromptMeta.options.some((option: any) => option.baseIndex === 1)).toBe(true);
+
+        await game.screenshot('mermaids-temptress-charmer-move-prompt', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-mermaids-temptress-charmer-move-prompt-2026-04-30');
+
+        await game.selectInteractionOptionBy(
+            (option: any) => option.value?.baseIndex === 1,
+            '迷人的人把自己移动到诱惑者所在基地',
+        );
+        await game.waitForNoInteraction();
+        await dismissSpotlightQueueIfPresent(page);
+
+        const finalState = await game.getState();
+        expect(finalState.core.bases[1].minions.some((minion: any) => minion.uid === 'charmer-1')).toBe(true);
+        expect(finalState.core.bases[1].minions.some((minion: any) => minion.uid === 'temptress-1')).toBe(true);
+
+        await expectBaseScore(page, 1, '0', '3');
+        await expectBaseScore(page, 1, '1', '6');
+        await expect(page.locator('[data-minion-uid="temptress-1"] [title*="诱惑者: +2"]')).toBeVisible();
+
+        await game.screenshot('mermaids-temptress-buffed', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-mermaids-temptress-buffed-2026-04-30');
+    });
+
+    test('无人岛应把这里所有仆从的控制者总力量压到 0 并在你下回合开始前自毁', async ({ page, game }, testInfo) => {
+        test.setTimeout(60000);
+
+        await page.goto('/play/smashup');
+        await page.waitForFunction(
+            () => (window as any).__BG_TEST_HARNESS__?.state?.isRegistered?.() === true,
+            { timeout: 15000 },
+        );
+
+        await game.setupScene({
+            gameId: 'smashup',
+            player0: {
+                hand: ['mermaids_desert_island'],
+                deck: [],
+                factions: ['mermaids', 'robots'],
+            },
+            player1: {
+                hand: [],
+                deck: [],
+                factions: ['mermaids', 'dinosaurs'],
+            },
+            currentPlayer: '0',
+            phase: 'playCards',
+            bases: [{
+                defId: 'base_1',
+                minions: [
+                    { uid: 'ally-charmer', defId: 'mermaids_charmer', owner: '0', controller: '0', tempPowerModifier: 0 },
+                    { uid: 'enemy-temptress', defId: 'mermaids_temptress', owner: '1', controller: '1', tempPowerModifier: 0 },
+                ],
+                ongoingActions: [],
+            }],
+        });
+
+        await game.playCard('mermaids_desert_island', { targetBaseIndex: 0 });
+        await game.waitForNoInteraction();
+        await dismissSpotlightQueueIfPresent(page);
+
+        const afterPlay = await game.getState();
+        const desertIslandUid = afterPlay.core.bases[0].ongoingActions.find(
+            (action: any) => action.defId === 'mermaids_desert_island',
+        )?.uid;
+        expect(desertIslandUid).toBeTruthy();
+
+        await expectBaseScore(page, 0, '0', '0');
+        await expectBaseScore(page, 0, '1', '0');
+        await expect(page.getByTestId('base-zone-0').getByText(/^7$/).first()).toBeVisible();
+
+        await game.screenshot('mermaids-desert-island-attached', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-mermaids-desert-island-attached-2026-04-30');
+
+        await dispatchHarnessCommand(page, '0', 'ADVANCE_PHASE', {});
+        await page.waitForFunction(() => {
+            const state = (window as any).__BG_TEST_HARNESS__?.state?.get?.();
+            return state?.core?.currentPlayerIndex === 1 && state?.sys?.phase === 'playCards';
+        }, { timeout: 10000 });
+
+        await dispatchHarnessCommand(page, '1', 'ADVANCE_PHASE', {});
+        await page.waitForFunction(() => {
+            const state = (window as any).__BG_TEST_HARNESS__?.state?.get?.();
+            return state?.core?.currentPlayerIndex === 0 && state?.sys?.phase === 'playCards';
+        }, { timeout: 10000 });
+        await dismissSpotlightQueueIfPresent(page);
+
+        const nextTurnState = await game.getState();
+        expect(nextTurnState.core.bases[0].ongoingActions.some(
+            (action: any) => action.defId === 'mermaids_desert_island',
+        )).toBe(false);
+
+        await expectBaseScore(page, 0, '0', '3');
+        await expectBaseScore(page, 0, '1', '4');
+        await expect(page.locator(`[data-ongoing-uid="${desertIslandUid}"]`)).toHaveCount(0);
+
+        await game.screenshot('mermaids-desert-island-destroyed', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-mermaids-desert-island-destroyed-2026-04-30');
     });
 
     test('魅惑应可移动目标、压制其本回合总力量贡献，并允许额外打出另一张行动', async ({ page, game }, testInfo) => {
@@ -4290,26 +4499,26 @@ test.describe('Smash Up 牌库检索交互', () => {
                 hand: ['skeletons_burst_forth'],
                 deck: [],
                 discard: [],
-                factions: ['skeletons', 'robots'],
+                factions: ['skeletons', 'dinosaurs'],
             },
             player1: {
                 hand: [],
                 deck: [],
                 discard: [],
-                factions: ['pirates', 'dinosaurs'],
+                factions: ['robots', 'dinosaurs'],
             },
             currentPlayer: '0',
             phase: 'playCards',
             bases: [{
                 defId: 'base_the_jungle',
                 minions: [
-                    { uid: 'burst-host-rex', defId: 'dino_king_rex', owner: '0', controller: '0', tempPowerModifier: 0 },
-                    { uid: 'burst-host-raptor', defId: 'dino_war_raptor', owner: '0', controller: '0', tempPowerModifier: 0 },
-                    { uid: 'burst-host-alpha', defId: 'robot_microbot_alpha', owner: '0', controller: '0', tempPowerModifier: 0 },
+                    { uid: 'burst-host-laser', defId: 'dino_laser_triceratops', owner: '0', controller: '0', tempPowerModifier: 0 },
+                    { uid: 'burst-enemy-rex', defId: 'dino_king_rex', owner: '1', controller: '1', tempPowerModifier: 0 },
+                    { uid: 'burst-enemy-alpha', defId: 'robot_microbot_alpha', owner: '1', controller: '1', tempPowerModifier: 0 },
                 ],
                 ongoingActions: [],
                 buriedCards: [
-                    { uid: 'burst-buried', defId: 'robot_microbot_alpha', trueOwnerId: '0', controllerId: '0', buriedFrom: 'discard' },
+                    { uid: 'burst-buried', defId: 'dino_king_rex', trueOwnerId: '0', controllerId: '0', buriedFrom: 'discard' },
                 ],
             }, {
                 defId: 'base_tar_pits',
@@ -4364,7 +4573,8 @@ test.describe('Smash Up 牌库检索交互', () => {
 
         const finalState = await game.getState();
         expect((finalState.core.bases[0].buriedCards ?? []).some((card: any) => card.uid === 'burst-buried')).toBe(false);
-        expect((finalState.core.bases[0].minions ?? []).some((minion: any) => minion.uid === 'burst-buried')).toBe(true);
+        expect(finalState.core.players['0'].vp).toBe(2);
+        expect(finalState.core.players['1'].vp).toBe(0);
 
         await game.screenshot('burst-forth-resolved', testInfo);
         await saveStableScreenshot(page, testInfo, 'smashup-skeletons-burst-forth-resolved-2026-04-29');

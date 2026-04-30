@@ -1,5 +1,36 @@
 # Smash Up 10 周年三派系专项审计（2026-04-19）
 
+## 2026-04-30 继续重审记录：Mermaids《塞壬 / 诱惑者 / 无人岛》L3 补证 + BaseZone 分数口径修复
+
+- 触发原因：
+  - `Mermaids / 美人鱼` 剩余的《塞壬 / 诱惑者 / 无人岛》此前只有 L2，没有浏览器级对象证据。
+  - 本轮补《塞壬》时还抓到了一个真问题：UI 玩家分数徽章没有按卡面口径显示“控制者总力量贡献”。
+- 本轮真实修复：
+  - `src/games/smashup/ui/BaseZone.tsx`
+  - `e2e/src/games/smashup/ui/BaseZone.tsx`
+  - 根因不是规则没实现，而是 `BaseZone` 自己手算 `minion + ongoing + base bonus`，绕过了 `getPlayerEffectivePowerOnBase(...)`。
+  - 结果会把《塞壬 / 无人岛 / 魅惑 / 人鱼暗礁》这类“只影响控制者总力量、不影响基地总力量”的牌显示错。
+  - 现已统一改为：玩家列分数徽章只走 `getPlayerEffectivePowerOnBase(...)`。
+- 本轮实现：
+  - `e2e/smashup/smashup-robot-hoverbot-new.e2e.ts`
+    - 新增 `塞壬应只压低其他玩家在这里的总力量贡献而不改变基地总力量`
+    - 新增 `诱惑者应在其他玩家的仆从本回合移动到这里后获得 +2 力量`
+    - 新增 `无人岛应把这里所有仆从的控制者总力量压到 0 并在你下回合开始前自毁`
+- 本轮验证：
+  1. `node scripts/infra/run-e2e-single.mjs ci e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "塞壬应只压低其他玩家在这里的总力量贡献而不改变基地总力量"` → `1 passed`
+  2. `node scripts/infra/run-e2e-single.mjs ci e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "诱惑者应在其他玩家的仆从本回合移动到这里后获得"` → `1 passed`
+  3. `node scripts/infra/run-e2e-single.mjs ci e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "无人岛应把这里所有仆从的控制者总力量压到 0 并在你下回合开始前自毁"` → `1 passed`
+  4. `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/ongoingModifiers.test.ts --configLoader native --maxWorkers 1 --testNamePattern "mermaids_siren|mermaids_desert_island|mermaids_temptress"` → `6 passed`
+  5. `npm run typecheck` → 通过
+- 新增证据：
+  - `evidence/smashup/smashup-mermaids-siren-temptress-desert-island-e2e-2026-04-30.md`
+- 本轮新结论：
+  1. 《塞壬》当前已补齐“压低其他玩家个人总力量，但不改基地总力量”的 L3。
+  2. 《诱惑者》当前已补齐“别人的仆从本回合移动到这里后，真实棋盘出现 +2”的 L3。
+  3. 《无人岛》当前已补齐“压到 0 + 下回合开始前自毁”的 L3。
+  4. “其他玩家自己的回合把自己的仆从移动到这里时仍应 +2”这一更细分支，本轮继续由 `ongoingModifiers.test.ts` 锁死，不在 L3 证据里伪装 guest 私有视角。
+  5. 截至本轮，`Mermaids` 当前至少已有 `最后的歌声 / 迷倒观众 / 人鱼女王 / 安静的海岸 / 塞壬的歌声 / 塞壬 / 诱惑者 / 无人岛` 共 `8` 条正路径对象级 L3 证据；但三新派系整包仍维持 **仍有残余范围**。
+
 ## 2026-04-26 继续重审记录：World Champs《警长 / 木乃伊》真实入口补证 + 误判根因回写
 
 - 触发原因：
@@ -1149,17 +1180,26 @@
   3. `$env:BG_ALLOW_HEAVY_TASK_CONCURRENCY='1'; $env:NODE_OPTIONS='--max-old-space-size=4096'; node scripts/infra/run-e2e-single.mjs ci e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "诡异。可怕。应从弃牌堆埋葬低力量随从并抽一张牌"`
   4. `$env:BG_ALLOW_HEAVY_TASK_CONCURRENCY='1'; $env:BG_BYPASS_GLOBAL_HEAVY_BUDGET='1'; $env:NODE_OPTIONS='--max-old-space-size=4096'; node scripts/infra/run-e2e-single.mjs ci e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "墓碑应在基地计分后可把自己埋葬到另一个基地"`
 
-## 2026-04-29 补证（七）：《守墓人》L3，和《墓地爆发》当前阻塞点
+## 2026-04-29 补证（七）：《守墓人 / 墓地爆发》L3，与旧错误结论失效回写
 
 - 本轮新增证据：
   - `evidence/smashup/smashup-skeletons-gravetender-e2e-2026-04-29.md`
+  - `evidence/smashup/smashup-skeletons-burst-forth-e2e-2026-04-29.md`
 - 当前新增 L3 对象：
   - `skeletons_gravetender`
+  - `skeletons_burst_forth`
 - 已通过命令：
-  - `$env:BG_ALLOW_HEAVY_TASK_CONCURRENCY='1'; $env:BG_BYPASS_GLOBAL_HEAVY_BUDGET='1'; $env:NODE_OPTIONS='--max-old-space-size=4096'; node scripts/infra/run-e2e-single.mjs ci e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "守墓人应在你的其他牌被埋葬后抽一张牌"`
-- 新暴露的未收口项：
-  - `skeletons_burst_forth` 已新增浏览器级测试草案，并且失败截图已证明真实入口确实能进入 `skeletons_burst_forth` prompt、且目标埋葬牌会翻面并变成可点对象；
-  - 但当前还没拿到稳定通过结果，失败原因在测试入口：
-    1. 先误用本地 harness `dispatch` 到在线房间；
-    2. 随后命中多 runtime / 端口占用抖动，legacy 入口又反复卡在 `setupSUOnlineMatch`。
-  - 这条目前只能记为：**真实入口已看到，浏览器级通过结果待下一轮稳定重跑**，不能提前宣称通过。
+  1. `$env:BG_ALLOW_HEAVY_TASK_CONCURRENCY='1'; $env:BG_BYPASS_GLOBAL_HEAVY_BUDGET='1'; $env:NODE_OPTIONS='--max-old-space-size=4096'; node scripts/infra/run-e2e-single.mjs ci e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "守墓人应在你的其他牌被埋葬后抽一张牌"`
+  2. `$env:BG_ALLOW_HEAVY_TASK_CONCURRENCY='1'; $env:BG_BYPASS_GLOBAL_HEAVY_BUDGET='1'; $env:NODE_OPTIONS='--max-old-space-size=4096'; node scripts/infra/run-e2e-single.mjs ci e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "墓地爆发应在基地计分前可挖掘你埋葬在那里的牌"`
+  3. `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/newFactionAbilities.test.ts -t "skeletons_burst_forth special 可在指定基地挖掘埋葬牌|雄蜂：scoreBases 阶段（真实基地达临界点）交互解决后不应无限循环" --configLoader native --maxWorkers 1`
+- 旧结论失效：
+  - 旧“《墓地爆发》当前只是测试基础设施阻塞，业务实现没暴露问题”这条结论已失效。
+  - 新证据表明，真实入口不仅能看到 prompt，而且《雷克斯王》已经作为 `MINION_PLAYED` 写进 action log，但同一轮 `BASE_SCORED` 仍按旧总力量 `13` 结算。
+- 新确认的根因：
+  1. 根因不是数据录入错误，也不是 E2E 场景再一次用错 `defId`。
+  2. 根因是 `scoreBases` 阶段交互刚产出领域事件时，FlowSystem 会在这些事件正式 reduce 前继续自动推进，导致《墓地爆发》翻出的随从没有被纳入本次计分。
+  3. 本轮已在 `src/games/smashup/domain/systems.ts` 与 `src/games/smashup/domain/index.ts` 增加 `scoreBases` 交互 reduce 门禁，先等这一轮事件落入 core，再继续计分。
+- 当前结论：
+  - 《守墓人》已补齐“你的其他牌被埋葬后抽 1 张”浏览器级 L3。
+  - 《墓地爆发》已补齐“计分前反应 -> 挖掘埋葬牌 -> 翻出的随从改写本次 VP 归属”浏览器级 L3。
+  - `Skeletons` 当前至少已有 `殉葬品 / 灵车队伍 / 复仇者 / 他们出来了 / 墓园 / 骸骨之王 / 轮回者 / 诡异。可怕。 / 墓碑 / 守墓人 / 墓地爆发` 共 `11` 条正路径对象级 L3 证据。

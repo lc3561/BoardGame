@@ -1,5 +1,25 @@
 # Findings & Resources
 
+## Addendum（2026-04-30）：Smash Up 美人鱼《塞壬 / 诱惑者 / 无人岛》重审
+
+- 本轮不是单纯补截图，先抓到 1 个真实 UI 口径 bug：
+  - `BaseZone` 玩家列分数徽章此前没有走 `getPlayerEffectivePowerOnBase(...)`
+  - 而是自己手算 `getEffectivePower + ongoing + base bonus`
+  - 结果会漏掉《塞壬 / 无人岛 / 魅惑 / 人鱼暗礁》这类“只影响控制者总力量、不影响基地总力量”的扣减语义
+- 这说明此前返工的一个根因不是“维度名不够多”，而是：
+  - L2 领域断言已经对
+  - 但 L3 浏览器真实出口没有逐对象核到 UI 显示口径
+  - 于是把“规则正确、显示错误”误当成“数据录错 / 效果没触发”
+- 本轮已修复：
+  - `src/games/smashup/ui/BaseZone.tsx`
+  - `e2e/src/games/smashup/ui/BaseZone.tsx`
+- 本轮新增对象级 L3：
+  - `塞壬`
+  - `诱惑者`
+  - `无人岛`
+- 证据：
+  - `evidence/smashup/smashup-mermaids-siren-temptress-desert-island-e2e-2026-04-30.md`
+
 ## Addendum（2026-04-24）：线上反馈 69a440ea（DiceThrone 教程弃牌堆方向）
 - 反馈 `69a440ea1eb921c6091f1231` 指向“教程把右侧弃牌堆写成左侧”。
 - 复核结论：中文文案已正确，英文教程仍残留旧方向描述（`on the left`）。
@@ -882,13 +902,14 @@
 - **Status:** in_progress
 - Findings:
   - 《守墓人》浏览器级正路径已通过，说明“你的其他牌被埋葬后抽 1 张”在真实入口里没有漏掉。
-  - 《墓地爆发》不是业务语义没出来；失败截图已经证明：
-    1. 真实链路能进入 `skeletons_burst_forth` prompt；
-    2. 目标埋葬牌会在基地旁翻正；
-    3. 目标埋葬牌带 `data-buried-card-uid` / `data-buried-face-up` / `data-buried-selectable` 这条真实 DOM 出口。
-  - 当前阻塞点是测试基础设施，不是业务实现：
-    1. 在线房间误用了本地 harness dispatch；
-    2. 隔离 runtime 被其他 worktree 占端口；
-    3. legacy single-worker 又会偶发卡在 `setupSUOnlineMatch`。
+  - 《墓地爆发》旧“只是测试基础设施阻塞”结论已失效。
+  - 新确认的真实根因：
+    1. 真实链路确实能进入 `skeletons_burst_forth` prompt，且目标埋葬牌会翻正、可点，这部分不是问题；
+    2. 问题出在 `scoreBases` 交互收口后的自动推进时序：交互刚产出的 `MINION_PLAYED` 还没 reduce 进 core，Flow 就继续计分了；
+    3. 结果是 action log 里能先看到《雷克斯王》被挖出来，但同一轮 `BASE_SCORED` 仍按旧总力量 `13` 结算。
+  - 本轮修复后：
+    1. `src/games/smashup/domain/systems.ts` 与 `src/games/smashup/domain/index.ts` 已新增 `scoreBases` 交互 reduce 门禁；
+    2. 《墓地爆发》浏览器级已通过，证明翻出的随从会真实改写本次计分结果。
 - Evidence:
   - `evidence/smashup/smashup-skeletons-gravetender-e2e-2026-04-29.md`
+  - `evidence/smashup/smashup-skeletons-burst-forth-e2e-2026-04-29.md`

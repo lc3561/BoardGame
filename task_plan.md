@@ -141,6 +141,15 @@
 - [x] 2026-04-29 补《墓园》L3：把 `Skeletons` 的“场上持续牌天赋 -> 挖掘 -> 可选 +1 指示物”从 L2 扩到浏览器级真实入口，并同步回写累计对象证据口径
 - [x] 2026-04-29 补《骸骨之王》L3：把 `Skeletons` 的“场上 minion 天赋 -> 挖掘这里任意埋葬牌 -> 先经 reaction session 再进 +1 后续交互”从 L2 扩到浏览器级真实入口，并同步回写累计对象证据口径
 - [x] 2026-04-29 回写长期任务 / 派系重审 workflow 门禁：把“批量派系重审批次清单”“E2E 场景 defId 预检”“L0-L4 分层验收”“reaction session 抽样门禁”补进 `.windsurf/skills/data-entry-workflow/SKILL.md`、`docs/games/smashup/workflows/smashup-faction-implementation.md`、`docs/ai-rules/testing-audit.md`
+- [x] 2026-04-30 收口《墓地爆发》L3，并修复 `scoreBases` 交互事件在 reduce 前被提前计分的时序缺口；定向 E2E `1 passed`，回归 Vitest `2 passed`
+- [x] 2026-04-30 补《塞壬 / 诱惑者 / 无人岛》L3，并修复 `BaseZone` 分数徽章绕过 `getPlayerEffectivePowerOnBase(...)` 的 UI 口径缺口；3 条定向 E2E、`ongoingModifiers` 聚焦回归 `6 passed`、`typecheck` 全绿
+
+### Current Remaining Batch（强制继续，未清空前不得按“收口”停下）
+- [ ] 明确枚举 `World Champs / 世界冠军` 剩余未到发布级门禁的对象/链路，补到对象级 L3 或明确降级理由
+- [ ] 明确枚举 `Skeletons / 骷髅` 剩余未到发布级门禁的对象/链路，补到对象级 L3 或明确降级理由
+- [ ] 对三派系当前已补对象做一轮“卡图口径 vs UI真实出口 vs reaction session”交叉抽检，防止再出现“领域对 / UI错”型漏审
+- [ ] 回写总审计文档里所有仍写着泛化“已完成专项审计与回归验证”的旧高层口径，避免旧结论继续误导
+- [ ] 只有当上面 4 项全部勾完，且总审计文档的“仍有残余范围”被逐条消解或显式冻结，才允许进入最终收口汇报
 
 
 ## Addendum（2026-04-22）：线上 Dicethrone critical 反馈收口补强（69c3c83e / 69cba605）

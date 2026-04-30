@@ -1598,6 +1598,9 @@ export const smashUpFlowHooks: FlowHooks<SmashUpCore> = {
             if (getSmashUpReactionSession(state)) {
                 return undefined;
             }
+            if ((state.sys as any)._waitForScoreBasesInteractionReduce) {
+                return undefined;
+            }
 
             if ((state.sys as any)._waitForPostScoringReduce) {
                 return undefined;

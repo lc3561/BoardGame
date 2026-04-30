@@ -29,7 +29,8 @@ import {
   setupSWOnlineMatch,
   waitForPhase as waitForPhaseViaHelper,
 } from '../helpers/summonerwars';
-import { setChineseLocale } from '../helpers/common';
+import { getMatchState } from '../helpers/state-injection';
+import { setChineseLocale, waitForTestHarness } from '../helpers/common';
 import type { GameTestContext as __ThreeAxeFrameworkMarker } from '../framework';
 
 type __ThreeAxeGameMarker = {
@@ -443,6 +444,22 @@ const clearArea = (board: any[][], positions: { row: number; col: number }[]) =>
   }
 };
 
+const clearRect = (
+  board: any[][],
+  rowStart: number,
+  rowEnd: number,
+  colStart: number,
+  colEnd: number,
+) => {
+  for (let row = rowStart; row <= rowEnd; row += 1) {
+    for (let col = colStart; col <= colEnd; col += 1) {
+      if (board[row]?.[col]) {
+        board[row][col] = { ...board[row][col], unit: undefined, structure: undefined };
+      }
+    }
+  }
+};
+
 /** 在指定位置放置单位 */
 const placeUnit = (board: any[][], pos: { row: number; col: number }, unit: any) => {
   board[pos.row][pos.col] = {
@@ -728,6 +745,189 @@ const prepareLifeDrainOnlineState = (coreState: any) => {
   return { core: next, dragosPosition, allyPosition, enemyPosition };
 };
 
+const prepareSoulTransferOnlineState = (coreState: any) => {
+  const next = cloneState(coreState);
+  next.phase = 'attack';
+  next.currentPlayer = '0';
+  next.selectedUnit = undefined;
+  next.attackTargetMode = undefined;
+
+  const player = next.players?.['0'];
+  if (!player) throw new Error('无法读取玩家0状态');
+  player.attackCount = 0;
+  player.hasAttackedEnemy = false;
+
+  const necromancerDeck = createDeckByFactionId('necromancer');
+  const paladinDeck = createDeckByFactionId('paladin');
+  const archerCard = necromancerDeck.deck.find(
+    (card) => card.cardType === 'unit' && card.id.startsWith('necro-undead-archer-'),
+  );
+  const enemyCard = paladinDeck.deck.find(
+    (card) => card.cardType === 'unit' && card.id.startsWith('paladin-temple-priest-'),
+  );
+
+  if (!archerCard || archerCard.cardType !== 'unit') {
+    throw new Error('未找到真实亡灵弓箭手卡牌模板');
+  }
+  if (!enemyCard || enemyCard.cardType !== 'unit') {
+    throw new Error('未找到真实敌方祭司卡牌模板');
+  }
+
+  const board = next.board as Array<Array<Record<string, any>>>;
+  const archerPosition = { row: 4, col: 2 };
+  const victimPosition = { row: 4, col: 4 };
+  clearRect(board, 3, 5, 1, 4);
+
+  placeUnit(board, archerPosition, {
+    instanceId: makeInjectedInstanceId('e2e-soul-transfer-archer'),
+    cardId: archerCard.id,
+    card: { ...archerCard },
+    owner: '0',
+    damage: 0,
+    boosts: 0,
+    hasMoved: false,
+    hasAttacked: false,
+  });
+
+  placeUnit(board, victimPosition, {
+    instanceId: makeInjectedInstanceId('e2e-soul-transfer-victim'),
+    cardId: enemyCard.id,
+    card: { ...enemyCard },
+    owner: '1',
+    damage: Math.max(0, Number(enemyCard.life ?? 1) - 1),
+    boosts: 0,
+    hasMoved: false,
+    hasAttacked: false,
+  });
+
+  return { core: next, archerPosition, victimPosition };
+};
+
+const setHarnessRandomQueue = async (page: Page, values: number[]) => {
+  await page.evaluate((queue) => {
+    const harness = (window as Window & {
+      __BG_TEST_HARNESS__?: { random?: { setQueue?: (items: number[]) => void } };
+    }).__BG_TEST_HARNESS__;
+    if (typeof harness?.random?.setQueue !== 'function') {
+      throw new Error('__BG_TEST_HARNESS__.random.setQueue not found');
+    }
+    harness.random.setQueue(queue);
+  }, values);
+};
+
+const waitForSoulTransferPrompt = async (page: Page) => {
+  const overlay = page.getByTestId('sw-dice-result-overlay');
+  const prompt = page.getByTestId('sw-ability-prompt').filter({
+    hasText: /灵魂转移|Soul Transfer|确认移动|Confirm Move/i,
+  }).first();
+  try {
+    await expect.poll(async () => {
+      const overlayVisible = await overlay.isVisible().catch(() => false);
+      if (overlayVisible) {
+        await overlay.click({ force: true }).catch(() => {});
+      }
+      const promptVisible = await prompt.isVisible().catch(() => false);
+      const overlayStillVisible = await overlay.isVisible().catch(() => false);
+      return promptVisible && !overlayStillVisible;
+    }, {
+      timeout: 15000,
+      message: '等待灵魂转移确认提示出现并关闭攻击骰子特写',
+    }).toBe(true);
+  } catch {
+    const matchId = await page.evaluate(() => {
+      const match = window.location.pathname.match(/\/play\/[^/]+\/match\/([^/?#]+)/i);
+      return match?.[1] ?? null;
+    }).catch(() => null);
+    const bannerText = await page.getByTestId('sw-action-banner').textContent().catch(() => null);
+
+    let lastSnapshot: unknown = { matchId, bannerText };
+    if (matchId) {
+      try {
+        const liveState = await getMatchState(matchId, page) as {
+          core?: {
+            phase?: string;
+            currentPlayer?: string;
+            board?: Array<Array<{
+              unit?: {
+                owner?: string;
+                cardId?: string;
+                card?: { name?: string; life?: number };
+                damage?: number;
+              };
+            }>>;
+          };
+          sys?: {
+            phase?: string;
+            currentPlayerIndex?: number;
+            turnOrder?: string[];
+            interaction?: {
+              current?: {
+                id?: string;
+                kind?: string;
+                playerId?: string;
+                data?: unknown;
+                options?: Array<{ id?: string; label?: string; value?: unknown }>;
+              };
+              queue?: unknown[];
+            };
+          };
+        };
+
+        lastSnapshot = {
+          matchId,
+          bannerText,
+          corePhase: liveState.core?.phase ?? null,
+          currentPlayer: liveState.core?.currentPlayer ?? null,
+          sysPhase: liveState.sys?.phase ?? null,
+          currentPlayerIndex: liveState.sys?.currentPlayerIndex ?? null,
+          turnOrder: liveState.sys?.turnOrder ?? null,
+          currentInteraction: liveState.sys?.interaction?.current
+            ? {
+                id: liveState.sys.interaction.current.id,
+                kind: liveState.sys.interaction.current.kind,
+                playerId: liveState.sys.interaction.current.playerId,
+                data: liveState.sys.interaction.current.data,
+                options: liveState.sys.interaction.current.options?.map((option) => ({
+                  id: option.id,
+                  label: option.label,
+                  value: option.value,
+                })),
+              }
+            : null,
+          queueLength: liveState.sys?.interaction?.queue?.length ?? null,
+          archerCell: liveState.core?.board?.[4]?.[2]?.unit
+            ? {
+                owner: liveState.core.board[4][2].unit?.owner ?? null,
+                cardId: liveState.core.board[4][2].unit?.cardId ?? null,
+                name: liveState.core.board[4][2].unit?.card?.name ?? null,
+                damage: liveState.core.board[4][2].unit?.damage ?? null,
+              }
+            : null,
+          victimCell: liveState.core?.board?.[4]?.[4]?.unit
+            ? {
+                owner: liveState.core.board[4][4].unit?.owner ?? null,
+                cardId: liveState.core.board[4][4].unit?.cardId ?? null,
+                name: liveState.core.board[4][4].unit?.card?.name ?? null,
+                damage: liveState.core.board[4][4].unit?.damage ?? null,
+                life: liveState.core.board[4][4].unit?.card?.life ?? null,
+              }
+            : null,
+        };
+      } catch (error) {
+        lastSnapshot = {
+          matchId,
+          bannerText,
+          serverStateError: error instanceof Error ? error.message : String(error),
+        };
+      }
+    }
+
+    throw new Error(`等待灵魂转移确认提示出现并关闭攻击骰子特写失败: ${JSON.stringify(lastSnapshot)}`);
+  }
+
+  return prompt;
+};
+
 test.describe('亡灵交互技能', () => {
   test('火祀召唤：召唤后选择牺牲友军并移动到牺牲位置', async ({ browser }, testInfo) => {
     test.setTimeout(120000);
@@ -794,6 +994,8 @@ test.describe('亡灵交互技能', () => {
         summonCellEmpty: true,
         summonedUnitName: '伊路特-巴尔',
       });
+      await expect(hostPage.getByTestId('sw-ability-prompt')).toHaveCount(0, { timeout: 5000 });
+      await hostPage.waitForTimeout(1200);
 
       await hostPage.screenshot({
         path: getEvidenceScreenshotPath(testInfo, 'fire-sacrifice-complete', {
@@ -844,13 +1046,103 @@ test.describe('亡灵交互技能', () => {
       });
 
       await expect(hostPage.locator(allySelector).first()).toBeVisible({ timeout: 5000 });
-      await clickBoardElementViaHelper(hostPage, allySelector);
+      await hostPage.locator(allySelector).first().click({ force: true });
       await hostPage.waitForTimeout(1500);
       await expect(hostPage.getByTestId('sw-action-banner')).toContainText(/用最多3个单位进行攻击|Attack with up to 3 units/i, { timeout: 8000 });
 
       await hostPage.screenshot({
         path: getEvidenceScreenshotPath(testInfo, 'life-drain-complete', {
           subdir: 'summonerwars/summonerwars-abilities.e2e/吸取生命：宣告攻击后出现牺牲友军提示并完成牺牲',
+        }),
+      });
+    } finally {
+      void hostContext.close().catch(() => {});
+      void guestContext.close().catch(() => {});
+    }
+  });
+
+  test('灵魂转移：击杀后确认移动到死者位置', async ({ browser }, testInfo) => {
+    test.setTimeout(120000);
+    await clearEvidenceScreenshotsForTest(testInfo);
+    const baseURL = testInfo.project.use.baseURL as string | undefined;
+    const match = await setupSWOnlineMatch(browser, baseURL, 'necromancer', 'paladin');
+    if (!match) {
+      test.skip(true, 'Game server unavailable or room creation failed.');
+      return;
+    }
+
+    const { hostPage, hostContext, guestContext, matchId } = match;
+
+    try {
+      await waitForTestHarness(hostPage, 15000);
+      const prepared = prepareSoulTransferOnlineState(await readCoreStateViaServer(hostPage));
+      await applyCoreStateViaServer(hostPage, prepared.core);
+      await closeDebugPanelIfOpenViaHelper(hostPage);
+      await waitForPhaseViaHelper(hostPage, 'attack');
+      await setHarnessRandomQueue(hostPage, [0.6, 0.6, 0.6, 0.6, 0.6]);
+
+      const archerSelector = `[data-testid="sw-unit-${prepared.archerPosition.row}-${prepared.archerPosition.col}"][data-owner="0"]`;
+      const victimSelector = `[data-testid="sw-unit-${prepared.victimPosition.row}-${prepared.victimPosition.col}"][data-owner="1"]`;
+
+      await expect(hostPage.locator(archerSelector).first()).toBeVisible({ timeout: 5000 });
+      await clickBoardElementViaHelper(hostPage, archerSelector);
+      await expect(hostPage.locator(victimSelector).first()).toBeVisible({ timeout: 5000 });
+      await clickBoardElementViaHelper(hostPage, victimSelector);
+
+      const prompt = await waitForSoulTransferPrompt(hostPage);
+      await hostPage.screenshot({
+        path: getEvidenceScreenshotPath(testInfo, 'soul-transfer-prompt-visible', {
+          subdir: 'summonerwars/summonerwars-abilities.e2e/灵魂转移：击杀后确认移动到死者位置',
+        }),
+      });
+
+      const confirmMoveButton = prompt.locator('button').filter({ hasText: /确认移动|Confirm Move/i }).first();
+      await expect(confirmMoveButton).toBeVisible({ timeout: 5000 });
+      await confirmMoveButton.click({ force: true });
+
+      await expect.poll(async () => {
+        const liveState = await getMatchState(matchId, hostPage) as {
+          core?: {
+            board?: Array<Array<{
+              unit?: {
+                owner?: string;
+                card?: { name?: string };
+              };
+            }>>;
+          };
+          sys?: {
+            interaction?: {
+              current?: {
+                data?: {
+                  sw?: { type?: string };
+                };
+              };
+            };
+          };
+        };
+
+        return {
+          interactionType: liveState.sys?.interaction?.current?.data?.sw?.type ?? null,
+          sourceCellUnit: liveState.core?.board?.[prepared.archerPosition.row]?.[prepared.archerPosition.col]?.unit?.card?.name ?? null,
+          destinationOwner: liveState.core?.board?.[prepared.victimPosition.row]?.[prepared.victimPosition.col]?.unit?.owner ?? null,
+          destinationUnit: liveState.core?.board?.[prepared.victimPosition.row]?.[prepared.victimPosition.col]?.unit?.card?.name ?? null,
+        };
+      }, { timeout: 8000 }).toEqual({
+        interactionType: null,
+        sourceCellUnit: null,
+        destinationOwner: '0',
+        destinationUnit: '亡灵弓箭手',
+      });
+
+      await expect(hostPage.getByTestId('sw-ability-prompt')).toHaveCount(0, { timeout: 8000 });
+      await expect(hostPage.locator(archerSelector)).toHaveCount(0, { timeout: 8000 });
+      await expect(hostPage.locator(`[data-testid="sw-unit-${prepared.victimPosition.row}-${prepared.victimPosition.col}"][data-owner="0"]`).first()).toBeVisible({ timeout: 8000 });
+      await expect(hostPage.getByTestId('sw-action-banner')).toContainText(/用最多3个单位进行攻击|Attack with up to 3 units/i, { timeout: 8000 });
+      await hostPage.waitForTimeout(500);
+
+      await hostPage.screenshot({
+        path: getEvidenceScreenshotPath(testInfo, 'soul-transfer-complete', {
+          subdir: 'summonerwars/summonerwars-abilities.e2e/灵魂转移：击杀后确认移动到死者位置',
         }),
       });
     } finally {
