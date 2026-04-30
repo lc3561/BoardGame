@@ -1074,6 +1074,68 @@ test.describe('Smash Up 牌库检索交互', () => {
         await game.screenshot('samurai-chan-play-no-akye-prompt', testInfo);
     });
 
+    test('武士 陈在基地计分进入弃牌堆后应抽一张牌', async ({ page, game }, testInfo) => {
+        test.setTimeout(60000);
+
+        await page.goto('/play/smashup');
+        await page.waitForFunction(
+            () => (window as any).__BG_TEST_HARNESS__?.state?.isRegistered?.() === true,
+            { timeout: 15000 },
+        );
+
+        await game.setupScene({
+            gameId: 'smashup',
+            player0: {
+                hand: [],
+                deck: ['robot_microbot_alpha'],
+                discard: [],
+                factions: ['world_champs', 'robots'],
+            },
+            player1: {
+                hand: [],
+                deck: [],
+                discard: [],
+                factions: ['dinosaurs', 'pirates'],
+            },
+            currentPlayer: '0',
+            phase: 'playCards',
+            bases: [{
+                defId: 'base_the_jungle',
+                minions: [
+                    { uid: 'wc-chan-1', defId: 'world_champs_samurai_chan', owner: '0', controller: '0', tempPowerModifier: 0 },
+                    { uid: 'wc-ally-1', defId: 'dino_laser_triceratops', owner: '0', controller: '0', tempPowerModifier: 0 },
+                    { uid: 'wc-enemy-1', defId: 'dino_king_rex', owner: '1', controller: '1', tempPowerModifier: 0 },
+                ],
+                ongoingActions: [],
+            }, {
+                defId: 'base_tar_pits',
+                minions: [],
+                ongoingActions: [],
+            }],
+        });
+
+        await waitForHandArea(page);
+        await game.screenshot('samurai-chan-before-scoring', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-world-champs-samurai-chan-before-scoring-2026-04-30');
+
+        await page.getByRole('button', { name: /^(结束回合|Finish Turn|End)$/i }).click({ force: true });
+        await page.waitForFunction(
+            () => {
+                const state = (window as any).__BG_TEST_HARNESS__?.state?.get?.();
+                return state?.core?.bases?.[0]?.defId !== 'base_the_jungle';
+            },
+            { timeout: 12000, polling: 200 },
+        );
+
+        const finalState = await game.getState();
+        expect(finalState.core.players['0'].hand.map((card: any) => card.defId)).toContain('robot_microbot_alpha');
+        expect(finalState.core.bases[0].defId).not.toBe('base_the_jungle');
+
+        await waitForHandArea(page);
+        await game.screenshot('samurai-chan-draw-after-scoring', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-world-champs-samurai-chan-draw-after-scoring-2026-04-30');
+    });
+
     test('盾牌少女打出后应选择对手并拿走其牌库顶的合格卡牌', async ({ page, game }, testInfo) => {
         test.setTimeout(60000);
 
@@ -1135,6 +1197,117 @@ test.describe('Smash Up 牌库检索交互', () => {
         expect(finalState.core.bases[0].minions.some((minion: any) => minion.defId === 'world_champs_shield_maiden')).toBe(true);
 
         await game.screenshot('shield-maiden-gained-top-card', testInfo);
+    });
+
+    test('竞技场应在首次于此打出随从后提供抽牌或额外行动交互', async ({ page, game }, testInfo) => {
+        test.setTimeout(60000);
+
+        await page.goto('/play/smashup');
+        await page.waitForFunction(
+            () => (window as any).__BG_TEST_HARNESS__?.state?.isRegistered?.() === true,
+            { timeout: 15000 },
+        );
+
+        await game.setupScene({
+            gameId: 'smashup',
+            player0: {
+                hand: ['pirate_first_mate'],
+                deck: ['wizard_summon'],
+                factions: ['world_champs', 'pirates'],
+            },
+            player1: {
+                hand: [],
+                deck: [],
+                factions: ['robots', 'dinosaurs'],
+            },
+            currentPlayer: '0',
+            phase: 'playCards',
+            bases: [
+                { defId: 'base_arena', minions: [], ongoingActions: [] },
+                { defId: 'base_2', minions: [], ongoingActions: [] },
+            ],
+        });
+
+        await game.playCard('pirate_first_mate', { targetBaseIndex: 0 });
+        await game.waitForInteraction('base_arena');
+
+        const promptMeta = await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const current = harness?.state?.get?.()?.sys?.interaction?.current;
+            return {
+                sourceId: current?.data?.sourceId ?? null,
+                options: (current?.data?.options ?? []).map((option: any) => ({
+                    choice: option.value?.choice ?? null,
+                    skip: option.value?.skip ?? false,
+                    label: option.label ?? null,
+                })),
+            };
+        });
+
+        expect(promptMeta.sourceId).toBe('base_arena');
+        expect(promptMeta.options.some((option: any) => option.choice === 'draw_card')).toBe(true);
+        expect(promptMeta.options.some((option: any) => option.choice === 'extra_action')).toBe(true);
+
+        await game.screenshot('world-champs-arena-prompt-visible', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-world-champs-arena-prompt-2026-04-30');
+
+        await game.selectInteractionOptionBy(
+            (option: any) => option.value?.choice === 'draw_card',
+            '竞技场选择抽一张牌',
+        );
+        await game.waitForNoInteraction();
+        await dismissSpotlightQueueIfPresent(page);
+
+        const finalState = await game.getState();
+        expect(finalState.core.players['0'].hand.map((card: any) => card.defId)).toContain('wizard_summon');
+        expect(finalState.core.bases[0].minions.some((minion: any) => minion.defId === 'pirate_first_mate')).toBe(true);
+
+        await game.screenshot('world-champs-arena-draw-resolved', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-world-champs-arena-draw-resolved-2026-04-30');
+    });
+
+    test('名人堂应在首次于此打出随从后给予该随从 +2 力量并反映到基地分数', async ({ page, game }, testInfo) => {
+        test.setTimeout(60000);
+
+        await page.goto('/play/smashup');
+        await page.waitForFunction(
+            () => (window as any).__BG_TEST_HARNESS__?.state?.isRegistered?.() === true,
+            { timeout: 15000 },
+        );
+
+        await game.setupScene({
+            gameId: 'smashup',
+            player0: {
+                hand: ['pirate_first_mate'],
+                deck: [],
+                factions: ['world_champs', 'pirates'],
+            },
+            player1: {
+                hand: [],
+                deck: [],
+                factions: ['robots', 'dinosaurs'],
+            },
+            currentPlayer: '0',
+            phase: 'playCards',
+            bases: [
+                { defId: 'base_hall_of_fame', minions: [], ongoingActions: [] },
+                { defId: 'base_2', minions: [], ongoingActions: [] },
+            ],
+        });
+
+        await game.playCard('pirate_first_mate', { targetBaseIndex: 0 });
+        await game.waitForNoInteraction();
+        await dismissSpotlightQueueIfPresent(page);
+
+        const finalState = await game.getState();
+        const buffedMinion = finalState.core.bases[0].minions.find((minion: any) => minion.defId === 'pirate_first_mate');
+
+        expect(buffedMinion).toBeTruthy();
+        expect(buffedMinion?.tempPowerModifier ?? 0).toBe(2);
+        await expect(page.getByTestId('su-base-score-0-0')).toContainText('4');
+
+        await game.screenshot('world-champs-hall-of-fame-buffed', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-world-champs-hall-of-fame-buffed-2026-04-30');
     });
 
     test('最后的歌声应强制对手额外打出小随从且不触发其打出能力，并给予你额外行动与额外随从', async ({ page, game }, testInfo) => {
@@ -3714,6 +3887,73 @@ test.describe('Smash Up 牌库检索交互', () => {
 
         await game.screenshot('place-em-down-resolved', testInfo);
         await saveStableScreenshot(page, testInfo, 'smashup-skeletons-place-em-down-resolved-2026-04-29');
+    });
+
+    test('藏骨堂应在你的回合开始时允许把弃牌堆中的低力量随从埋葬到这里', async ({ page, game }, testInfo) => {
+        test.setTimeout(60000);
+
+        await page.goto('/play/smashup');
+        await page.waitForFunction(
+            () => (window as any).__BG_TEST_HARNESS__?.state?.isRegistered?.() === true,
+            { timeout: 15000 },
+        );
+
+        await game.setupScene({
+            gameId: 'smashup',
+            player0: {
+                hand: [],
+                deck: [],
+                discard: ['skeletons_returned_one'],
+                factions: ['skeletons', 'robots'],
+            },
+            player1: {
+                hand: [],
+                deck: [],
+                discard: [],
+                factions: ['pirates', 'dinosaurs'],
+            },
+            currentPlayer: '1',
+            phase: 'playCards',
+            bases: [
+                { defId: 'base_ossuary', minions: [], ongoingActions: [] },
+                { defId: 'base_2', minions: [], ongoingActions: [] },
+            ],
+        });
+
+        await dispatchHarnessCommand(page, '1', 'ADVANCE_PHASE', {});
+        await game.waitForInteraction('base_ossuary');
+
+        const promptMeta = await page.evaluate(() => {
+            const harness = (window as any).__BG_TEST_HARNESS__;
+            const current = harness?.state?.get?.()?.sys?.interaction?.current;
+            return {
+                sourceId: current?.data?.sourceId ?? null,
+                optionDefs: (current?.data?.options ?? []).map((option: any) => option.value?.defId ?? null),
+                optionDisplayModes: (current?.data?.options ?? []).map((option: any) => option.displayMode ?? 'implicit'),
+            };
+        });
+
+        expect(promptMeta.sourceId).toBe('base_ossuary');
+        expect(promptMeta.optionDefs).toContain('skeletons_returned_one');
+        expect(promptMeta.optionDisplayModes.filter((mode: string) => mode === 'card')).toHaveLength(1);
+
+        await game.screenshot('skeletons-ossuary-prompt-visible', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-skeletons-ossuary-prompt-2026-04-30');
+
+        await game.selectInteractionOptionBy(
+            (option: any) => option.value?.defId === 'skeletons_returned_one',
+            '藏骨堂选择轮回者',
+        );
+        await game.waitForNoInteraction();
+        await dismissSpotlightQueueIfPresent(page);
+
+        const finalState = await game.getState();
+        expect((finalState.core.bases[0].buriedCards ?? []).some((card: any) => card.defId === 'skeletons_returned_one')).toBe(true);
+        expect(finalState.core.players['0'].discard.some((card: any) => card.defId === 'skeletons_returned_one')).toBe(false);
+        await expect(page.locator('[data-buried-card-uid]').first()).toBeVisible();
+
+        await game.screenshot('skeletons-ossuary-buried-resolved', testInfo);
+        await saveStableScreenshot(page, testInfo, 'smashup-skeletons-ossuary-buried-2026-04-30');
     });
 
     test('殉葬品打出后应先强制埋一张，再允许把额外埋葬牌放到不同基地', async ({ page, game }, testInfo) => {

@@ -103,7 +103,7 @@ const loadTutorial7 = async () => {
 
 const loadCriticalImageResolver7 = async () => {
     const resolverModule = await import('./smashup/criticalImageResolver');
-    return resolverModule.default ?? resolverModule.smashUpCriticalImageResolver;
+    return resolverModule.default;
 };
 
 const loadRuntime8 = async (): Promise<GameClientRuntimeModule> => {

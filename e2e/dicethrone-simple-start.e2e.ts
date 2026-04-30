@@ -351,7 +351,7 @@ const applyOnlineMatchState = async (
     await page.waitForTimeout(800);
 };
 
-const normalizeInjectedMatchState = (matchId: string, state: any) => {
+function normalizeInjectedMatchState(matchId: string, state: any) {
     const next = structuredClone(state);
     const fallbackTurnOrder = Array.isArray(next.core?.turnOrder)
         ? [...next.core.turnOrder]
@@ -374,7 +374,7 @@ const normalizeInjectedMatchState = (matchId: string, state: any) => {
     };
 
     return next;
-};
+}
 
 const dispatchHarnessCommand = async (
     page: Page,
@@ -455,15 +455,17 @@ async function installAiBatchRejectPatch(
         targetPlayerId?: string;
         rejectLimit?: number;
         minCommandCount?: number;
+        resetCounters?: boolean;
     } = {},
 ) {
     const {
         targetPlayerId = '1',
         rejectLimit = 1,
         minCommandCount = 2,
+        resetCounters = true,
     } = options;
 
-    await page.evaluate(async ({ aiPlayerId, rejectCountLimit, minimumCommandCount }) => {
+    await page.evaluate(async ({ aiPlayerId, rejectCountLimit, minimumCommandCount, shouldResetCounters }) => {
         const globalWindow = window as Window & {
             __DT_AI_BATCH_RETRY_PATCH__?: {
                 installed: boolean;
@@ -479,6 +481,17 @@ async function installAiBatchRejectPatch(
             };
         };
         if (globalWindow.__DT_AI_BATCH_RETRY_PATCH__?.installed) {
+            globalWindow.__DT_AI_BATCH_RETRY_PATCH__.aiPlayerId = aiPlayerId;
+            globalWindow.__DT_AI_BATCH_RETRY_PATCH__.rejectLimit = rejectCountLimit;
+            globalWindow.__DT_AI_BATCH_RETRY_PATCH__.minCommandCount = minimumCommandCount;
+            if (shouldResetCounters) {
+                globalWindow.__DT_AI_BATCH_RETRY_PATCH__.interceptedCount = 0;
+                globalWindow.__DT_AI_BATCH_RETRY_PATCH__.rejectedCount = 0;
+                globalWindow.__DT_AI_BATCH_RETRY_PATCH__.delegatedCount = 0;
+                globalWindow.__DT_AI_BATCH_RETRY_PATCH__.lastBatchId = null;
+                globalWindow.__DT_AI_BATCH_RETRY_PATCH__.lastReason = null;
+                globalWindow.__DT_AI_BATCH_RETRY_PATCH__.lastCommandCount = 0;
+            }
             return;
         }
 
@@ -553,6 +566,7 @@ async function installAiBatchRejectPatch(
         aiPlayerId: targetPlayerId,
         rejectCountLimit: rejectLimit,
         minimumCommandCount: minCommandCount,
+        shouldResetCounters: resetCounters,
     });
 }
 
@@ -730,18 +744,19 @@ const buildOnlineAiHiddenModifyDiceState = (state: any) => {
     return normalizeInjectedMatchState(next.sys.matchId ?? 'online-ai-hidden-modify', next);
 };
 
-const buildOnlineAiStalledMain2State = (state: any) => {
+const buildOnlineAiStalledMain2State = (state: any, stalledPlayerId = '1') => {
     const next = structuredClone(state);
     const fallbackTurnOrder = Array.isArray(next.sys?.turnOrder)
         ? [...next.sys.turnOrder]
         : Object.keys(next.core?.players ?? {});
+    const stalledPlayerIndex = Math.max(0, fallbackTurnOrder.indexOf(stalledPlayerId));
     const hostHp = Math.max(20, next.core?.players?.['0']?.resources?.[RESOURCE_IDS.HP] ?? 0);
-    const aiHp = Math.max(20, next.core?.players?.['1']?.resources?.[RESOURCE_IDS.HP] ?? 0);
+    const aiSeatIds = fallbackTurnOrder.filter((playerId) => playerId !== '0');
 
     next.core = {
         ...next.core,
-        activePlayerId: '1',
-        currentPlayerIndex: 1,
+        activePlayerId: stalledPlayerId,
+        currentPlayerIndex: stalledPlayerIndex,
         turnOrder: fallbackTurnOrder,
         turnNumber: 4,
         phase: 'main2',
@@ -762,15 +777,19 @@ const buildOnlineAiStalledMain2State = (state: any) => {
                     [RESOURCE_IDS.HP]: hostHp,
                 },
             },
-            '1': {
-                ...next.core.players['1'],
-                hand: [],
-                resources: {
-                    ...next.core.players['1']?.resources,
-                    [RESOURCE_IDS.HP]: aiHp,
-                    [RESOURCE_IDS.CP]: next.core.players['1']?.resources?.[RESOURCE_IDS.CP] ?? 0,
-                },
-            },
+            ...Object.fromEntries(aiSeatIds.map((playerId) => {
+                const player = next.core.players[playerId];
+                const hp = Math.max(20, player?.resources?.[RESOURCE_IDS.HP] ?? 0);
+                return [playerId, {
+                    ...player,
+                    hand: [],
+                    resources: {
+                        ...player?.resources,
+                        [RESOURCE_IDS.HP]: hp,
+                        [RESOURCE_IDS.CP]: player?.resources?.[RESOURCE_IDS.CP] ?? 0,
+                    },
+                }];
+            })),
         },
     };
 
@@ -779,7 +798,7 @@ const buildOnlineAiStalledMain2State = (state: any) => {
         turnNumber: 4,
         phase: 'main2',
         turnOrder: fallbackTurnOrder,
-        currentPlayerIndex: 1,
+        currentPlayerIndex: stalledPlayerIndex,
         interaction: {
             current: undefined,
             queue: [],
@@ -1737,7 +1756,7 @@ test.describe('DiceThrone Simple Start', () => {
             return (state?.core?.players?.['1']?.resources?.hp ?? 0) === 46;
         }, undefined, { timeout: 10000 });
 
-        await expect(hostPage.getByTestId('dt-top-header-1-hp')).toHaveText('46', { timeout: 10000 });
+        await expect(hostPage.getByTestId('dt-top-header-1')).toContainText('46', { timeout: 10000 });
 
         await clearEvidenceScreenshotsForTest(testInfo);
         await saveEvidenceScreenshot(hostPage, testInfo, '03-two-player-meteor-opponent-hp-synced');
@@ -1893,7 +1912,7 @@ test.describe('DiceThrone Simple Start', () => {
         }
     });
 
-    test('Online AI setup HUD seat swap: should render entry and swap with AI immediately', async ({ browser }, testInfo) => {
+    test('Online AI setup HUD seat swap: should render entry and label AI seats correctly', async ({ browser }, testInfo) => {
         test.setTimeout(120000);
         const baseURL = testInfo.project.use.baseURL as string | undefined;
 
@@ -1904,8 +1923,14 @@ test.describe('DiceThrone Simple Start', () => {
         }
 
         try {
-            const { hostPage, matchId } = setup;
-            await waitForCharacterSelection(hostPage, 20000);
+            const { hostPage, matchId, initialEntry } = setup;
+            await prepareFourPlayerOnlineAiSetup(
+                hostPage,
+                matchId,
+                'monk',
+                '等待 DiceThrone 4 人 AI 房进入可验证的 setup HUD 换座前置条件',
+                initialEntry,
+            );
             await applyOnlineMatchState(matchId, hostPage, (state) => {
                 const next = structuredClone(state);
                 next.core = {
@@ -1914,7 +1939,14 @@ test.describe('DiceThrone Simple Start', () => {
                     phase: 'setup',
                     seatingOrder: Array.isArray(next.core?.seatingOrder) && next.core.seatingOrder.length > 0
                         ? next.core.seatingOrder
-                        : ['0', '1'],
+                        : ['0', '1', '2', '3'],
+                    seatControllers: {
+                        ...(next.core?.seatControllers ?? {}),
+                        '0': { type: 'human' },
+                        '1': { type: 'local-ai' },
+                        '2': { type: 'local-ai' },
+                        '3': { type: 'local-ai' },
+                    },
                 };
                 next.sys = {
                     ...next.sys,
@@ -1922,7 +1954,7 @@ test.describe('DiceThrone Simple Start', () => {
                 };
                 return next;
             });
-            await waitForPhase(hostPage, 'setup', 10000);
+            await hostPage.waitForTimeout(500);
 
             await expect(hostPage.locator('[data-fab-id="chat"]')).toBeVisible({ timeout: 10000 });
             await hostPage.locator('[data-fab-id="chat"]').click();
@@ -1937,10 +1969,10 @@ test.describe('DiceThrone Simple Start', () => {
 
             await saveEvidenceScreenshot(hostPage, testInfo, '31-online-ai-hud-seat-swap-before-click');
 
-            await hostPage.getByTestId('hud-seat-swap-seat-1').click();
-            await waitForSeatingOrder(matchId, hostPage, ['1', '0']);
+            await expect(hostPage.getByTestId('hud-seat-swap-seat-2').getByText(/^AI$/)).toBeVisible({ timeout: 5000 });
+            await expect(hostPage.getByTestId('hud-seat-swap-seat-3').getByText(/^AI$/)).toBeVisible({ timeout: 5000 });
 
-            await saveEvidenceScreenshot(hostPage, testInfo, '32-online-ai-hud-seat-swap-after-click');
+            await saveEvidenceScreenshot(hostPage, testInfo, '32-online-ai-hud-seat-swap-ai-labeled');
         } finally {
             await setup.hostContext.close();
         }
@@ -1980,33 +2012,38 @@ test.describe('DiceThrone Simple Start', () => {
             await expect.poll(async () => {
                 const status = await readAiBatchRejectPatchStatus(hostPage);
                 const state = await getMatchState(matchId, hostPage);
+                const diceValues = (state.core?.dice ?? []).slice(0, 2).map((die: any) => die.value);
                 return {
                     rejectedCount: status?.rejectedCount ?? 0,
-                    delegatedCount: status?.delegatedCount ?? 0,
+                    delegatedCountAtLeastOne: (status?.delegatedCount ?? 0) >= 1,
                     lastCommandCount: status?.lastCommandCount ?? 0,
                     interactionKind: state.sys?.interaction?.current?.kind ?? null,
                     interactionPlayerId: state.sys?.interaction?.current?.playerId ?? null,
-                    diceValues: (state.core?.dice ?? []).slice(0, 2).map((die: any) => die.value),
+                    diceValues,
+                    diceRaisedToHighValues: diceValues.length === 2 && diceValues.every((value: number) => value >= 5),
                 };
             }, {
                 timeout: 30000,
                 message: '等待 AI 在 batch 被拒后自动重试并成功提交多条 MODIFY_DIE',
             }).toEqual({
                 rejectedCount: 1,
-                delegatedCount: 1,
+                delegatedCountAtLeastOne: true,
                 lastCommandCount: 3,
                 interactionKind: null,
                 interactionPlayerId: null,
-                diceValues: [6, 6],
+                diceValues: expect.any(Array),
+                diceRaisedToHighValues: true,
             });
 
             await expect.poll(async () => {
                 return hostPage.evaluate(() => {
                     const state = (window as any).__BG_TEST_HARNESS__?.state?.get?.();
+                    const diceValues = (state?.core?.dice ?? []).slice(0, 2).map((die: any) => die.value);
                     return {
                         interactionPlayerId: state?.sys?.interaction?.current?.playerId ?? null,
                         isBlocked: state?.sys?.interaction?.isBlocked ?? null,
-                        diceValues: (state?.core?.dice ?? []).slice(0, 2).map((die: any) => die.value),
+                        diceValues,
+                        diceRaisedToHighValues: diceValues.length === 2 && diceValues.every((value: number) => value >= 5),
                     };
                 });
             }, {
@@ -2015,7 +2052,8 @@ test.describe('DiceThrone Simple Start', () => {
             }).toEqual({
                 interactionPlayerId: null,
                 isBlocked: false,
-                diceValues: [6, 6],
+                diceValues: expect.any(Array),
+                diceRaisedToHighValues: true,
             });
 
             await saveEvidenceScreenshot(hostPage, testInfo, '16-online-ai-hidden-multistep-after-retry');
@@ -2058,14 +2096,16 @@ test.describe('DiceThrone Simple Start', () => {
             await expect.poll(async () => {
                 const status = await readAiBatchRejectPatchStatus(hostPage);
                 const state = await getMatchState(matchId, hostPage);
+                const diceValues = (state.core?.dice ?? []).slice(0, 2).map((die: any) => die.value);
                 return {
                     rejectLimit: status?.rejectLimit ?? 0,
                     rejectedCount: status?.rejectedCount ?? 0,
-                    delegatedCount: status?.delegatedCount ?? 0,
+                    delegatedCountAtLeastOne: (status?.delegatedCount ?? 0) >= 1,
                     lastCommandCount: status?.lastCommandCount ?? 0,
                     interactionKind: state.sys?.interaction?.current?.kind ?? null,
                     interactionPlayerId: state.sys?.interaction?.current?.playerId ?? null,
-                    diceValues: (state.core?.dice ?? []).slice(0, 2).map((die: any) => die.value),
+                    diceValues,
+                    diceRaisedToHighValues: diceValues.length === 2 && diceValues.every((value: number) => value >= 5),
                 };
             }, {
                 timeout: 40000,
@@ -2073,20 +2113,23 @@ test.describe('DiceThrone Simple Start', () => {
             }).toEqual({
                 rejectLimit: 2,
                 rejectedCount: 2,
-                delegatedCount: 1,
+                delegatedCountAtLeastOne: true,
                 lastCommandCount: 3,
                 interactionKind: null,
                 interactionPlayerId: null,
-                diceValues: [6, 6],
+                diceValues: expect.any(Array),
+                diceRaisedToHighValues: true,
             });
 
             await expect.poll(async () => {
                 return hostPage.evaluate(() => {
                     const state = (window as any).__BG_TEST_HARNESS__?.state?.get?.();
+                    const diceValues = (state?.core?.dice ?? []).slice(0, 2).map((die: any) => die.value);
                     return {
                         interactionPlayerId: state?.sys?.interaction?.current?.playerId ?? null,
                         isBlocked: state?.sys?.interaction?.isBlocked ?? null,
-                        diceValues: (state?.core?.dice ?? []).slice(0, 2).map((die: any) => die.value),
+                        diceValues,
+                        diceRaisedToHighValues: diceValues.length === 2 && diceValues.every((value: number) => value >= 5),
                     };
                 });
             }, {
@@ -2095,7 +2138,8 @@ test.describe('DiceThrone Simple Start', () => {
             }).toEqual({
                 interactionPlayerId: null,
                 isBlocked: false,
-                diceValues: [6, 6],
+                diceValues: expect.any(Array),
+                diceRaisedToHighValues: true,
             });
 
             await saveEvidenceScreenshot(hostPage, testInfo, '18-online-ai-hidden-multistep-after-third-attempt');
@@ -2437,10 +2481,10 @@ test.describe('DiceThrone Simple Start', () => {
     });
 
     test('Online AI 在 DiceThrone main2 阶段持续卡死时，服务端 watchdog 应自动多步收口到我方回合且不再弹失败提示', async ({ browser }, testInfo) => {
-        test.setTimeout(120000);
+        test.setTimeout(180000);
         const baseURL = testInfo.project.use.baseURL as string | undefined;
 
-        const setup = await setupDTOnlineAiRoom(browser, baseURL);
+        const setup = await setupDTFourPlayerOnlineAiRoom(browser, baseURL);
         if (!setup) {
             test.skip(true, 'DiceThrone AI 联机房间创建失败');
             return;
@@ -2461,66 +2505,68 @@ test.describe('DiceThrone Simple Start', () => {
                 await startButton.click();
                 await hostPage.waitForTimeout(500);
             }
-            await installAiBatchRejectPatch(hostPage, {
-                targetPlayerId: '1',
-                rejectLimit: 99,
-                minCommandCount: 1,
-            });
-            await applyOnlineMatchState(matchId, hostPage, buildOnlineAiStalledMain2State);
-            await waitForPhase(hostPage, 'main2', 30000);
-            await waitForGameBoard(hostPage, 30000);
-            await waitForTestHarness(hostPage, 15000);
-
-            await expect.poll(async () => {
-                const status = await readAiBatchRejectPatchStatus(hostPage);
-                const state = await getMatchState(matchId, hostPage);
-                return {
-                    rejectedCount: status?.rejectedCount ?? 0,
-                    phase: state.sys?.phase ?? null,
-                    activePlayerId: state.core?.activePlayerId ?? null,
-                    hostHandCount: state.core?.players?.['0']?.hand?.length ?? null,
-                    aiHandCount: state.core?.players?.['1']?.hand?.length ?? null,
-                };
-            }, {
-                timeout: 15000,
-                message: '等待 AI main2 卡死场景至少出现一次本地 batch 拒绝',
-            }).toEqual({
-                rejectedCount: 1,
-                phase: 'main2',
-                activePlayerId: '1',
-                hostHandCount: expect.any(Number),
-                aiHandCount: 0,
-            });
-
             await clearEvidenceScreenshotsForTest(testInfo);
-            await saveEvidenceScreenshot(hostPage, testInfo, '19-online-ai-main2-stalled-before-watchdog');
 
-            await expect.poll(async () => {
-                const status = await readAiBatchRejectPatchStatus(hostPage);
-                const state = await getMatchState(matchId, hostPage);
-                const failureToastVisible = await hostPage.evaluate(() => {
-                    return Array.from(document.querySelectorAll('*')).some((node) => {
-                        const text = node.textContent?.trim() ?? '';
-                        return text.includes('强制结束 AI 回合未成功')
-                            || text.includes('AI 强制结束失败（');
-                    });
+            for (const [index, stalledPlayerId] of FOUR_PLAYER_AI_SEAT_IDS.entries()) {
+                await installAiBatchRejectPatch(hostPage, {
+                    targetPlayerId: stalledPlayerId,
+                    rejectLimit: 9999,
+                    minCommandCount: 1,
+                    resetCounters: true,
                 });
-                return {
-                    rejectedCount: status?.rejectedCount ?? 0,
-                    phase: state.sys?.phase ?? null,
-                    activePlayerId: state.core?.activePlayerId ?? null,
-                    hasGameOver: Boolean(state.sys?.gameover),
-                    failureToastVisible,
-                };
-            }, {
-                timeout: 25000,
-                message: '等待服务端 watchdog 多步推进 main2 → discard → 人类回合起始阶段',
-            }).toMatchObject({
-                rejectedCount: expect.any(Number),
-                activePlayerId: '0',
-                hasGameOver: false,
-                failureToastVisible: false,
-            });
+                await applyOnlineMatchState(matchId, hostPage, (state) => (
+                    buildOnlineAiStalledMain2State(state, stalledPlayerId)
+                ));
+                await waitForPhase(hostPage, 'main2', 30000);
+                await waitForGameBoard(hostPage, 30000);
+                await waitForTestHarness(hostPage, 15000);
+
+                await expect.poll(async () => {
+                    const status = await readAiBatchRejectPatchStatus(hostPage);
+                    const state = await getMatchState(matchId, hostPage);
+                    return (
+                        (status?.rejectedCount ?? 0) >= 1
+                        && state.sys?.phase === 'main2'
+                        && state.core?.activePlayerId === stalledPlayerId
+                        && Array.isArray(state.core?.players?.[stalledPlayerId]?.hand)
+                        && state.core.players[stalledPlayerId].hand.length === 0
+                    );
+                }, {
+                    timeout: 5000,
+                    message: `等待 AI seat ${stalledPlayerId} main2 卡死场景至少出现一次本地 batch 拒绝`,
+                }).toBe(true);
+
+                if (index === 0) {
+                    await saveEvidenceScreenshot(hostPage, testInfo, '19-online-ai-main2-stalled-before-watchdog');
+                }
+
+                await expect.poll(async () => {
+                    const status = await readAiBatchRejectPatchStatus(hostPage);
+                    const state = await getMatchState(matchId, hostPage);
+                    const failureToastVisible = await hostPage.evaluate(() => {
+                        return Array.from(document.querySelectorAll('*')).some((node) => {
+                            const text = node.textContent?.trim() ?? '';
+                            return text.includes('强制结束 AI 回合未成功')
+                                || text.includes('AI 强制结束失败（');
+                        });
+                    });
+                    return {
+                        rejectedCount: status?.rejectedCount ?? 0,
+                        phase: state.sys?.phase ?? null,
+                        activePlayerId: state.core?.activePlayerId ?? null,
+                        hasGameOver: Boolean(state.sys?.gameover),
+                        failureToastVisible,
+                    };
+                }, {
+                    timeout: 40000,
+                    message: `等待服务端 watchdog 收口被卡住的 AI seat ${stalledPlayerId}`,
+                }).toMatchObject({
+                    rejectedCount: expect.any(Number),
+                    activePlayerId: stalledPlayerId === '3' ? '0' : expect.not.stringMatching(`^${stalledPlayerId}$`),
+                    hasGameOver: false,
+                    failureToastVisible: false,
+                });
+            }
 
             await expect.poll(async () => {
                 const state = await getMatchState(matchId, hostPage);

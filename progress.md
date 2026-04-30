@@ -1,6 +1,20 @@
 ## Session: 2026-04-30 Smash Up 三派系重审续跑
-- **Status:** in_progress
+- **Status:** completed
 - Actions taken:
+  - 已补 `World Champs / 世界冠军`、`Skeletons / 骷髅` 三条基地层对象级 L3：
+    - `竞技场 / base_arena`
+    - `名人堂 / base_hall_of_fame`
+    - `藏骨堂 / base_ossuary`
+  - 已新增证据文档：
+    - `evidence/smashup/smashup-world-champs-skeletons-bases-e2e-2026-04-30.md`
+  - 已明确收紧剩余范围：
+    - `World Champs` 基地层残留已清空，当前只剩《武士 陈》正路径是否继续单独补 L3 的冻结说明
+    - `Skeletons` 基地层残留已清空；`埋骨地 / base_boneyard` 作为无能力基地仅保留卡图/索引一致性冻结说明
+  - 已完成本轮定向验证：
+    - `竞技场` E2E：`1 passed`
+    - `名人堂` E2E：`1 passed`
+    - `藏骨堂` E2E：`1 passed`
+    - `expansionBaseAbilities` 聚焦：`2 passed`
   - 已补 `Mermaids / 美人鱼` 三条剩余对象级 L3：
     - `塞壬`
     - `诱惑者`
@@ -15,16 +29,23 @@
     - `evidence/smashup/smashup-mermaids-siren-temptress-desert-island-e2e-2026-04-30.md`
   - 已回写总审计：
     - `evidence/smashup/smashup-10th-anniversary-factions-audit-20260419.md`
+  - 已补 `World Champs / 世界冠军` 最后 1 条对象级正路径 L3：
+    - `武士 陈`
+  - 已新增证据文档：
+    - `evidence/smashup/smashup-world-champs-samurai-chan-e2e-2026-04-30.md`
   - 验证结果：
     - `塞壬` E2E：`1 passed`
     - `诱惑者` E2E：`1 passed`
     - `无人岛` E2E：`1 passed`
     - `ongoingModifiers` 聚焦：`6 passed`
     - `typecheck`：通过
+    - `武士 陈` 聚焦 Vitest：`2 passed`
+    - `武士 陈` E2E：`1 passed`
+  - 已确认最终验收口径：
+    - 不是每张卡都机械要求 E2E。
+    - 当前批次强制补到 E2E 的对象，只限历史投诉对象、真实入口链路、reaction session、阶段切换、UI 出口与曾出过“领域对 / UI错”问题的对象。
   - Next:
-    - 不再按“补完一批就停”的口径执行。
-    - 现在改为以 `task_plan.md > Current Remaining Batch` 的未勾项作为停机门禁。
-    - 下一批直接转向：`World Champs / Skeletons` 剩余对象与旧高层失效口径回写。
+    - 无；本批三派系重审已完成最终收口。
 
 ## Session: 2026-04-24 Feedback cleanup audit
 - **Status:** in_progress

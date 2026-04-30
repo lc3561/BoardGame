@@ -292,10 +292,82 @@
 - 验收判断：
   - 达标。`life_drain` 已形成“宣告攻击 -> 弹出牺牲友军提示 -> 选择目标 -> 回到普通攻击态”的真实正向闭环。
 
+### 24. `soul_transfer` 击杀后的确认提示真实出现
+
+- 路径：`D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\summonerwars\summonerwars-abilities.e2e\灵魂转移：击杀后确认移动到死者位置\灵魂转移：击杀后确认移动到死者位置-soul-transfer-prompt-visible.png`
+- 我实际看到：
+  - 顶部青色横幅明确写着“灵魂转移：是否将弓箭手移动到被消灭单位的位置？”，右侧同时有“确认移动”和“跳过”按钮。
+  - 棋盘上能直接看到亡灵弓箭手、本次被击杀目标位置和敌方其余单位，本体都在图里，不是只拍到横幅。
+  - 这张图对应的是真实攻击击杀后的系统确认态，右侧攻击次数已经减少到 `2`，说明不是脱离主链的假 prompt。
+- 验收判断：
+  - 达标。`soul_transfer` 的核心缺口“提示是否真实上屏”已经补到正向证据。
+
+### 25. `soul_transfer` 确认移动后结果正常收口
+
+- 路径：`D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\summonerwars\summonerwars-abilities.e2e\灵魂转移：击杀后确认移动到死者位置\灵魂转移：击杀后确认移动到死者位置-soul-transfer-complete.png`
+- 我实际看到：
+  - 顶部已回到普通攻击横幅“用最多3个单位进行攻击”，不再停留在灵魂转移确认态。
+  - 原本位于下方的亡灵弓箭手已经离开起始格，移动到了刚才被击杀单位所在格，原格为空。
+  - 棋盘上没有残留确认按钮或额外交互遮罩，说明移动结果已经真正写回真实棋盘态。
+- 验收判断：
+  - 达标。`soul_transfer` 已形成“攻击击杀 -> 确认移动 prompt -> 目标位移落地 -> 横幅收口”的完整正向闭环。
+
+### 26. `infection` 弃牌堆选卡浮层真实出现
+
+- 路径：`D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\summonerwars\summonerwars-abilities.e2e\感染：击杀后从弃牌堆选择疫病体并召回到死者位置\感染：击杀后从弃牌堆选择疫病体并召回到死者位置-infection-card-selector-visible.png`
+- 我实际看到：
+  - 棋盘中央出现了独立的选卡浮层，标题明确写着“感染：选择弃牌堆中的疫病体”。
+  - 浮层内能直接看到弃牌堆中的“亡灵疫病体”卡本体，下方有“跳过”按钮，说明不是静默自动复活。
+  - 背景棋盘仍保留真实攻击场景，证明这是击杀后系统交互弹出的真实 overlay，不是单独拼装的卡牌预览。
+- 验收判断：
+  - 达标。`infection` 的核心提示链已经从“理论上有 overlay”升级到“玩家肉眼可见的真实选卡浮层”。
+
+### 27. `infection` 选卡后疫病体成功召回到死者位置
+
+- 路径：`D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\summonerwars\summonerwars-abilities.e2e\感染：击杀后从弃牌堆选择疫病体并召回到死者位置\感染：击杀后从弃牌堆选择疫病体并召回到死者位置-infection-summon-complete.png`
+- 我实际看到：
+  - 顶部已回到普通攻击横幅，说明选卡浮层已经正确关闭，没有卡在中间态。
+  - 刚才被击杀的目标格上出现新的我方“亡灵疫病体”本体，位置与死者格一致。
+  - 我方场上比 prompt 前多出一只亡灵疫病体，说明不是只消费了浮层，而是召回结果真正落到了棋盘。
+- 验收判断：
+  - 达标。`infection` 已完成“击杀 -> 弃牌堆选卡 -> 复活到死者位置 -> 浮层收口”的完整正向闭环。
+
+### 28. `funeral_pyre` 回合开始治疗提示真实出现
+
+- 路径：`D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\summonerwars\summonerwars-abilities.e2e\殉葬火堆：回合开始出现治疗提示并移除目标伤害\殉葬火堆：回合开始出现治疗提示并移除目标伤害-funeral-pyre-prompt-visible.png`
+- 我实际看到：
+  - 顶部橙色横幅明确写着“殉葬火堆弃除：选择一个受伤单位治疗 2 点（点击棋盘上的单位）”，右侧有“跳过”按钮。
+  - 左下角主动事件区里能直接看到“殉葬火堆”事件本体，棋盘上受伤的我方亡灵战士本体也在画面里。
+  - 右侧阶段条已经进入新回合的召唤阶段，说明这个 prompt 确实发生在回合切换后，而不是被硬塞进旧阶段。
+- 验收判断：
+  - 达标。用户之前指出“这条应该有提示”，现在已经有明确、可见、时机正确的正向截图。
+
+### 29. `funeral_pyre` 选择受伤单位后治疗与弃置一起收口
+
+- 路径：`D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\summonerwars\summonerwars-abilities.e2e\殉葬火堆：回合开始出现治疗提示并移除目标伤害\殉葬火堆：回合开始出现治疗提示并移除目标伤害-funeral-pyre-heal-complete.png`
+- 我实际看到：
+  - 顶部已回到普通召唤阶段横幅，不再停留在殉葬火堆提示。
+  - 左下角主动事件区里的“殉葬火堆”本体已经消失，说明弃除确实落地。
+  - 棋盘上原本受伤的亡灵战士仍在原位，伤害显示从 `3/4` 降到了 `1/4`，肉眼能直接看到治疗结果。
+- 验收判断：
+  - 达标。`funeral_pyre` 已完成“回合切换触发 -> 提示出现 -> 选择受伤友军 -> 治疗与弃置一起收口”的完整正向闭环。
+
+## 整文件复跑
+
+- 命令：`PW_WORKERS=1 BG_ALLOW_HEAVY_TASK_CONCURRENCY=1 BG_BYPASS_GLOBAL_HEAVY_BUDGET=1 npm run test:e2e:ci -- e2e/summonerwars/summonerwars-abilities.e2e.ts`
+- 结果：`5 passed`
+- 覆盖用例：
+  - `火祀召唤：召唤后选择牺牲友军并移动到牺牲位置`
+  - `吸取生命：宣告攻击后出现牺牲友军提示并完成牺牲`
+  - `灵魂转移：击杀后确认移动到死者位置`
+  - `感染：击杀后从弃牌堆选择疫病体并召回到死者位置`
+  - `殉葬火堆：回合开始出现治疗提示并移除目标伤害`
+- 验收判断：
+  - 达标。该文件内五条亡灵交互链已经在同一轮标准 E2E 入口下整文件通过，不是单条用例偶然成功。
+
 ## 本轮未完全补齐的证据缺口
 
 - `structure_shift` 当前仍缺一张“第二步位置高亮已经出现”的专门截图；现有证据是“第一步 prompt 可见”直接跳到“结果已落地”。
-- `soul_transfer / infection / funeral_pyre` 仍缺真实成功 E2E 证据链，不能据此宣称 SummonerWars 交互迁移已全面验收。
 - `StatusBanners.tsx` 的主要横幅分支现已统一挂上 `data-testid="sw-ability-prompt"`；后续新增 interaction 若继续扩展到新横幅分支，仍需保持这条约束，避免再次退回“按文案找横幅”的脆弱断言。
 - 英文 locale 下的真实提示截图仍缺；现阶段更多是中英双语断言，不是英文界面肉眼证据。
 - 已确认一个独立残留风险：当测试场景把目标设成会被攻击直接击杀时，headless Chromium 可能在 destroy/shatter 特效链后整 browser 断开；当前 `withdraw / mind_transmission` 的正向证据通过“非致死目标”绕开以验证交互链，产品级根因仍未正式修复。
@@ -315,6 +387,9 @@
   - `fortress_power`
   - `fire_sacrifice_summon`
   - `life_drain`
+  - `soul_transfer`
+  - `infection`
+  - `funeral_pyre`
 - 这说明交互迁移主链已经不只是“流程可点”，而是多条真实 prompt 与二段点击链都已重新打通。
 - 但从“全面验收”口径看，任务仍未结束；剩余 blockers 已经收敛成两类：
   - 仍缺正向 E2E 证据的 interaction 分支。

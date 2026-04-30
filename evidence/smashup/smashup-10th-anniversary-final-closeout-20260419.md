@@ -1,5 +1,33 @@
 # Smash Up 10 周年三派系实施最终收口（2026-04-19，2026-04-20 更新）
 
+## 2026-04-30 最终版：当前收口结论生效
+
+- 当前这份 closeout 已重新对齐到最新真相，可以作为三派系重审完成后的最终汇总材料。
+- 最后一条补证是：
+  - `World Champs / 世界冠军`《武士 陈》正路径 L3，见 `evidence/smashup/smashup-world-champs-samurai-chan-e2e-2026-04-30.md`
+- 当前有效结论：
+  1. `Mermaids / 美人鱼` 的对象级 UI / move / ongoing 残余已清空。
+  2. `Skeletons / 骷髅` 的对象级 bury / uncover / scoreBases / reaction 残余已清空；`埋骨地 / base_boneyard` 仅保留“无能力基地”说明。
+  3. `World Champs / 世界冠军` 的对象级 onPlay / ongoing / discard special / beforeScoring / afterScoring / reaction 残余已清空；《武士 陈》现已同时具备负路径 L3 与正路径 L3。
+  4. 本文后续出现的“仍有残余范围”段落均属于历史失效记录，不再代表当前状态。
+- 当前验收策略也同步固定：
+  - 不是每个对象都要求端到端。
+  - 只有历史投诉对象、真实入口链路、reaction session、阶段切换、UI 出口与高风险对象必须补到 L3。
+
+## 2026-04-30 继续回写：当前 closeout 口径继续失效，但残余已收紧到对象级
+
+- 本文档仍**不能**作为“三派系最终已收口”的证明材料。
+- 但截至 2026-04-30，残余范围已经不是早期那种“World Champs / Skeletons 大片未补”，而是被收紧成：
+  1. `World Champs`
+     - 《竞技场》《名人堂》基地层 L3 已补齐，见 `evidence/smashup/smashup-world-champs-skeletons-bases-e2e-2026-04-30.md`
+     - 当前只剩《武士 陈》是否继续单独补一条正路径 L3；现阶段冻结为“L2 正路径 + 负路径 L3”
+  2. `Skeletons`
+     - 《藏骨堂》基地层 L3 已补齐，见 `evidence/smashup/smashup-world-champs-skeletons-bases-e2e-2026-04-30.md`
+     - `埋骨地 / base_boneyard` 当前按“无能力基地”冻结，不再视为漏实现
+  3. `Mermaids`
+     - 《塞壬 / 诱惑者 / 无人岛》L3 与 UI 分数口径缺口已补齐，见 `evidence/smashup/smashup-mermaids-siren-temptress-desert-island-e2e-2026-04-30.md`
+- 当前 closeout 失败的主要原因，已经从“没做完对象补证”转成“高层最终总结文案还没重写成当前真相”。
+
 ## 2026-04-25 重审记录：旧“最终收口”结论失效
 
 - 失效对象：

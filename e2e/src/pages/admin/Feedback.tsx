@@ -736,8 +736,8 @@ export default function AdminFeedbackPage() {
                 </div>
             </div>
 
-            <div className="grid flex-1 min-h-0 gap-1.5 xl:grid-cols-[minmax(0,1fr)_312px] 2xl:grid-cols-[minmax(0,1fr)_330px]">
-                <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm">
+            <div className="grid min-h-0 gap-1.5 xl:grid-cols-[minmax(0,1fr)_312px] 2xl:grid-cols-[minmax(0,1fr)_330px]">
+                <section className="flex min-h-0 max-h-[calc(100vh-260px)] flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm">
                     {loading ? (
                         <div className="flex flex-1 items-center justify-center py-20">
                             <RefreshCw className="animate-spin text-zinc-300" size={24} />
@@ -747,7 +747,7 @@ export default function AdminFeedbackPage() {
                             {t('feedback.table.empty')}
                         </div>
                     ) : (
-                        <div className="flex-1 min-h-0 max-h-[calc(100vh-260px)] overflow-auto" data-testid="feedback-list-scroll">
+                        <div className="flex-1 min-h-0 overflow-auto" data-testid="feedback-list-scroll">
                             <table className="w-full table-fixed text-[11px]">
                                 <thead className="sticky top-0 z-10 bg-zinc-50/95 backdrop-blur">
                                     <tr className="text-left text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-400">
@@ -1097,7 +1097,7 @@ function FeedbackDetailPanel({
         ?? 'bg-zinc-100 text-zinc-600 border-zinc-200';
 
     return (
-        <aside className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm">
+        <aside className="flex min-h-0 max-h-[calc(100vh-260px)] flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm">
             <div className="flex flex-none flex-col gap-1.5 border-b border-zinc-200 px-3 py-2">
                 <div className="flex flex-wrap items-start gap-2">
                     <div className="flex h-7 w-7 flex-none items-center justify-center rounded-lg bg-zinc-100">

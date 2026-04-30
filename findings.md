@@ -1,5 +1,34 @@
 # Findings & Resources
 
+## Addendum（2026-04-30）：Smash Up《武士 陈》正路径补证与最终验收口径
+
+- 本轮补上了 `World Champs` 最后一个对象级冻结点：《武士 陈》正路径 L3。
+- 新证据：
+  - `evidence/smashup/smashup-world-champs-samurai-chan-e2e-2026-04-30.md`
+- 新验证：
+  - `world_champs_samurai_chan` 聚焦 Vitest：`2 passed`
+  - `武士 陈在基地计分进入弃牌堆后应抽一张牌` E2E：`1 passed`
+- 这条补证后，前一版“《武士 陈》只保留负路径 L3 + 领域正路径”的冻结说明失效。
+- 也同步明确这轮流程结论：
+  - 不是每个对象都机械要求端到端。
+  - 必须补到 L3 的，是历史投诉对象、真实入口链路、reaction session、阶段切换、UI 出口和曾出现“领域对 / UI错”的对象。
+  - 其余对象保持 `L0-L2` + 风险抽样即可，不再用“全卡都上 E2E”制造无效工作量。
+
+## Addendum（2026-04-30）：Smash Up 世界冠军 / 骷髅基地层残余清理
+
+- 本轮新增 3 条基地层对象级 L3：
+  - `竞技场 / base_arena`
+  - `名人堂 / base_hall_of_fame`
+  - `藏骨堂 / base_ossuary`
+- 这批补证后，三新派系当前残余范围被继续收紧：
+  - `World Champs`：基地层真实入口残留已清空；当前只剩《武士 陈》正路径是否继续单独补 L3 的冻结说明
+  - `Skeletons`：基地层真实入口残留已清空；`埋骨地 / base_boneyard` 没有能力注册痕迹，当前按“无能力基地”冻结
+- 本轮也补上了一个流程层结论：
+  - 不是所有“还没补到 L3”的对象都必须机械继续补到同一深度
+  - 对于《武士 陈》这类没有主动 prompt、当前用户直接反馈风险点又是“别串成海龟阿凯效果”的对象，负路径 L3 + 领域正路径 + 明确降级理由，才是当前更严谨的收口方式
+- 证据：
+  - `evidence/smashup/smashup-world-champs-skeletons-bases-e2e-2026-04-30.md`
+
 ## Addendum（2026-04-30）：Smash Up 美人鱼《塞壬 / 诱惑者 / 无人岛》重审
 
 - 本轮不是单纯补截图，先抓到 1 个真实 UI 口径 bug：

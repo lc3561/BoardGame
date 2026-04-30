@@ -98,9 +98,23 @@ describe('expansion base extra timing regression coverage', () => {
             minionUid: 'm1',
         }));
 
-        const limitEvents = result.events.filter(e => e.type === SU_EVENTS.LIMIT_MODIFIED);
-        expect(limitEvents).toHaveLength(2);
-        expect(limitEvents.every(e => (e as any).payload.playTiming === 'immediate')).toBe(true);
+        expect(result.events).toHaveLength(0);
+        const interactions = getInteractionsFromResult(result);
+        expect(interactions).toHaveLength(1);
+
+        const handler = getInteractionHandler('base_fairy_ring');
+        const resolved = handler!(
+            result.matchState ?? makeMatchState(core),
+            '0',
+            { choice: 'extra_minion' },
+            interactions[0].data,
+            dummyRandom,
+            1000,
+        );
+
+        const limitEvents = resolved.events.filter(e => e.type === SU_EVENTS.LIMIT_MODIFIED);
+        expect(limitEvents).toHaveLength(1);
+        expect((limitEvents[0] as any).payload.playTiming).toBe('immediate');
     });
 });
 
@@ -177,6 +191,85 @@ describe('10th Anniversary bases', () => {
         );
 
         expect(resolved.events.some(event => event.type === SU_EVENTS.CARD_BURIED)).toBe(true);
+    });
+
+    it('base_arena 在此基地首次打出随从后，应提供额外行动或抽牌交互', () => {
+        const core = makeState({
+            bases: [makeBase('base_arena')],
+            players: {
+                '0': makePlayer('0', {
+                    deck: [makeCard('draw-1', 'pirate_dinghy', 'action')],
+                    minionsPlayedPerBase: { 0: 1 },
+                }),
+                '1': makePlayer('1'),
+            },
+        });
+
+        const result = triggerBaseAbilityWithMS('base_arena', 'onMinionPlayed', makeCtx({
+            state: core,
+            baseDefId: 'base_arena',
+            baseIndex: 0,
+            minionUid: 'm1',
+            minionDefId: 'pirate_first_mate',
+        }));
+
+        const interactions = getInteractionsFromResult(result);
+        expect(interactions).toHaveLength(1);
+        expect(interactions[0].data.sourceId).toBe('base_arena');
+        expect(interactions[0].data.options.map((option: any) => option.value?.choice ?? option.value?.skip)).toEqual(
+            expect.arrayContaining(['extra_action', 'draw_card', true]),
+        );
+
+        const handler = getInteractionHandler('base_arena');
+        const resolved = handler!(
+            makeMatchState(core),
+            '0',
+            { choice: 'draw_card' },
+            interactions[0].data,
+            dummyRandom,
+            1000,
+        );
+
+        expect(resolved.events).toHaveLength(1);
+        expect(resolved.events[0].type).toBe(SU_EVENTS.CARDS_DRAWN);
+        expect((resolved.events[0] as any).payload).toMatchObject({
+            playerId: '0',
+            count: 1,
+        });
+    });
+
+    it('base_hall_of_fame 在此基地首次打出随从后，应给予该随从本回合 +2 力量', () => {
+        const core = makeState({
+            bases: [makeBase('base_hall_of_fame', {
+                minions: [makeMinion('m1', '0', 2, 'pirate_first_mate')],
+            })],
+            players: {
+                '0': makePlayer('0', {
+                    minionsPlayedPerBase: { 0: 1 },
+                }),
+                '1': makePlayer('1'),
+            },
+        });
+
+        const result = triggerBaseAbilityWithMS('base_hall_of_fame', 'onMinionPlayed', makeCtx({
+            state: core,
+            baseDefId: 'base_hall_of_fame',
+            baseIndex: 0,
+            minionUid: 'm1',
+            minionDefId: 'pirate_first_mate',
+        }));
+
+        expect(result.events).toHaveLength(1);
+        expect(result.events[0].type).toBe(SU_EVENTS.TEMP_POWER_ADDED);
+        expect((result.events[0] as any).payload).toMatchObject({
+            minionUid: 'm1',
+            baseIndex: 0,
+            amount: 2,
+            reason: 'base_hall_of_fame',
+        });
+
+        const reduced = applyEvents(core, result.events as any);
+        expect(reduced.bases[0].minions[0].tempPowerModifier).toBe(2);
     });
 });
 
@@ -1378,34 +1471,52 @@ describe('base_enchanted_glade: 魔法林地 - 附着行动卡抽牌', () => {
 });
 
 describe('base_fairy_ring: 仙灵圈 - 首次打随从额外额度', () => {
-    it('首次打出随从时获得额外额度', () => {
-        const { events } = triggerBaseAbility('base_fairy_ring', 'onMinionPlayed', makeCtx({
-            state: makeState({
-                bases: [makeBase('base_fairy_ring', {
-                    minions: [makeMinion('m1', '0', 3)],
-                })],
-                players: {
-                    '0': makePlayer('0', {
-                        minionsPlayedPerBase: { 0: 1 }, // 首次打出（reduce 已执行）
-                    }),
-                    '1': makePlayer('1'),
-                },
-            }),
+    it('首次打出随从时先给出交互，选择后再发放额外额度', () => {
+        const core = makeState({
+            bases: [makeBase('base_fairy_ring', {
+                minions: [makeMinion('m1', '0', 3)],
+            })],
+            players: {
+                '0': makePlayer('0', {
+                    minionsPlayedPerBase: { 0: 1 }, // 首次打出（reduce 已执行）
+                }),
+                '1': makePlayer('1'),
+            },
+        });
+        const matchState = makeMatchState(core);
+        matchState.sys.phase = 'playCards';
+
+        const result = triggerBaseAbilityWithMS('base_fairy_ring', 'onMinionPlayed', makeCtx({
+            state: core,
+            matchState,
             baseDefId: 'base_fairy_ring',
             baseIndex: 0,
             minionUid: 'm1',
         }));
 
-        expect(events).toHaveLength(2);
-        // 一个 LIMIT_MODIFIED (minion) + 一个 LIMIT_MODIFIED (action)
-        const minionLimit = events.find(e =>
-            e.type === SU_EVENTS.LIMIT_MODIFIED && (e as any).payload.limitType === 'minion'
+        expect(result.events).toHaveLength(0);
+        const interactions = getInteractionsFromResult(result);
+        expect(interactions).toHaveLength(1);
+        expect(interactions[0].data.sourceId).toBe('base_fairy_ring');
+
+        const handler = getInteractionHandler('base_fairy_ring');
+        const resolved = handler!(
+            result.matchState ?? makeMatchState(core),
+            '0',
+            { choice: 'extra_action' },
+            interactions[0].data,
+            dummyRandom,
+            1000,
         );
-        const actionLimit = events.find(e =>
-            e.type === SU_EVENTS.LIMIT_MODIFIED && (e as any).payload.limitType === 'action'
-        );
-        expect(minionLimit).toBeDefined();
-        expect(actionLimit).toBeDefined();
+
+        const limitEvents = resolved.events.filter(e => e.type === SU_EVENTS.LIMIT_MODIFIED);
+        expect(limitEvents).toHaveLength(1);
+        expect((limitEvents[0] as any).payload).toMatchObject({
+            playerId: '0',
+            limitType: 'action',
+            delta: 1,
+            playTiming: 'banked',
+        });
     });
 
     it('非首次打出时不触发', () => {

@@ -6083,6 +6083,40 @@ describe('World Champs abilities', () => {
         expect(played.events.some((event: any) => event.type === SU_EVENTS.CARDS_DRAWN && event.payload?.count === 2)).toBe(false);
     });
 
+    it('world_champs_samurai_chan 因基地计分从场上进入弃牌堆后会抽一张牌', () => {
+        const state = makeState({
+            players: {
+                '0': makePlayer('0', {
+                    deck: [makeCard('draw-1', 'robot_microbot_alpha', 'minion', '0')],
+                }),
+                '1': makePlayer('1'),
+            },
+            bases: [{
+                defId: 'base_a',
+                minions: [makeMinion('chan-1', 'world_champs_samurai_chan', '0', 2)],
+                ongoingActions: [],
+            }],
+        });
+
+        const result = fireTriggers(state, 'onMinionDiscardedFromBase', {
+            state,
+            matchState: makeMatchState(state),
+            playerId: '0',
+            baseIndex: 0,
+            triggerMinion: makeMinion('chan-1', 'world_champs_samurai_chan', '0', 2),
+            triggerMinionUid: 'chan-1',
+            triggerMinionDefId: 'world_champs_samurai_chan',
+            random: defaultTestRandom,
+            now: 1002,
+        });
+
+        expect(result.events.some((event: any) => (
+            event.type === SU_EVENTS.CARDS_DRAWN
+            && event.payload?.playerId === '0'
+            && event.payload?.count === 1
+        ))).toBe(true);
+    });
+
     it('world_champs_high_speed_chase 天赋可转移行动并移动随从且+3', () => {
         const core = makeState({
             players: {

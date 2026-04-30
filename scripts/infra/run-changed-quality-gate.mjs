@@ -53,6 +53,20 @@ const PRE_PUSH_GAME_SMOKE_TARGETS = {
   tictactoe: ['src/games/tictactoe/__tests__/flow.test.ts'],
   cardia: ['src/games/cardia/__tests__/smoke.test.ts'],
 };
+const PLAY_ROUTE_ENTRY_GUARD_PATTERNS = new Set([
+  'src/App.tsx',
+  'src/lib/prefetchPlayRoute.ts',
+  'src/games/manifest.client.tsx',
+  'src/games/manifest.client.generated.tsx',
+  'src/pages/MatchRoom.tsx',
+  'src/pages/MatchRoomWithAudio.tsx',
+  'src/pages/LocalMatchRoom.tsx',
+  'src/pages/LocalMatchRoomWithAudio.tsx',
+  'src/pages/TestMatchRoom.tsx',
+  'src/pages/TestMatchRoomWithAudio.tsx',
+  'src/pages/TutorialMatchRoom.tsx',
+  'src/pages/TutorialMatchRoomWithAudio.tsx',
+]);
 const ESLINT_WARNING_DELTA_IGNORE_PATTERNS = [
   /^e2e\//,
   /(^|\/)__tests__\//,
@@ -652,6 +666,10 @@ function affectsPrePushGlobalVitest(file) {
     || file === 'vitest.config.ts';
 }
 
+function affectsPlayRouteEntry(file) {
+  return PLAY_ROUTE_ENTRY_GUARD_PATTERNS.has(normalizeFile(file));
+}
+
 function isNonGameTestFile(file) {
   return isTestFile(file) && !isGameFile(file);
 }
@@ -927,6 +945,20 @@ function collectCommands(files, baseRef, affectsTypecheck) {
       reason: 'UGC 目录有改动',
       command: 'npm',
       args: ['run', 'test:ugc'],
+    });
+  }
+
+  if (isPrePushMode && hasAny(workspaceScopeFiles, affectsPlayRouteEntry)) {
+    commands.push({
+      label: 'Play route smoke (online)',
+      reason: '在线对局入口改动，真实浏览器进房兜底动态 import / 路由白屏 / TDZ 运行时错误',
+      command: process.execPath,
+      args: [
+        'scripts/infra/run-e2e-single.mjs',
+        'ci',
+        'e2e/dicethrone-simple-start.e2e.ts',
+        'Online match: Can start a game successfully',
+      ],
     });
   }
 

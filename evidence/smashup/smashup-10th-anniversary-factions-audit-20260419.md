@@ -1,5 +1,70 @@
 # Smash Up 10 周年三派系专项审计（2026-04-19）
 
+## 2026-04-30 最终收口：三派系重审完成
+
+- 本轮最后补齐：
+  - `World Champs / 世界冠军`《武士 陈》正路径 L3，见 `evidence/smashup/smashup-world-champs-samurai-chan-e2e-2026-04-30.md`
+- 本轮验证：
+  1. `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/newFactionAbilities.test.ts --configLoader native --maxWorkers 1 --testNamePattern "world_champs_samurai_chan 打出时不应触发海龟阿凯式 onPlay 交互|world_champs_samurai_chan 因基地计分从场上进入弃牌堆后会抽一张牌"` → `2 passed`
+  2. `$env:BG_BYPASS_GLOBAL_HEAVY_BUDGET='1'; npm run test:e2e:ci:file -- e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "武士 陈在基地计分进入弃牌堆后应抽一张牌"` → `1 passed`
+- 当前最终结论：
+  - `Mermaids / 美人鱼`、`Skeletons / 骷髅`、`World Champs / 世界冠军` 这批重审已完成收口。
+  - `埋骨地 / base_boneyard` 保留为“无能力基地”的显式说明，但它不再属于残余范围。
+  - 本文中更早时间点写的“仍有残余范围”均保留为**历史记录**，不再代表当前状态。
+- 当前验收口径同时明确为：
+  - 不是每张卡都机械要求 E2E。
+  - 当前批次只把历史投诉对象、真实入口链路、reaction session、阶段切换、UI 出口与高风险对象补到 L3。
+  - 其余对象以 `L0-L2` + 风险抽样验收，不再把“全卡都做端到端”当成默认要求。
+
+## 2026-04-30 继续重审记录：World Champs / Skeletons 基地层 L3 补证 + 当前残余范围收紧
+
+- 触发原因：
+  - `World Champs / 世界冠军` 与 `Skeletons / 骷髅` 的真正残余已经不再是整派系“很多牌没审”，而是基地层与高层口径还没收紧到对象级。
+  - 本轮继续按“卡图口径优先，但要落到 UI 真实出口”推进，先清掉 `竞技场 / 名人堂 / 藏骨堂` 这三条基地层真实入口缺口。
+- 本轮实现：
+  - `src/games/smashup/__tests__/expansionBaseAbilities.test.ts`
+    - 新增 `base_arena` 聚焦回归
+    - 新增 `base_hall_of_fame` 聚焦回归
+  - `e2e/smashup/smashup-robot-hoverbot-new.e2e.ts`
+    - 新增 `竞技场应在首次于此打出随从后提供抽牌或额外行动交互`
+    - 新增 `名人堂应在首次于此打出随从后给予该随从 +2 力量并反映到基地分数`
+    - 新增 `藏骨堂应在你的回合开始时允许把弃牌堆中的低力量随从埋葬到这里`
+  - 新增证据文档：
+    - `evidence/smashup/smashup-world-champs-skeletons-bases-e2e-2026-04-30.md`
+- 本轮验证：
+  1. `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/expansionBaseAbilities.test.ts --configLoader native --maxWorkers 1 --testNamePattern "base_arena 在此基地首次打出随从后，应提供额外行动或抽牌交互|base_hall_of_fame 在此基地首次打出随从后，应给予该随从本回合 \+2 力量"` → `2 passed`
+  2. `$env:BG_BYPASS_GLOBAL_HEAVY_BUDGET='1'; npm run test:e2e:ci:file -- e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "竞技场应在首次于此打出随从后提供抽牌或额外行动交互"` → `1 passed`
+  3. `$env:BG_BYPASS_GLOBAL_HEAVY_BUDGET='1'; npm run test:e2e:ci:file -- e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "名人堂应在首次于此打出随从后给予该随从"` → `1 passed`
+  4. `$env:BG_BYPASS_GLOBAL_HEAVY_BUDGET='1'; npm run test:e2e:ci:file -- e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "藏骨堂应在你的回合开始时允许把弃牌堆中的低力量随从埋葬到这里"` → `1 passed`
+- 本轮交叉抽检结论：
+  1. **卡图口径 vs 基地数据**
+     - `竞技场 / 名人堂 / 藏骨堂` 的名称、索引、断点值与卡图一致。
+     - `埋骨地 / base_boneyard` 仍未发现能力注册痕迹，当前按“无能力基地”冻结，而不是“漏实现”。
+  2. **领域 vs UI 真实出口**
+     - `竞技场` 已证实真实页面会出现“抽牌 / 额外行动 / 跳过”三选一 prompt。
+     - `名人堂` 已证实 `+2` 不只存在于领域事件，还会真实反映到基地玩家分数徽章。
+     - `藏骨堂` 已证实回合开始 prompt 与埋葬结果都能落到浏览器棋盘。
+  3. **reaction session 抽样**
+     - `World Champs` 继续以《快如闪电 / 女主角 / 阿拉密斯》作为 reaction session 样本。
+     - `Skeletons` 继续以《轮回者 / 骸骨之王》作为 reaction session 样本。
+     - `Mermaids` 本轮仍以《塞壬 / 诱惑者 / 无人岛》的 UI 口径回归作为“领域对 / UI错”防漏样本。
+- 本轮收紧后的对象清单：
+  1. `World Champs`
+     - 基地层残留已清空：`竞技场 / 名人堂` 已补到 L3。
+     - 卡牌层当前只剩《武士 陈》没有单独正路径 L3；当前冻结为“L2 正路径 + 负路径 L3”。
+     - 冻结理由：
+       - 该牌当前用户直接反馈风险点是“不要再误串成《海龟阿凯》效果”，这一点已经由负路径 L3 直接锁死；
+       - 它本身没有主动 prompt，正路径只是“自身离场后抽 1”，当前由领域回归覆盖；
+       - 相比继续机械补一条低信息量 L3，更需要先把旧高层误导口径删干净。
+  2. `Skeletons`
+     - 卡牌层当前已有《殉葬品 / 灵车队伍 / 复仇者 / 他们出来了 / 墓园 / 骸骨之王 / 轮回者 / 诡异。可怕。 / 墓碑 / 守墓人 / 墓地爆发》正路径 L3，外加此前已补的链路回写。
+     - 基地层残留已清空：`藏骨堂` 已补到 L3，`埋骨地` 当前按“无能力基地”冻结。
+- 当前结论等级：
+  - **仍有残余范围**
+- 当前残余范围（已显式冻结到最小）：
+  - 不再是 `World Champs / Skeletons` 基地层缺口。
+  - 当前只剩《武士 陈》这条“是否继续补单卡正路径 L3”的冻结说明，以及最终总审计收口尚未单独改写成最终版总结。
+
 ## 2026-04-30 继续重审记录：Mermaids《塞壬 / 诱惑者 / 无人岛》L3 补证 + BaseZone 分数口径修复
 
 - 触发原因：
@@ -370,9 +435,9 @@
 - 重审后的当前等级：
   - **仍有残余范围**
 - 当前残余范围：
-  - `World Champs` 仍缺整派系级真实入口玩法覆盖；`斯坦福` 单卡缺口已补齐，但不能替代其它关键能力与整包收口。
-  - `Skeletons` 当前已确认为整派系语义错录，必须按整派系重新 intake / 重新实现；旧文档中关于 `Skeletons` 的“0 缺口 / 已收口”口径全部失效。
-  - 截至 `2026-04-26`，`Skeletons` 已有新的聚焦修复与单测证据回写到 `evidence/smashup/smashup-10th-anniversary-reintake-2026-04-25.md`，且《复仇者》真实入口 L3 已补齐，见 `evidence/smashup/smashup-skeletons-revenant-e2e-2026-04-26.md`；本文件仍不得恢复为“专项已收口”，原因已变成“三派系整包仍有整体残余范围”，而不是《复仇者》单卡仍缺 during-turn 入口。
+  - `World Champs` 当前残余已收窄为《武士 陈》正路径 L3 是否继续单独补证；基地层缺口已在 2026-04-30 清空。
+  - `Skeletons` 当前不再是“整派系语义错录待重做”；经卡图优先重录与对象级 L3 续补后，现阶段只保留 `埋骨地 / base_boneyard` 的“无能力基地”冻结说明。
+  - 截至 `2026-04-30`，`Skeletons` 的《复仇者》《轮回者》《墓地爆发》《藏骨堂》等关键入口都已有回写证据；本文件仍不得恢复为“专项已收口”，原因已变成“最终高层收口文案尚未重写 + 个别冻结说明仍需保留”，而不是整派系仍缺一轮重录。
   - 旧文档中的“三派系整体已收口”不能继续引用；后续若引用本文件，必须连同本失效记录一起看。
 
 ## 审计范围
@@ -449,9 +514,9 @@
   - 远端回查：两个目标 URL 均 `200`
 
 ## 2026-04-19 历史审计结论（已失效，不得作为当前收口依据）
-- 三派系（Mermaids / Skeletons / World Champs）已完成专项审计与回归验证。
-- 本轮已修掉三派系引入的 `sourceId` 审计噪声，且 `interactionTargetTypeAudit / interactionDefIdAudit / abilityBehaviorAudit / interactionCompletenessAudit` 全部转绿。
-- 历史 `orphan handlers` 债务已转入显式基线清单并持续纳入审计；后续新增孤儿仍会被门禁拦截。
+- 当日曾误写为“三派系（Mermaids / Skeletons / World Champs）已完成专项审计与回归验证”，该高层结论现已失效。
+- 当日“`interactionTargetTypeAudit / interactionDefIdAudit / abilityBehaviorAudit / interactionCompletenessAudit` 全部转绿”只代表当日 L1/L2 门禁快照，不再等同于当前玩法整包收口。
+- 当日“历史 `orphan handlers` 债务已转入显式基线清单并持续纳入审计”仍是事实，但它只说明审计门禁治理，不说明三派系对象级真实入口已补齐。
 
 ---
 
@@ -660,7 +725,8 @@
 - `D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\_shared\smashup-10th-factions-world-champs-banner.png`
 
 结论：
-- 三派系（Mermaids / Skeletons / World Champs）在 2026-04-24 基线上继续保持“能力回归 + 4 审计套件 + E2E + i18n”全绿。
+- 三派系（Mermaids / Skeletons / World Champs）在 2026-04-24 的**当日门禁快照**里保持“能力回归 + 4 审计套件 + E2E + i18n”全绿。
+- 这条结论现仅保留“历史快照”含义，不再外推成“三派系玩法整包已收口”。
 - 旧记录中的 `166 passed / 1 skipped` 属于 2026-04-23 历史快照，当前最新口径为 `168 passed / 1 skipped`。
 
 ### 静态覆盖复核（2026-04-24）

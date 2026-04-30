@@ -803,6 +803,121 @@ const prepareSoulTransferOnlineState = (coreState: any) => {
   return { core: next, archerPosition, victimPosition };
 };
 
+const prepareInfectionOnlineState = (coreState: any) => {
+  const next = cloneState(coreState);
+  next.phase = 'attack';
+  next.currentPlayer = '0';
+  next.selectedUnit = undefined;
+  next.attackTargetMode = undefined;
+
+  const player = next.players?.['0'];
+  if (!player) throw new Error('无法读取玩家0状态');
+  player.attackCount = 0;
+  player.hasAttackedEnemy = false;
+
+  const necromancerDeck = createDeckByFactionId('necromancer');
+  const paladinDeck = createDeckByFactionId('paladin');
+  const plagueZombieCard = necromancerDeck.deck.find(
+    (card) => card.cardType === 'unit' && card.id.startsWith('necro-plague-zombie-'),
+  );
+  const enemyCard = paladinDeck.deck.find(
+    (card) => card.cardType === 'unit' && card.id.startsWith('paladin-temple-priest-'),
+  );
+
+  if (!plagueZombieCard || plagueZombieCard.cardType !== 'unit') {
+    throw new Error('未找到真实亡灵疫病体卡牌模板');
+  }
+  if (!enemyCard || enemyCard.cardType !== 'unit') {
+    throw new Error('未找到真实敌方祭司卡牌模板');
+  }
+
+  const discardCardId = makeInjectedInstanceId('e2e-infection-discard-zombie');
+  player.discard = [
+    { ...plagueZombieCard, id: discardCardId },
+    ...(player.discard ?? []).filter((card: any) => card.id !== discardCardId),
+  ];
+
+  const board = next.board as Array<Array<Record<string, any>>>;
+  const attackerPosition = { row: 5, col: 2 };
+  const victimPosition = { row: 5, col: 3 };
+  clearArea(board, [attackerPosition, victimPosition]);
+
+  placeUnit(board, attackerPosition, {
+    instanceId: makeInjectedInstanceId('e2e-infection-attacker'),
+    cardId: plagueZombieCard.id,
+    card: { ...plagueZombieCard },
+    owner: '0',
+    damage: 0,
+    boosts: 0,
+    hasMoved: false,
+    hasAttacked: false,
+  });
+
+  placeUnit(board, victimPosition, {
+    instanceId: makeInjectedInstanceId('e2e-infection-victim'),
+    cardId: enemyCard.id,
+    card: { ...enemyCard },
+    owner: '1',
+    damage: Math.max(0, Number(enemyCard.life ?? 1) - 1),
+    boosts: 0,
+    hasMoved: false,
+    hasAttacked: false,
+  });
+
+  return { core: next, attackerPosition, victimPosition, discardCardId };
+};
+
+const prepareFuneralPyreOnlineState = (coreState: any) => {
+  const next = cloneState(coreState);
+  next.phase = 'draw';
+  next.currentPlayer = '1';
+  next.selectedUnit = undefined;
+  next.attackTargetMode = undefined;
+
+  const necromancerDeck = createDeckByFactionId('necromancer');
+  const funeralPyreCard = necromancerDeck.deck.find(
+    (card) => card.cardType === 'event' && card.id.startsWith('necro-funeral-pyre-'),
+  );
+  const woundedCard = necromancerDeck.deck.find(
+    (card) => card.cardType === 'unit' && card.id.startsWith('necro-undead-warrior-'),
+  );
+
+  if (!funeralPyreCard || funeralPyreCard.cardType !== 'event') {
+    throw new Error('未找到真实殉葬火堆卡牌模板');
+  }
+  if (!woundedCard || woundedCard.cardType !== 'unit') {
+    throw new Error('未找到真实亡灵战士卡牌模板');
+  }
+
+  const player0 = next.players?.['0'];
+  if (!player0) throw new Error('无法读取玩家0状态');
+  const pyreCardId = makeInjectedInstanceId('necro-funeral-pyre');
+  player0.activeEvents = [
+    {
+      ...funeralPyreCard,
+      id: pyreCardId,
+      isActive: true,
+      charges: 2,
+    },
+  ];
+
+  const board = next.board as Array<Array<Record<string, any>>>;
+  const woundedPosition = { row: 5, col: 2 };
+  clearArea(board, [woundedPosition]);
+  placeUnit(board, woundedPosition, {
+    instanceId: makeInjectedInstanceId('e2e-funeral-pyre-wounded'),
+    cardId: woundedCard.id,
+    card: { ...woundedCard },
+    owner: '0',
+    damage: 3,
+    boosts: 0,
+    hasMoved: false,
+    hasAttacked: false,
+  });
+
+  return { core: next, pyreCardId, woundedPosition };
+};
+
 const setHarnessRandomQueue = async (page: Page, values: number[]) => {
   await page.evaluate((queue) => {
     const harness = (window as Window & {
@@ -849,11 +964,22 @@ const readVisibleAbilityPromptText = async (page: Page) => page.evaluate(() => {
     const rect = node.getBoundingClientRect();
     return rect.width > 0 && rect.height > 0;
   };
+  const overlayVisible = isVisible(document.querySelector('[data-testid="sw-dice-result-overlay"]'));
+  if (overlayVisible) return '';
   const prompt = Array.from(document.querySelectorAll('[data-testid="sw-ability-prompt"]'))
     .find((node) => isVisible(node));
   if (!(prompt instanceof HTMLElement)) return '';
   return (prompt.innerText || prompt.textContent || '').trim();
 }).catch(() => '');
+
+const runWithStepTimeout = async <T>(label: string, promise: Promise<T>, timeoutMs = 10000): Promise<T> => {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error(`步骤超时: ${label}`)), timeoutMs);
+    }),
+  ]);
+};
 
 const waitForSoulTransferPrompt = async (page: Page) => {
   const overlay = page.getByTestId('sw-dice-result-overlay');
@@ -1124,67 +1250,204 @@ test.describe('亡灵交互技能', () => {
       const victimSelector = `[data-testid="sw-unit-${prepared.victimPosition.row}-${prepared.victimPosition.col}"][data-owner="1"]`;
 
       await expect(hostPage.locator(archerSelector).first()).toBeVisible({ timeout: 5000 });
-      await clickBoardElementViaHelper(hostPage, archerSelector);
+      await hostPage.locator(archerSelector).first().click({ force: true });
       await expect(hostPage.locator(victimSelector).first()).toBeVisible({ timeout: 5000 });
-      await clickBoardElementViaHelper(hostPage, victimSelector);
+      await hostPage.locator(victimSelector).first().click({ force: true });
+
+      const overlay = hostPage.getByTestId('sw-dice-result-overlay');
+      const overlayVisible = await overlay.isVisible().catch(() => false);
+      if (overlayVisible) {
+        await overlay.click({ force: true }).catch(() => {});
+        await expect(overlay).toBeHidden({ timeout: 8000 }).catch(() => {});
+      }
 
       const prompt = await waitForSoulTransferPrompt(hostPage);
-      console.log('[SW soul_transfer] prompt visible');
-      await hostPage.screenshot({
+      await runWithStepTimeout('soul_transfer.prompt-visible-text', Promise.resolve().then(async () => {
+        const promptText = await readVisibleAbilityPromptText(hostPage);
+        expect(promptText).toMatch(/灵魂转移|Soul Transfer|确认移动|Confirm Move/i);
+      }));
+      await runWithStepTimeout('soul_transfer.prompt-screenshot', hostPage.screenshot({
         path: getEvidenceScreenshotPath(testInfo, 'soul-transfer-prompt-visible', {
           subdir: 'summonerwars/summonerwars-abilities.e2e/灵魂转移：击杀后确认移动到死者位置',
         }),
+      }));
+
+      await runWithStepTimeout(
+        'soul_transfer.confirm-click',
+        hostPage.getByRole('button', { name: /Confirm Move|确认移动/i }).click({ force: true }),
+      );
+      await runWithStepTimeout('soul_transfer.prompt-hidden', expect(prompt).toBeHidden({ timeout: 8000 }));
+      await runWithStepTimeout(
+        'soul_transfer.prompt-text-cleared',
+        expect.poll(async () => await readVisibleAbilityPromptText(hostPage), { timeout: 8000 }).toBe(''),
+      );
+      await runWithStepTimeout(
+        'soul_transfer.source-cell-empty',
+        expect(hostPage.locator(archerSelector)).toHaveCount(0, { timeout: 8000 }),
+      );
+      await runWithStepTimeout(
+        'soul_transfer.victim-cell-occupied',
+        expect(
+          hostPage.locator(`[data-testid="sw-unit-${prepared.victimPosition.row}-${prepared.victimPosition.col}"][data-owner="0"]`).first(),
+        ).toBeVisible({ timeout: 8000 }),
+      );
+      await runWithStepTimeout(
+        'soul_transfer.action-banner-restored',
+        expect(hostPage.getByTestId('sw-action-banner')).toContainText(/用最多3个单位进行攻击|Attack with up to 3 units/i, { timeout: 8000 }),
+      );
+      const latestCore = await runWithStepTimeout('soul_transfer.fetch-core', readCoreStateViaServer(hostPage));
+      expect(latestCore.board?.[prepared.archerPosition.row]?.[prepared.archerPosition.col]?.unit ?? null).toBeNull();
+      expect(latestCore.board?.[prepared.victimPosition.row]?.[prepared.victimPosition.col]?.unit?.owner ?? null).toBe('0');
+      expect(latestCore.board?.[prepared.victimPosition.row]?.[prepared.victimPosition.col]?.unit?.card?.name ?? null).toBe('亡灵弓箭手');
+      await hostPage.waitForTimeout(500);
+
+      await runWithStepTimeout('soul_transfer.complete-screenshot', hostPage.screenshot({
+        path: getEvidenceScreenshotPath(testInfo, 'soul-transfer-complete', {
+          subdir: 'summonerwars/summonerwars-abilities.e2e/灵魂转移：击杀后确认移动到死者位置',
+        }),
+      }));
+    } finally {
+      void hostContext.close().catch(() => {});
+      void guestContext.close().catch(() => {});
+    }
+  });
+
+  test('感染：击杀后从弃牌堆选择疫病体并召回到死者位置', async ({ browser }, testInfo) => {
+    test.setTimeout(120000);
+    await clearEvidenceScreenshotsForTest(testInfo);
+    const baseURL = testInfo.project.use.baseURL as string | undefined;
+    const match = await setupSWOnlineMatch(browser, baseURL, 'necromancer', 'paladin');
+    if (!match) {
+      test.skip(true, 'Game server unavailable or room creation failed.');
+      return;
+    }
+
+    const { hostPage, hostContext, guestContext } = match;
+
+    try {
+      await waitForTestHarness(hostPage, 15000);
+      const prepared = prepareInfectionOnlineState(await readCoreStateViaServer(hostPage));
+      await applyCoreStateViaServer(hostPage, prepared.core);
+      await closeDebugPanelIfOpenViaHelper(hostPage);
+      await waitForPhaseViaHelper(hostPage, 'attack');
+      await setHarnessRandomQueue(hostPage, [0.6, 0.6, 0.6, 0.6, 0.6]);
+
+      const attackerSelector = `[data-testid="sw-unit-${prepared.attackerPosition.row}-${prepared.attackerPosition.col}"][data-owner="0"]`;
+      const victimSelector = `[data-testid="sw-unit-${prepared.victimPosition.row}-${prepared.victimPosition.col}"][data-owner="1"]`;
+
+      await expect(hostPage.locator(attackerSelector).first()).toBeVisible({ timeout: 5000 });
+      await hostPage.locator(attackerSelector).first().click({ force: true });
+      await expect(hostPage.locator(victimSelector).first()).toBeVisible({ timeout: 5000 });
+      await hostPage.locator(victimSelector).first().click({ force: true });
+
+      const overlay = hostPage.getByTestId('sw-dice-result-overlay');
+      const overlayVisible = await overlay.isVisible().catch(() => false);
+      if (overlayVisible) {
+        await overlay.click({ force: true }).catch(() => {});
+        await expect(overlay).toBeHidden({ timeout: 8000 }).catch(() => {});
+      }
+
+      const cardSelector = hostPage.getByTestId('sw-card-selector-overlay');
+      await expect(cardSelector).toBeVisible({ timeout: 8000 });
+      const discardCard = cardSelector.locator(`[data-card-id="${prepared.discardCardId}"]`).first();
+      await expect(discardCard).toBeVisible({ timeout: 5000 });
+
+      await hostPage.screenshot({
+        path: getEvidenceScreenshotPath(testInfo, 'infection-card-selector-visible', {
+          subdir: 'summonerwars/summonerwars-abilities.e2e/感染：击杀后从弃牌堆选择疫病体并召回到死者位置',
+        }),
       });
 
-      const confirmResult = await clickAbilityPromptButton(hostPage, '^Confirm Move$|^确认移动$');
-      expect(confirmResult.clicked, `soul_transfer 确认点击失败: ${JSON.stringify(confirmResult)}`).toBe(true);
-      await hostPage.waitForTimeout(200);
-      console.log('[SW soul_transfer] confirm click dispatched');
+      await discardCard.click({ force: true });
+      await expect(cardSelector).toBeHidden({ timeout: 8000 });
+      const summonedUnit = hostPage.locator(
+        `[data-testid="sw-unit-${prepared.victimPosition.row}-${prepared.victimPosition.col}"][data-owner="0"]`,
+      ).first();
+      await expect(summonedUnit).toBeVisible({ timeout: 8000 });
+      await expect(summonedUnit).toHaveAttribute('data-unit-name', /亡灵疫病体/i, { timeout: 8000 });
+      await expect(hostPage.getByTestId('sw-action-banner')).toContainText(/用最多3个单位进行攻击|Attack with up to 3 units/i, { timeout: 8000 });
+
+      const latestCore = await readCoreStateViaServer(hostPage);
+      const discardIds = (latestCore.players?.['0']?.discard ?? []).map((card: { id?: string }) => card?.id);
+      expect(discardIds).not.toContain(prepared.discardCardId);
+      expect(latestCore.board?.[prepared.victimPosition.row]?.[prepared.victimPosition.col]?.unit?.owner ?? null).toBe('0');
+      expect(latestCore.board?.[prepared.victimPosition.row]?.[prepared.victimPosition.col]?.unit?.card?.name ?? null).toBe('亡灵疫病体');
+
+      await hostPage.screenshot({
+        path: getEvidenceScreenshotPath(testInfo, 'infection-summon-complete', {
+          subdir: 'summonerwars/summonerwars-abilities.e2e/感染：击杀后从弃牌堆选择疫病体并召回到死者位置',
+        }),
+      });
+    } finally {
+      void hostContext.close().catch(() => {});
+      void guestContext.close().catch(() => {});
+    }
+  });
+
+  test('殉葬火堆：回合开始出现治疗提示并移除目标伤害', async ({ browser }, testInfo) => {
+    test.setTimeout(120000);
+    await clearEvidenceScreenshotsForTest(testInfo);
+    const baseURL = testInfo.project.use.baseURL as string | undefined;
+    const match = await setupSWOnlineMatch(browser, baseURL, 'necromancer', 'paladin');
+    if (!match) {
+      test.skip(true, 'Game server unavailable or room creation failed.');
+      return;
+    }
+
+    const { hostPage, guestPage, hostContext, guestContext, matchId } = match;
+
+    try {
+      const prepared = prepareFuneralPyreOnlineState(await readCoreStateViaServer(hostPage));
+      await applyCoreStateViaServer(hostPage, prepared.core);
+      await closeDebugPanelIfOpenViaHelper(hostPage);
+      await closeDebugPanelIfOpenViaHelper(guestPage);
+      await waitForPhaseViaHelper(guestPage, 'draw');
+
+      await expect(guestPage.getByTestId('sw-end-phase')).toBeEnabled({ timeout: 5000 });
+      await guestPage.getByTestId('sw-end-phase').click();
 
       await expect.poll(async () => {
         const liveState = await getMatchState(matchId, hostPage) as {
-          core?: {
-            board?: Array<Array<{
-              unit?: {
-                owner?: string;
-                card?: { name?: string };
-              };
-            }>>;
-          };
-          sys?: {
-            interaction?: {
-              current?: {
-                data?: {
-                  sw?: { type?: string };
-                };
-              };
-            };
-          };
+          core?: { phase?: string; currentPlayer?: string };
+          sys?: { interaction?: { current?: { data?: { sw?: { type?: string } } } } };
         };
-
         return {
+          phase: liveState.core?.phase ?? null,
+          currentPlayer: liveState.core?.currentPlayer ?? null,
           interactionType: liveState.sys?.interaction?.current?.data?.sw?.type ?? null,
-          sourceCellUnit: liveState.core?.board?.[prepared.archerPosition.row]?.[prepared.archerPosition.col]?.unit?.card?.name ?? null,
-          destinationOwner: liveState.core?.board?.[prepared.victimPosition.row]?.[prepared.victimPosition.col]?.unit?.owner ?? null,
-          destinationUnit: liveState.core?.board?.[prepared.victimPosition.row]?.[prepared.victimPosition.col]?.unit?.card?.name ?? null,
         };
       }, { timeout: 8000 }).toEqual({
-        interactionType: null,
-        sourceCellUnit: null,
-        destinationOwner: '0',
-        destinationUnit: '亡灵弓箭手',
+        phase: 'summon',
+        currentPlayer: '0',
+        interactionType: 'funeral_pyre',
       });
-      console.log('[SW soul_transfer] server state moved');
 
-      await expect(hostPage.getByTestId('sw-ability-prompt')).toHaveCount(0, { timeout: 8000 });
-      await expect(hostPage.locator(archerSelector)).toHaveCount(0, { timeout: 8000 });
-      await expect(hostPage.locator(`[data-testid="sw-unit-${prepared.victimPosition.row}-${prepared.victimPosition.col}"][data-owner="0"]`).first()).toBeVisible({ timeout: 8000 });
-      await expect(hostPage.getByTestId('sw-action-banner')).toContainText(/用最多3个单位进行攻击|Attack with up to 3 units/i, { timeout: 8000 });
-      await hostPage.waitForTimeout(500);
+      const prompt = hostPage.getByTestId('sw-ability-prompt').first();
+      await expect(prompt).toBeVisible({ timeout: 8000 });
+      const promptText = await readVisibleAbilityPromptText(hostPage);
+      expect(promptText).toMatch(/殉葬火堆|Funeral Pyre|治疗 2 点|heal 2/i);
 
       await hostPage.screenshot({
-        path: getEvidenceScreenshotPath(testInfo, 'soul-transfer-complete', {
-          subdir: 'summonerwars/summonerwars-abilities.e2e/灵魂转移：击杀后确认移动到死者位置',
+        path: getEvidenceScreenshotPath(testInfo, 'funeral-pyre-prompt-visible', {
+          subdir: 'summonerwars/summonerwars-abilities.e2e/殉葬火堆：回合开始出现治疗提示并移除目标伤害',
+        }),
+      });
+
+      const woundedSelector = `[data-testid="sw-unit-${prepared.woundedPosition.row}-${prepared.woundedPosition.col}"][data-owner="0"]`;
+      await expect(hostPage.locator(woundedSelector).first()).toBeVisible({ timeout: 5000 });
+      await hostPage.locator(woundedSelector).first().click({ force: true });
+
+      await expect(prompt).toBeHidden({ timeout: 8000 });
+      await expect(hostPage.getByTestId('sw-action-banner')).toContainText(/召唤|Summon/i, { timeout: 8000 });
+
+      const latestCore = await readCoreStateViaServer(hostPage);
+      expect(latestCore.board?.[prepared.woundedPosition.row]?.[prepared.woundedPosition.col]?.unit?.damage ?? null).toBe(1);
+      expect((latestCore.players?.['0']?.activeEvents ?? []).some((card: { id?: string }) => card?.id === prepared.pyreCardId)).toBe(false);
+      expect((latestCore.players?.['0']?.discard ?? []).some((card: { id?: string }) => card?.id === prepared.pyreCardId)).toBe(true);
+
+      await hostPage.screenshot({
+        path: getEvidenceScreenshotPath(testInfo, 'funeral-pyre-heal-complete', {
+          subdir: 'summonerwars/summonerwars-abilities.e2e/殉葬火堆：回合开始出现治疗提示并移除目标伤害',
         }),
       });
     } finally {
