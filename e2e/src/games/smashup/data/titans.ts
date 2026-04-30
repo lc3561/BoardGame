@@ -40,6 +40,15 @@ export const TITAN_CARD_DEFS: TitanCardDef[] = [
         previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.TITANS, index: 4 },
     },
     {
+        id: 'fairies_spirit_of_the_forest',
+        type: 'titan',
+        name: '丛林之灵',
+        faction: SMASHUP_FACTION_IDS.FAIRIES,
+        abilityTags: ['special', 'ongoing'],
+        summonMode: 'insteadOfRegularMinionAndAction',
+        previewRef: { type: 'atlas', atlasId: SMASHUP_ATLAS_IDS.TITANS, index: 3 },
+    },
+    {
         id: 'changerbots_mergacon',
         type: 'titan',
         name: '合体机器人',

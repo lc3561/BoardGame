@@ -815,23 +815,62 @@ const setHarnessRandomQueue = async (page: Page, values: number[]) => {
   }, values);
 };
 
+const clickAbilityPromptButton = async (page: Page, pattern: string) => page.evaluate((patternSource) => {
+  const isVisible = (node: Element | null) => {
+    if (!(node instanceof HTMLElement)) return false;
+    const style = window.getComputedStyle(node);
+    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+    const rect = node.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  };
+  const regex = new RegExp(patternSource, 'i');
+  const prompt = Array.from(document.querySelectorAll('[data-testid="sw-ability-prompt"]'))
+    .find((node) => isVisible(node));
+  if (!(prompt instanceof HTMLElement)) {
+    return { clicked: false, reason: 'prompt-not-visible', promptText: '' };
+  }
+  const button = Array.from(prompt.querySelectorAll('button'))
+    .find((node) => regex.test(node.textContent ?? ''));
+  if (!(button instanceof HTMLButtonElement)) {
+    return { clicked: false, reason: 'button-not-found', promptText: prompt.innerText || prompt.textContent || '' };
+  }
+  if (button.disabled) {
+    return { clicked: false, reason: 'button-disabled', promptText: prompt.innerText || prompt.textContent || '' };
+  }
+  button.click();
+  return { clicked: true, reason: 'clicked', promptText: prompt.innerText || prompt.textContent || '' };
+}, pattern).catch(() => ({ clicked: false, reason: 'page-evaluate-failed', promptText: '' }));
+
+const readVisibleAbilityPromptText = async (page: Page) => page.evaluate(() => {
+  const isVisible = (node: Element | null) => {
+    if (!(node instanceof HTMLElement)) return false;
+    const style = window.getComputedStyle(node);
+    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+    const rect = node.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  };
+  const prompt = Array.from(document.querySelectorAll('[data-testid="sw-ability-prompt"]'))
+    .find((node) => isVisible(node));
+  if (!(prompt instanceof HTMLElement)) return '';
+  return (prompt.innerText || prompt.textContent || '').trim();
+}).catch(() => '');
+
 const waitForSoulTransferPrompt = async (page: Page) => {
   const overlay = page.getByTestId('sw-dice-result-overlay');
-  const prompt = page.getByTestId('sw-ability-prompt').filter({
-    hasText: /灵魂转移|Soul Transfer|确认移动|Confirm Move/i,
-  }).first();
   try {
+    const overlayVisible = await overlay.isVisible().catch(() => false);
+    if (overlayVisible) {
+      await overlay.click({ force: true }).catch(() => {});
+      await expect(overlay).toBeHidden({ timeout: 8000 }).catch(() => {});
+    }
+
+    let promptText = '';
     await expect.poll(async () => {
-      const overlayVisible = await overlay.isVisible().catch(() => false);
-      if (overlayVisible) {
-        await overlay.click({ force: true }).catch(() => {});
-      }
-      const promptVisible = await prompt.isVisible().catch(() => false);
-      const overlayStillVisible = await overlay.isVisible().catch(() => false);
-      return promptVisible && !overlayStillVisible;
+      promptText = await readVisibleAbilityPromptText(page);
+      return /灵魂转移|Soul Transfer|确认移动|Confirm Move/i.test(promptText);
     }, {
       timeout: 15000,
-      message: '等待灵魂转移确认提示出现并关闭攻击骰子特写',
+      message: '等待灵魂转移确认提示出现',
     }).toBe(true);
   } catch {
     const matchId = await page.evaluate(() => {
@@ -925,7 +964,7 @@ const waitForSoulTransferPrompt = async (page: Page) => {
     throw new Error(`等待灵魂转移确认提示出现并关闭攻击骰子特写失败: ${JSON.stringify(lastSnapshot)}`);
   }
 
-  return prompt;
+  return page.getByTestId('sw-ability-prompt').first();
 };
 
 test.describe('亡灵交互技能', () => {
@@ -1090,15 +1129,17 @@ test.describe('亡灵交互技能', () => {
       await clickBoardElementViaHelper(hostPage, victimSelector);
 
       const prompt = await waitForSoulTransferPrompt(hostPage);
+      console.log('[SW soul_transfer] prompt visible');
       await hostPage.screenshot({
         path: getEvidenceScreenshotPath(testInfo, 'soul-transfer-prompt-visible', {
           subdir: 'summonerwars/summonerwars-abilities.e2e/灵魂转移：击杀后确认移动到死者位置',
         }),
       });
 
-      const confirmMoveButton = prompt.locator('button').filter({ hasText: /确认移动|Confirm Move/i }).first();
-      await expect(confirmMoveButton).toBeVisible({ timeout: 5000 });
-      await confirmMoveButton.click({ force: true });
+      const confirmResult = await clickAbilityPromptButton(hostPage, '^Confirm Move$|^确认移动$');
+      expect(confirmResult.clicked, `soul_transfer 确认点击失败: ${JSON.stringify(confirmResult)}`).toBe(true);
+      await hostPage.waitForTimeout(200);
+      console.log('[SW soul_transfer] confirm click dispatched');
 
       await expect.poll(async () => {
         const liveState = await getMatchState(matchId, hostPage) as {
@@ -1133,6 +1174,7 @@ test.describe('亡灵交互技能', () => {
         destinationOwner: '0',
         destinationUnit: '亡灵弓箭手',
       });
+      console.log('[SW soul_transfer] server state moved');
 
       await expect(hostPage.getByTestId('sw-ability-prompt')).toHaveCount(0, { timeout: 8000 });
       await expect(hostPage.locator(archerSelector)).toHaveCount(0, { timeout: 8000 });

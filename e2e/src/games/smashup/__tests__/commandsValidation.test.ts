@@ -71,6 +71,56 @@ describe('SmashUp command validation', () => {
         expect(result.valid).toBe(true);
     });
 
+    it('fairies_spirit_of_the_forest special 需要同时保留通常随从与通常行动额度', () => {
+        const validCore = makeState({
+            players: {
+                '0': makePlayer('0', {
+                    minionsPlayed: 0,
+                    minionLimit: 1,
+                    actionsPlayed: 0,
+                    actionLimit: 1,
+                }),
+                '1': makePlayer('1'),
+            },
+            bases: [makeBase('test_base')],
+            titans: [
+                makeTitan({
+                    uid: 'titan-fairy',
+                    defId: 'fairies_spirit_of_the_forest',
+                    faction: 'fairies',
+                    ownerId: '0',
+                    controllerId: '0',
+                }),
+            ],
+        });
+
+        const invalidCore = makeState({
+            ...validCore,
+            players: {
+                ...validCore.players,
+                '0': makePlayer('0', {
+                    minionsPlayed: 0,
+                    minionLimit: 1,
+                    actionsPlayed: 1,
+                    actionLimit: 1,
+                }),
+            },
+        });
+
+        const validResult = validate(makeMatchState(validCore), {
+            type: SU_COMMANDS.ACTIVATE_SPECIAL,
+            playerId: '0',
+            payload: { titanUid: 'titan-fairy', baseIndex: 0 },
+        } as any);
+        const invalidResult = validate(makeMatchState(invalidCore), {
+            type: SU_COMMANDS.ACTIVATE_SPECIAL,
+            playerId: '0',
+            payload: { titanUid: 'titan-fairy', baseIndex: 0 },
+        } as any);
+
+        expect(validResult.valid).toBe(true);
+        expect(invalidResult.valid).toBe(false);
+    });
     it('rejects summoning a second titan while another titan is already in play', () => {
         registerAbility('ghosts_creampuff_man', 'special', () => ({ events: [] }));
         const core = makeState({

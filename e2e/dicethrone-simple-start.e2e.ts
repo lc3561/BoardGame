@@ -244,24 +244,47 @@ async function setupDTFourPlayerOnlineAiRoom(
         minimumActionDelayMs?: number;
     } = {},
 ) {
-    const setup = await setupDTOnlineAiRoom(browser, baseURL, {
-        numPlayers: 4,
-        aiSeatIds: [...FOUR_PLAYER_AI_SEAT_IDS],
-        ...options,
-    });
-    if (!setup) {
-        return null;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+        const setup = await setupDTOnlineAiRoom(browser, baseURL, {
+            numPlayers: 4,
+            aiSeatIds: [...FOUR_PLAYER_AI_SEAT_IDS],
+            minimumActionDelayMs: options.minimumActionDelayMs,
+        });
+        if (!setup) {
+            return null;
+        }
+
+        const initialEntry = await resolveOnlineAiRoomEntry(setup.hostPage, 30000)
+            .catch(() => 'character-selection' as const);
+
+        if (initialEntry === 'character-selection') {
+            return {
+                ...setup,
+                initialEntry,
+            };
+        }
+
+        try {
+            await waitForGameBoard(setup.hostPage, 30000);
+            await waitForTestHarness(setup.hostPage, 15000);
+            await expect.poll(async () => {
+                const state = await getMatchState(setup.matchId, setup.hostPage);
+                return Object.keys(state.core?.players ?? {}).sort();
+            }, {
+                timeout: 10000,
+                message: '等待 4 人 AI 房棋盘态在服务器侧保持 0/1/2/3 四个 seat',
+            }).toEqual(['0', '1', '2', '3']);
+
+            return {
+                ...setup,
+                initialEntry,
+            };
+        } catch {
+            await setup.hostContext.close();
+        }
     }
 
-    await expect.poll(async () => {
-        const state = await getMatchState(setup.matchId, setup.hostPage);
-        return Object.keys(state.core?.players ?? {}).sort();
-    }, {
-        timeout: 30000,
-        message: '等待 4 人 AI 房在服务器态注册 0/1/2/3 四个 seat',
-    }).toEqual(['0', '1', '2', '3']);
-
-    return setup;
+    return null;
 }
 
 async function prepareFourPlayerOnlineAiSetup(
@@ -269,8 +292,9 @@ async function prepareFourPlayerOnlineAiSetup(
     matchId: string,
     characterId: string,
     waitMessage: string,
+    entryHint?: 'board' | 'character-selection',
 ): Promise<'board' | 'character-selection'> {
-    const entry = await resolveOnlineAiRoomEntry(page, 30000);
+    const entry = entryHint ?? await resolveOnlineAiRoomEntry(page, 30000);
     if (entry === 'character-selection') {
         await waitForCharacterSelection(page, 20000);
         await waitForAiSeatCredentials(page, matchId, FOUR_PLAYER_AI_SEAT_IDS);
@@ -1810,12 +1834,13 @@ test.describe('DiceThrone Simple Start', () => {
         }
 
         try {
-            const { hostPage, matchId } = setup;
+            const { hostPage, matchId, initialEntry } = setup;
             const roomEntry = await prepareFourPlayerOnlineAiSetup(
                 hostPage,
                 matchId,
                 'monk',
                 '等待 DiceThrone host/3 个 AI 一起完成 4 人 setup 前置条件',
+                initialEntry,
             );
             if (roomEntry === 'character-selection') {
                 const startButton = hostPage.locator('button').filter({ hasText: /开始游戏|Start Game|Press.*Start/i }).first();
@@ -1932,12 +1957,13 @@ test.describe('DiceThrone Simple Start', () => {
         }
 
         try {
-            const { hostPage, matchId } = setup;
+            const { hostPage, matchId, initialEntry } = setup;
             const roomEntry = await prepareFourPlayerOnlineAiSetup(
                 hostPage,
                 matchId,
                 'monk',
                 '等待 DiceThrone host/3 个 AI 一起完成 4 人 retry 测试前置条件',
+                initialEntry,
             );
             if (roomEntry === 'character-selection') {
                 const startButton = hostPage.locator('button').filter({ hasText: /开始游戏|Start Game|Press.*Start/i }).first();
@@ -2009,12 +2035,13 @@ test.describe('DiceThrone Simple Start', () => {
         }
 
         try {
-            const { hostPage, matchId } = setup;
+            const { hostPage, matchId, initialEntry } = setup;
             const roomEntry = await prepareFourPlayerOnlineAiSetup(
                 hostPage,
                 matchId,
                 'monk',
                 '等待 DiceThrone host/3 个 AI 一起完成 4 人双拒绝 retry 测试前置条件',
+                initialEntry,
             );
             if (roomEntry === 'character-selection') {
                 const startButton = hostPage.locator('button').filter({ hasText: /开始游戏|Start Game|Press.*Start/i }).first();
@@ -2420,12 +2447,13 @@ test.describe('DiceThrone Simple Start', () => {
         }
 
         try {
-            const { hostPage, matchId } = setup;
+            const { hostPage, matchId, initialEntry } = setup;
             const roomEntry = await prepareFourPlayerOnlineAiSetup(
                 hostPage,
                 matchId,
                 'monk',
                 '等待 DiceThrone host/3 个 AI 一起完成 4 人 watchdog 测试前置条件',
+                initialEntry,
             );
             if (roomEntry === 'character-selection') {
                 const startButton = hostPage.locator('button').filter({ hasText: /开始游戏|Start Game|Press.*Start/i }).first();

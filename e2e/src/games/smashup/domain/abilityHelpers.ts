@@ -50,6 +50,7 @@ import type {
     OngoingCardCounterChangedEvent,
     CardToDeckBottomEvent,
     TitanRemovedFromPlayEvent,
+    TitanMetadataUpdatedEvent,
 } from './types';
 import { SU_EVENT_TYPES as SU_EVENTS } from './events';
 import { getEffectivePower } from './ongoingModifiers';
@@ -139,6 +140,42 @@ export function getTitanByController(
     );
 }
 
+export function getSpiritOfTheForestByController(
+    state: SmashUpCore | MatchState<SmashUpCore>,
+    controllerId: PlayerId,
+): TitanState | undefined {
+    const titan = getTitanByController(state, controllerId);
+    return titan?.defId === 'fairies_spirit_of_the_forest' ? titan : undefined;
+}
+
+export function getAvailableSpiritOfTheForestOrTitan(
+    state: SmashUpCore | MatchState<SmashUpCore>,
+    controllerId: PlayerId,
+): TitanState | undefined {
+    const core = 'core' in state ? state.core : state;
+    const titan = getSpiritOfTheForestByController(core, controllerId);
+    if (!titan) return undefined;
+    const usedTurn = typeof titan.metadata?.spiritOfTheForestUsedTurn === 'number'
+        ? titan.metadata.spiritOfTheForestUsedTurn
+        : undefined;
+    return usedTurn === core.turnNumber ? undefined : titan;
+}
+
+export function markSpiritOfTheForestOrUsed(
+    titanUid: string,
+    turnNumber: number,
+    now: number,
+): TitanMetadataUpdatedEvent {
+    return {
+        type: SU_EVENTS.TITAN_METADATA_UPDATED,
+        payload: {
+            titanUid,
+            metadataUpdate: { spiritOfTheForestUsedTurn: turnNumber },
+            reason: 'fairies_spirit_of_the_forest_or',
+        },
+        timestamp: now,
+    };
+}
 export function removeTitanFromPlay(
     titan: TitanState,
     reason: string,
@@ -952,7 +989,7 @@ export function fireMinionPlayedTriggers(params: {
     if (queued) events.push(queued);
 
     // 4. 消费 pendingMinionPlayEffects 队列（如 crack_of_dusk / its_alive 的打出后+1指示物）
-    const player = core.players[playerId];
+    const player = triggerCore.players[playerId];
     if (player?.pendingMinionPlayEffects && player.pendingMinionPlayEffects.length > 0) {
         const effect = player.pendingMinionPlayEffects[0];
         if (effect.effect === 'addPowerCounter') {

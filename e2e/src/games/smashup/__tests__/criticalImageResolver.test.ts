@@ -117,6 +117,21 @@ describe('smashUpCriticalImageResolver', () => {
         expect(result.critical).toContain('smashup/base/aiji_base');
     });
 
+    it('fairies 会命中 Pretty Pretty card atlas 与共享 Pretty Pretty base atlas', () => {
+        const result = smashUpCriticalImageResolver(
+            makePlayingState({
+                '0': ['fairies', 'kitty_cats'],
+                '1': ['princesses', 'mythic_horses'],
+            }),
+            undefined,
+            '0',
+        );
+
+        expect(result.critical).toContain('smashup/cards/pretty_pretty');
+        expect(result.critical).toContain('smashup/base/base3');
+        expect(result.critical).toContain('smashup/taitan/taitan1');
+    });
+
     it('教程 playing 阶段仍只加载已选派系对应图集', () => {
         const result = smashUpCriticalImageResolver(
             makePlayingState(

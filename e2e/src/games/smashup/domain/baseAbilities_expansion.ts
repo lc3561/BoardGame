@@ -30,6 +30,8 @@ import {
     buildStandardDrawEvents,
     drawMadnessCards,
     findMinionOnBases,
+    getAvailableSpiritOfTheForestOrTitan,
+    markSpiritOfTheForestOrUsed,
 } from './abilityHelpers';
 import { buildBuryCardEvents } from './bury';
 import { createSimpleChoice, queueInteraction, type PromptOption } from '../../../engine/systems/InteractionSystem';
@@ -477,23 +479,37 @@ export function registerExpansionBaseAbilities(): void {
         return { events: buildStandardDrawEvents(ctx.state, ctx.playerId, 1, ctx.random, ctx.now) };
     });
 
-    // ── 仙灵之环（Fairy Ring）──────────────────────────────────
-    // "在一个玩家首次打出一个随从到这后，该玩家可以额外打出一个随从和一张行动卡牌"
+    // ── 仙灵之环（Fairy Circle）────────────────────────────────
+    // "在一个玩家首次打出一个随从到这后，该玩家可以额外打出一个随从到这里，或额外打出一张行动卡。"
     // 通过 minionsPlayedPerBase 追踪每回合每基地打出次数，reduce 已执行，首次打出时值为 1
     registerBaseAbility('base_fairy_ring', 'onMinionPlayed', (ctx) => {
         const player = ctx.state.players[ctx.playerId];
-        if (!player) return { events: [] };
+        if (!player || !ctx.matchState) return { events: [] };
 
         // 每回合只有第一次打出随从到此基地才触发
         // reduce 已执行，minionsPlayedPerBase 包含刚打出的随从，首次打出时值为 1
         const playedAtBase = player.minionsPlayedPerBase?.[ctx.baseIndex] ?? 0;
         if (playedAtBase !== 1) return { events: [] };
 
+        const options: PromptOption<Record<string, unknown>>[] = [
+            { id: 'extra-minion', label: '额外打出一个随从到这里', value: { choice: 'extra_minion' }, displayMode: 'button' as const },
+            { id: 'extra-action', label: '额外打出一张行动卡', value: { choice: 'extra_action' }, displayMode: 'button' as const },
+            { id: 'skip', label: '跳过', value: { skip: true }, displayMode: 'button' as const },
+        ];
+        const interaction = createSimpleChoice(
+            `base_fairy_ring_${ctx.playerId}_${ctx.now}`,
+            ctx.playerId,
+            '精灵之环：选择额外打出一个随从到这里，或额外打出一张行动卡',
+            options,
+            { sourceId: 'base_fairy_ring', targetType: 'button' },
+        );
+
         return {
-            events: [
-                grantContextualExtraMinion(ctx, '仙灵之环：首次打出随从后额外随从机会', ctx.baseIndex),
-                grantContextualExtraAction(ctx, '仙灵之环：首次打出随从后额外行动机会'),
-            ],
+            events: [],
+            matchState: queueInteraction(ctx.matchState, {
+                ...interaction,
+                data: { ...interaction.data, continuationContext: { baseIndex: ctx.baseIndex } },
+            }),
         };
     });
 
@@ -848,6 +864,55 @@ export function registerExpansionBaseInteractionHandlers(): void {
             return {
                 state,
                 events: buildStandardDrawEvents(state.core, playerId, 1, random, timestamp),
+            };
+        }
+
+        return { state, events: [] };
+    });
+    registerInteractionHandler('base_fairy_ring', (state, playerId, value, iData, _random, timestamp) => {
+        const selected = value as { skip?: boolean; choice?: 'extra_minion' | 'extra_action' };
+        const continuation = getContinuationContext<{ baseIndex: number }>(iData);
+        if (selected.skip) return { state, events: [] };
+        const spirit = getAvailableSpiritOfTheForestOrTitan(state.core, playerId);
+
+        if (spirit) {
+            if (!continuation) return { state, events: [] };
+            return {
+                state,
+                events: [
+                    grantContextualExtraMinion(
+                        { playerId, now: timestamp, matchState: state },
+                        'base_fairy_ring',
+                        continuation.baseIndex,
+                    ),
+                    grantContextualExtraAction(
+                        { playerId, now: timestamp, matchState: state },
+                        'base_fairy_ring',
+                    ),
+                    markSpiritOfTheForestOrUsed(spirit.uid, state.core.turnNumber, timestamp),
+                ],
+            };
+        }
+
+        if (selected.choice === 'extra_minion') {
+            if (!continuation) return { state, events: [] };
+            return {
+                state,
+                events: [grantContextualExtraMinion(
+                    { playerId, now: timestamp, matchState: state },
+                    'base_fairy_ring',
+                    continuation.baseIndex,
+                )],
+            };
+        }
+
+        if (selected.choice === 'extra_action') {
+            return {
+                state,
+                events: [grantContextualExtraAction(
+                    { playerId, now: timestamp, matchState: state },
+                    'base_fairy_ring',
+                )],
             };
         }
 
