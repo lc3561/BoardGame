@@ -98,9 +98,40 @@ describe('expansion base extra timing regression coverage', () => {
             minionUid: 'm1',
         }));
 
-        const limitEvents = result.events.filter(e => e.type === SU_EVENTS.LIMIT_MODIFIED);
-        expect(limitEvents).toHaveLength(2);
-        expect(limitEvents.every(e => (e as any).payload.playTiming === 'immediate')).toBe(true);
+        const prompt = getInteractionsFromResult(result)[0] as any;
+        expect(prompt?.data?.sourceId).toBe('base_fairy_ring');
+
+        const handler = getInteractionHandler('base_fairy_ring');
+        expect(handler).toBeDefined();
+
+        const minionOption = prompt.data.options.find((entry: any) => entry.value?.choice === 'extra_minion');
+        const actionOption = prompt.data.options.find((entry: any) => entry.value?.choice === 'extra_action');
+        expect(minionOption).toBeDefined();
+        expect(actionOption).toBeDefined();
+
+        const minionResolved = handler!(
+            result.matchState!,
+            '0',
+            minionOption.value,
+            prompt.data,
+            dummyRandom,
+            1000,
+        );
+        const actionResolved = handler!(
+            result.matchState!,
+            '0',
+            actionOption.value,
+            prompt.data,
+            dummyRandom,
+            1000,
+        );
+
+        const minionEvent = minionResolved.events.find(e => e.type === SU_EVENTS.LIMIT_MODIFIED) as any;
+        const actionEvent = actionResolved.events.find(e => e.type === SU_EVENTS.LIMIT_MODIFIED) as any;
+        expect(minionEvent?.payload.limitType).toBe('minion');
+        expect(actionEvent?.payload.limitType).toBe('action');
+        expect(minionEvent?.payload.playTiming).toBe('immediate');
+        expect(actionEvent?.payload.playTiming).toBe('immediate');
     });
 });
 
@@ -1379,29 +1410,59 @@ describe('base_enchanted_glade: 魔法林地 - 附着行动卡抽牌', () => {
 
 describe('base_fairy_ring: 仙灵圈 - 首次打随从额外额度', () => {
     it('首次打出随从时获得额外额度', () => {
-        const { events } = triggerBaseAbility('base_fairy_ring', 'onMinionPlayed', makeCtx({
-            state: makeState({
-                bases: [makeBase('base_fairy_ring', {
-                    minions: [makeMinion('m1', '0', 3)],
-                })],
-                players: {
-                    '0': makePlayer('0', {
-                        minionsPlayedPerBase: { 0: 1 }, // 首次打出（reduce 已执行）
-                    }),
-                    '1': makePlayer('1'),
-                },
-            }),
+        const core = makeState({
+            bases: [makeBase('base_fairy_ring', {
+                minions: [makeMinion('m1', '0', 3)],
+            })],
+            players: {
+                '0': makePlayer('0', {
+                    minionsPlayedPerBase: { 0: 1 }, // 首次打出（reduce 已执行）
+                }),
+                '1': makePlayer('1'),
+            },
+        });
+
+        const result = triggerBaseAbilityWithMS('base_fairy_ring', 'onMinionPlayed', makeCtx({
+            state: core,
+            matchState: makeMatchState(core),
             baseDefId: 'base_fairy_ring',
             baseIndex: 0,
             minionUid: 'm1',
         }));
 
-        expect(events).toHaveLength(2);
-        // 一个 LIMIT_MODIFIED (minion) + 一个 LIMIT_MODIFIED (action)
-        const minionLimit = events.find(e =>
+        expect(result.events).toHaveLength(0);
+        const prompt = getInteractionsFromResult(result)[0] as any;
+        expect(prompt?.data?.sourceId).toBe('base_fairy_ring');
+
+        const handler = getInteractionHandler('base_fairy_ring');
+        expect(handler).toBeDefined();
+
+        const minionOption = prompt.data.options.find((entry: any) => entry.value?.choice === 'extra_minion');
+        const actionOption = prompt.data.options.find((entry: any) => entry.value?.choice === 'extra_action');
+        expect(minionOption).toBeDefined();
+        expect(actionOption).toBeDefined();
+
+        const minionResolved = handler!(
+            result.matchState!,
+            '0',
+            minionOption.value,
+            prompt.data,
+            dummyRandom,
+            1000,
+        );
+        const actionResolved = handler!(
+            result.matchState!,
+            '0',
+            actionOption.value,
+            prompt.data,
+            dummyRandom,
+            1000,
+        );
+
+        const minionLimit = minionResolved.events.find(e =>
             e.type === SU_EVENTS.LIMIT_MODIFIED && (e as any).payload.limitType === 'minion'
         );
-        const actionLimit = events.find(e =>
+        const actionLimit = actionResolved.events.find(e =>
             e.type === SU_EVENTS.LIMIT_MODIFIED && (e as any).payload.limitType === 'action'
         );
         expect(minionLimit).toBeDefined();
@@ -1409,49 +1470,57 @@ describe('base_fairy_ring: 仙灵圈 - 首次打随从额外额度', () => {
     });
 
     it('非首次打出时不触发', () => {
-        const { events } = triggerBaseAbility('base_fairy_ring', 'onMinionPlayed', makeCtx({
-            state: makeState({
-                bases: [makeBase('base_fairy_ring', {
-                    minions: [
-                        makeMinion('m1', '0', 3),
-                        makeMinion('m2', '0', 2),
-                    ],
-                })],
-                players: {
-                    '0': makePlayer('0', {
-                        minionsPlayedPerBase: { 0: 2 }, // 第二次打出
-                    }),
-                    '1': makePlayer('1'),
-                },
-            }),
+        const core = makeState({
+            bases: [makeBase('base_fairy_ring', {
+                minions: [
+                    makeMinion('m1', '0', 3),
+                    makeMinion('m2', '0', 2),
+                ],
+            })],
+            players: {
+                '0': makePlayer('0', {
+                    minionsPlayedPerBase: { 0: 2 }, // 第二次打出
+                }),
+                '1': makePlayer('1'),
+            },
+        });
+
+        const result = triggerBaseAbilityWithMS('base_fairy_ring', 'onMinionPlayed', makeCtx({
+            state: core,
+            matchState: makeMatchState(core),
             baseDefId: 'base_fairy_ring',
             baseIndex: 0,
             minionUid: 'm2',
         }));
 
-        expect(events).toHaveLength(0);
+        expect(result.events).toHaveLength(0);
+        expect(getInteractionsFromResult(result)).toHaveLength(0);
     });
 
     it('之前有随从被消灭后再打出仍不触发（非首次打出）', () => {
         // 回归测试：旧实现用基地上随从数量判断，消灭后再打出会误触发
-        const { events } = triggerBaseAbility('base_fairy_ring', 'onMinionPlayed', makeCtx({
-            state: makeState({
-                bases: [makeBase('base_fairy_ring', {
-                    minions: [makeMinion('m2', '0', 2)], // 基地上只有1个（之前的被消灭了）
-                })],
-                players: {
-                    '0': makePlayer('0', {
-                        minionsPlayedPerBase: { 0: 2 }, // 但这是第二次打出
-                    }),
-                    '1': makePlayer('1'),
-                },
-            }),
+        const core = makeState({
+            bases: [makeBase('base_fairy_ring', {
+                minions: [makeMinion('m2', '0', 2)], // 基地上只有1个（之前的被消灭了）
+            })],
+            players: {
+                '0': makePlayer('0', {
+                    minionsPlayedPerBase: { 0: 2 }, // 但这是第二次打出
+                }),
+                '1': makePlayer('1'),
+            },
+        });
+
+        const result = triggerBaseAbilityWithMS('base_fairy_ring', 'onMinionPlayed', makeCtx({
+            state: core,
+            matchState: makeMatchState(core),
             baseDefId: 'base_fairy_ring',
             baseIndex: 0,
             minionUid: 'm2',
         }));
 
-        expect(events).toHaveLength(0);
+        expect(result.events).toHaveLength(0);
+        expect(getInteractionsFromResult(result)).toHaveLength(0);
     });
 });
 
