@@ -105,6 +105,69 @@ function collectFrameworkBackedTests(rootDir: string): string[] {
     return matches;
 }
 
+function collectForbiddenLocalModeSpecs(rootDir: string): string[] {
+    const matches: string[] = [];
+    const forbiddenPattern = /\/play\/[^/\s'"]+\/local\b/;
+
+    const walk = (currentDir: string) => {
+        for (const entry of fs.readdirSync(currentDir, { withFileTypes: true })) {
+            const absolutePath = path.join(currentDir, entry.name);
+
+            if (entry.isDirectory()) {
+                walk(absolutePath);
+                continue;
+            }
+
+            if (!entry.isFile() || !entry.name.endsWith('.e2e.ts')) {
+                continue;
+            }
+
+            const content = fs.readFileSync(absolutePath, 'utf-8');
+            if (!forbiddenPattern.test(content)) {
+                continue;
+            }
+
+            matches.push(path.relative(process.cwd(), absolutePath).replace(/\\/g, '/'));
+        }
+    };
+
+    walk(rootDir);
+    return matches;
+}
+
+const ROOT_SMASHUP_DEPRECATED_SPECS = [
+    'e2e/smashup-alien-atlas-verify.e2e.ts',
+    'e2e/smashup-alien-cards-visual.e2e.ts',
+    'e2e/smashup-alien-terraform-verify.e2e.ts',
+    'e2e/smashup-check-dev-mode.e2e.ts',
+    'e2e/smashup-crypt-base.e2e.ts',
+    'e2e/smashup-gnome-skip.e2e.ts',
+    'e2e/smashup-local-gameplay.e2e.ts',
+    'e2e/smashup-multi-select-elder-thing-fixture.e2e.ts',
+    'e2e/smashup-multi-select-elder-thing.e2e.ts',
+    'e2e/smashup-multistep-pirates.e2e.ts',
+];
+
+function collectRootSmashUpSpecsMissingSkip(): string[] {
+    const matches: string[] = [];
+
+    for (const relativeSpecPath of ROOT_SMASHUP_DEPRECATED_SPECS) {
+        const absolutePath = path.join(process.cwd(), relativeSpecPath);
+        if (!fs.existsSync(absolutePath)) {
+            continue;
+        }
+
+        const content = fs.readFileSync(absolutePath, 'utf-8');
+        if (content.includes('test.describe.skip(') || content.includes('test.skip(')) {
+            continue;
+        }
+
+        matches.push(path.relative(process.cwd(), absolutePath).replace(/\\/g, '/'));
+    }
+
+    return matches;
+}
+
 if (!isMultiWorker) {
     process.env.GAME_SERVER_PORT = String(ports.gameServer);
     process.env.PW_GAME_SERVER_PORT = String(ports.gameServer);
@@ -116,7 +179,10 @@ const frontendPort = process.env.PW_PORT || process.env.E2E_PORT || String(ports
 // Chromium 在 Windows 上可能优先解析 localhost -> ::1，而测试前端默认只监听 IPv4。
 // 统一固定到 127.0.0.1，避免 page.goto 偶发 ERR_CONNECTION_REFUSED。
 const singleWorkerBaseURL = process.env.VITE_FRONTEND_URL || `http://127.0.0.1:${frontendPort}`;
-const multiWorkerSafeTests = collectFrameworkBackedTests(path.join(process.cwd(), 'e2e'));
+const e2eRootDir = path.join(process.cwd(), 'e2e');
+const multiWorkerSafeTests = collectFrameworkBackedTests(e2eRootDir);
+const forbiddenLocalModeSpecs = collectForbiddenLocalModeSpecs(e2eRootDir);
+const rootSmashUpSpecsMissingSkip = collectRootSmashUpSpecsMissingSkip();
 const explicitTestMatch = process.env.PW_TEST_MATCH?.trim();
 
 function hasExplicitPlaywrightTarget(argv: string[]): boolean {
@@ -185,6 +251,28 @@ if (!allowFullRun && !hasExplicitTarget) {
             '1. node scripts/infra/run-e2e-command.mjs ci e2e/<相关文件>.e2e.ts',
             '2. node scripts/infra/run-e2e-command.mjs ci --grep "<相关用例名>"',
             '3. 需要明确全量时，再显式使用 npm run test:e2e:all',
+        ].join('\n'),
+    );
+}
+
+if (forbiddenLocalModeSpecs.length > 0) {
+    throw new Error(
+        [
+            '检测到 E2E 仍在尝试使用已废弃的本地模式入口 `/play/:gameId/local`。',
+            '项目规范要求开发和测试统一走联机入口或测试入口，禁止再用本地模式充数。',
+            '请改用 `setupOnlineMatch` 或 `/play/:gameId` 测试入口，并清理以下文件：',
+            ...forbiddenLocalModeSpecs.map((specPath) => `- ${specPath}`),
+        ].join('\n'),
+    );
+}
+
+if (rootSmashUpSpecsMissingSkip.length > 0) {
+    throw new Error(
+        [
+            '检测到根级 SmashUp 旧测试文件被重新启用，已阻止本次 Playwright 运行。',
+            '这些文件依赖旧单页入口或调试全局，不得继续作为真实 online 覆盖使用：',
+            ...rootSmashUpSpecsMissingSkip.map((specPath) => `- ${specPath}`),
+            '如需恢复，请先迁到 `e2e/smashup/` 下的在线规范版本。',
         ].join('\n'),
     );
 }

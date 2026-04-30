@@ -19,7 +19,7 @@ import {
     cleanupTwoPlayerMatch,
 } from './smashup-helpers';
 
-test.describe('SmashUp 外星人 - 适居化图片验证', () => {
+test.describe.skip('已废弃：根级旧 verify 文件依赖调试全局；请改跑 e2e/smashup/ 下的在线规范版本', () => {
     test('验证适居化(Terraforming)显示正确的图片', async ({ browser }, testInfo) => {
         const baseURL = testInfo.project.use.baseURL as string | undefined;
         const setup = await setupTwoPlayerMatch(browser, baseURL);

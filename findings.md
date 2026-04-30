@@ -942,3 +942,22 @@
 - Evidence:
   - `evidence/smashup/smashup-skeletons-gravetender-e2e-2026-04-29.md`
   - `evidence/smashup/smashup-skeletons-burst-forth-e2e-2026-04-29.md`
+
+## Addendum（2026-04-30）：Feedback cleanup audit 收口复核
+- 2026-04-24 初版 `temp/feedback-cleanup-audit-2026-04-24.md` 把 4 条反馈都列为“需复核是否回归”，这在当时成立，但已不是当前真相。
+- 2026-04-30 复核后确认：
+  - `69c8f2f432bd47a7b57a66f8`（DiceThrone 黑屏）已在 `temp/feedback-closeout/status-board.json` 记为 `resolved`。
+  - `699f098e25c2319ea7b5f281`（波纹造成伤害但没有掉血）已在 `status-board.json` 记为 `resolved`。
+  - `69a277a317d6c588726802fe`（SummonerWars 撤回特别慢 / 放大镜功能没了）已在 `status-board.json` 记为 `resolved`。
+- 当前只剩 `699f0a1625c2319ea7b5f2a9`（获得 3cp 后伤害不对）未完成最终闭环：
+  - 已有本地业务验证 evidence：`evidence/dicethrone/dicethrone-feedback-699eb46-699f0a-regression-verification-2026-04-25.md`
+  - 但最新 `temp/feedback-closeout/remote-human-unresolved-latest.json` 仍显示该反馈远端状态为 `in_progress`
+  - `status-board.json` 也尚无该条登记
+- 结论：Feedback cleanup audit 不能按“已全部完成”处理；最准确说法是“仅剩 699f0a 的远端状态/状态板闭环证据待补”。
+
+## Addendum（2026-04-30）：Feedback cleanup audit 最终闭环确认
+- 对 `699f0a1625c2319ea7b5f2a9` 的最新远端直查结果表明：该反馈当前线上已是 `resolved`。
+- 本地执行的 `temp/feedback-closeout/update-feedback-status-20260430-699f0a-to-resolved.js` 返回 `matched=0 / modified=0`，原因不是失败，而是该条在数据库里已经不再属于 `open / in_progress`。
+- 同次返回的远端文档字段：`status=resolved`，`updatedAt=2026-04-25T16:24:42.444Z`。
+- 由此可确认：此前“只剩 699f0a 未闭环”的结论已经失效；真实问题是本地状态板与审计文档漏登记，而不是线上未回写。
+- 现已补齐 `temp/feedback-closeout/status-board.json` 与相关规划文档，`Feedback cleanup audit` 可以按完成处理。

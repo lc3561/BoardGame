@@ -65,7 +65,7 @@ const applyCoreStateDirect = async (page: Page, coreState: unknown) => {
 };
 
 const gotoLocalSmashUp = async (page: Page) => {
-    await page.goto('/play/smashup/local', { waitUntil: 'domcontentloaded' });
+    await page.goto('/play/smashup', { waitUntil: 'domcontentloaded' });
     await dismissViteOverlay(page);
     await page.waitForFunction(
         () => {

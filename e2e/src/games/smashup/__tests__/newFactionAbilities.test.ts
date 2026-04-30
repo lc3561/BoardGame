@@ -8618,7 +8618,7 @@ describe('Fairies abilities', () => {
 
         const prompt = getInteractionsFromMS(played.finalState)[0] as any;
         expect(prompt?.data?.sourceId).toBe('fairies_enchantment');
-        const minusOption = prompt.data.options.find((entry: any) => entry.value?.choice === 'minus');
+        const minusOption = prompt.data.options.find((entry: any) => entry.value?.branchId === 'minus');
         expect(minusOption).toBeDefined();
 
         const resolved = runCommand(
@@ -8632,6 +8632,59 @@ describe('Fairies abilities', () => {
         expect(enchantment?.metadata?.fairiesEnchantmentMode).toBe('minus');
         expect(targetMinion).toBeDefined();
         expect(getEffectivePower(resolved.finalState.core, targetMinion!, 0)).toBe(2);
+    });
+
+    it('fairies_puck 在丛林之灵在场时允许按顺序同时选择抽牌和额外行动', () => {
+        const core = makeState({
+            turnNumber: 1,
+            players: {
+                '0': makePlayer('0', {
+                    hand: [makeCard('puck-1', 'fairies_puck', 'minion', '0')],
+                    deck: [makeCard('draw-1', 'robot_microbot_alpha', 'minion', '0')],
+                }),
+                '1': makePlayer('1'),
+            },
+            titans: [{
+                uid: 'spirit-1',
+                defId: 'fairies_spirit_of_the_forest',
+                faction: 'fairies',
+                ownerId: '0',
+                controllerId: '0',
+                powerCounters: 0,
+                talentUsed: false,
+                location: { zone: 'base', baseIndex: 0, enteredAt: 1 },
+            }],
+            bases: [{
+                defId: 'base_a',
+                minions: [],
+                ongoingActions: [],
+            }],
+        });
+
+        const played = runCommand(
+            makeMatchState(core),
+            { type: SU_COMMANDS.PLAY_MINION, playerId: '0', payload: { cardUid: 'puck-1', baseIndex: 0 } },
+            defaultTestRandom,
+        );
+
+        const prompt = getInteractionsFromMS(played.finalState)[0] as any;
+        expect(prompt?.data?.sourceId).toBe('fairies_puck');
+        expect(prompt?.data?.multi?.ordered).toBe(true);
+        const drawOption = prompt.data.options.find((entry: any) => entry.value?.branchId === 'draw_card');
+        const actionOption = prompt.data.options.find((entry: any) => entry.value?.branchId === 'extra_action');
+        expect(drawOption).toBeDefined();
+        expect(actionOption).toBeDefined();
+
+        const resolved = runCommand(
+            played.finalState,
+            { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionIds: [drawOption.id, actionOption.id] } } as any,
+            defaultTestRandom,
+        );
+
+        expect(resolved.events.some(event => event.type === SU_EVENTS.CARDS_DRAWN)).toBe(true);
+        expect(resolved.finalState.core.players['0'].hand.length).toBe(1);
+        expect(resolved.finalState.core.players['0'].actionLimit).toBe(2);
+        expect(resolved.finalState.core.titans?.find(titan => titan.uid === 'spirit-1')?.metadata?.spiritOfTheForestUsedTurn).toBe(1);
     });
 
     it('fairies_playful_tricks 可以直接把丛林之灵打到场上而不额外消耗通常随从额度', () => {
@@ -8666,8 +8719,8 @@ describe('Fairies abilities', () => {
         );
 
         const modePrompt = getInteractionsFromMS(played.finalState)[0] as any;
-        expect(modePrompt?.data?.sourceId).toBe('fairies_playful_tricks_mode');
-        const playSpiritOption = modePrompt.data.options.find((entry: any) => entry.value?.choice === 'play_spirit');
+        expect(modePrompt?.data?.sourceId).toBe('fairies_playful_tricks');
+        const playSpiritOption = modePrompt.data.options.find((entry: any) => entry.value?.branchId === 'play_spirit');
         expect(playSpiritOption).toBeDefined();
 
         const choseSpirit = runCommand(
@@ -8692,7 +8745,7 @@ describe('Fairies abilities', () => {
         expect(summoned.finalState.core.players['0'].minionsPlayed).toBe(0);
     });
 
-    it('fairies_enchantment 在丛林之灵在场时会记录 both 模式且净力量不变', () => {
+    it('fairies_enchantment 在丛林之灵在场时可选双执行并记录 both 模式', () => {
         const core = makeState({
             turnNumber: 1,
             players: {
@@ -8724,12 +8777,15 @@ describe('Fairies abilities', () => {
             defaultTestRandom,
         );
         const prompt = getInteractionsFromMS(played.finalState)[0] as any;
-        const plusOption = prompt.data.options.find((entry: any) => entry.value?.choice === 'plus');
+        expect(prompt?.data?.multi?.ordered).toBe(true);
+        const plusOption = prompt.data.options.find((entry: any) => entry.value?.branchId === 'plus');
+        const minusOption = prompt.data.options.find((entry: any) => entry.value?.branchId === 'minus');
         expect(plusOption).toBeDefined();
+        expect(minusOption).toBeDefined();
 
         const resolved = runCommand(
             played.finalState,
-            { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: plusOption.id } } as any,
+            { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionIds: [plusOption.id, minusOption.id] } } as any,
             defaultTestRandom,
         );
 

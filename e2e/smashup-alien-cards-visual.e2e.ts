@@ -13,7 +13,7 @@ import {
     cleanupTwoPlayerMatch,
 } from './smashup-helpers';
 
-test.describe('SmashUp 外星人卡牌图片视觉验证', () => {
+test.describe.skip('已废弃：根级旧视觉验证文件依赖旧选秀/调试链路；请改跑 e2e/smashup/ 下的在线规范版本', () => {
     test('截图手牌中的外星人卡牌', async ({ browser }, testInfo) => {
         const baseURL = testInfo.project.use.baseURL as string | undefined;
         const setup = await setupTwoPlayerMatch(browser, baseURL);

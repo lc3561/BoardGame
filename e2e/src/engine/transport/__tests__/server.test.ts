@@ -6108,6 +6108,55 @@ describe('GameTransportServer（离座与重连）', () => {
         }));
     });
 
+    it('online AI watchdog 默认上报链路不应把成功恢复类事件写入反馈库', async () => {
+        const io = new MockIO();
+        const storage = new InMemoryStorage();
+
+        const server = new GameTransportServer({
+            io: io as unknown as any,
+            storage,
+            games: [createEngineConfig()],
+            onlineAiRecoveryTickMs: 0,
+            onlineAiRecoveryFeedbackCooldownMs: 60_000,
+        });
+
+        const serverInternal = server as unknown as {
+            reportOnlineAiRecoveryFeedback: (payload: {
+                matchId: string;
+                gameId: string;
+                playerId: string;
+                incidentKind:
+                    | 'force-end-turn-success'
+                    | 'force-end-turn-failed'
+                    | 'unsatisfiable-interaction-auto-skipped'
+                    | 'legal-action-recovered';
+                severity: 'medium' | 'high';
+                reason: string;
+                trackerKey: string;
+                progressMarker: string;
+                stateSnapshot: string;
+                actionLog?: string;
+            }) => Promise<void>;
+            defaultOnlineAiFeedbackReporter: (payload: unknown) => Promise<void>;
+        };
+
+        const defaultReporterSpy = vi.spyOn(serverInternal, 'defaultOnlineAiFeedbackReporter').mockResolvedValue();
+
+        await serverInternal.reportOnlineAiRecoveryFeedback({
+            matchId: 'match-watchdog-suppress-success',
+            gameId: 'dicethrone',
+            playerId: '1',
+            incidentKind: 'legal-action-recovered',
+            severity: 'medium',
+            reason: 'active-turn:legal-action:roll-dice:roll:dice',
+            trackerKey: '1:active-turn:0|defensiveRoll|42|0|||||||1',
+            progressMarker: 'marker-before-1',
+            stateSnapshot: '{"matchId":"match-watchdog-suppress-success"}',
+        });
+
+        expect(defaultReporterSpy).not.toHaveBeenCalled();
+    });
+
     it('online AI watchdog 自动反馈应携带交互选项与可选性诊断信息', async () => {
         const io = new MockIO();
         const storage = new InMemoryStorage();

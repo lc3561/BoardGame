@@ -18,7 +18,8 @@ const DEFAULT_USER_SOURCE = 'feedback-modal';
 const LEGACY_WATCHDOG_SOURCE = 'online-ai-watchdog';
 const WATCHDOG_AGGREGATION_SOURCE = 'online-ai-watchdog';
 export const WATCHDOG_AGGREGATION_WINDOW_MS = 6 * 60 * 60 * 1000;
-export const WATCHDOG_CLOSED_ARCHIVE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+export const WATCHDOG_RECENT_RETENTION_MS = 3 * 24 * 60 * 60 * 1000;
+export const WATCHDOG_MAX_RECENT_RECORDS = 100;
 
 const FEEDBACK_SEVERITY_RANK: Record<string, number> = {
     low: 1,
@@ -38,6 +39,8 @@ type WatchdogSnapshotRecord = Record<string, unknown>;
 
 @Injectable()
 export class FeedbackService {
+    private readonly watchdogAggregationLocks = new Map<string, Promise<Feedback>>();
+
     constructor(
         @InjectModel(Feedback.name) private feedbackModel: Model<FeedbackDocument>,
         @InjectModel(User.name) private userModel: Model<UserDocument>,
@@ -553,6 +556,7 @@ export class FeedbackService {
         source: string,
         gameId?: string,
         retryDepth = 0,
+        lockAcquired = false,
     ): Promise<Feedback> {
         const now = new Date();
         const aggregationPlan = this.buildWatchdogAggregationPlan(dto, source, gameId, now);
@@ -564,7 +568,13 @@ export class FeedbackService {
                 gameId,
             });
         }
-        await this.cleanupExpiredWatchdogClosedArchives(now);
+        if (!lockAcquired) {
+            return this.runWithWatchdogAggregationLock(
+                aggregationPlan.dedupeKey,
+                () => this.createOrUpdateAggregatedSystemFeedback(dto, source, gameId, retryDepth, true),
+            );
+        }
+        await this.enforceWatchdogFeedbackRetention(now);
         const aggregationKey = aggregationPlan.dedupeKey;
         const aggregationActiveKey = aggregationKey;
 
@@ -614,7 +624,7 @@ export class FeedbackService {
 
         if (!existing) {
             try {
-                return await this.feedbackModel.create({
+                const created = await this.feedbackModel.create({
                     ...dto,
                     source,
                     reporterType: FeedbackReporterType.SYSTEM,
@@ -627,6 +637,8 @@ export class FeedbackService {
                     lastOccurredAt: now,
                     latestIncidentKey: dto.incidentKey,
                 });
+                await this.enforceWatchdogFeedbackRetention(now);
+                return created;
             } catch (error) {
                 if (!this.isDuplicateKeyError(error)) {
                     throw error;
@@ -639,7 +651,7 @@ export class FeedbackService {
                 ).exec();
                 if (releasedClosedDoc) {
                     try {
-                        return await this.feedbackModel.create({
+                        const created = await this.feedbackModel.create({
                             ...dto,
                             source,
                             reporterType: FeedbackReporterType.SYSTEM,
@@ -652,6 +664,8 @@ export class FeedbackService {
                             lastOccurredAt: now,
                             latestIncidentKey: dto.incidentKey,
                         });
+                        await this.enforceWatchdogFeedbackRetention(now);
+                        return created;
                     } catch (retryError) {
                         if (!this.isDuplicateKeyError(retryError)) {
                             throw retryError;
@@ -706,24 +720,80 @@ export class FeedbackService {
             if (retryDepth >= 1) {
                 throw new Error('failed_to_update_aggregated_system_feedback_after_retry');
             }
-            return this.createOrUpdateAggregatedSystemFeedback(dto, source, gameId, retryDepth + 1);
+            return this.createOrUpdateAggregatedSystemFeedback(dto, source, gameId, retryDepth + 1, true);
         }
+        await this.enforceWatchdogFeedbackRetention(now);
         return updated.toObject() as Feedback;
     }
 
-    private async cleanupExpiredWatchdogClosedArchives(now: Date): Promise<void> {
-        const nowMs = now.getTime();
-        const cutoff = new Date(nowMs - WATCHDOG_CLOSED_ARCHIVE_RETENTION_MS);
+    private async runWithWatchdogAggregationLock(
+        dedupeKey: string,
+        task: () => Promise<Feedback>,
+    ): Promise<Feedback> {
+        const previous = this.watchdogAggregationLocks.get(dedupeKey) ?? Promise.resolve(undefined as unknown as Feedback);
+        const current = previous
+            .catch(() => undefined as unknown as Feedback)
+            .then(task)
+            .finally(() => {
+                if (this.watchdogAggregationLocks.get(dedupeKey) === current) {
+                    this.watchdogAggregationLocks.delete(dedupeKey);
+                }
+            });
+        this.watchdogAggregationLocks.set(dedupeKey, current);
+        return current;
+    }
+
+    private async enforceWatchdogFeedbackRetention(now: Date): Promise<void> {
+        const cutoff = new Date(now.getTime() - WATCHDOG_RECENT_RETENTION_MS);
         try {
-            await this.feedbackModel.deleteMany({
+            const keepRows = await this.feedbackModel.aggregate<Array<{ _id: Types.ObjectId }>>([
+                {
+                    $match: {
+                        source: WATCHDOG_AGGREGATION_SOURCE,
+                        reporterType: FeedbackReporterType.SYSTEM,
+                    },
+                },
+                {
+                    $addFields: {
+                        __retentionSortAt: {
+                            $ifNull: [
+                                '$lastOccurredAt',
+                                { $ifNull: ['$createdAt', '$updatedAt'] },
+                            ],
+                        },
+                    },
+                },
+                {
+                    $match: {
+                        __retentionSortAt: { $gte: cutoff },
+                    },
+                },
+                {
+                    $sort: {
+                        __retentionSortAt: -1,
+                        _id: -1,
+                    },
+                },
+                {
+                    $limit: WATCHDOG_MAX_RECENT_RECORDS,
+                },
+                {
+                    $project: {
+                        _id: 1,
+                    },
+                },
+            ]).exec();
+
+            const keepIds = keepRows.map((row) => row._id);
+            const deleteFilter: Record<string, unknown> = {
                 source: WATCHDOG_AGGREGATION_SOURCE,
                 reporterType: FeedbackReporterType.SYSTEM,
-                status: FeedbackStatus.CLOSED,
-                aggregationKey: { $exists: true, $nin: ['', null] },
-                $or: [
-                    { lastOccurredAt: { $lte: cutoff } },
-                    { lastOccurredAt: { $exists: false }, updatedAt: { $lte: cutoff } },
-                ],
+            };
+            if (keepIds.length > 0) {
+                deleteFilter._id = { $nin: keepIds };
+            }
+            await this.feedbackModel.deleteMany({
+                ...deleteFilter,
             }).exec();
         } catch {
             // 清理失败不应影响线上 watchdog 反馈上报链路。

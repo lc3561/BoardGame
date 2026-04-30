@@ -6,7 +6,7 @@
 
 import { test, expect } from './fixtures';
 
-test.describe('SmashUp - Gnome Skip Option', () => {
+test.describe.skip('已废弃：根级旧 fixture 文件直接依赖 __BG_STATE__/__BG_DISPATCH__，待迁到在线规范版本', () => {
     test('should allow skipping Gnome ability', async ({ smashupMatch }) => {
         const { page, player1Id, player2Id } = smashupMatch;
 

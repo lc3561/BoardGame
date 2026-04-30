@@ -146,6 +146,12 @@ type UnsatisfiableSimpleChoiceReason =
 export interface PromptMultiConfig {
     min?: number;
     max?: number;
+    /**
+     * 是否要求保留选择顺序。
+     * - false / undefined: 视为无序多选（组合语义）
+     * - true: 视为有序多选（排列语义）
+     */
+    ordered?: boolean;
 }
 
 export type SimpleChoiceAutoRefresh =

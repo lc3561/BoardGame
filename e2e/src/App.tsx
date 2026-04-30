@@ -40,7 +40,6 @@ const ENABLE_INTERNAL_DEVTOOLS = import.meta.env.DEV;
 
 // 页面级懒加载：首页是默认入口，保留同步加载避免首屏闪出路由级 loading 文案
 const MatchRoom = React.lazy(() => import('./pages/MatchRoomWithAudio'));
-const LocalMatchRoom = React.lazy(() => import('./pages/LocalMatchRoomWithAudio'));
 const TestMatchRoom = React.lazy(() => import('./pages/TestMatchRoomWithAudio'));
 // 旧的测试路由已废弃，使用新的 TestHarness 框架
 const LazyGlobalHUD = React.lazy(() => import('./components/system/GlobalHUD').then(m => ({ default: m.GlobalHUD })));
@@ -140,14 +139,6 @@ const AppContent = () => {
                       element={(
                         <React.Suspense fallback={playRouteFallback}>
                           <MatchRoom />
-                        </React.Suspense>
-                      )}
-                    />
-                    <Route
-                      path="/play/:gameId/local"
-                      element={(
-                        <React.Suspense fallback={playRouteFallback}>
-                          <LocalMatchRoom />
                         </React.Suspense>
                       )}
                     />

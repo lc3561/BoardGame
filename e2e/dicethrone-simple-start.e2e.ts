@@ -1618,45 +1618,52 @@ test.describe('DiceThrone Simple Start', () => {
         await cleanupDTMatch(setup);
     });
 
-    test('Local match: HUD 样式合同应保留生命条渐变与下一阶段按钮实体外观', async ({ page }, testInfo) => {
+    test('Online match: HUD 样式合同应保留生命条渐变与下一阶段按钮实体外观', async ({ browser }, testInfo) => {
         test.setTimeout(60000);
+        const baseURL = testInfo.project.use.baseURL as string | undefined;
+        const setup = await setupDTOnlineMatch(browser, baseURL, { gameServerBaseURL: getGameServerBaseURL() });
+        if (!setup) {
+            test.skip(true, '游戏服务器不可用或创建房间失败');
+            return;
+        }
 
-        await page.setViewportSize({ width: 802, height: 393 });
-        await setChineseLocale(page);
-        await page.goto('/play/dicethrone/local', { waitUntil: 'domcontentloaded' });
-        await waitForCharacterSelection(page, 30000);
+        const { hostPage, guestPage } = setup;
 
-        await clearEvidenceScreenshotsForTest(testInfo);
-        await saveEvidenceScreenshot(page, testInfo, '01-local-character-selection-mobile-baseline');
+        try {
+            await hostPage.setViewportSize({ width: 802, height: 393 });
+            await guestPage.setViewportSize({ width: 802, height: 393 });
+            await setChineseLocale(hostPage.context());
+            await setChineseLocale(guestPage.context());
+            await waitForCharacterSelection(hostPage, 30000);
+            await waitForCharacterSelection(guestPage, 30000);
 
-        await selectCharacter(page, 'barbarian');
-        await selectCharacter(page, 'paladin');
+            await clearEvidenceScreenshotsForTest(testInfo);
+            await saveEvidenceScreenshot(hostPage, testInfo, '01-online-character-selection-mobile-baseline');
 
-        const readyButton = page.getByRole('button', { name: /准备|Ready/i }).first();
-        await expect(readyButton).toBeVisible({ timeout: 10000 });
-        await readyButton.click();
+            await selectCharacter(hostPage, 'barbarian');
+            await selectCharacter(guestPage, 'paladin');
+            await readyAndStartGame(hostPage, guestPage);
 
-        const startButton = page.getByRole('button', { name: /开始游戏|Start Game/i }).first();
-        await expect(startButton).toBeVisible({ timeout: 10000 });
-        await expect(startButton).toBeEnabled({ timeout: 10000 });
-        await startButton.click();
+            await waitForGameBoard(hostPage);
+            await waitForGameBoard(guestPage);
+            await hostPage.waitForTimeout(1200);
 
-        await waitForGameBoard(page);
-        await page.waitForTimeout(1200);
+            const hudStyle = await readHudStyleContract(hostPage);
 
-        const hudStyle = await readHudStyleContract(page);
+            expect(hudStyle.hasHealthLabel).toBe(true);
+            expect(hudStyle.hpFillFound).toBe(true);
+            expect(hudStyle.advanceButtonFound).toBe(true);
+            expect(hudStyle.hpBackgroundImage).toContain('gradient');
+            expect(hudStyle.hpWidthPx).toBeGreaterThan(40);
+            expect(hudStyle.advanceButtonBackgroundImage).toContain('gradient');
+            expect(hudStyle.advanceButtonBoxShadow).not.toBe('none');
+            expect(hudStyle.advanceButtonBorderColor).not.toBe('rgba(0, 0, 0, 0)');
+            expect(hudStyle.advanceButtonText).toBe('下一阶段');
 
-        expect(hudStyle.hasHealthLabel).toBe(true);
-        expect(hudStyle.hpFillFound).toBe(true);
-        expect(hudStyle.advanceButtonFound).toBe(true);
-        expect(hudStyle.hpBackgroundImage).toContain('gradient');
-        expect(hudStyle.hpWidthPx).toBeGreaterThan(40);
-        expect(hudStyle.advanceButtonBackgroundImage).toContain('gradient');
-        expect(hudStyle.advanceButtonBoxShadow).not.toBe('none');
-        expect(hudStyle.advanceButtonBorderColor).not.toBe('rgba(0, 0, 0, 0)');
-        expect(hudStyle.advanceButtonText).toBe('下一阶段');
-
-        await saveEvidenceScreenshot(page, testInfo, '02-hud-style-contract');
+            await saveEvidenceScreenshot(hostPage, testInfo, '02-online-hud-style-contract');
+        } finally {
+            await cleanupDTMatch(setup);
+        }
     });
 
     test('Online 2-player transfer token: transfer phase keeps locked source card and target card', async ({ browser, workerPorts }, testInfo) => {

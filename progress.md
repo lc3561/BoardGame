@@ -48,7 +48,7 @@
     - 无；本批三派系重审已完成最终收口。
 
 ## Session: 2026-04-24 Feedback cleanup audit
-- **Status:** in_progress
+- **Status:** completed
 - Actions taken:
   - 已实修反馈 `69a440ea1eb921c6091f1231`（DiceThrone 教程把弃牌堆写成左侧）：
     - 修复 `public/locales/en/game-dicethrone.json` 的 `sellCardIntro / undoSellIntro`，统一为 `on the right`。
@@ -844,3 +844,24 @@
       - `task_plan.md`
       - `findings.md`
   - Next: 继续补三新派系剩余未到 L3 的对象，当前优先回到 `Mermaids` 的 `诱惑者 / 塞壬 / 无人岛`。
+
+### 复核更新（2026-04-30）
+- 已确认 4 条存疑项里有 3 条已具备关闭证据：
+  - `69c8f2f432bd47a7b57a66f8`（DiceThrone 黑屏）已在 `temp/feedback-closeout/status-board.json` 记为 `resolved`，并挂载 `dicethrone-webview91-board-shell-fix` / `dicethrone-gunslinger-the-law-multiselect-e2e-test` evidence。
+  - `699f098e25c2319ea7b5f281`（波纹造成伤害但没有掉血）已在 `status-board.json` 记为 `resolved`，并有 `evidence/feedback-online-batch11-crossgame-verify-2026-04-24.md` 佐证。
+  - `69a277a317d6c588726802fe`（SummonerWars 撤回特别慢 / 放大镜功能没了）已在 `status-board.json` 记为 `resolved`，并挂载 `summonerwars-feedback-69a277...` 与放大镜回归 evidence。
+- 当前唯一未闭环残项：
+  - `699f0a1625c2319ea7b5f2a9`（获得 3cp 后伤害不对）已有本地业务验证证据 `evidence/dicethrone/dicethrone-feedback-699eb46-699f0a-regression-verification-2026-04-25.md`，但最新 `temp/feedback-closeout/remote-human-unresolved-latest.json` 里该条远端状态仍是 `in_progress`，且 `status-board.json` 尚无对应登记。
+- 结论：
+  - 本长期项不能宣称“全部完成”。
+  - 当前最准确口径是：只剩 `699f0a1625c2319ea7b5f2a9` 的远端状态回写 / 状态板登记尚未闭环。
+
+### 最终闭环更新（2026-04-30）
+- 针对最后一条残项 `699f0a1625c2319ea7b5f2a9`，已通过 SSH + Mongo 直接复核远端真实状态。
+- 结果：`temp/feedback-closeout/update-feedback-status-20260430-699f0a-to-resolved.raw.txt` 显示本次脚本 `matched=0 / modified=0`，但同次查询返回 `doc.status="resolved"`、`updatedAt="2026-04-25T16:24:42.444Z"`。
+- 结论：该反馈此前已被线上回写为 `resolved`，只是本地 `status-board.json` 与 cleanup audit 文档漏登记。
+- 已完成补录：
+  - `temp/feedback-closeout/status-board.json` 新增 / 回填 `699f0a1625c2319ea7b5f2a9`
+  - `temp/feedback-cleanup-audit-2026-04-24.md` 更新最终结论
+  - `findings.md` 更新收口复核结论
+- 最终结论：`Feedback cleanup audit` 已完成收口。

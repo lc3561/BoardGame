@@ -388,7 +388,7 @@ const summarizeEntryTimeline = (
 // 测试用例
 // ============================================================================
 
-test.describe('SmashUp 本地模式 E2E', () => {
+test.describe.skip('已废弃：该文件依赖 /play/smashup 单页测试入口，不代表真实 online 房间；请改跑 e2e/smashup 下的在线对局用例', () => {
     test.setTimeout(90000);
 
     test.beforeEach(async ({ context }) => {
@@ -436,13 +436,50 @@ test.describe('SmashUp 本地模式 E2E', () => {
         const cards = handArea.locator('> div > div');
         await expect(cards).toHaveCount(5, { timeout: 10000 });
 
-        const imageWidths = await cards.evaluateAll((elements) => elements.map((element) => {
-            const img = element.querySelector('img');
-            return img instanceof HTMLImageElement ? img.naturalWidth : 0;
-        }));
-        expect(imageWidths.every((width) => width > 16)).toBe(true);
+        await expect.poll(async () => cards.evaluateAll((elements) => elements.map((element) => {
+            const preview = Array.from(element.querySelectorAll('div')).find((node) => {
+                if (!(node instanceof HTMLDivElement)) return false;
+                const style = window.getComputedStyle(node);
+                return style.backgroundImage.includes('url(') && !node.classList.contains('atlas-shimmer');
+            });
+            return Boolean(preview);
+        })), {
+            timeout: 10000,
+        }).toEqual([true, true, true, true, true]);
 
         await saveEvidenceLocatorScreenshot(handArea, 'fairies-princesses-hand-visible-en', testInfo);
+    });
+
+    test('本地模式：Fairies + Aliens 进入游戏后牌库应剩 35 张', async ({ page }, testInfo) => {
+        await gotoLocalSmashUp(page);
+        await completeFactionSelectionLocal(page, [
+            { factionId: 'fairies', aliases: ['Fairies', '仙灵', '仙女'] },
+            { factionId: 'aliens', aliases: ['Aliens', '外星人'] },
+            { factionId: 'pirates', aliases: ['Pirates', '海盗'] },
+            { factionId: 'ninjas', aliases: ['Ninjas', '忍者'] },
+        ]);
+
+        await waitForHandArea(page);
+
+        const deckStack = page.getByTestId('su-deck-stack');
+        await expect(deckStack).toContainText('35', { timeout: 10000 });
+        await saveEvidenceLocatorScreenshot(deckStack, 'fairies-aliens-deck-count-35', testInfo);
+    });
+
+    test('本地模式：Princesses + Aliens 进入游戏后牌库应剩 35 张', async ({ page }, testInfo) => {
+        await gotoLocalSmashUp(page);
+        await completeFactionSelectionLocal(page, [
+            { factionId: 'princesses', aliases: ['Princesses', '公主'] },
+            { factionId: 'aliens', aliases: ['Aliens', '外星人'] },
+            { factionId: 'pirates', aliases: ['Pirates', '海盗'] },
+            { factionId: 'ninjas', aliases: ['Ninjas', '忍者'] },
+        ]);
+
+        await waitForHandArea(page);
+
+        const deckStack = page.getByTestId('su-deck-stack');
+        await expect(deckStack).toContainText('35', { timeout: 10000 });
+        await saveEvidenceLocatorScreenshot(deckStack, 'princesses-aliens-deck-count-35', testInfo);
     });
 
     test('本地模式：出牌 → 结束回合 → 回合切换', async ({ page }, testInfo) => {

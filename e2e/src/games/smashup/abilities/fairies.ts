@@ -24,6 +24,17 @@ import {
 } from '../domain/abilityHelpers';
 import { registerProtection, registerRestriction } from '../domain/ongoingEffects';
 import type { ProtectionCheckContext, RestrictionCheckContext } from '../domain/ongoingEffects';
+import {
+    getSelectedBranchIds,
+    hasBranchingChoiceSelection,
+    queueBranchingChoice,
+    resolveBranchingChoiceSelection,
+    resumeBranchingChoicePlan,
+    type BranchExecutionResult,
+    type BranchExecutor,
+    type BranchingChoiceOption,
+    type BranchingChoiceUpgrade,
+} from '../domain/branchingChoice';
 import { SU_EVENTS } from '../domain/types';
 import type { SmashUpCore, SmashUpEvent, OngoingAttachedEvent, OngoingDetachedEvent } from '../domain/types';
 import { getBaseDef, getCardDef } from '../data/cards';
@@ -317,14 +328,42 @@ function getOwnedSetAsideSpiritOfTheForest(state: SmashUpCore, playerId: PlayerI
     );
 }
 
+function getSpiritOptionalBothUpgrade(
+    state: SmashUpCore,
+    playerId: PlayerId,
+    now: number,
+): BranchingChoiceUpgrade | undefined {
+    const spirit = getAvailableSpiritOfTheForestOrTitan(state, playerId);
+    if (!spirit) return undefined;
+    return {
+        mode: 'optional-both',
+        consumeEvents: [markSpiritOfTheForestOrUsed(spirit.uid, state.turnNumber, now)],
+    };
+}
+
+function createButtonBranchOption(
+    id: string,
+    label: string,
+    branchId: string,
+): BranchingChoiceOption {
+    return {
+        id,
+        label,
+        branchId,
+        displayMode: 'button',
+    };
+}
+
 function queuePlayfulTricksDestroyPrompt(
-    ctx: AbilityContext,
+    matchState: MatchState<SmashUpCore>,
+    playerId: PlayerId,
+    now: number,
     options: Array<{ id: string; label: string; value: { cardUid: string; defId: string; ownerId: PlayerId }; _source: 'field'; displayMode: 'card' }>,
     continuationContext?: Record<string, unknown>,
-): AbilityResult {
+): MatchState<SmashUpCore> {
     const interaction = createSimpleChoice(
-        `fairies_playful_tricks_${ctx.now}`,
-        ctx.playerId,
+        `fairies_playful_tricks_${now}`,
+        playerId,
         '有趣的把戏：选择至多两张打在基地或随从上的行动卡并摧毁它们',
         options,
         {
@@ -335,18 +374,15 @@ function queuePlayfulTricksDestroyPrompt(
         },
     );
 
-    return {
-        events: [],
-        matchState: queueInteraction(ctx.matchState, continuationContext
-            ? {
-                ...interaction,
-                data: {
-                    ...interaction.data,
-                    continuationContext,
-                },
-            }
-            : interaction),
-    };
+    return queueInteraction(matchState, continuationContext
+        ? {
+            ...interaction,
+            data: {
+                ...interaction.data,
+                continuationContext,
+            },
+        }
+        : interaction);
 }
 
 function queuePlayfulTricksSpiritBasePrompt(
@@ -430,17 +466,22 @@ function fairiesGlymmer(ctx: AbilityContext): AbilityResult {
 }
 
 function fairiesPuck(ctx: AbilityContext): AbilityResult {
-    const interaction = createSimpleChoice(
-        `fairies_puck_${ctx.now}`,
-        ctx.playerId,
-        'Puck：额外打出一张行动卡，或抽一张牌',
-        [
-            { id: 'extra-action', label: '额外打出一张行动卡', value: { choice: 'extra_action' }, displayMode: 'button' as const },
-            { id: 'draw-card', label: '抽一张牌', value: { choice: 'draw_card' }, displayMode: 'button' as const },
-        ],
-        { sourceId: 'fairies_puck', targetType: 'button', autoResolveIfSingle: false },
-    );
-    return { events: [], matchState: queueInteraction(ctx.matchState, interaction) };
+    return {
+        events: [],
+        matchState: queueBranchingChoice({
+            matchState: ctx.matchState,
+            playerId: ctx.playerId,
+            now: ctx.now,
+            sourceId: 'fairies_puck',
+            title: 'Puck：额外打出一张行动卡，或抽一张牌',
+            targetType: 'button',
+            upgrade: getSpiritOptionalBothUpgrade(ctx.state, ctx.playerId, ctx.now),
+            options: [
+                createButtonBranchOption('extra-action', '额外打出一张行动卡', 'extra_action'),
+                createButtonBranchOption('draw-card', '抽一张牌', 'draw_card'),
+            ],
+        }),
+    };
 }
 
 function fairiesTinx(ctx: AbilityContext): AbilityResult {
@@ -495,17 +536,22 @@ function fairiesLeafArmor(ctx: AbilityContext): AbilityResult {
 }
 
 function fairiesMagicAcorns(ctx: AbilityContext): AbilityResult {
-    const interaction = createSimpleChoice(
-        `fairies_magic_acorns_${ctx.now}`,
-        ctx.playerId,
-        '魔法橡子：选择让每位其他玩家随机弃一张牌，或抽一张牌并额外打出一张行动卡',
-        [
-            { id: 'discard-others', label: '每位其他玩家随机弃一张牌', value: { choice: 'discard_others' }, displayMode: 'button' as const },
-            { id: 'draw-and-action', label: '抽一张牌并额外打出一张行动卡', value: { choice: 'draw_one_and_action' }, displayMode: 'button' as const },
-        ],
-        { sourceId: 'fairies_magic_acorns', targetType: 'button', autoResolveIfSingle: false },
-    );
-    return { events: [], matchState: queueInteraction(ctx.matchState, interaction) };
+    return {
+        events: [],
+        matchState: queueBranchingChoice({
+            matchState: ctx.matchState,
+            playerId: ctx.playerId,
+            now: ctx.now,
+            sourceId: 'fairies_magic_acorns',
+            title: '魔法橡子：选择让每位其他玩家随机弃一张牌，或抽一张牌并额外打出一张行动卡',
+            targetType: 'button',
+            upgrade: getSpiritOptionalBothUpgrade(ctx.state, ctx.playerId, ctx.now),
+            options: [
+                createButtonBranchOption('discard-others', '每位其他玩家随机弃一张牌', 'discard_others'),
+                createButtonBranchOption('draw-and-action', '抽一张牌并额外打出一张行动卡', 'draw_one_and_action'),
+            ],
+        }),
+    };
 }
 
 function fairiesPlayfulTricks(ctx: AbilityContext): AbilityResult {
@@ -515,69 +561,69 @@ function fairiesPlayfulTricks(ctx: AbilityContext): AbilityResult {
 
     if (!canPlaySpirit) {
         if (actionOptions.length === 0) return { events: [] };
-        return queuePlayfulTricksDestroyPrompt(ctx, actionOptions);
+        return {
+            events: [],
+            matchState: queuePlayfulTricksDestroyPrompt(ctx.matchState, ctx.playerId, ctx.now, actionOptions),
+        };
     }
 
-    const branchOptions = [
-        { id: 'destroy-actions', label: '消灭至多两张行动卡', value: { choice: 'destroy_actions' }, displayMode: 'button' as const },
-        { id: 'play-spirit', label: '打出丛林之灵', value: { choice: 'play_spirit' }, displayMode: 'button' as const },
-    ];
-    const interaction = createSimpleChoice(
-        `fairies_playful_tricks_mode_${ctx.now}`,
-        ctx.playerId,
-        '有趣的把戏：选择消灭至多两张行动卡，或打出丛林之灵',
-        branchOptions,
-        { sourceId: 'fairies_playful_tricks_mode', targetType: 'button', autoResolveIfSingle: false },
-    );
     return {
         events: [],
-        matchState: queueInteraction(ctx.matchState, {
-            ...interaction,
-            data: {
-                ...interaction.data,
-                continuationContext: {
-                    titanUid: setAsideSpirit?.uid,
-                    hasActionTargets: actionOptions.length > 0,
-                },
+        matchState: queueBranchingChoice({
+            matchState: ctx.matchState,
+            playerId: ctx.playerId,
+            now: ctx.now,
+            sourceId: 'fairies_playful_tricks',
+            title: '有趣的把戏：选择消灭至多两张行动卡，或打出丛林之灵',
+            targetType: 'button',
+            continuationContext: {
+                titanUid: setAsideSpirit?.uid,
             },
+            options: [
+                ...(actionOptions.length > 0 ? [createButtonBranchOption('destroy-actions', '消灭至多两张行动卡', 'destroy_actions')] : []),
+                createButtonBranchOption('play-spirit', '打出丛林之灵', 'play_spirit'),
+            ],
         }),
     };
 }
 
 function fairiesEnchantment(ctx: AbilityContext): AbilityResult {
-    const interaction = createSimpleChoice(
-        `fairies_enchantment_${ctx.now}`,
-        ctx.playerId,
-        '结果：选择让此基地所有随从 +1 力量，或所有随从 -1 力量',
-        [
-            { id: 'plus', label: '所有随从 +1 力量', value: { choice: 'plus' }, displayMode: 'button' as const },
-            { id: 'minus', label: '所有随从 -1 力量', value: { choice: 'minus' }, displayMode: 'button' as const },
-        ],
-        { sourceId: 'fairies_enchantment', targetType: 'button', autoResolveIfSingle: false },
-    );
-
     return {
         events: [],
-        matchState: queueInteraction(ctx.matchState, {
-            ...interaction,
-            data: { ...interaction.data, continuationContext: { baseIndex: ctx.baseIndex } },
+        matchState: queueBranchingChoice({
+            matchState: ctx.matchState,
+            playerId: ctx.playerId,
+            now: ctx.now,
+            sourceId: 'fairies_enchantment',
+            title: '结果：选择让此基地所有随从 +1 力量，或所有随从 -1 力量',
+            targetType: 'button',
+            continuationContext: { baseIndex: ctx.baseIndex },
+            upgrade: getSpiritOptionalBothUpgrade(ctx.state, ctx.playerId, ctx.now),
+            options: [
+                createButtonBranchOption('plus', '所有随从 +1 力量', 'plus'),
+                createButtonBranchOption('minus', '所有随从 -1 力量', 'minus'),
+            ],
         }),
     };
 }
 
 function fairiesFairyBallet(ctx: AbilityContext): AbilityResult {
-    const interaction = createSimpleChoice(
-        `fairies_fairy_ballet_${ctx.now}`,
-        ctx.playerId,
-        '精灵芭蕾：抽两张牌，或抽一张牌并额外打出一张行动卡',
-        [
-            { id: 'draw-two', label: '抽两张牌', value: { choice: 'draw_two' }, displayMode: 'button' as const },
-            { id: 'draw-one-action', label: '抽一张牌并额外打出一张行动卡', value: { choice: 'draw_one_and_action' }, displayMode: 'button' as const },
-        ],
-        { sourceId: 'fairies_fairy_ballet', targetType: 'button', autoResolveIfSingle: false },
-    );
-
-    return { events: [], matchState: queueInteraction(ctx.matchState, interaction) };
+    return {
+        events: [],
+        matchState: queueBranchingChoice({
+            matchState: ctx.matchState,
+            playerId: ctx.playerId,
+            now: ctx.now,
+            sourceId: 'fairies_fairy_ballet',
+            title: '精灵芭蕾：抽两张牌，或抽一张牌并额外打出一张行动卡',
+            targetType: 'button',
+            upgrade: getSpiritOptionalBothUpgrade(ctx.state, ctx.playerId, ctx.now),
+            options: [
+                createButtonBranchOption('draw-two', '抽两张牌', 'draw_two'),
+                createButtonBranchOption('draw-one-action', '抽一张牌并额外打出一张行动卡', 'draw_one_and_action'),
+            ],
+        }),
+    };
 }
 
 function fairiesLadybugProtectionChecker(ctx: ProtectionCheckContext): boolean {
@@ -702,34 +748,33 @@ const handleFairiesGlymmer: InteractionHandler = (state, playerId, value, _data,
     };
 };
 
-const handleFairiesPuck: InteractionHandler = (state, playerId, value, _data, random, timestamp) => {
-    const selected = value as ButtonChoice;
-    const spirit = getAvailableSpiritOfTheForestOrTitan(state.core, playerId);
-    if (selected.choice === 'extra_action') {
+const runFairiesPuckBranch: BranchExecutor = ({ state, playerId, selection, random, timestamp }) => {
+    const branchId = selection.branchId;
+    if (branchId === 'extra_action') {
         return {
             state,
-            events: spirit
-                ? [
-                    grantContextualExtraAction({ playerId, now: timestamp, matchState: state }, 'fairies_puck'),
-                    ...buildStandardDrawEvents(state.core, playerId, 1, random, timestamp),
-                    markSpiritOfTheForestOrUsed(spirit.uid, state.core.turnNumber, timestamp),
-                ]
-                : [grantContextualExtraAction({ playerId, now: timestamp, matchState: state }, 'fairies_puck')],
+            events: [grantContextualExtraAction({ playerId, now: timestamp, matchState: state }, 'fairies_puck')],
         };
     }
-    if (selected.choice === 'draw_card') {
+    if (branchId === 'draw_card') {
         return {
             state,
-            events: spirit
-                ? [
-                    ...buildStandardDrawEvents(state.core, playerId, 1, random, timestamp),
-                    grantContextualExtraAction({ playerId, now: timestamp, matchState: state }, 'fairies_puck'),
-                    markSpiritOfTheForestOrUsed(spirit.uid, state.core.turnNumber, timestamp),
-                ]
-                : buildStandardDrawEvents(state.core, playerId, 1, random, timestamp),
+            events: buildStandardDrawEvents(state.core, playerId, 1, random, timestamp),
         };
     }
     return { state, events: [] };
+};
+
+const handleFairiesPuck: InteractionHandler = (state, playerId, value, _data, random, timestamp) => {
+    return resolveBranchingChoiceSelection({
+        state,
+        playerId,
+        value,
+        interactionData: _data,
+        random,
+        timestamp,
+        executeBranch: runFairiesPuckBranch,
+    }) ?? { state, events: [] };
 };
 
 const handleFairiesTinx: InteractionHandler = (state, _playerId, value, data, _random, timestamp) => {
@@ -773,10 +818,9 @@ function handleTransferSelfTalent(sourceId: 'fairies_ladybug' | 'fairies_leaf_ar
     };
 }
 
-const handleFairiesMagicAcorns: InteractionHandler = (state, playerId, value, _data, random, timestamp) => {
-    const selected = value as ButtonChoice;
-    const spirit = getAvailableSpiritOfTheForestOrTitan(state.core, playerId);
-    if (selected.choice === 'discard_others') {
+const runFairiesMagicAcornsBranch: BranchExecutor = ({ state, playerId, selection, random, timestamp }) => {
+    const branchId = selection.branchId;
+    if (branchId === 'discard_others') {
         const events: SmashUpEvent[] = [];
         for (const [targetPlayerId, player] of Object.entries(state.core.players)) {
             if (targetPlayerId === playerId || player.hand.length === 0) continue;
@@ -787,41 +831,68 @@ const handleFairiesMagicAcorns: InteractionHandler = (state, playerId, value, _d
                 timestamp,
             } as SmashUpEvent);
         }
-        if (spirit) {
-            events.push(
-                ...buildStandardDrawEvents(state.core, playerId, 1, random, timestamp),
-                grantContextualExtraAction({ playerId, now: timestamp, matchState: state }, 'fairies_magic_acorns'),
-                markSpiritOfTheForestOrUsed(spirit.uid, state.core.turnNumber, timestamp),
-            );
-        }
         return { state, events };
     }
-    if (selected.choice === 'draw_one_and_action') {
+    if (branchId === 'draw_one_and_action') {
         return {
             state,
-            events: spirit
-                ? [
-                    ...buildStandardDrawEvents(state.core, playerId, 1, random, timestamp),
-                    grantContextualExtraAction({ playerId, now: timestamp, matchState: state }, 'fairies_magic_acorns'),
-                    ...Object.entries(state.core.players)
-                        .filter(([targetPlayerId, player]) => targetPlayerId !== playerId && player.hand.length > 0)
-                        .map(([targetPlayerId, player]) => ({
-                            type: SU_EVENTS.CARDS_DISCARDED,
-                            payload: { playerId: targetPlayerId, cardUids: [player.hand[Math.floor(random.random() * player.hand.length)].uid] },
-                            timestamp,
-                        } as SmashUpEvent)),
-                    markSpiritOfTheForestOrUsed(spirit.uid, state.core.turnNumber, timestamp),
-                ]
-                : [
-                    ...buildStandardDrawEvents(state.core, playerId, 1, random, timestamp),
-                    grantContextualExtraAction({ playerId, now: timestamp, matchState: state }, 'fairies_magic_acorns'),
-                ],
+            events: [
+                ...buildStandardDrawEvents(state.core, playerId, 1, random, timestamp),
+                grantContextualExtraAction({ playerId, now: timestamp, matchState: state }, 'fairies_magic_acorns'),
+            ],
         };
     }
     return { state, events: [] };
 };
 
-const handleFairiesPlayfulTricks: InteractionHandler = (state, _playerId, value, _data, _random, timestamp) => {
+const handleFairiesMagicAcorns: InteractionHandler = (state, playerId, value, _data, random, timestamp) => {
+    return resolveBranchingChoiceSelection({
+        state,
+        playerId,
+        value,
+        interactionData: _data,
+        random,
+        timestamp,
+        executeBranch: runFairiesMagicAcornsBranch,
+    }) ?? { state, events: [] };
+};
+
+const runFairiesPlayfulTricksBranch: BranchExecutor = ({ state, playerId, selection, planContext, timestamp }) => {
+    const branchId = selection.branchId;
+    if (branchId === 'destroy_actions') {
+        const actionOptions = buildPlayfulTricksActionOptions(state.core);
+        if (actionOptions.length === 0) return { state, events: [] };
+        return {
+            state: queuePlayfulTricksDestroyPrompt(state, playerId, timestamp, actionOptions),
+            events: [],
+        };
+    }
+
+    if (branchId === 'play_spirit') {
+        const titanUid = typeof planContext?.titanUid === 'string' ? planContext.titanUid : undefined;
+        if (!titanUid) return { state, events: [] };
+        return {
+            state: queuePlayfulTricksSpiritBasePrompt(state, playerId, titanUid, timestamp),
+            events: [],
+        };
+    }
+
+    return { state, events: [] };
+};
+
+const handleFairiesPlayfulTricks: InteractionHandler = (state, playerId, value, _data, random, timestamp) => {
+    if (hasBranchingChoiceSelection(value)) {
+        return resolveBranchingChoiceSelection({
+            state,
+            playerId,
+            value,
+            interactionData: _data,
+            random,
+            timestamp,
+            executeBranch: runFairiesPlayfulTricksBranch,
+        }) ?? { state, events: [] };
+    }
+
     const rawSelections = Array.isArray(value)
         ? value as Array<{ cardUid?: string; defId?: string; ownerId?: string }>
         : [];
@@ -849,37 +920,15 @@ const handleFairiesPlayfulTricks: InteractionHandler = (state, _playerId, value,
         } as OngoingDetachedEvent);
     }
 
-    return { state, events };
-};
-
-const handleFairiesPlayfulTricksMode: InteractionHandler = (state, playerId, value, data, _random, timestamp) => {
-    const selected = value as ButtonChoice;
-    const continuation = data?.continuationContext as { titanUid?: string; hasActionTargets?: boolean } | undefined;
-    if (selected.choice === 'destroy_actions') {
-        if (!continuation?.hasActionTargets) return { state, events: [] };
-        const actionOptions = buildPlayfulTricksActionOptions(state.core);
-        if (actionOptions.length === 0) return { state, events: [] };
-        const interaction = createSimpleChoice(
-            `fairies_playful_tricks_${timestamp}`,
-            playerId,
-            '有趣的把戏：选择至多两张打在基地或随从上的行动卡并摧毁它们',
-            actionOptions,
-            {
-                sourceId: 'fairies_playful_tricks',
-                targetType: 'generic',
-                multi: { min: 0, max: Math.min(2, actionOptions.length) },
-                autoResolveIfSingle: false,
-            },
-        );
-        return { state: queueInteraction(state, interaction), events: [] };
-    }
-    if (selected.choice === 'play_spirit' && continuation?.titanUid) {
-        return {
-            state: queuePlayfulTricksSpiritBasePrompt(state, playerId, continuation.titanUid, timestamp),
-            events: [],
-        };
-    }
-    return { state, events: [] };
+    return resumeBranchingChoicePlan({
+        state,
+        playerId,
+        interactionData: _data,
+        random,
+        timestamp,
+        executeBranch: runFairiesPlayfulTricksBranch,
+        prefixEvents: events,
+    }) ?? { state, events };
 };
 
 const handleFairiesPlayfulTricksSpiritBase: InteractionHandler = (state, playerId, value, data, _random, timestamp) => {
@@ -894,7 +943,7 @@ const handleFairiesPlayfulTricksSpiritBase: InteractionHandler = (state, playerI
         && candidate.location.zone === 'setaside',
     );
     if (!titan || !canControllerPlayTitan(state.core, playerId, titan.uid)) return { state, events: [] };
-    return {
+    const result: BranchExecutionResult = {
         state,
         events: [
             playTitan(
@@ -907,22 +956,37 @@ const handleFairiesPlayfulTricksSpiritBase: InteractionHandler = (state, playerI
             ),
         ],
     };
+    return resumeBranchingChoicePlan({
+        state: result.state,
+        playerId,
+        interactionData: data,
+        random: _random,
+        timestamp,
+        executeBranch: runFairiesPlayfulTricksBranch,
+        prefixEvents: result.events,
+    }) ?? result;
 };
 
 const handleFairiesEnchantment: InteractionHandler = (state, playerId, value, data, _random, timestamp) => {
-    const selected = value as ButtonChoice;
     const continuation = data?.continuationContext as { baseIndex?: number } | undefined;
     if (!continuation || continuation.baseIndex === undefined) return { state, events: [] };
-    if (selected.choice !== 'plus' && selected.choice !== 'minus') return { state, events: [] };
+    const branchIds = getSelectedBranchIds(value);
+    if (branchIds.length === 0) return { state, events: [] };
+    if (!branchIds.every((branchId) => branchId === 'plus' || branchId === 'minus')) return { state, events: [] };
 
     const attached = state.core.bases[continuation.baseIndex]?.ongoingActions.find(action =>
         action.ownerId === playerId && (action.defId === 'fairies_enchantment' || action.defId === 'fairies_enchantment_pod'),
     );
     if (!attached) return { state, events: [] };
-    const spirit = getAvailableSpiritOfTheForestOrTitan(state.core, playerId);
-    const fairiesEnchantmentMode = spirit ? 'both' : selected.choice;
+    const spirit = branchIds.length > 1 ? getAvailableSpiritOfTheForestOrTitan(state.core, playerId) : undefined;
+    const fairiesEnchantmentMode = branchIds.includes('plus') && branchIds.includes('minus')
+        ? 'both'
+        : branchIds[0];
+    if (fairiesEnchantmentMode !== 'plus' && fairiesEnchantmentMode !== 'minus' && fairiesEnchantmentMode !== 'both') {
+        return { state, events: [] };
+    }
 
-    return {
+    const result: BranchExecutionResult = {
         state,
         events: [
             {
@@ -941,41 +1005,39 @@ const handleFairiesEnchantment: InteractionHandler = (state, playerId, value, da
             ...(spirit ? [markSpiritOfTheForestOrUsed(spirit.uid, state.core.turnNumber, timestamp)] : []),
         ],
     };
+    return result;
 };
 
-const handleFairiesFairyBallet: InteractionHandler = (state, playerId, value, _data, random, timestamp) => {
-    const selected = value as ButtonChoice;
-    const spirit = getAvailableSpiritOfTheForestOrTitan(state.core, playerId);
-    if (selected.choice === 'draw_two') {
+const runFairiesFairyBalletBranch: BranchExecutor = ({ state, playerId, selection, random, timestamp }) => {
+    const branchId = selection.branchId;
+    if (branchId === 'draw_two') {
         return {
             state,
-            events: spirit
-                ? [
-                    ...buildStandardDrawEvents(state.core, playerId, 2, random, timestamp),
-                    ...buildStandardDrawEvents(state.core, playerId, 1, random, timestamp),
-                    grantContextualExtraAction({ playerId, now: timestamp, matchState: state }, 'fairies_fairy_ballet'),
-                    markSpiritOfTheForestOrUsed(spirit.uid, state.core.turnNumber, timestamp),
-                ]
-                : buildStandardDrawEvents(state.core, playerId, 2, random, timestamp),
+            events: buildStandardDrawEvents(state.core, playerId, 2, random, timestamp),
         };
     }
-    if (selected.choice === 'draw_one_and_action') {
+    if (branchId === 'draw_one_and_action') {
         return {
             state,
-            events: spirit
-                ? [
-                    ...buildStandardDrawEvents(state.core, playerId, 1, random, timestamp),
-                    grantContextualExtraAction({ playerId, now: timestamp, matchState: state }, 'fairies_fairy_ballet'),
-                    ...buildStandardDrawEvents(state.core, playerId, 2, random, timestamp),
-                    markSpiritOfTheForestOrUsed(spirit.uid, state.core.turnNumber, timestamp),
-                ]
-                : [
-                    ...buildStandardDrawEvents(state.core, playerId, 1, random, timestamp),
-                    grantContextualExtraAction({ playerId, now: timestamp, matchState: state }, 'fairies_fairy_ballet'),
-                ],
+            events: [
+                ...buildStandardDrawEvents(state.core, playerId, 1, random, timestamp),
+                grantContextualExtraAction({ playerId, now: timestamp, matchState: state }, 'fairies_fairy_ballet'),
+            ],
         };
     }
     return { state, events: [] };
+};
+
+const handleFairiesFairyBallet: InteractionHandler = (state, playerId, value, _data, random, timestamp) => {
+    return resolveBranchingChoiceSelection({
+        state,
+        playerId,
+        value,
+        interactionData: _data,
+        random,
+        timestamp,
+        executeBranch: runFairiesFairyBalletBranch,
+    }) ?? { state, events: [] };
 };
 
 export function registerFairiesInteractionHandlers(): void {
@@ -987,7 +1049,6 @@ export function registerFairiesInteractionHandlers(): void {
     registerInteractionHandler('fairies_ladybug', handleTransferSelfTalent('fairies_ladybug', 'fairies_ladybug'));
     registerInteractionHandler('fairies_leaf_armor', handleTransferSelfTalent('fairies_leaf_armor', 'fairies_leaf_armor'));
     registerInteractionHandler('fairies_magic_acorns', handleFairiesMagicAcorns);
-    registerInteractionHandler('fairies_playful_tricks_mode', handleFairiesPlayfulTricksMode);
     registerInteractionHandler('fairies_playful_tricks', handleFairiesPlayfulTricks);
     registerInteractionHandler('fairies_playful_tricks_spirit_base', handleFairiesPlayfulTricksSpiritBase);
     registerInteractionHandler('fairies_enchantment', handleFairiesEnchantment);

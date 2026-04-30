@@ -217,6 +217,7 @@ export const PromptOverlay: React.FC<Props> = ({ interaction, dispatch, playerID
     // 所有 hooks 必须在条件返回之前调用（React hooks 规则）
     const isMyPrompt = isSmashUpPromptOwnedByPlayer({ currentPrompt: prompt, playerID });
     const isMulti = !!prompt?.multi; // 多选功能不应该依赖 isMyPrompt
+    const isOrderedMulti = isMulti && !!prompt?.multi?.ordered;
     const minSelections = isMulti ? (prompt?.multi?.min ?? 0) : 0;
     const maxSelections = isMulti ? prompt?.multi?.max : undefined;
     const hasOptions = (prompt?.options?.length ?? 0) > 0;
@@ -772,8 +773,14 @@ export const PromptOverlay: React.FC<Props> = ({ interaction, dispatch, playerID
                                             {name || option.label}
                                         </div>
                                         {isMulti && isSelected && (
-                                            <div className={`absolute -top-[0.5vw] -right-[0.5vw] w-[2vw] h-[2vw] bg-amber-400 rounded-full flex items-center justify-center shadow-lg`}>
-                                                <Check size={14} strokeWidth={3} className="text-black" />
+                                            <div className={`absolute -top-[0.5vw] -right-[0.5vw] min-w-[2vw] h-[2vw] px-[0.2vw] bg-amber-400 rounded-full flex items-center justify-center shadow-lg`}>
+                                                {isOrderedMulti ? (
+                                                    <span className="text-[0.75vw] font-black text-black leading-none">
+                                                        {selectedIds.indexOf(option.id) + 1}
+                                                    </span>
+                                                ) : (
+                                                    <Check size={14} strokeWidth={3} className="text-black" />
+                                                )}
                                             </div>
                                         )}
                                         {/* 放大镜按钮 - 右上角突出显示，多选模式下勾选在左上角 */}
@@ -814,7 +821,7 @@ export const PromptOverlay: React.FC<Props> = ({ interaction, dispatch, playerID
                                             {opt.label}
                                         </GameButton>
                                     ))}
-                                    {isMulti && (
+                                    {isMulti && !isOrderedMulti && (
                                         <>
                                             <GameButton
                                                 variant="secondary"
@@ -918,7 +925,7 @@ export const PromptOverlay: React.FC<Props> = ({ interaction, dispatch, playerID
                                 >
                                     {isMulti && (
                                         <span className={`w-4 h-4 rounded border-2 flex items-center justify-center text-[10px] mr-1 ${isSelected ? 'bg-amber-400 border-amber-400 text-black' : 'border-slate-500'}`}>
-                                            {isSelected && <Check size={10} strokeWidth={3} />}
+                                            {isSelected && (isOrderedMulti ? selectedIds.indexOf(option.id) + 1 : <Check size={10} strokeWidth={3} />)}
                                         </span>
                                     )}
                                     {option.label}
@@ -949,20 +956,22 @@ export const PromptOverlay: React.FC<Props> = ({ interaction, dispatch, playerID
                     {/* 多选确认 */}
                     {isMyPrompt && isMulti && (
                         <div className="px-4 pb-4 pt-2 border-t border-slate-700 flex justify-end gap-3">
-                            <GameButton
-                                variant="secondary"
-                                size="sm"
-                                onClick={() => {
-                                    const allIds = nonSkipOptions.map(o => o.id);
-                                    setSelectedIds(prev =>
-                                        prev.length === allIds.length ? [] : (maxSelections !== undefined ? allIds.slice(0, maxSelections) : allIds),
-                                    );
-                                }}
-                            >
-                                {selectedIds.length === nonSkipOptions.length
-                                    ? t('ui.deselect_all', { defaultValue: '取消全选' })
-                                    : t('ui.select_all', { defaultValue: '全选' })}
-                            </GameButton>
+                            {!isOrderedMulti && (
+                                <GameButton
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={() => {
+                                        const allIds = nonSkipOptions.map(o => o.id);
+                                        setSelectedIds(prev =>
+                                            prev.length === allIds.length ? [] : (maxSelections !== undefined ? allIds.slice(0, maxSelections) : allIds),
+                                        );
+                                    }}
+                                >
+                                    {selectedIds.length === nonSkipOptions.length
+                                        ? t('ui.deselect_all', { defaultValue: '取消全选' })
+                                        : t('ui.select_all', { defaultValue: '全选' })}
+                                </GameButton>
+                            )}
                             <GameButton
                                 variant="primary"
                                 size="sm"

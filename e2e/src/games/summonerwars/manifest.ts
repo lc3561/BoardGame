@@ -10,7 +10,7 @@ const entry: GameManifestEntry = {
     playersKey: 'games.summonerwars.players',
     icon: '⚔️',
     thumbnailPath: 'summonerwars/thumbnails/cover',
-    allowLocalMode: true,
+    allowLocalMode: false,
     playerOptions: [2],
     tags: ['tactical', 'card_driven', 'dice_driven'],
     bestPlayers: [2],

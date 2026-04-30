@@ -164,7 +164,7 @@ export const NODES: ArchNode[] = [
     details: ['🎯 同一套规则代码 → 三种模式自动切换'],
     dataFlow: [
       '联机模式: 玩家操作 → GameTransportServer 校验+执行 → socket.io 同步给所有人',
-      '本地模式: 玩家操作 → 跳过网络 → 本地直接执行（调试/单机）',
+      '测试模式: TestHarness/调试面板注入状态 → 只用于自动化验证，不作为真实对局入口',
       '教学模式: 按脚本引导 → 限制可用操作 → 一步步教新手',
     ],
     realExample: [
@@ -587,7 +587,7 @@ export const AI_AUDIT_STEPS: AIAuditStep[] = [
 
 export const E2E_TEST_STEPS: E2EStep[] = [
   { emoji: '🌐', label: '启动浏览器', desc: 'Playwright 打开 Chromium 无头浏览器', example: 'npx playwright test dice-throne.spec.ts' },
-  { emoji: '🔗', label: '进入游戏页面', desc: '导航到本地开发服务器的对战页面', example: 'page.goto("/play/dice-throne/local")' },
+  { emoji: '🔗', label: '进入游戏页面', desc: '导航到联机或测试入口页面', example: 'page.goto("/play/dicethrone")' },
   { emoji: '🎮', label: '模拟玩家操作', desc: '点击按钮/拖拽卡牌/选择目标', example: 'page.click("[data-action=attack]")' },
   { emoji: '📸', label: '截取屏幕快照', desc: '关键帧截图保存为 PNG', example: 'expect(page).toHaveScreenshot("after-attack.png")' },
   { emoji: '🔍', label: '像素级对比', desc: '新截图与基线图逐像素比较', example: '允许 0.1% 像素差异阈值' },

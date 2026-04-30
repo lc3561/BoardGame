@@ -1141,6 +1141,35 @@ const enumerateInteractionOptionCombinations = <T extends { id: string }>(
     return results;
 };
 
+const enumerateInteractionOptionPermutations = <T extends { id: string }>(
+    options: T[],
+    minCount: number,
+    maxCount: number,
+): T[][] => {
+    const results: T[][] = [];
+    const path: T[] = [];
+    const used = new Set<string>();
+
+    const dfs = () => {
+        if (path.length >= minCount && path.length <= maxCount) {
+            results.push([...path]);
+        }
+        if (path.length === maxCount) return;
+
+        for (const option of options) {
+            if (used.has(option.id)) continue;
+            used.add(option.id);
+            path.push(option);
+            dfs();
+            path.pop();
+            used.delete(option.id);
+        }
+    };
+
+    dfs();
+    return results;
+};
+
 const buildInteractionActions = (state: SmashUpState, playerId: PlayerId): AiLegalAction[] | null => {
     const current = state.sys.interaction?.current as EngineInteractionDescriptor | undefined;
     if (!current || current.playerId !== playerId) return null;
@@ -1201,7 +1230,9 @@ const buildInteractionActions = (state: SmashUpState, playerId: PlayerId): AiLeg
     }
 
     if (data.multi) {
-        const combinations = enumerateInteractionOptionCombinations(options, minCount, maxCount)
+        const combinations = (data.multi.ordered
+            ? enumerateInteractionOptionPermutations(options, minCount, maxCount)
+            : enumerateInteractionOptionCombinations(options, minCount, maxCount))
             .filter((combination) => {
                 if (combination.length === 0) return false;
                 const controlOptionCount = combination.filter((option) => isInteractionControlValue(option.value)).length;

@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures';
 
-test.describe('SmashUp - 地窖基地能力', () => {
+test.describe.skip('已废弃：根级旧 fixture 文件直接依赖 __BG_STATE__/__BG_DISPATCH__，待迁到在线规范版本', () => {
     test('行动卡消灭对手随从时触发地窖能力', async ({ smashupMatch }) => {
         const { hostPage, guestPage } = smashupMatch;
         

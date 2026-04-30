@@ -433,6 +433,10 @@ const resolveOnlineAiFeedbackConfig = (): OnlineAiFeedbackConfig => {
 };
 
 const ONLINE_AI_FEEDBACK_CONFIG = resolveOnlineAiFeedbackConfig();
+const ONLINE_AI_FEEDBACK_PERSISTENCE_SUPPRESSED_KINDS = new Set<OnlineAiRecoveryFeedbackPayload['incidentKind']>([
+    'force-end-turn-success',
+    'legal-action-recovered',
+]);
 
 // ============================================================================
 // 游戏引擎定义
@@ -2119,6 +2123,18 @@ export class GameTransportServer {
         }
         this.onlineAiRecoveryFeedbackCooldown.set(dedupeKey, now + this.onlineAiRecoveryFeedbackCooldownMs);
 
+        if (!this.onlineAiFeedbackReporter && this.shouldSuppressOnlineAiFeedbackPersistence(payload)) {
+            logger.info('[GameTransport] online-ai-watchdog feedback persistence suppressed', {
+                matchID: payload.matchId,
+                gameId: payload.gameId,
+                playerID: payload.playerId,
+                incidentKind: payload.incidentKind,
+                reason: payload.reason,
+                trackerKey: payload.trackerKey,
+            });
+            return;
+        }
+
         const reporter = this.onlineAiFeedbackReporter ?? this.defaultOnlineAiFeedbackReporter.bind(this);
         try {
             await reporter(payload);
@@ -2141,6 +2157,10 @@ export class GameTransportServer {
                 error: error instanceof Error ? error.message : String(error),
             });
         }
+    }
+
+    private shouldSuppressOnlineAiFeedbackPersistence(payload: OnlineAiRecoveryFeedbackPayload): boolean {
+        return ONLINE_AI_FEEDBACK_PERSISTENCE_SUPPRESSED_KINDS.has(payload.incidentKind);
     }
 
     private buildOnlineAiDiagnosticActionLog(args: {

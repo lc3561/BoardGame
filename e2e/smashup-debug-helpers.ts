@@ -13,6 +13,8 @@ import {
     joinMatchViaAPI,
     seedMatchCredentials,
     getGameServerBaseURL,
+    setTestLocale,
+    type E2ETestLocale,
 } from './helpers/common';
 
 // ============================================================================
@@ -71,7 +73,7 @@ export const applyCoreStateDirect = async (page: Page, coreState: unknown) => {
 // ============================================================================
 
 export const gotoLocalSmashUp = async (page: Page) => {
-    await page.goto('/play/smashup/local', { waitUntil: 'domcontentloaded' });
+    await page.goto('/play/smashup', { waitUntil: 'domcontentloaded' });
     await dismissViteOverlay(page);
     await page.waitForFunction(
         () => {
@@ -548,9 +550,13 @@ export const setupSUOnlineMatch = async (
     browser: Browser,
     baseURL: string | undefined,
     factionIds: [string, string, string, string] = ['zombies', 'pirates', 'ninjas', 'aliens'],
+    options?: { locale?: E2ETestLocale },
 ): Promise<SUMatchSetup | null> => {
     // 房主上下文
     const hostContext = await browser.newContext({ baseURL });
+    if (options?.locale) {
+        await setTestLocale(hostContext, options.locale);
+    }
     const hostPage = await hostContext.newPage();
 
     // 预热 Vite 模块缓存
@@ -571,6 +577,9 @@ export const setupSUOnlineMatch = async (
 
     // 客人上下文
     const guestContext = await browser.newContext({ baseURL });
+    if (options?.locale) {
+        await setTestLocale(guestContext, options.locale);
+    }
     const guestPage = await guestContext.newPage();
 
     // guest 预热

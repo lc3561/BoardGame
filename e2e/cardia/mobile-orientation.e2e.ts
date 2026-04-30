@@ -31,8 +31,8 @@ test.describe('移动端横屏适配', () => {
     const page = await context.newPage();
 
     try {
-      await page.goto('/play/cardia/local', { waitUntil: 'domcontentloaded' });
-      await page.waitForSelector('[data-game-page]', { timeout: 20000 });
+      await page.goto('/play/cardia', { waitUntil: 'domcontentloaded' });
+      await page.waitForSelector('div[data-game-page="true"]', { timeout: 20000 });
 
       const banner = page.getByText('建议旋转至横屏以获得更佳体验');
       await expect(banner).toBeVisible({ timeout: 15000 });
@@ -42,7 +42,7 @@ test.describe('移动端横屏适配', () => {
       await closeButton.click();
       await expect(banner).toHaveCount(0);
 
-      await expect(page.locator('[data-game-page]')).toBeVisible();
+      await expect(page.locator('div[data-game-page="true"]').first()).toBeVisible();
     } finally {
       await context.close();
     }

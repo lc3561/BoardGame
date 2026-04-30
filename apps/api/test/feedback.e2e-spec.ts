@@ -19,7 +19,8 @@ import { FeedbackModule } from '../src/modules/feedback/feedback.module';
 import { Feedback, type FeedbackDocument } from '../src/modules/feedback/feedback.schema';
 import {
     WATCHDOG_AGGREGATION_WINDOW_MS,
-    WATCHDOG_CLOSED_ARCHIVE_RETENTION_MS,
+    WATCHDOG_MAX_RECENT_RECORDS,
+    WATCHDOG_RECENT_RETENTION_MS,
 } from '../src/modules/feedback/feedback.service';
 import { User, type UserDocument } from '../src/modules/auth/schemas/user.schema';
 import { GlobalHttpExceptionFilter } from '../src/shared/filters/http-exception.filter';
@@ -671,7 +672,7 @@ describe('Feedback Module (e2e)', () => {
         expect(docs[1].status).toBe('open');
     });
 
-    it('online-ai-watchdog 超过保留期的 closed 聚合归档应在新上报时自动清理，避免数据库累积', async () => {
+    it('online-ai-watchdog 超过3天的聚合归档应在新上报时自动清理，避免数据库累积', async () => {
         const payload = {
             content: '[system][online-ai-watchdog] force-end-turn-success active-turn:follow-up-advance:steps=1',
             source: 'online-ai-watchdog',
@@ -699,7 +700,7 @@ describe('Feedback Module (e2e)', () => {
             .send(payload)
             .expect(201);
 
-        const staleOccurredAt = new Date(Date.now() - WATCHDOG_CLOSED_ARCHIVE_RETENTION_MS - 60_000);
+        const staleOccurredAt = new Date(Date.now() - WATCHDOG_RECENT_RETENTION_MS - 60_000);
         await feedbackModel.updateOne(
             { _id: first.body._id },
             {
@@ -728,7 +729,7 @@ describe('Feedback Module (e2e)', () => {
         expect(docs[0].latestIncidentKey).toBe('archive-retention-b');
     });
 
-    it('online-ai-watchdog 未超过保留期的 closed 聚合归档不应被提前清理', async () => {
+    it('online-ai-watchdog 近3天内的聚合归档在未超100条时不应被提前清理', async () => {
         const payload = {
             content: '[system][online-ai-watchdog] force-end-turn-success active-turn:follow-up-advance:steps=1',
             source: 'online-ai-watchdog',
@@ -756,7 +757,7 @@ describe('Feedback Module (e2e)', () => {
             .send(payload)
             .expect(201);
 
-        const freshOccurredAt = new Date(Date.now() - WATCHDOG_CLOSED_ARCHIVE_RETENTION_MS + 60_000);
+        const freshOccurredAt = new Date(Date.now() - WATCHDOG_RECENT_RETENTION_MS + 60_000);
         await feedbackModel.updateOne(
             { _id: first.body._id },
             {
@@ -782,6 +783,58 @@ describe('Feedback Module (e2e)', () => {
         expect(docs).toHaveLength(2);
         const retainedClosed = docs.find((doc) => String(doc._id) === String(first.body._id));
         expect(retainedClosed?.status).toBe('closed');
+    });
+
+    it('online-ai-watchdog 近3天内也只保留最近100条，超出上限时应自动删除更旧记录', async () => {
+        await feedbackModel.deleteMany({ source: 'online-ai-watchdog' });
+
+        const basePayload = {
+            content: '[system][online-ai-watchdog] force-end-turn-failed visible-interaction:recover-interaction:blocker_persisted',
+            source: 'online-ai-watchdog',
+            type: 'bug',
+            severity: 'high',
+            autoReportKind: 'force-end-turn-failed',
+            gameName: 'smashup',
+            clientContext: {
+                gameId: 'smashup',
+                route: 'server-watchdog',
+                mode: 'online',
+            },
+            errorContext: {
+                source: 'online-ai-watchdog',
+                name: 'force-end-turn-failed',
+                message: 'visible-interaction:recover-interaction:blocker_persisted',
+            },
+        };
+
+        const totalRows = WATCHDOG_MAX_RECENT_RECORDS + 5;
+        for (let index = 0; index < totalRows; index += 1) {
+            await request(app.getHttpServer())
+                .post('/internal/feedback/system')
+                .set('X-Internal-Feedback-Token', INTERNAL_FEEDBACK_TOKEN)
+                .send({
+                    ...basePayload,
+                    incidentKey: `recent-cap-${index}`,
+                    stateSnapshot: JSON.stringify({
+                        phase: 'scoreBases',
+                        reason: 'visible-interaction',
+                        interaction: {
+                            seat: {
+                                kind: 'simple-choice',
+                                sourceId: `retention-source-${index}`,
+                            },
+                        },
+                    }),
+                })
+                .expect(201);
+        }
+
+        const docs = await feedbackModel.find({ source: 'online-ai-watchdog' }).sort({ createdAt: 1 }).lean();
+        expect(docs).toHaveLength(WATCHDOG_MAX_RECENT_RECORDS);
+        expect(
+            docs.filter((doc) => String(doc.aggregationKey || '').includes('retention-source-')).length,
+        ).toBe(WATCHDOG_MAX_RECENT_RECORDS);
+        expect(docs.some((doc) => String(doc.aggregationKey || '').includes(`retention-source-${totalRows - 1}`))).toBe(true);
     });
 
     it('online-ai-watchdog clientContext.gameId 为空白时应回退到 gameName 作为聚合 gameId', async () => {

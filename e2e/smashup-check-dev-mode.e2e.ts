@@ -10,7 +10,7 @@ import {
     cleanupTwoPlayerMatch,
 } from './smashup-helpers';
 
-test.describe('检查开发模式', () => {
+test.describe.skip('已废弃：根级旧开发态检查文件不代表真实 online 行为', () => {
     test('检查 import.meta.env.DEV 的值', async ({ browser }, testInfo) => {
         const baseURL = testInfo.project.use.baseURL as string | undefined;
         const setup = await setupTwoPlayerMatch(browser, baseURL);

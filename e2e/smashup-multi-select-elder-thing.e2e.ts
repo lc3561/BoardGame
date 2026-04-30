@@ -14,7 +14,7 @@ import {
     seedMatchCredentials
 } from './helpers/common';
 
-test.describe('远古之物 - 消灭两个己方随从（多选）', () => {
+test.describe.skip('已废弃：根级旧多选文件混用旧 fixture 与调试全局；请改跑 e2e/smashup/ 下的规范版本', () => {
     test('选择消灭时应显示多选界面，选择2个随从后确认', async ({ browser }) => {
         // 创建房间
         const context = await browser.newContext();

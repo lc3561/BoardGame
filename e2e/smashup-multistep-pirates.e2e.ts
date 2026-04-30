@@ -25,7 +25,7 @@ import {
     FACTION,
 } from './smashup-debug-helpers';
 
-test.describe('SmashUp 海盗多步交互', () => {
+test.describe.skip('已废弃：根级旧多步交互文件依赖单页测试入口与调试全局；请改跑 e2e/smashup/ 下的规范版本', () => {
     test.setTimeout(120000);
 
     test.beforeEach(async ({ context }) => {

@@ -18,7 +18,7 @@ test.describe('SmashUp Image Loading', () => {
     });
 
     test.beforeEach(async ({ page }) => {
-        await page.goto('/play/smashup/local');
+        await page.goto('/play/smashup');
         await page.waitForLoadState('networkidle');
     });
 
@@ -169,7 +169,7 @@ test.describe('SmashUp Critical Image Gate', () => {
         timeout: 60000,
     });
 
-    test('进入本地对局时先显示 LoadingScreen，再进入派系选择界面', async ({ browser }, testInfo) => {
+    test('进入测试对局入口时先显示 LoadingScreen，再进入派系选择界面', async ({ browser }, testInfo) => {
         const evidenceDir = join(process.cwd(), 'test-results', 'evidence-screenshots', 'add-critical-image-preloading');
         mkdirSync(evidenceDir, { recursive: true });
         const loadingShotPath = join(evidenceDir, 'critical-image-gate-loading.png');
@@ -199,7 +199,7 @@ test.describe('SmashUp Critical Image Gate', () => {
         const page = await context.newPage();
 
         try {
-            await page.goto('/play/smashup/local', { waitUntil: 'domcontentloaded' });
+            await page.goto('/play/smashup', { waitUntil: 'domcontentloaded' });
             await dismissViteOverlay(page);
 
             const loadingText = page.getByText(/Loading match resources|正在加载对局资源/i).first();

@@ -8,7 +8,7 @@
 import { test, expect, createSmashUpMatch } from './fixtures';
 import { readCoreState, applyCoreState } from './helpers/smashup';
 
-test.describe('远古之物 - 消灭两个己方随从（多选）', () => {
+test.describe.skip('已废弃：根级旧 fixture 文件直接依赖调试全局；请改跑 e2e/smashup/ 下的规范版本', () => {
     test('选择消灭时应显示多选界面，选择2个随从后确认', async ({ browser }, testInfo) => {
         test.setTimeout(120000); // 增加到 120 秒，因为创建对局 + 选择派系需要时间
         

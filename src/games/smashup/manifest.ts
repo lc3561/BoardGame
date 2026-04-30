@@ -14,7 +14,7 @@ const entry: GameManifestEntry = {
     /** 最佳游玩人数：3 人 */
     bestPlayers: [3],
     tags: ['card_driven', 'casual'],
-    allowLocalMode: true,
+    allowLocalMode: false,
     setupOptions: {
         expansions: {
             type: 'multi-select',
