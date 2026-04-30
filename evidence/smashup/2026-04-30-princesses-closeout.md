@@ -36,22 +36,23 @@
 ## Verification Run
 
 - `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/newFactionAbilities.test.ts --configLoader native -t "Princesses abilities"`：`9 passed`
+- `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/afterscoring-window-skip-base-clear.test.ts -t "base_greenhouse: 应先换基地，再把牌库随从打到新基地" --configLoader native --maxWorkers 1`：通过
 - `npm run typecheck`：通过
 - `npx tsx scripts/verify/i18n-check.ts`：通过
 - `openspec validate add-smashup-princesses-faction --strict --no-interactive`：通过
 
-## Manual Regression Notes
+## Resource Delivery
 
-- `npm run test:smashup` 本轮结果：
-  - `2066 passed`
-  - `19 skipped`
-  - `1 failed`
-- 失败项为：
-  - `src/games/smashup/__tests__/afterscoring-window-skip-base-clear.test.ts`
-  - 用例：`base_greenhouse: 应先换基地，再把牌库随从打到新基地`
-- 该红点位于 `base_greenhouse / afterScoring / base replace` 链路，和 Princesses 本轮改动面不重叠；本轮未顺手改动该链。
+- 已执行 `npm run assets:check` / `npm run assets:upload`，补齐 Pretty Pretty 运行时资源上传。
+- 远端 `HEAD 200` 回查已通过：
+  - `https://assets.easyboardgame.top/official/i18n/zh-CN/smashup/cards/compressed/pretty_pretty.webp`
+  - `https://assets.easyboardgame.top/official/i18n/zh-CN/smashup/base/compressed/base3.webp`
+
+## Gate Notes
+
+- 原 PR 红灯 `src/games/smashup/__tests__/afterscoring-window-skip-base-clear.test.ts` 已修复并单测复跑通过。
+- 修复点：`postProcessSystemEvents(...)` 返回的 `matchState.core` 属于预览态；测试断言需要从原始 `state.core` 重放补发事件，避免把 `BASE_CLEARED / BASE_REPLACED / MINION_PLAYED` 二次叠加到预览态。
 
 ## Remaining Gaps
 
 - 还未补 Princesses 真实入口 E2E 与人工看图证据。
-- 还未做 Pretty Pretty 资源远端上传 / `HEAD 200` 回查。
