@@ -1390,6 +1390,85 @@ describe('王权骰铸流程测试', () => {
             expect(nextState.sys.interaction.current).toBeUndefined();
         });
 
+        it('4 人模式 targetingRoll 自动目标后，Loaded token 的奖励骰特写应命中自动目标', () => {
+            const playerIds: PlayerId[] = ['0', '1', '2', '3'];
+            const pipelineConfig = {
+                domain: DiceThroneDomain,
+                systems: testSystems,
+            };
+            let state = createInitializedStateWithCharacters(playerIds, fixedRandom, {
+                '0': 'gunslinger',
+                '1': 'monk',
+                '2': 'samurai',
+                '3': 'shadow_thief',
+            });
+
+            for (const pid of playerIds) {
+                state.core.players[pid].hand = [];
+                state.core.players[pid].deck = [];
+                state.core.players[pid].discard = [];
+                state.core.players[pid].statusEffects = {};
+            }
+
+            state.core.players['0'].tokens.loaded = 1;
+            state.core.activePlayerId = '0';
+            state.core.turnPhase = 'targetingRoll';
+            state.core.dice = [{ id: 0, value: 2, locked: true, ownerId: '0' }] as any;
+            state.core.rollCount = 1;
+            state.core.rollConfirmed = true;
+            state.core.rollsRemaining = 0;
+            state.core.pendingAttack = {
+                attackerId: '0',
+                defenderId: undefined,
+                isDefendable: true,
+                sourceAbilityId: 'revolver-3',
+                damageResolved: false,
+                resolvedDamage: 0,
+                attackDiceFaceCounts: {},
+            } as any;
+            state.sys.phase = 'targetingRoll';
+
+            const advanceResult = executePipeline(
+                pipelineConfig,
+                state,
+                {
+                    type: 'ADVANCE_PHASE',
+                    playerId: '0',
+                    payload: {},
+                    timestamp: Date.now(),
+                } as DiceThroneCommand,
+                fixedRandom,
+                playerIds,
+            );
+
+            expect(advanceResult.success).toBe(true);
+            const tokenChoiceState = advanceResult.state as MatchState<DiceThroneCore>;
+            expect(tokenChoiceState.core.pendingAttack?.defenderId).toBe('3');
+            expect(tokenChoiceState.sys.interaction.current).toBeTruthy();
+
+            const loadedResult = executePipeline(
+                pipelineConfig,
+                tokenChoiceState,
+                {
+                    type: 'SYS_INTERACTION_RESPOND',
+                    playerId: '0',
+                    payload: { optionId: 'option-0' },
+                    timestamp: Date.now(),
+                } as DiceThroneCommand,
+                fixedRandom,
+                playerIds,
+            );
+
+            expect(loadedResult.success).toBe(true);
+            const finalState = loadedResult.state as MatchState<DiceThroneCore>;
+            expect(finalState.core.players['0'].tokens.loaded).toBe(0);
+            expect(finalState.core.pendingAttack?.bonusDamage).toBe(1);
+            expect(finalState.core.pendingAttack?.offensiveRollEndTokenResolved).toBe(true);
+            expect(finalState.core.pendingBonusDiceSettlement?.targetId).toBe('3');
+            expect(finalState.core.pendingBonusDiceSettlement?.attackerId).toBe('0');
+            expect(finalState.core.pendingBonusDiceSettlement?.dice[0]?.effectKey).toBe('bonusDie.effect.gunslingerLoadedDie');
+        });
+
         it('4 人模式 targetingRoll 掷出 3/4 时自动锁定右侧对手', () => {
             const playerIds: PlayerId[] = ['0', '1', '2', '3'];
             const pipelineConfig = {

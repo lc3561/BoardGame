@@ -3,6 +3,7 @@ import { createDamageCalculation } from '../../../engine/primitives/damageCalcul
 import type { DiceThroneCore } from '../domain/core-types';
 import { TOKEN_IDS } from '../domain/ids';
 import { validateCommand } from '../domain/commandValidation';
+import { execute } from '../domain/execute';
 import { checkPlayCard } from '../domain/rules';
 import type { DiceThroneEvent } from '../domain/types';
 import { BARBARIAN_CARDS } from '../heroes/barbarian/cards';
@@ -11,7 +12,7 @@ import { MOON_ELF_CARDS } from '../heroes/moon_elf/cards';
 import { PYROMANCER_CARDS } from '../heroes/pyromancer/cards';
 import { SAMURAI_CARDS } from '../heroes/samurai/cards';
 import { reduce } from '../domain/reducer';
-import { createInitializedState, fixedRandom } from './test-utils';
+import { createInitializedState, createQueuedRandom, fixedRandom } from './test-utils';
 
 const redHotCard = PYROMANCER_CARDS.find(c => c.id === 'card-red-hot')!;
 const morePleaseCard = BARBARIAN_CARDS.find(c => c.id === 'card-more-please')!;
@@ -420,6 +421,33 @@ describe('红热攻击修正出牌边界', () => {
         );
 
         expect(result.ok).toBe(true);
+    });
+
+    it('4 人模式 targetingRoll 自动目标窗口打出吃我子弹时，应立即把击倒与特写目标落到自动目标', () => {
+        const core = makeFourPlayerAttackModifierCore('gunslinger', eatMyLeadCard, 2);
+        (core.players['0'] as any).characterId = 'gunslinger';
+        const events = execute(
+            { core, sys: { phase: 'targetingRoll' } } as any,
+            {
+                type: 'PLAY_CARD',
+                playerId: '0',
+                payload: { cardId: 'card-eat-my-lead' },
+                timestamp: 1,
+            } as any,
+            createQueuedRandom([1, 1, 1, 2, 3]),
+        );
+
+        const nextCore = events.reduce(
+            (state, event) => reduce(state, event as DiceThroneEvent),
+            core,
+        );
+
+        expect(nextCore.pendingAttack?.bonusDamage).toBe(5);
+        expect(nextCore.pendingAttack?.attackModifierBonusDamage).toBe(5);
+        expect(nextCore.pendingBonusDiceSettlement?.targetId).toBe('3');
+        expect(nextCore.pendingBonusDiceSettlement?.summaryEffectKey).toBe('bonusDie.effect.gunslingerEatMyLead.resultKnockdown');
+        expect(nextCore.players['3'].statusEffects.knockdown).toBe(1);
+        expect(nextCore.players['2'].statusEffects.knockdown ?? 0).toBe(0);
     });
 
     it.each(fourPlayerAttackModifierCases)('4 人模式 targetingRoll 手选目标窗口仍禁止提前打出攻击修正卡: %s', ({ heroId, card, tokens }) => {

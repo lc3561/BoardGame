@@ -78,6 +78,8 @@ const WANTED_CARD_ID = 'card-wanted';
 const WANTED_CARD = GUNSLINGER_CARDS.find((card) => card.id === WANTED_CARD_ID);
 const HIGH_NOON_CARD_ID = 'card-high-noon';
 const HIGH_NOON_CARD = GUNSLINGER_CARDS.find((card) => card.id === HIGH_NOON_CARD_ID);
+const EAT_MY_LEAD_CARD_ID = 'card-eat-my-lead';
+const EAT_MY_LEAD_CARD = GUNSLINGER_CARDS.find((card) => card.id === EAT_MY_LEAD_CARD_ID);
 const CONSECRATE_CARD_ID = 'card-consecrate';
 const CONSECRATE_CARD = PALADIN_CARDS.find((card) => card.id === CONSECRATE_CARD_ID);
 const PALADIN_VENGEANCE_2_CARD_ID = 'card-vengeance-2';
@@ -1659,6 +1661,59 @@ const buildFourPlayerHighNoonState = (state: any) => {
             knockdown: 0,
         };
     }
+
+    return next;
+};
+
+const buildFourPlayerEatMyLeadTargetingRollState = (state: any) => {
+    const next = buildFourPlayerNoResponseState(state);
+    const eatMyLeadCard = EAT_MY_LEAD_CARD;
+    if (!eatMyLeadCard) {
+        throw new Error(`未找到稳定枪手卡 ${EAT_MY_LEAD_CARD_ID}，无法构造 4 人 Eat My Lead 场景`);
+    }
+
+    next.core.activePlayerId = '0';
+    next.core.phase = 'targetingRoll';
+    next.core.rollCount = 1;
+    next.core.rollLimit = 1;
+    next.core.rollDiceCount = 1;
+    next.core.rollConfirmed = true;
+    next.core.selectedAbilityId = 'revolver-3';
+    next.core.pendingAttack = {
+        attackerId: '0',
+        defenderId: undefined,
+        targetingSelectionPending: false,
+        targetingSelectionResolved: false,
+        isDefendable: true,
+        damage: 4,
+        sourceAbilityId: 'revolver-3',
+        defenseAbilityId: undefined,
+        preDefenseResolved: false,
+        bonusDamage: 0,
+        attackModifierBonusDamage: 0,
+        damageResolved: false,
+        resolvedDamage: 0,
+        offensiveRollEndTokenResolved: true,
+        bonusDiceResolved: false,
+    };
+    next.core.players['0'].hand = [{ ...structuredClone(eatMyLeadCard) }];
+    next.core.players['0'].resources.cp = Math.max(next.core.players['0'].resources.cp ?? 0, 2);
+    next.core.players['0'].tokens = {
+        ...(next.core.players['0'].tokens ?? {}),
+        [TOKEN_IDS.LOADED]: 1,
+    };
+    next.core.players['3'].statusEffects = {
+        ...(next.core.players['3'].statusEffects ?? {}),
+        knockdown: 0,
+    };
+    next.core.dice = next.core.dice.map((die: any, index: number) => ({
+        ...die,
+        value: index === 0 ? 2 : (die?.value ?? 1),
+        isKept: false,
+    }));
+
+    next.sys.phase = 'targetingRoll';
+    next.sys.flowHalted = false;
 
     return next;
 };
@@ -4149,6 +4204,107 @@ test.describe('DiceThrone Simple Start', () => {
         }, { timeout: 10000 });
         await expect(hostPage.getByTestId('dt-target-choice-panel')).toBeHidden({ timeout: 10000 });
 
+        await cleanupDTMatch(setup);
+    });
+
+    test('Online 4-player Eat My Lead: real hand play in targetingRoll auto-target window keeps spotlight and defense on inferred enemy', async ({ browser }, testInfo) => {
+        test.setTimeout(150000);
+        const baseURL = testInfo.project.use.baseURL as string | undefined;
+
+        const setup = await setupDTOnlineMatchWithPlayers(browser, baseURL, {
+            numPlayers: 4,
+            gameServerBaseURL: getGameServerBaseURL(),
+        });
+        if (!setup) {
+            test.skip(true, '游戏服务器不可用或四人房间创建失败');
+            return;
+        }
+
+        const { hostPage, matchId, players } = setup;
+        const enemyCaptainPage = players[3].page;
+
+        await selectCharacter(players[0].page, 'gunslinger');
+        await selectCharacter(players[1].page, 'barbarian');
+        await selectCharacter(players[2].page, 'samurai');
+        await selectCharacter(players[3].page, 'paladin');
+        await readyMultiplePlayersAndStartGame(hostPage, players.slice(1).map((player) => player.page));
+
+        await waitForGameBoard(hostPage);
+        await waitForHarnessPages([hostPage, enemyCaptainPage]);
+
+        await applyOnlineMatchState(matchId, hostPage, buildFourPlayerEatMyLeadTargetingRollState);
+        await waitForPhase(hostPage, 'targetingRoll');
+
+        const eatMyLeadCard = hostPage.locator(`[data-card-id="${EAT_MY_LEAD_CARD_ID}"]`).first();
+        await expect(eatMyLeadCard).toBeVisible({ timeout: 10000 });
+
+        await clearEvidenceScreenshotsForTest(testInfo);
+        await saveEvidenceScreenshot(hostPage, testInfo, '07-four-player-eat-my-lead-before-play');
+
+        await eatMyLeadCard.click({ force: true });
+
+        const bonusDieOverlay = hostPage.locator('[data-testid="bonus-die-overlay"]').first();
+        await expect(bonusDieOverlay).toBeVisible({ timeout: 10000 });
+        await expect(bonusDieOverlay.locator('.dice3d-perspective')).toHaveCount(5, { timeout: 10000 });
+
+        await expect.poll(async () => {
+            const state = await readHarnessState<any>(hostPage);
+            return {
+                phase: state?.sys?.phase ?? null,
+                settlementTargetId: state?.core?.pendingBonusDiceSettlement?.targetId ?? null,
+                settlementDiceCount: state?.core?.pendingBonusDiceSettlement?.dice?.length ?? 0,
+                sourceAbilityId: state?.core?.pendingAttack?.sourceAbilityId ?? null,
+                defenderId: state?.core?.pendingAttack?.defenderId ?? null,
+                modifierDamage: state?.core?.pendingAttack?.attackModifierBonusDamage ?? null,
+            };
+        }, { timeout: 10000, intervals: [200, 400, 800] }).toMatchObject({
+            phase: 'targetingRoll',
+            settlementTargetId: '3',
+            settlementDiceCount: 5,
+            sourceAbilityId: 'revolver-3',
+            defenderId: null,
+        });
+
+        await saveEvidenceScreenshot(hostPage, testInfo, '08-four-player-eat-my-lead-overlay-on-auto-target');
+
+        await bonusDieOverlay.click({ force: true });
+        await expect(bonusDieOverlay).toBeHidden({ timeout: 10000 });
+
+        await expect.poll(async () => {
+            const state = await readHarnessState<any>(hostPage);
+            return {
+                phase: state?.sys?.phase ?? null,
+                settlement: state?.core?.pendingBonusDiceSettlement ?? null,
+                defenderId: state?.core?.pendingAttack?.defenderId ?? null,
+            };
+        }, { timeout: 10000, intervals: [200, 400, 800] }).toMatchObject({
+            phase: 'targetingRoll',
+            settlement: null,
+            defenderId: null,
+        });
+
+        await saveEvidenceScreenshot(hostPage, testInfo, '09-four-player-eat-my-lead-overlay-closed');
+
+        await dispatchHarnessCommand(hostPage, 'ADVANCE_PHASE', '0');
+        await waitForPhase(hostPage, 'defensiveRoll');
+        await waitForPendingDefender(hostPage, '3');
+        await waitForPhase(enemyCaptainPage, 'defensiveRoll');
+        await dismissStartDefenseShowcaseIfPresent(enemyCaptainPage);
+
+        await expect.poll(async () => {
+            const state = await readHarnessState<any>(hostPage);
+            return {
+                phase: state?.sys?.phase ?? null,
+                defenderId: state?.core?.pendingAttack?.defenderId ?? null,
+                settlement: state?.core?.pendingBonusDiceSettlement ?? null,
+            };
+        }, { timeout: 10000, intervals: [200, 400, 800] }).toMatchObject({
+            phase: 'defensiveRoll',
+            defenderId: '3',
+            settlement: null,
+        });
+
+        await saveEvidenceScreenshot(enemyCaptainPage, testInfo, '10-four-player-eat-my-lead-correct-defender');
         await cleanupDTMatch(setup);
     });
 

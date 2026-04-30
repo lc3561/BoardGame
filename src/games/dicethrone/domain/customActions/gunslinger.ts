@@ -1,7 +1,7 @@
 import { createBonusDiceWithReroll, createDisplayOnlySettlement, registerCustomActionHandler, resolveEffectsToEvents, type CustomActionContext } from '../effects';
 import { registerChoiceResolvedEventHandler } from '../choiceResolvedEvents';
 import { GUNSLINGER_DICE_FACE_IDS, STATUS_IDS, TOKEN_IDS } from '../ids';
-import { getActiveDice, getMaxDuplicateValueCount, getOpponents, getPlayerDieFace, getSeatingOrder, getTokenStackLimit } from '../rules';
+import { getActiveDice, getMaxDuplicateValueCount, getOpponents, getPlayerDieFace, getSeatingOrder, getSelectedCombatOpponentId, getTokenStackLimit } from '../rules';
 import { RESOURCE_IDS } from '../resources';
 import { CP_MAX } from '../types';
 import type { PendingInteraction } from '../core-types';
@@ -24,16 +24,19 @@ function createLoadedChoiceContext(
     timestamp: number,
     random: CustomActionContext['random'],
 ): CustomActionContext {
+    const opponentId = getSelectedCombatOpponentId(state, attackerId, state.turnPhase)
+        ?? state.pendingAttack?.defenderId
+        ?? attackerId;
     return {
         ctx: {
             attackerId,
-            defenderId: state.pendingAttack?.defenderId ?? attackerId,
+            defenderId: opponentId,
             sourceAbilityId,
             state,
             damageDealt: 0,
             timestamp,
         },
-        targetId: state.pendingAttack?.defenderId ?? attackerId,
+        targetId: opponentId,
         attackerId,
         sourceAbilityId,
         state,
@@ -48,6 +51,9 @@ function handleLoadedUse({ attackerId, sourceAbilityId, state, timestamp, random
 
     const quickDrawLevel = state.players[attackerId]?.abilityLevels?.['quick-draw'] ?? 1;
     const loadedBoost = state.pendingAttack?.loadedBonusDieBoost;
+    const opponentId = getSelectedCombatOpponentId(state, attackerId, state.turnPhase)
+        ?? state.pendingAttack?.defenderId
+        ?? attackerId;
     const canReroll = sourceAbilityId === 'fill-em-with-lead'
         || quickDrawLevel >= 2
         || loadedBoost?.allowReroll;
@@ -107,7 +113,7 @@ function handleLoadedUse({ attackerId, sourceAbilityId, state, timestamp, random
                 value: roll,
                 face,
                 playerId: attackerId,
-                targetPlayerId: state.pendingAttack?.defenderId ?? attackerId,
+                targetPlayerId: opponentId,
                 effectKey: 'bonusDie.effect.gunslingerLoadedDie',
                 effectParams: { value: roll, index: 0, bonusDamage },
             },
@@ -117,7 +123,7 @@ function handleLoadedUse({ attackerId, sourceAbilityId, state, timestamp, random
         createDisplayOnlySettlement(
             sourceAbilityId,
             attackerId,
-            state.pendingAttack?.defenderId ?? attackerId,
+            opponentId,
             [{
                 index: 0,
                 value: roll,
@@ -274,8 +280,10 @@ function handleWildWest({ attackerId, sourceAbilityId, state, timestamp }: Custo
     } as DiceThroneEvent];
 }
 
-function handleEatMyLead({ attackerId, sourceAbilityId, state, timestamp, random }: CustomActionContext): DiceThroneEvent[] {
+function handleEatMyLead({ attackerId, sourceAbilityId, state, timestamp, random, ctx }: CustomActionContext): DiceThroneEvent[] {
     if (!random) return [];
+
+    const opponentId = ctx.defenderId ?? state.pendingAttack?.defenderId ?? attackerId;
 
     const dice = Array.from({ length: 5 }, (_, index) => {
         const value = random.d(6);
@@ -300,7 +308,7 @@ function handleEatMyLead({ attackerId, sourceAbilityId, state, timestamp, random
                 value: die.value,
                 face: die.face,
                 playerId: attackerId,
-                targetPlayerId: state.pendingAttack?.defenderId ?? attackerId,
+                targetPlayerId: opponentId,
                 effectKey: die.effectKey,
                 effectParams: { value: die.value, index: die.index },
             },
@@ -312,7 +320,7 @@ function handleEatMyLead({ attackerId, sourceAbilityId, state, timestamp, random
     events.push(createDisplayOnlySettlement(
         sourceAbilityId,
         attackerId,
-        state.pendingAttack?.defenderId ?? attackerId,
+        opponentId,
         dice,
         timestamp + 10,
         {
@@ -339,13 +347,12 @@ function handleEatMyLead({ attackerId, sourceAbilityId, state, timestamp, random
         } as BonusDamageAddedEvent);
     }
 
-    if (bonusDamage > 4 && state.pendingAttack?.defenderId) {
-        const defenderId = state.pendingAttack.defenderId;
-        const currentStacks = state.players[defenderId]?.statusEffects[STATUS_IDS.KNOCKDOWN] ?? 0;
+    if (bonusDamage > 4 && opponentId !== attackerId) {
+        const currentStacks = state.players[opponentId]?.statusEffects[STATUS_IDS.KNOCKDOWN] ?? 0;
         events.push({
             type: 'STATUS_APPLIED',
             payload: {
-                targetId: defenderId,
+                targetId: opponentId,
                 statusId: STATUS_IDS.KNOCKDOWN,
                 stacks: 1,
                 newTotal: Math.min(currentStacks + 1, 1),
