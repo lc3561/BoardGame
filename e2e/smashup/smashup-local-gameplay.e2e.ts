@@ -13,6 +13,7 @@ import {
     initContext,
     blockAudioRequests,
     dismissViteOverlay,
+    setEnglishLocale,
 } from '../helpers/common';
 import { GameTestContext } from '../framework/GameTestContext';
 import { getEvidenceScreenshotPath } from '../framework/evidenceScreenshots';
@@ -57,35 +58,38 @@ const gotoLocalSmashUp = async (page: Page) => {
  * 蛇形选秀：P0 选1个 → P1 选2个 → P0 选最后1个。
  * 流程：点击派系卡片 → 打开详情弹窗 → 点击确认按钮。
  */
-const completeFactionSelectionLocal = async (page: Page) => {
+const completeFactionSelectionLocal = async (
+    page: Page,
+    draftPlan: Array<{ factionId: string; aliases: string[] }> = [
+        { factionId: 'pirates', aliases: ['Pirates', '海盗'] },
+        { factionId: 'ninjas', aliases: ['Ninjas', '忍者'] },
+        { factionId: 'dinosaurs', aliases: ['Dinosaurs', '恐龙'] },
+        { factionId: 'aliens', aliases: ['Aliens', '外星人'] },
+    ],
+) => {
     const factionHeading = page.locator('h1').filter({ hasText: /Draft Your Factions|选择你的派系/i });
     if (!await factionHeading.isVisible().catch(() => false)) return; // 已经跳过了
 
-    // 保持原本派系归属：P0 = Pirates + Aliens，P1 = Ninjas + Dinosaurs。
-    const factionNames = [
-        ['Pirates', '海盗'],
-        ['Ninjas', '忍者'],
-        ['Dinosaurs', '恐龙'],
-        ['Aliens', '外星人'],
-    ];
-
-    for (let i = 0; i < factionNames.length; i++) {
+    for (let i = 0; i < draftPlan.length; i++) {
         if (await page.getByTestId('su-hand-area').isVisible().catch(() => false)) {
             return;
         }
 
-        const aliases = factionNames[i];
+        const { factionId, aliases } = draftPlan[i];
 
         // 等待派系网格可见且没有弹窗遮挡
         await page.waitForTimeout(600);
 
-        // 通过派系名称文本找到对应派系列表项，避免命中错误的 group 父节点
-        const factionPattern = new RegExp(`^(?:${aliases.join('|')})(?:\\s*\\((?:POD|POD版)\\))?$`, 'i');
-        const factionCard = page.locator('h3')
-            .filter({ hasText: factionPattern })
-            .first()
-            .locator('xpath=ancestor::*[starts-with(@data-testid,"faction-option-")]')
-            .first();
+        // 优先使用稳定 test id；旧派系列表仍保留文本兜底，减少历史测试抖动。
+        let factionCard = page.getByTestId(`faction-option-${factionId}`).first();
+        if (!await factionCard.isVisible().catch(() => false)) {
+            const factionPattern = new RegExp(`^(?:${aliases.join('|')})(?:\\s*\\((?:POD|POD版)\\))?$`, 'i');
+            factionCard = page.locator('h3')
+                .filter({ hasText: factionPattern })
+                .first()
+                .locator('xpath=ancestor::*[starts-with(@data-testid,"faction-option-")]')
+                .first();
+        }
         await expect(factionCard).toBeVisible({ timeout: 5000 });
         await factionCard.click({ force: true });
 
@@ -416,6 +420,29 @@ test.describe('SmashUp 本地模式 E2E', () => {
         await expect(finishBtn).toBeVisible({ timeout: 5000 });
 
         await page.screenshot({ path: testInfo.outputPath('local-game-loaded.png') });
+    });
+
+    test('本地模式：Fairies + Princesses 在英文环境进入游戏后手牌卡图不应空白', async ({ page }, testInfo) => {
+        await setEnglishLocale(page);
+        await gotoLocalSmashUp(page);
+        await completeFactionSelectionLocal(page, [
+            { factionId: 'fairies', aliases: ['Fairies', '仙灵', '仙女'] },
+            { factionId: 'aliens', aliases: ['Aliens', '外星人'] },
+            { factionId: 'pirates', aliases: ['Pirates', '海盗'] },
+            { factionId: 'princesses', aliases: ['Princesses', '公主'] },
+        ]);
+
+        const handArea = await waitForHandArea(page);
+        const cards = handArea.locator('> div > div');
+        await expect(cards).toHaveCount(5, { timeout: 10000 });
+
+        const imageWidths = await cards.evaluateAll((elements) => elements.map((element) => {
+            const img = element.querySelector('img');
+            return img instanceof HTMLImageElement ? img.naturalWidth : 0;
+        }));
+        expect(imageWidths.every((width) => width > 16)).toBe(true);
+
+        await saveEvidenceLocatorScreenshot(handArea, 'fairies-princesses-hand-visible-en', testInfo);
     });
 
     test('本地模式：出牌 → 结束回合 → 回合切换', async ({ page }, testInfo) => {

@@ -191,11 +191,16 @@ export const SmashUpCardRenderer: React.FC<SmashUpRendererArgs> = ({
     // 4. 原生泰坦图集当前只有本地资源，需要强制回到 zh-CN 目录
     // 5. 其他情况（基础派系） → 使用当前语言（图片在 zh-CN/smashup/）
     const usesNativeTitanAtlas = finalAtlasId === SMASHUP_ATLAS_IDS.TITANS;
+    const isBuiltInAtlas = finalAtlasId.startsWith('smashup:');
     const imageLocale = usesNativeTitanAtlas
         ? 'zh-CN'
         : (isPodVersion || shouldUseEnglishAtlas || usesTtsAtlas)
             ? 'en'
-            : effectiveLocale;
+            : (isEnglishVariant && isBuiltInAtlas)
+                // Pretty Pretty 等新增原版派系目前仍复用内建中文 atlas；
+                // 若英文环境下没有命中 TTS 高清映射，强制回退 zh-CN 资源，避免整张卡空白。
+                ? 'zh-CN'
+                : effectiveLocale;
 
     // 直接返回完整的卡牌（图片 + 覆盖层）
     return (
