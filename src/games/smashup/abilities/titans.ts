@@ -55,6 +55,7 @@ import type { ProtectionCheckContext, TriggerContext, TriggerResult } from '../d
 import { getPlayerEffectivePowerOnBase, registerTitanPowerModifier } from '../domain/ongoingModifiers';
 import {
     appendPendingPostScoringActions,
+    getDeferredPostScoringEvents as readDeferredPostScoringEvents,
     getDeferredReplacementBaseDefId,
     mergeDeferredPostScoringCompatibility,
 } from '../domain/scoringSession';
@@ -188,9 +189,11 @@ function buildOtherPlayerChoiceOptions(state: AbilityContext['state'], playerId:
         }));
 }
 
-function getDeferredPostScoringEvents(interactionData: Record<string, unknown> | undefined): SmashUpEvent[] | undefined {
-    const continuation = interactionData?.continuationContext as { _deferredPostScoringEvents?: SmashUpEvent[] } | undefined;
-    return continuation?._deferredPostScoringEvents;
+function getDeferredPostScoringEvents(
+    state: AbilityContext['matchState'],
+    interactionData: Record<string, unknown> | undefined,
+): SmashUpEvent[] | undefined {
+    return readDeferredPostScoringEvents(state, interactionData) as SmashUpEvent[] | undefined;
 }
 
 function appendDeferredPostScoringEventsIfLast(
@@ -198,7 +201,7 @@ function appendDeferredPostScoringEventsIfLast(
     interactionData: Record<string, unknown> | undefined,
     events: SmashUpEvent[],
 ): SmashUpEvent[] {
-    const deferredEvents = getDeferredPostScoringEvents(interactionData);
+    const deferredEvents = getDeferredPostScoringEvents(state, interactionData);
     const hasPendingInteraction =
         !!state.sys.interaction?.current
         || (state.sys.interaction?.queue?.length ?? 0) > 0;
@@ -5278,7 +5281,10 @@ export function registerTitanInteractionHandlers(): void {
             continuationContext?: { titanUid?: string; titanDefId?: string };
         } | undefined)?.continuationContext;
         const titan = continuation?.titanUid ? getTitanByUid(state.core, continuation.titanUid) : undefined;
-        const replacementEvent = getDeferredPostScoringEvents(data as Record<string, unknown> | undefined)?.find(
+        const replacementEvent = getDeferredPostScoringEvents(
+            state,
+            data as Record<string, unknown> | undefined,
+        )?.find(
             event => event.type === SU_EVENTS.BASE_REPLACED,
         );
         const replacementBaseIndex = replacementEvent?.payload?.baseIndex;

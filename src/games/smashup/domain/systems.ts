@@ -29,9 +29,14 @@ import { reduce } from './reduce';
 import { resolveLiveBaseIndex } from './utils';
 import { maybeResolveReactionQueue } from './reactionQueue';
 import { getSmashUpReactionSession, resolveSmashUpReactionChoice } from './reactionSession';
+import { clearIdleSmashUpCommandResolutionFrame } from './mainResolutionFrame';
 import {
+    clearPendingPostScoringActions,
+    clearScoringSessionPostReduceBlock,
     getDeferredPostScoringEvents,
+    getPendingPostScoringActions,
     getScoringSession,
+    isScoringSessionAwaitingPostReduce,
     mergeDeferredPostScoringCompatibility,
     mirrorDeferredPostScoringToFirstInteraction,
 } from './scoringSession';
@@ -357,20 +362,14 @@ export function createSmashUpEventSystem(): EngineSystem<SmashUpCore> {
             // 同一轮 afterEvents 中，后续系统看不到本轮新发出事件的 reduce 结果。
             // 上一轮如果刚补发了 BASE_CLEARED / BASE_REPLACED，需要先等 pipeline 在轮末完成 reduce，
             // 本轮开始时再清掉阻塞标记，允许 FlowSystem 继续自动推进。
+            if (isScoringSessionAwaitingPostReduce(newState as MatchState<SmashUpCore>)) {
+                newState = clearScoringSessionPostReduceBlock(newState as MatchState<SmashUpCore>);
+            }
             if ((newState.sys as any)[pendingReduceFlag]) {
-                const scoringSession = (newState.sys as any).smashupScoring;
                 newState = {
                     ...newState,
                     sys: {
                         ...newState.sys,
-                        ...(scoringSession?.currentStep === 'awaiting-post-reduce'
-                            ? {
-                                smashupScoring: {
-                                    ...scoringSession,
-                                    currentStep: 'idle',
-                                },
-                            }
-                            : {}),
                         [pendingReduceFlag]: undefined,
                     } as typeof newState.sys,
                 };
@@ -439,9 +438,13 @@ export function createSmashUpEventSystem(): EngineSystem<SmashUpCore> {
                                 );
 
                                 const currentInteractionIdAfter = newState.sys.interaction?.current?.id;
+                                const isReactionChooserResolution = payload.sourceId === 'smashup_reaction_choose';
                                 const shouldResolveCurrentInteraction = Boolean(currentInteractionIdBefore)
                                     && payload.interactionId === currentInteractionIdBefore
-                                    && isSameInteractionDataSnapshot(currentInteractionDataBefore, payload.interactionData)
+                                    && (
+                                        isReactionChooserResolution
+                                        || isSameInteractionDataSnapshot(currentInteractionDataBefore, payload.interactionData)
+                                    )
                                     && currentInteractionIdAfter === currentInteractionIdBefore;
 
                                 // 当一次响应已被接收并产出后续链路时，需弹出当前交互，
@@ -480,11 +483,11 @@ export function createSmashUpEventSystem(): EngineSystem<SmashUpCore> {
                                 // 补发延迟的 BASE_CLEARED/BASE_REPLACED 事件
                                 // afterScoring 基地能力创建交互时，清除事件被延迟到交互解决后发出，
                                 // 确保 targetType: 'minion' 的场上点选交互能看到随从
-                                const ctx = payload.interactionData?.continuationContext as Record<string, unknown> | undefined;
-                                const deferred = ctx?._deferredPostScoringEvents as { type: string; payload: unknown; timestamp: number }[] | undefined;
-                                const scoringSession = (newState.sys as typeof newState.sys & {
-                                    smashupScoring?: { currentBaseRef?: unknown; currentStep?: string };
-                                }).smashupScoring;
+                                const deferred = getDeferredPostScoringEvents(
+                                    newState as MatchState<SmashUpCore>,
+                                    payload.interactionData,
+                                );
+                                const scoringSession = getScoringSession(newState as MatchState<SmashUpCore>);
                                 const scoringSessionOwnsDeferredFlush =
                                     !!scoringSession?.currentBaseRef
                                     && (scoringSession.currentStep === 'awaiting-interactions'
@@ -518,18 +521,16 @@ export function createSmashUpEventSystem(): EngineSystem<SmashUpCore> {
                                             } as SmashUpEvent),
                                             newState.core,
                                         );
-                                        const pendingActions = newState.core.pendingPostScoringActions ?? [];
+                                        const pendingActions = getPendingPostScoringActions(
+                                            newState as MatchState<SmashUpCore>,
+                                        ) ?? [];
                                         if (pendingActions.length > 0) {
                                             nextEvents.push(...buildPendingPostScoringActionEvents({
                                                 core: postDeferredCore,
                                             }, pendingActions, eventTimestamp));
-                                            newState = {
-                                                ...newState,
-                                                core: {
-                                                    ...newState.core,
-                                                    pendingPostScoringActions: undefined,
-                                                },
-                                            };
+                                            newState = clearPendingPostScoringActions(
+                                                newState as MatchState<SmashUpCore>,
+                                            );
                                         }
                                         newState = {
                                             ...newState,
@@ -628,6 +629,10 @@ export function createSmashUpEventSystem(): EngineSystem<SmashUpCore> {
                     newState = reactionQueueResult.state;
                     nextEvents.push(...reactionQueueResult.events as GameEvent[]);
                 }
+            }
+
+            if (nextEvents.length === 0) {
+                newState = clearIdleSmashUpCommandResolutionFrame(newState as MatchState<SmashUpCore>);
             }
 
             if (newState !== state || nextEvents.length > 0) {

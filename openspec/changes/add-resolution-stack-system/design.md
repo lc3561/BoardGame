@@ -144,3 +144,28 @@ SmashUp 当前已有 `scoringSession`，但它还不是通用 resolution frame �
 - frame 的 `deferredActions` 应落在 `sys` 还是继续允许 game core 持有镜像？
 - response window 与 frame 的关系是“一窗对应一帧”，还是“一个 frame 内可多次打开窗口”？
 - `SmashUp` 的 `reactionSession` 最终是保留为“UI 轮询状态”，还是进一步折叠为 frame metadata 的一个视图？
+
+## Compatibility Inventory (2026-04-29)
+当前主链已经迁到 `resolution frame`，但仍保留少量兼容层，目的是让旧 handler、旧测试和旧 UI 入口不至于在同一轮重构里一起断掉。这里明确区分“仍需保留”和“后续可删”。
+
+仍需保留的兼容层：
+- `sys.smashupReactionSession`
+  - 现在只作为 reaction/UI/命令校验镜像存在；真实恢复点已经在 reaction frame metadata。
+  - 仍被 `commands.ts`、`reactionWindowState.ts`、部分现有测试和少量能力逻辑读取。
+- `continuationContext._deferredPostScoringEvents`
+  - 现在只在两种场景继续使用：没有 scoring session 的旧最后一跳兼容链路；以及“当前交互解决后，deferred 事件要转交给下一个交互”时的链上传递。
+  - 一旦交互链完全结束，session-first 路径会优先从 scoring frame 的 `deferredEvents` / `deferredActions` 收口。
+- `core.pendingPostScoringActions`
+  - 现在只作为“没有 active scoring session 时”的 legacy fallback。
+  - `getPendingPostScoringActionsCompatibility()` / `mergeDeferredPostScoringCompatibility()` 明确只在无 scoring session 时才会落回 core。
+
+已经不该再作为主权威理解的旧状态：
+- 旧 `SystemState.smashupScoring`
+  - 已从 `src/engine/types.ts` 删除；计分 session 现在挂在 `smashup:score-bases` frame metadata。
+- 旧 `smashupReactionStack`
+  - 已不再存在；父子打断/恢复改由 resolution frame parent-child handoff 承载。
+
+后续删除条件：
+- 当 `afterscoring-response-window-execution`、`commandsValidation` 等仍直接手塞 `sys.smashupReactionSession` 的测试全部迁成 frame-first setup 后，可以继续收窄 `sys.smashupReactionSession` 的镜像范围。
+- 当所有 afterScoring 末跳 handler 都不再依赖 `continuationContext._deferredPostScoringEvents` 透传，且下一交互的 deferred 交接也能直接由 frame metadata 驱动时，可以删除这一兼容通道。
+- 当 `core.pendingPostScoringActions` 再没有任何非 session 路径消费者时，可以删除 compatibility helper，并把 pending ownership 完全收口到 scoring frame 的 `deferredActions`。

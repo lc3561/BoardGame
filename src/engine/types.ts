@@ -263,8 +263,9 @@ export interface ResolutionFrame {
     kind: string;
     ownerGame?: string;
     ownerSystem?: string;
+    parentFrameId?: string;
     ordering: 'stack' | 'queue' | 'explicit';
-    status: 'running' | 'blocked' | 'completed';
+    status: 'running' | 'blocked' | 'suspended' | 'completed';
     step?: string;
     phase?: string;
     phaseGate?: 'none' | 'block-advance-when-blocked';
@@ -443,18 +444,6 @@ export interface SystemState {
     flowHalted?: boolean;
     /** 游戏结束结果（由管线在每次命令执行后自动检测并写入） */
     gameover?: GameOverResult;
-    /** SmashUp: scoreBases 结算会话（当前为通用 resolution frame 的游戏专属镜像） */
-    smashupScoring?: {
-        lockedBaseRefs: Array<{ slotIndex: number; baseDefId: string }>;
-        completedBaseRefs: Array<{ slotIndex: number; baseDefId: string }>;
-        currentBaseRef?: { slotIndex: number; baseDefId: string };
-        currentStep: string;
-        deferredPostScoringEvents?: Array<{ type: string; payload: unknown; timestamp: number }>;
-        afterScoringInitialPowers?: {
-            baseRef: { slotIndex: number; baseDefId: string };
-            powers: Record<string, number>;
-        };
-    };
     /** SmashUp: 记分阶段已记分的基地索引（防止 halt 后重复记分） */
     scoredBaseIndices?: number[];
     /** SmashUp: postProcessSystemEvents 去重标记（防止 MINION_PLAYED/ACTION_PLAYED 被处理两次） */

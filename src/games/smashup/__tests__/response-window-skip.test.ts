@@ -5,13 +5,16 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { GameTestRunner } from '../../../engine/testing';
 import { asSimpleChoice } from '../../../engine/systems/InteractionSystem';
+import { getActiveResolutionFrame, getResolutionFrame, upsertActiveResolutionFrame } from '../../../engine/systems/resolutionStack';
 import { createInitialSystemState } from '../../../engine/pipeline';
 import type { MatchState, PlayerId, RandomFn } from '../../../engine/types';
 import { initAllAbilities } from '../abilities';
 import { SmashUpDomain } from '../domain';
 import { smashUpSystemsForTest } from '../game';
 import type { MinionOnBase, SmashUpCore } from '../domain/types';
-import { advanceSmashUpReactionSession, startSmashUpReactionSession } from '../domain/reactionSession';
+import { SU_COMMANDS } from '../domain/types';
+import { advanceSmashUpReactionSession, resolveSmashUpReactionChoice, startSmashUpReactionSession } from '../domain/reactionSession';
+import { defaultTestRandom } from './testRunner';
 
 interface ReactionSessionView {
     responseWindowType?: 'meFirst' | 'afterScoring';
@@ -86,6 +89,73 @@ beforeAll(() => {
 });
 
 describe('响应窗口跳过逻辑', () => {
+    it('普通 PLAY_MINION 命令进入 execute 时，应先种下 smashup:command 主 frame', () => {
+        const core = SmashUpDomain.setup(['0', '1'], defaultTestRandom);
+        const sys = createInitialSystemState(['0', '1'], smashUpSystemsForTest, undefined);
+
+        core.factionSelection = undefined;
+        sys.phase = 'playCards';
+        core.bases[0] = {
+            defId: 'base_the_mothership',
+            minions: [],
+            ongoingActions: [],
+        };
+        core.players['0'].hand = [
+            { uid: 'm1', defId: 'robot_microbot_alpha', type: 'minion', owner: '0' },
+        ];
+
+        const state: MatchState<SmashUpCore> = { core, sys };
+        const events = SmashUpDomain.execute(state, {
+            type: SU_COMMANDS.PLAY_MINION,
+            playerId: '0',
+            payload: { cardUid: 'm1', baseIndex: 0 },
+        } as any, defaultTestRandom);
+
+        expect(events.length).toBeGreaterThan(0);
+        const activeFrame = getActiveResolutionFrame(state);
+        expect(activeFrame?.kind).toBe('smashup:command');
+        expect(activeFrame?.id.startsWith('smashup:command:0:')).toBe(true);
+        expect(activeFrame?.status).toBe('running');
+    });
+
+    it('startSmashUpReactionSession 应创建 active reaction frame，关闭后恢复父 frame', () => {
+        const core = SmashUpDomain.setup(['0', '1'], defaultTestRandom);
+        const sys = createInitialSystemState(['0', '1'], smashUpSystemsForTest, undefined);
+        sys.phase = 'scoreBases';
+        sys.interaction.current = undefined;
+        sys.interaction.queue = [];
+        let state: MatchState<SmashUpCore> = { core, sys };
+
+        state = upsertActiveResolutionFrame(state, {
+            id: 'smashup:score-parent',
+            kind: 'smashup:score-bases',
+            ownerGame: 'smashup',
+            ownerSystem: 'smashup-scoring',
+            ordering: 'explicit',
+            status: 'running',
+            phase: 'scoreBases',
+            phaseGate: 'block-advance-when-blocked',
+        });
+
+        state = startSmashUpReactionSession(state, {
+            frameId: 'reaction-frame',
+            frameKind: 'score-after',
+            phase: 'optional',
+            currentPlayerId: '0',
+            activePlayerId: '1',
+            consecutivePasses: 1,
+            sourceBaseIndex: 0,
+            responseWindowType: 'afterScoring',
+        });
+
+        expect(getActiveResolutionFrame(state)?.id).toBe('reaction-frame');
+        expect(getResolutionFrame(state, 'smashup:score-parent')).toBeTruthy();
+
+        const resolved = resolveSmashUpReactionChoice(state, defaultTestRandom, 1, { kind: 'pass' });
+        expect(getResolutionFrame(resolved.state, 'reaction-frame')).toBeUndefined();
+        expect(getActiveResolutionFrame(resolved.state)?.id).toBe('smashup:score-parent');
+    });
+
     it('同轮有人行动后，如果其他玩家没有内容，统一反应选择器会先回到仍可行动的本家', () => {
         const runner = createRunner((playerIds, random) => {
             const core = SmashUpDomain.setup(playerIds, random);

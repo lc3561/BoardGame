@@ -646,7 +646,44 @@ describe('zombie_lord（僵尸领主）循环链', () => {
 });
 
 // ============================================================================
-// 8. zombie_tenacious_z（顽强丧尸）弃牌堆出牌流
+// 8. zombie_they_keep_coming（它们不断来临）交互创建
+// ============================================================================
+
+describe('zombie_they_keep_coming（它们不断来临）交互创建', () => {
+    it('PLAY_ACTION 后保留 discard_minion 直点交互，而不是在 pipeline 里丢失', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0', {
+                    hand: [makeCard('tkc1', 'zombie_they_keep_coming', '0', 'action')],
+                    discard: [
+                        makeCard('disc-m1', 'pirate_first_mate', '0', 'minion'),
+                        makeCard('disc-m2', 'zombie_walker', '0', 'minion'),
+                    ],
+                    factions: ['zombies', 'pirates'] as [string, string],
+                }),
+                '1': makePlayer('1'),
+            },
+        });
+        const state = makeFullMatchState(core);
+
+        const r1 = runCommand(state, {
+            type: SU_COMMANDS.PLAY_ACTION,
+            playerId: '0',
+            payload: { cardUid: 'tkc1' },
+        }, 'zombie_they_keep_coming: 打出');
+
+        expect(r1.steps[0]?.success).toBe(true);
+        const choice = asSimpleChoice(r1.finalState.sys.interaction.current);
+        expect(choice).toBeDefined();
+        expect(choice?.sourceId).toBe('zombie_they_keep_coming');
+        expect(choice?.targetType).toBe('discard_minion');
+        expect(choice?.options.some((option: any) => option.value?.cardUid === 'disc-m1')).toBe(true);
+        expect(choice?.options.some((option: any) => option.value?.cardUid === 'disc-m2')).toBe(true);
+    });
+});
+
+// ============================================================================
+// 9. zombie_tenacious_z（顽强丧尸）弃牌堆出牌流
 // ============================================================================
 
 describe('zombie_tenacious_z（顽强丧尸）弃牌堆出牌', () => {

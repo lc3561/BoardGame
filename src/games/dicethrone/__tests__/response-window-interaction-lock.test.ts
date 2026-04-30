@@ -7,6 +7,7 @@
  * 直到交互完成或取消。
  */
 import { describe, expect, it } from 'vitest';
+import { getActiveResolutionFrame, upsertActiveResolutionFrame } from '../../../engine/systems/resolutionStack';
 import { diceModifyReducer, diceModifyToCommands } from '../domain/systems';
 import {
     advanceTo,
@@ -32,6 +33,75 @@ function assertWindowLockedWithInteraction(
 }
 
 describe('响应窗口交互锁定：骰子修改类（modifyDie）', () => {
+    it('非 SmashUp 试点：afterRollConfirmed 响应窗链可挂接 resolution frame，并在交互结束后恢复运行态', () => {
+        const random = createQueuedRandom([3, 3, 3, 3, 3]);
+        const runner = createRunner(random, true);
+
+        const preWindow = runner.run({
+            name: '进入 afterRollConfirmed 响应窗',
+            setup: createSetupWithHand(['card-flick'], {
+                playerId: '1',
+                cp: 10,
+                mutate: (core) => {
+                    core.players['0'].hand = [];
+                    core.players['0'].deck = [];
+                    core.players['1'].deck = [];
+                },
+            }),
+            commands: [
+                ...advanceTo('offensiveRoll'),
+                cmd('ROLL_DICE', '0'),
+                cmd('CONFIRM_ROLL', '0'),
+            ],
+        });
+
+        const seededState = upsertActiveResolutionFrame(preWindow.finalState, {
+            id: 'dicethrone:test:after-roll-resolution',
+            kind: 'dicethrone:after-roll-confirmed',
+            ownerGame: 'dicethrone',
+            ownerSystem: 'dicethrone-test',
+            ordering: 'explicit',
+            status: 'running',
+            phase: 'offensiveRoll',
+            phaseGate: 'block-advance-when-blocked',
+            step: 'awaiting-response',
+        });
+
+        const playCard = runner.run({
+            name: '在响应窗中打出弹一手并创建交互',
+            setup: () => seededState,
+            commands: [
+                cmd('PLAY_CARD', '1', { cardId: 'card-flick' }),
+            ],
+        });
+
+        assertWindowLockedWithInteraction(playCard.finalState, 'multistep-choice', '1');
+        expect(getActiveResolutionFrame(playCard.finalState)).toMatchObject({
+            id: 'dicethrone:test:after-roll-resolution',
+            status: 'blocked',
+            blockedBy: {
+                type: 'response-window',
+            },
+        });
+
+        const finishInteraction = runner.run({
+            name: '完成改骰交互并关闭响应窗',
+            setup: () => playCard.finalState,
+            commands: [
+                cmd('MODIFY_DIE', '1', { dieId: 0, newValue: 4 }),
+                cmd('SYS_INTERACTION_CONFIRM', '1'),
+            ],
+        });
+
+        expect(finishInteraction.finalState.sys.interaction?.current).toBeUndefined();
+        expect(finishInteraction.finalState.sys.responseWindow?.current).toBeUndefined();
+        expect(getActiveResolutionFrame(finishInteraction.finalState)).toMatchObject({
+            id: 'dicethrone:test:after-roll-resolution',
+            status: 'running',
+            blockedBy: undefined,
+        });
+    });
+
     it('弹一手（modify-die-adjust-1, target=select）：完整流程', () => {
         const random = createQueuedRandom([3, 3, 3, 3, 3]);
         const runner = createRunner(random, true);

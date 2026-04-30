@@ -24,7 +24,13 @@ import type { SmashUpCommand } from '../domain/types';
 import { SU_EVENTS } from '../domain/types';
 import { SMASHUP_FACTION_IDS } from '../domain/ids';
 import { SmashUpDomain, smashUpSystemsForTest } from '../game';
-import { createScoringBaseRef, createScoringSession, setScoringSession } from '../domain/scoringSession';
+import {
+    createScoringBaseRef,
+    createScoringSession,
+    getScoringSession,
+    setScoringSession,
+} from '../domain/scoringSession';
+import { getActiveResolutionFrame, getResolutionFrame, upsertActiveResolutionFrame } from '../../../engine/systems/resolutionStack';
 import { defaultTestRandom } from './testRunner';
 
 beforeAll(() => {
@@ -109,6 +115,42 @@ function wrapState(core: SmashUpCore) {
 }
 
 describe('afterScoring 延迟清场回归', () => {
+    it('setScoringSession 应把 scoreBases 主链镜像到 resolution frame，且不抢走已有 active child frame', () => {
+        let state = wrapState(makeCore({
+            bases: [
+                makeBase('base_tortuga'),
+            ],
+        }));
+
+        state = upsertActiveResolutionFrame(state, {
+            id: 'child-frame',
+            kind: 'test:child',
+            ordering: 'stack',
+            status: 'running',
+        });
+
+        state = setScoringSession(state, {
+            ...createScoringSession(state.core, [0]),
+            currentBaseRef: createScoringBaseRef(state.core, 0),
+            currentStep: 'awaiting-interactions',
+        });
+
+        expect(getActiveResolutionFrame(state)?.id).toBe('child-frame');
+        expect(getScoringSession(state)?.currentBaseRef?.slotIndex).toBe(0);
+        expect(getResolutionFrame(state, 'smashup:score-bases')).toMatchObject({
+            id: 'smashup:score-bases',
+            kind: 'smashup:score-bases',
+            step: 'awaiting-interactions',
+            metadata: {
+                smashupScoringSession: {
+                    currentBaseRef: {
+                        slotIndex: 0,
+                    },
+                },
+            },
+        });
+    });
+
     it('base_greenhouse: 应先换基地，再把牌库随从打到新基地', () => {
         const system = createSmashUpEventSystem();
         const state = wrapState(makeCore({
@@ -798,7 +840,7 @@ describe('afterScoring 延迟清场回归', () => {
         const reactionChoice = asSimpleChoice(result.updatedState?.sys.interaction?.current)!;
         expect(reactionChoice).toBeTruthy();
         expect(reactionChoice.sourceId).toBe('smashup_reaction_choose');
-        expect((result.updatedState?.sys as any).smashupScoring?.currentBaseRef?.slotIndex).toBe(0);
+        expect(getScoringSession(result.updatedState!)?.currentBaseRef?.slotIndex).toBe(0);
         expect(result.updatedState?.sys.scoredBaseIndices).toEqual([0]);
     });
 

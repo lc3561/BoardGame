@@ -60,6 +60,27 @@ async function advancePhaseFromUI(page: Page, game: GameTestContext): Promise<vo
     await game.advancePhase();
 }
 
+async function clickReactionPass(page: Page): Promise<void> {
+    const selectors = [
+        page.getByTestId('me-first-pass-button').first(),
+        page.getByRole('button', { name: /^(让过|Pass|跳过|Skip)(?:\s*\(\d+\))?$/i }).first(),
+    ];
+    for (const locator of selectors) {
+        if (await locator.isVisible({ timeout: 1500 }).catch(() => false)) {
+            await locator.click({ force: true, timeout: 5000 });
+            await page.waitForTimeout(300);
+            return;
+        }
+    }
+    throw new Error('未找到可点击的响应窗口让过按钮');
+}
+
+async function isReactionChooserVisible(page: Page): Promise<boolean> {
+    return page.getByRole('heading', { name: /^(选择一个反应动作|选择先结算的强制效果)$/i }).first()
+        .isVisible()
+        .catch(() => false);
+}
+
 async function openFourPlayerTestGame(game: GameTestContext): Promise<void> {
     let lastError: unknown;
     for (let attempt = 1; attempt <= 3; attempt += 1) {
@@ -79,11 +100,6 @@ test.describe('大杀四方 - afterScoring 响应窗口', () => {
         test.setTimeout(180000);
 
         const diagnostics = attachPageDiagnostics(page);
-        page.on('console', (msg) => {
-            if (msg.type() === 'error' || msg.text().includes('[LocalGame]')) {
-                console.log(`[浏览器控制台] ${msg.type()}: ${msg.text()}`);
-            }
-        });
 
         try {
             await openSmashupScene(page, game, {
@@ -134,7 +150,7 @@ test.describe('大杀四方 - afterScoring 响应窗口', () => {
                     phase: state?.sys?.phase,
                     windowType: state?.sys?.responseWindow?.current?.windowType ?? null,
                     interactionId: state?.sys?.interaction?.current?.id ?? null,
-                    interactionSource: state?.sys?.interaction?.current?.sourceId ?? null,
+                    interactionSource: state?.sys?.interaction?.current?.data?.sourceId ?? null,
                     p0Hand: state?.core?.players?.['0']?.hand?.map((card: any) => card.defId) ?? [],
                     scoringEligibleBaseIndices: state?.core?.scoringEligibleBaseIndices ?? null,
                 };
@@ -165,16 +181,14 @@ test.describe('大杀四方 - afterScoring 响应窗口', () => {
             expect(responseWindowState.phase).toBe('scoreBases');
             expect(['meFirst', 'afterScoring']).toContain(responseWindowState.windowType);
 
-            await expect(page.getByTestId('me-first-overlay')).toBeVisible();
-            await expect(page.getByTestId('me-first-pass-button')).toBeVisible();
-
             if (responseWindowState.windowType === 'meFirst') {
+                await expect(page.getByTestId('me-first-overlay')).toBeVisible();
+                await expect(page.getByTestId('me-first-pass-button')).toBeVisible();
                 await game.screenshot('02-me-first-open', testInfo);
-                await page.getByTestId('me-first-pass-button').click();
-                await page.waitForTimeout(500);
+                await clickReactionPass(page);
                 await game.screenshot('03-p0-passed-me-first', testInfo);
 
-                await page.getByTestId('me-first-pass-button').click();
+                await clickReactionPass(page);
 
                 await page.waitForFunction(
                     () => {
@@ -199,12 +213,17 @@ test.describe('大杀四方 - afterScoring 响应窗口', () => {
             expect(afterScoringState.phase).toBe('scoreBases');
             expect(afterScoringState.windowType).toBe('afterScoring');
 
-            await expect(page.getByTestId('me-first-overlay')).toBeVisible();
-            await expect(page.getByTestId('me-first-pass-button')).toBeVisible();
+            const chooserVisible = await isReactionChooserVisible(page);
+            if (chooserVisible) {
+                await expect(page.getByRole('button', { name: /我们乃最强/i }).first()).toBeVisible();
+                await expect(page.getByRole('button', { name: /^(让过|Pass)$/i }).first()).toBeVisible();
+            } else {
+                await expect(page.getByTestId('me-first-overlay')).toBeVisible();
+                await expect(page.getByTestId('me-first-pass-button')).toBeVisible();
+            }
             await game.screenshot('04-after-scoring-open', testInfo);
 
-            await page.getByTestId('me-first-pass-button').click();
-            await page.waitForTimeout(500);
+            await clickReactionPass(page);
             await game.screenshot('05-p0-passed-after-scoring', testInfo);
 
             const afterFirstAfterScoringPass = await page.evaluate(() => {
@@ -220,8 +239,7 @@ test.describe('大杀四方 - afterScoring 响应窗口', () => {
             console.log('[TEST] afterScoring 首次 PASS 后状态:', afterFirstAfterScoringPass);
 
             if (afterFirstAfterScoringPass.windowType === 'afterScoring') {
-                await expect(page.getByTestId('me-first-pass-button')).toBeVisible();
-                await page.getByTestId('me-first-pass-button').click();
+                await clickReactionPass(page);
             }
 
             await page.waitForFunction(
@@ -263,11 +281,6 @@ test.describe('大杀四方 - afterScoring 响应窗口', () => {
         test.setTimeout(240000);
 
         const diagnostics = attachPageDiagnostics(page);
-        page.on('console', (msg) => {
-            if (msg.type() === 'error' || msg.text().includes('[LocalGame]')) {
-                console.log(`[browser-console] ${msg.type()}: ${msg.text()}`);
-            }
-        });
 
         const createPlayer = (id: string, factions: [string, string]) => ({
             id,
@@ -374,8 +387,10 @@ test.describe('大杀四方 - afterScoring 响应窗口', () => {
             await game.waitForInteraction('pirate_king_move', 20000);
 
             const resolvedSources: string[] = [];
+            const chooserSelections: string[] = [];
+            let chooserShown = false;
 
-            for (let step = 0; step < 10; step += 1) {
+            for (let step = 0; step < 16; step += 1) {
                 const currentInteraction = await page.evaluate(() => {
                     const state = (window as any).__BG_TEST_HARNESS__?.state?.get?.();
                     const current = state?.sys?.interaction?.current;
@@ -392,6 +407,29 @@ test.describe('大杀四方 - afterScoring 响应窗口', () => {
                 });
 
                 if (!currentInteraction) break;
+
+                if (currentInteraction.sourceId === 'smashup_reaction_choose') {
+                    if (!chooserShown) {
+                        chooserShown = true;
+                        await game.screenshot('4p-02-mandatory-order-chooser', testInfo);
+                    }
+                    const tortugaButton = page.getByRole('button', { name: /^托尔图加$/i }).first();
+                    const firstMateButton = page.getByRole('button', { name: /^大副$/i }).first();
+                    if (await tortugaButton.isVisible({ timeout: 1000 }).catch(() => false)) {
+                        chooserSelections.push('托尔图加');
+                        await tortugaButton.click({ force: true, timeout: 5000 });
+                        await page.waitForTimeout(200);
+                        continue;
+                    }
+                    if (await firstMateButton.isVisible({ timeout: 1000 }).catch(() => false)) {
+                        chooserSelections.push('大副');
+                        await firstMateButton.click({ force: true, timeout: 5000 });
+                        await page.waitForTimeout(200);
+                        continue;
+                    }
+                    throw new Error(`mandatory chooser has no supported visible option: ${JSON.stringify(currentInteraction.options)}`);
+                }
+
                 resolvedSources.push(currentInteraction.sourceId);
 
                 if (currentInteraction.sourceId === 'pirate_king_move') {
@@ -415,6 +453,8 @@ test.describe('大杀四方 - afterScoring 响应窗口', () => {
             expect(resolvedSources.filter((id) => id === 'base_tortuga')).toHaveLength(1);
             expect(resolvedSources.filter((id) => id === 'pirate_first_mate_choose_base')).toHaveLength(4);
             expect(resolvedSources).toHaveLength(6);
+            expect(chooserSelections.length).toBeGreaterThan(0);
+            expect(chooserSelections[0]).toContain('托尔图加');
 
             await page.waitForFunction(
                 () => {
@@ -445,7 +485,7 @@ test.describe('大杀四方 - afterScoring 响应窗口', () => {
             expect(finalState.totalVp).toBe(9);
             expect([...finalState.vpByPlayer].sort((a, b) => a - b)).toEqual([0, 2, 3, 4]);
 
-            await game.screenshot('4p-02-final', testInfo);
+            await game.screenshot('4p-03-final', testInfo);
         } catch (error) {
             if (diagnostics.errors.length > 0) {
                 console.log('[page-diagnostics]', diagnostics.errors);

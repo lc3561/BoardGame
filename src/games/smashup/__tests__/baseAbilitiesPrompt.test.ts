@@ -25,6 +25,7 @@ import {
 } from '../domain/baseAbilities';
 import type { BaseAbilityContext } from '../domain/baseAbilities';
 import { clearOngoingEffectRegistry } from '../domain/ongoingEffects';
+import { getPendingPostScoringActions } from '../domain/scoringSession';
 import type { SmashUpCore, PlayerState, BaseInPlay, MinionOnBase, CardInstance } from '../domain/types';
 import { SU_EVENTS } from '../domain/types';
 import { SMASHUP_FACTION_IDS } from '../domain/ids';
@@ -802,8 +803,7 @@ describe('base_tortuga: 计分后亚军移动随从', () => {
         );
 
         expect(resolved?.events ?? []).toHaveLength(3);
-        // 当前实现不会在 sys.smashupScoring 里登记延迟移动动作
-        expect(((resolved?.state.sys as any).smashupScoring?.pendingPostScoringActions) ?? []).toEqual([]);
+        expect(getPendingPostScoringActions(resolved!.state)).toBeUndefined();
     });
 });
 

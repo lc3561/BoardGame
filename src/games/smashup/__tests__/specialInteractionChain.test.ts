@@ -795,6 +795,45 @@ describe('onMinionDestroyed trigger: steampunk_escape_hatch', () => {
     });
 });
 
+describe('ninja_acolyte special 交互创建', () => {
+    it('ACTIVATE_SPECIAL 后保留手牌直点交互，而不是在 pipeline 里丢失', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0', {
+                    hand: [makeCard('hand-first-mate', 'pirate_first_mate', '0', 'minion')],
+                    minionsPlayed: 0,
+                    factions: ['ninjas', 'pirates'] as [string, string],
+                }),
+                '1': makePlayer('1'),
+            },
+            bases: [
+                makeBase('test_base_1', [
+                    makeMinion('acolyte-1', 'ninja_acolyte', '0', 2),
+                ]),
+                makeBase('test_base_2'),
+                makeBase('test_base_3'),
+            ],
+        });
+        const state = makeFullMatchState(core);
+
+        const r1 = runCommand(state, {
+            type: SU_COMMANDS.ACTIVATE_SPECIAL,
+            playerId: '0',
+            payload: { minionUid: 'acolyte-1', baseIndex: 0 },
+        }, 'ninja_acolyte: 激活 special');
+
+        expect(r1.steps[0]?.success).toBe(true);
+        expect(r1.finalState.core.players['0'].hand.some((card: CardInstance) => card.uid === 'acolyte-1')).toBe(true);
+
+        const choice = asSimpleChoice(r1.finalState.sys.interaction.current);
+        expect(choice).toBeDefined();
+        expect(choice?.sourceId).toBe('ninja_acolyte_play');
+        expect(choice?.targetType).toBe('hand');
+        expect(choice?.options.some((option: any) => option.value?.cardUid === 'acolyte-1')).toBe(true);
+        expect(choice?.options.some((option: any) => option.value?.cardUid === 'hand-first-mate')).toBe(true);
+    });
+});
+
 // ============================================================================
 // 13. DiscardPlayProvider: ghost_spectre — 手牌≤2时从弃牌堆打出
 // ============================================================================

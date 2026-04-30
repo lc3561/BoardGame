@@ -1,4 +1,13 @@
 import type { GameEvent, MatchState, PlayerId } from '../../../engine/types';
+import type { ResolutionFrame } from '../../../engine/types';
+import {
+    clearResolutionFrame,
+    clearResolutionFrameBlock,
+    getResolutionFrame,
+    setResolutionFrameBlock,
+    updateResolutionFrame,
+    upsertResolutionFrame,
+} from '../../../engine/systems/resolutionStack';
 import type {
     MinionPlayedEvent,
     PendingPostScoringAction,
@@ -32,16 +41,73 @@ export interface SmashUpScoringSession {
     completedBaseRefs: SmashUpScoringBaseRef[];
     currentBaseRef?: SmashUpScoringBaseRef;
     currentStep: SmashUpScoringStep;
-    deferredPostScoringEvents?: SerializedPostScoringEvent[];
-    pendingPostScoringActions?: PendingPostScoringAction[];
 }
 
 type SmashUpScoringStateCarrier = MatchState<SmashUpCore>['sys'] & {
     scoredBaseIndices?: number[];
-    smashupScoring?: SmashUpScoringSession;
 };
 
-function syncLegacyScoreBaseFields(
+const SMASHUP_SCORING_RESOLUTION_FRAME_ID = 'smashup:score-bases';
+
+type ScoringResolutionMetadata = {
+    smashupScoringSession?: SmashUpScoringSession;
+} & Record<string, unknown>;
+
+function getScoringResolutionFrame(state: MatchState<SmashUpCore>): ResolutionFrame | undefined {
+    return getResolutionFrame(state, SMASHUP_SCORING_RESOLUTION_FRAME_ID);
+}
+
+export function getSmashUpScoringResolutionFrame(
+    state: MatchState<SmashUpCore>,
+): ResolutionFrame | undefined {
+    return getScoringResolutionFrame(state);
+}
+
+function getScoringSessionFromResolution(state: MatchState<SmashUpCore>): SmashUpScoringSession | undefined {
+    const metadata = getScoringResolutionFrame(state)?.metadata as ScoringResolutionMetadata | undefined;
+    return metadata?.smashupScoringSession;
+}
+
+function buildScoringResolutionFrame(
+    state: MatchState<SmashUpCore>,
+    session: SmashUpScoringSession,
+): ResolutionFrame {
+    const existing = getScoringResolutionFrame(state);
+    return {
+        id: SMASHUP_SCORING_RESOLUTION_FRAME_ID,
+        kind: 'smashup:score-bases',
+        ownerGame: 'smashup',
+        ownerSystem: 'smashup-scoring',
+        ordering: existing?.ordering ?? 'explicit',
+        status: existing?.status ?? 'running',
+        step: session.currentStep,
+        phase: 'scoreBases',
+        phaseGate: 'block-advance-when-blocked',
+        blockedBy: existing?.blockedBy,
+        deferredEvents: existing?.deferredEvents,
+        deferredActions: existing?.deferredActions,
+        metadata: {
+            ...(existing?.metadata ?? {}),
+            smashupScoringSession: session,
+        },
+    };
+}
+
+function updateScoringResolutionFrame(
+    state: MatchState<SmashUpCore>,
+    updater: (frame: ResolutionFrame) => ResolutionFrame,
+): MatchState<SmashUpCore> {
+    const frame = getScoringResolutionFrame(state);
+    if (!frame) return state;
+    return updateResolutionFrame(
+        state,
+        SMASHUP_SCORING_RESOLUTION_FRAME_ID,
+        current => current ? updater(current) : current,
+        { makeActive: state.sys.resolution?.activeFrameId === SMASHUP_SCORING_RESOLUTION_FRAME_ID },
+    );
+}
+
+function syncScoredBaseIndices(
     sys: SmashUpScoringStateCarrier,
     session: SmashUpScoringSession | undefined,
 ): SmashUpScoringStateCarrier {
@@ -56,7 +122,6 @@ function syncLegacyScoreBaseFields(
 
     return {
         ...sys,
-        smashupScoring: session,
         scoredBaseIndices,
     };
 }
@@ -89,7 +154,7 @@ export function createScoringSession(core: SmashUpCore, lockedBaseIndices: numbe
 }
 
 export function getScoringSession(state: MatchState<SmashUpCore>): SmashUpScoringSession | undefined {
-    return (state.sys as SmashUpScoringStateCarrier).smashupScoring;
+    return getScoringSessionFromResolution(state);
 }
 
 export function setScoringSession(
@@ -97,10 +162,19 @@ export function setScoringSession(
     session: SmashUpScoringSession | undefined,
 ): MatchState<SmashUpCore> {
     const sys = state.sys as SmashUpScoringStateCarrier;
-    return {
+    const mirroredState: MatchState<SmashUpCore> = {
         ...state,
-        sys: syncLegacyScoreBaseFields(sys, session),
+        sys: syncScoredBaseIndices(sys, session),
     };
+    const activeFrameId = state.sys.resolution?.activeFrameId;
+    if (!session) {
+        return clearResolutionFrame(mirroredState, SMASHUP_SCORING_RESOLUTION_FRAME_ID);
+    }
+    return upsertResolutionFrame(
+        mirroredState,
+        buildScoringResolutionFrame(state, session),
+        { makeActive: activeFrameId === undefined || activeFrameId === SMASHUP_SCORING_RESOLUTION_FRAME_ID },
+    );
 }
 
 export function updateScoringSession(
@@ -114,10 +188,119 @@ export function clearScoringSession(state: MatchState<SmashUpCore>): MatchState<
     return setScoringSession(state, undefined);
 }
 
+export function getScoringDeferredEvents(
+    state: MatchState<SmashUpCore>,
+): SerializedPostScoringEvent[] | undefined {
+    return getScoringResolutionFrame(state)?.deferredEvents as SerializedPostScoringEvent[] | undefined;
+}
+
+export function setScoringDeferredEvents(
+    state: MatchState<SmashUpCore>,
+    deferredEvents: SerializedPostScoringEvent[] | undefined,
+): MatchState<SmashUpCore> {
+    return updateScoringResolutionFrame(state, frame => ({
+        ...frame,
+        deferredEvents: deferredEvents && deferredEvents.length > 0 ? deferredEvents : undefined,
+    }));
+}
+
+export function getPendingPostScoringActions(
+    state: MatchState<SmashUpCore>,
+): PendingPostScoringAction[] | undefined {
+    return getScoringResolutionFrame(state)?.deferredActions as PendingPostScoringAction[] | undefined;
+}
+
+export function setPendingPostScoringActions(
+    state: MatchState<SmashUpCore>,
+    actions: PendingPostScoringAction[] | undefined,
+): MatchState<SmashUpCore> {
+    return updateScoringResolutionFrame(state, frame => ({
+        ...frame,
+        deferredActions: actions && actions.length > 0 ? actions : undefined,
+    }));
+}
+
+export function clearPendingPostScoringActions(
+    state: MatchState<SmashUpCore>,
+): MatchState<SmashUpCore> {
+    return setPendingPostScoringActions(state, undefined);
+}
+
+export function getPendingPostScoringActionsCompatibility(
+    state: MatchState<SmashUpCore>,
+): PendingPostScoringAction[] | undefined {
+    return getScoringSession(state)
+        ? undefined
+        : state.core.pendingPostScoringActions;
+}
+
+export function clearPendingPostScoringActionsCompatibility(
+    state: MatchState<SmashUpCore>,
+): MatchState<SmashUpCore> {
+    if (!state.core.pendingPostScoringActions?.length) {
+        return state;
+    }
+    return {
+        ...state,
+        core: {
+            ...state.core,
+            pendingPostScoringActions: undefined,
+        },
+    };
+}
+
+export function markScoringSessionAwaitingPostReduce(
+    state: MatchState<SmashUpCore>,
+): MatchState<SmashUpCore> {
+    const nextState = updateScoringSession(state, (session) => session
+        ? {
+            ...session,
+            currentStep: 'awaiting-post-reduce',
+        }
+        : session,
+    );
+    return setPendingPostScoringActions(setResolutionFrameBlock(nextState, SMASHUP_SCORING_RESOLUTION_FRAME_ID, {
+        type: 'post-reduce',
+        reason: 'awaiting-post-reduce',
+    }), undefined);
+}
+
+export function clearScoringSessionPostReduceBlock(
+    state: MatchState<SmashUpCore>,
+): MatchState<SmashUpCore> {
+    const unblockedState = clearResolutionFrameBlock(
+        state,
+        SMASHUP_SCORING_RESOLUTION_FRAME_ID,
+        'post-reduce',
+    );
+    return updateScoringSession(unblockedState, (session) => {
+        if (!session || session.currentStep !== 'awaiting-post-reduce') {
+            return session;
+        }
+        return {
+            ...session,
+            currentStep: 'idle',
+        };
+    });
+}
+
+export function isScoringSessionAwaitingPostReduce(
+    state: MatchState<SmashUpCore>,
+): boolean {
+    const scoringFrame = getScoringResolutionFrame(state);
+    if (scoringFrame?.blockedBy?.type === 'post-reduce') {
+        return true;
+    }
+    return getScoringSession(state)?.currentStep === 'awaiting-post-reduce';
+}
+
 export function mirrorDeferredPostScoringToFirstInteraction(
     state: MatchState<SmashUpCore>,
     deferredEvents: SerializedPostScoringEvent[] | undefined,
 ): MatchState<SmashUpCore> {
+    if (getScoringSession(state)) {
+        return state;
+    }
     if (!deferredEvents?.length) {
         return state;
     }
@@ -205,9 +388,12 @@ export function getDeferredPostScoringEvents(
     state: MatchState<SmashUpCore>,
     interactionData?: Record<string, unknown>,
 ): SerializedPostScoringEvent[] | undefined {
-    const sessionDeferred = getScoringSession(state)?.deferredPostScoringEvents;
+    const sessionDeferred = getScoringDeferredEvents(state);
     if (sessionDeferred && sessionDeferred.length > 0) {
         return sessionDeferred;
+    }
+    if (getScoringSession(state)) {
+        return undefined;
     }
     const continuation = interactionData?.continuationContext as {
         _deferredPostScoringEvents?: SerializedPostScoringEvent[];
@@ -248,21 +434,13 @@ export function flushDeferredPostScoringCompatibility(
     flushedEvents.push(
         ...buildPendingPostScoringActionEvents(
             { core: state.core },
-            state.core.pendingPostScoringActions,
+            getPendingPostScoringActionsCompatibility(state),
             timestamp,
         ),
     );
 
     return {
-        state: state.core.pendingPostScoringActions?.length
-            ? {
-                ...state,
-                core: {
-                    ...state.core,
-                    pendingPostScoringActions: undefined,
-                },
-            }
-            : state,
+        state: clearPendingPostScoringActionsCompatibility(state),
         events: flushedEvents,
         flushed: true,
     };
@@ -276,18 +454,22 @@ export function appendPendingPostScoringActions(
         return state;
     }
 
-    const session = getScoringSession(state);
-    if (session) {
-        return updateScoringSession(state, (currentSession) => {
-            if (!currentSession) return currentSession;
-            return {
-                ...currentSession,
-                pendingPostScoringActions: [
-                    ...(currentSession.pendingPostScoringActions ?? []),
-                    ...actions,
-                ],
-            };
-        });
+    if (!getScoringSession(state)) {
+        return state;
+    }
+
+    return setPendingPostScoringActions(state, [
+        ...(getPendingPostScoringActions(state) ?? []),
+        ...actions,
+    ]);
+}
+
+export function appendPendingPostScoringActionsCompatibility(
+    state: MatchState<SmashUpCore>,
+    actions: PendingPostScoringAction[] | undefined,
+): MatchState<SmashUpCore> {
+    if (!actions?.length) {
+        return state;
     }
 
     return {
@@ -307,6 +489,7 @@ export function mergeDeferredPostScoringCompatibility(
     interactionData: Record<string, unknown> | undefined,
     timestamp: number,
     options?: {
+        primaryEvents?: SmashUpEvent[];
         primaryOrder?: 'before' | 'after';
         extraPendingActions?: PendingPostScoringAction[];
     },
@@ -315,7 +498,7 @@ export function mergeDeferredPostScoringCompatibility(
         return undefined;
     }
 
-    const nextState = appendPendingPostScoringActions(state, options?.extraPendingActions);
+    const nextState = appendPendingPostScoringActionsCompatibility(state, options?.extraPendingActions);
     const deferredEvents = getDeferredPostScoringEvents(nextState, interactionData);
     if (!deferredEvents?.length) {
         return options?.extraPendingActions?.length
@@ -324,9 +507,12 @@ export function mergeDeferredPostScoringCompatibility(
     }
 
     const flushed = flushDeferredPostScoringCompatibility(nextState, interactionData, timestamp);
+    const primaryEvents = options?.primaryEvents ?? [];
     return {
         state: flushed.state,
-        events: flushed.events,
+        events: options?.primaryOrder === 'before'
+            ? [...primaryEvents, ...flushed.events]
+            : [...flushed.events, ...primaryEvents],
     };
 }
 
@@ -348,7 +534,7 @@ export function markScoringBaseCompleted(
     state: MatchState<SmashUpCore>,
     baseRef: SmashUpScoringBaseRef,
 ): MatchState<SmashUpCore> {
-    return updateScoringSession(state, (session) => {
+    const clearedSessionState = updateScoringSession(state, (session) => {
         if (!session) return session;
         const alreadyCompleted = session.completedBaseRefs.some((completed) => isSameScoringBaseRef(completed, baseRef));
         return {
@@ -357,9 +543,12 @@ export function markScoringBaseCompleted(
                 ? session.completedBaseRefs
                 : [...session.completedBaseRefs, baseRef],
             currentBaseRef: undefined,
-            deferredPostScoringEvents: undefined,
         };
     });
+    return setPendingPostScoringActions(
+        setScoringDeferredEvents(clearedSessionState, undefined),
+        undefined,
+    );
 }
 
 export function buildPendingPostScoringActionEvents(

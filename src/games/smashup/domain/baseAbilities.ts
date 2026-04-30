@@ -49,6 +49,7 @@ import { isBaseAbilitySuppressed } from './ongoingEffects';
 import { registerBaseAbilityAsQueuedTrigger } from './baseAbilityQueue';
 import { resolveLiveBaseIndex } from './utils';
 import {
+    appendPendingPostScoringActions,
     buildPendingPostScoringActionEvents,
     flushDeferredPostScoringCompatibility,
     getDeferredPostScoringEvents as readDeferredPostScoringEvents,
@@ -1824,16 +1825,7 @@ export function registerBaseInteractionHandlers(): void {
                 };
             }
             return {
-                state: {
-                    ...state,
-                    core: {
-                        ...state.core,
-                        pendingPostScoringActions: [
-                            ...(state.core.pendingPostScoringActions ?? []),
-                            pendingAction,
-                        ],
-                    },
-                },
+                state: appendPendingPostScoringActions(state, [pendingAction]),
                 events: [],
             };
         }

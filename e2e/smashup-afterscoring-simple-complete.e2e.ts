@@ -41,10 +41,33 @@ test.describe('SmashUp afterScoring 简化验证', () => {
             { timeout: 5000 }
         );
 
-        const finishButton = page.getByRole('button', { name: /Finish Turn|结束回合/i });
+        const finishButton = page.getByTestId('su-end-turn-action-button');
         await expect(finishButton).toBeVisible();
         await finishButton.click();
         await page.waitForTimeout(1000);
+
+        await page.waitForFunction(
+            () => {
+                const state = (window as any).__BG_TEST_HARNESS__?.state?.get();
+                const windowType = state?.sys?.responseWindow?.current?.windowType;
+                return state?.sys?.phase === 'scoreBases' && (windowType === 'meFirst' || windowType === 'afterScoring');
+            },
+            { timeout: 15000 }
+        );
+
+        for (let attempt = 0; attempt < 4; attempt += 1) {
+            const windowType = await page.evaluate(() => {
+                const state = (window as any).__BG_TEST_HARNESS__?.state?.get();
+                return state?.sys?.responseWindow?.current?.windowType ?? null;
+            });
+            if (windowType === 'afterScoring') {
+                break;
+            }
+            if (windowType !== 'meFirst') {
+                throw new Error(`推进到 afterScoring 前遇到意外响应窗口: ${windowType}`);
+            }
+            await game.passResponseWindow();
+        }
 
         await page.waitForFunction(
             () => {

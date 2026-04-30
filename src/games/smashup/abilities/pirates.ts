@@ -17,7 +17,13 @@ import { registerTrigger, isMinionProtected } from '../domain/ongoingEffects';
 import type { TriggerContext, TriggerResult } from '../domain/ongoingEffects';
 import { FACTION_DISPLAY_NAMES } from '../domain/ids';
 import { getOpponentLabel } from '../domain/utils';
-import { mergeDeferredPostScoringCompatibility } from '../domain/scoringSession';
+import {
+    clearPendingPostScoringActionsCompatibility,
+    getDeferredPostScoringEvents,
+    getPendingPostScoringActionsCompatibility,
+    getScoringSession,
+    mergeDeferredPostScoringCompatibility,
+} from '../domain/scoringSession';
 
 /** 注册海盗派系所有能力*/
 export function registerPirateAbilities(): void {
@@ -1050,17 +1056,20 @@ export function registerPirateInteractionHandlers(): void {
         
         // 【通用修复】检查是否有延迟事件需要补发
         // 引擎层 resolveInteraction 已自动传递延迟事件，这里只需要在最后一个交互时补发
-        const deferredEvents = (iData?.continuationContext as any)?._deferredPostScoringEvents as 
-            { type: string; payload: unknown; timestamp: number }[] | undefined;
+        const deferredEvents = getDeferredPostScoringEvents(
+            state,
+            iData as Record<string, unknown> | undefined,
+        );
         const hasNextInteraction =
             !!state.sys.interaction?.current
             || (state.sys.interaction?.queue?.length ?? 0) > 0;
         const reactionSys = state.sys as any;
         const hasPendingReactionWork =
             (state.core.triggerQueue?.length ?? 0) > 0
-            || Boolean(reactionSys?.smashupReactionSession)
-            || (reactionSys?.smashupReactionStack?.length ?? 0) > 0;
-        const legacyPendingActions = state.core.pendingPostScoringActions ?? [];
+            || Boolean(reactionSys?.smashupReactionSession);
+        const compatibilityPendingActions = getScoringSession(state)
+            ? []
+            : (getPendingPostScoringActionsCompatibility(state) ?? []);
         const shouldFlushDeferred = !!(
             deferredEvents
             && deferredEvents.length > 0
@@ -1072,14 +1081,11 @@ export function registerPirateInteractionHandlers(): void {
             // 跳过时，如果这是最后一个交互，补发延迟事件
             if (shouldFlushDeferred) {
                 const compatibility = mergeDeferredPostScoringCompatibility(state, iData, timestamp, {
-                    extraPendingActions: legacyPendingActions.length > 0 ? legacyPendingActions : undefined,
+                    extraPendingActions: compatibilityPendingActions.length > 0 ? compatibilityPendingActions : undefined,
                 });
                 if (compatibility) {
-                    const clearedState = legacyPendingActions.length > 0
-                        ? {
-                            ...compatibility.state,
-                            core: { ...compatibility.state.core, pendingPostScoringActions: undefined },
-                        }
+                    const clearedState = compatibilityPendingActions.length > 0
+                        ? clearPendingPostScoringActionsCompatibility(compatibility.state)
                         : compatibility.state;
                     return { state: clearedState, events: compatibility.events };
                 }
@@ -1119,14 +1125,11 @@ export function registerPirateInteractionHandlers(): void {
             const compatibility = mergeDeferredPostScoringCompatibility(state, iData, timestamp, {
                 primaryEvents: events,
                 primaryOrder: 'after',
-                extraPendingActions: legacyPendingActions.length > 0 ? legacyPendingActions : undefined,
+                extraPendingActions: compatibilityPendingActions.length > 0 ? compatibilityPendingActions : undefined,
             });
             if (compatibility) {
-                const clearedState = legacyPendingActions.length > 0
-                    ? {
-                        ...compatibility.state,
-                        core: { ...compatibility.state.core, pendingPostScoringActions: undefined },
-                    }
+                const clearedState = compatibilityPendingActions.length > 0
+                    ? clearPendingPostScoringActionsCompatibility(compatibility.state)
                     : compatibility.state;
                 return { state: clearedState, events: compatibility.events };
             }

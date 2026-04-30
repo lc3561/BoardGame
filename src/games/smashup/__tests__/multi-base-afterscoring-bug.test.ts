@@ -677,6 +677,65 @@ describe('多基地同时计分 afterScoring 触发问题', () => {
         expect(finalState.core.baseDeck).toEqual(['base_the_factory']);
     });
 
+    it('海盗湾 afterScoring 让过后，scoreBases 必须继续停在忍者道场而不是直接结束回合', () => {
+        const advance = runCommand(createMultiBaseScoringSetup(), {
+            type: 'ADVANCE_PHASE',
+            playerId: '0',
+            payload: undefined,
+        });
+        expect(advance.success).toBe(true);
+
+        const firstChoice = getActiveSimpleChoice(advance.finalState)!;
+        expect(firstChoice).toBeTruthy();
+        expect(firstChoice.sourceId).toBe('multi_base_scoring');
+
+        const chooseJungle = findOption(firstChoice, (option: any) => option.value?.baseDefId === 'base_the_jungle');
+        const afterJungle = runCommand(advance.finalState, {
+            type: 'SYS_INTERACTION_RESPOND',
+            playerId: '0',
+            payload: { optionId: chooseJungle },
+        });
+        expect(afterJungle.success).toBe(true);
+
+        const secondChoice = getActiveSimpleChoice(afterJungle.finalState)!;
+        expect(secondChoice).toBeTruthy();
+        expect(secondChoice.sourceId).toBe('multi_base_scoring');
+        const choosePirateCove = findOption(
+            secondChoice,
+            (option: any) => option.value?.baseDefId === 'base_pirate_cove',
+        );
+
+        const afterPirateCoveChoice = runCommand(afterJungle.finalState, {
+            type: 'SYS_INTERACTION_RESPOND',
+            playerId: '0',
+            payload: { optionId: choosePirateCove },
+        });
+        expect(afterPirateCoveChoice.success).toBe(true);
+
+        const pirateCoveInteraction = getActiveSimpleChoice(afterPirateCoveChoice.finalState)!;
+        expect(pirateCoveInteraction).toBeTruthy();
+        expect(pirateCoveInteraction.sourceId).toBe('base_pirate_cove');
+        expect(afterPirateCoveChoice.finalState.sys.phase).toBe('scoreBases');
+
+        const afterPirateCoveSkip = runCommand(afterPirateCoveChoice.finalState, {
+            type: 'SYS_INTERACTION_RESPOND',
+            playerId: pirateCoveInteraction.playerId,
+            payload: { optionId: 'skip' },
+        });
+        expect(afterPirateCoveSkip.success).toBe(true);
+
+        const nextInteraction = getActiveSimpleChoice(afterPirateCoveSkip.finalState)!;
+        expect(afterPirateCoveSkip.finalState.sys.phase).toBe('scoreBases');
+        expect(nextInteraction).toBeTruthy();
+        expect(nextInteraction.sourceId).toBe('smashup_reaction_choose');
+        expect(nextInteraction.options.some(
+            (option: any) => option.value?.kind === 'trigger' && String(option.value?.triggerId ?? '').includes('base_ninja_dojo'),
+        )).toBe(true);
+        expect(afterPirateCoveSkip.finalState.core.players['0'].vp).toBe(7);
+        expect(afterPirateCoveSkip.finalState.core.players['1'].vp).toBe(4);
+        expect(afterPirateCoveSkip.finalState.core.bases[1].defId).toBe('base_ninja_dojo');
+    });
+
     it('复杂链路：海盗王 beforeScoring + 托尔图加 afterScoring + 大副 afterScoring 能完整走完计分链', () => {
         const initialState = createPirateKingFirstMateEndToEndSetup();
 

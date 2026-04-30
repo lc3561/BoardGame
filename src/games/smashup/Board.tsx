@@ -1222,7 +1222,9 @@ const SmashUpBoard: FC<Props> = ({ G, dispatch, playerID: rawPlayerID, reset, ma
 
         // 同名额度检查：全局额度用完且只剩同名额度时，defId 必须匹配
         if (cardMode === 'minion') {
-            const globalRemaining = player.minionLimit - player.minionsPlayed;
+            const minionLimit = player.minionLimit ?? 1;
+            const minionsPlayed = player.minionsPlayed ?? 0;
+            const globalRemaining = minionLimit - minionsPlayed;
             const sameNameRemaining = player.sameNameMinionRemaining ?? 0;
             const baseQuotaTotal = Object.values(player.baseLimitedMinionQuota ?? {}).reduce((s, v) => s + v, 0);
             if (globalRemaining <= 0 && sameNameRemaining > 0 && baseQuotaTotal <= 0) {
@@ -2717,7 +2719,9 @@ const SmashUpBoard: FC<Props> = ({ G, dispatch, playerID: rawPlayerID, reset, ma
                                             const baseQuota = myPlayer.baseLimitedMinionQuota ?? {};
                                             const baseQuotaTotal = Object.values(baseQuota).reduce((s, v) => s + v, 0);
                                             const sameNameRemaining = myPlayer.sameNameMinionRemaining ?? 0;
-                                            const globalRemaining = Math.max(0, myPlayer.minionLimit - myPlayer.minionsPlayed);
+                                            const minionLimit = myPlayer.minionLimit ?? 1;
+                                            const minionsPlayed = myPlayer.minionsPlayed ?? 0;
+                                            const globalRemaining = Math.max(0, minionLimit - minionsPlayed);
                                             const totalRemaining = globalRemaining + baseQuotaTotal + sameNameRemaining;
                                             const hasExtra = baseQuotaTotal > 0 || myPlayer.extraMinionPowerMax !== undefined || sameNameRemaining > 0;
                                             return (
@@ -2742,7 +2746,7 @@ const SmashUpBoard: FC<Props> = ({ G, dispatch, playerID: rawPlayerID, reset, ma
                                                         <div className="bg-slate-900/95 backdrop-blur-sm text-white text-[11px] leading-tight rounded border border-slate-600 shadow-xl px-2 py-1.5 whitespace-nowrap space-y-0.5">
                                                             <div className="flex justify-between gap-3">
                                                                 <span className="text-slate-300">{t('ui.minion_global_quota', { defaultValue: '通用额度' })}</span>
-                                                                <span className="font-bold">{globalRemaining}/{myPlayer.minionLimit}</span>
+                                                                <span className="font-bold">{globalRemaining}/{minionLimit}</span>
                                                             </div>
                                                             {Object.entries(baseQuota).map(([baseIdx, count]) => {
                                                                 if (count <= 0) return null;
@@ -2773,8 +2777,10 @@ const SmashUpBoard: FC<Props> = ({ G, dispatch, playerID: rawPlayerID, reset, ma
                                         })()}
                                         {/* 行动额度（含 tooltip） */}
                                         {(() => {
-                                            const actionRemaining = Math.max(0, myPlayer.actionLimit - myPlayer.actionsPlayed);
-                                            const hasExtraAction = myPlayer.actionLimit > 1;
+                                            const actionLimit = myPlayer.actionLimit ?? 1;
+                                            const actionsPlayed = myPlayer.actionsPlayed ?? 0;
+                                            const actionRemaining = Math.max(0, actionLimit - actionsPlayed);
+                                            const hasExtraAction = actionLimit > 1;
                                             return (
                                                 <div className="relative group/action" data-testid="su-end-turn-action-quota">
                                                     <div className={`${endTurnQuotaBadgeClassName} ${actionRemaining > 0
@@ -2797,10 +2803,10 @@ const SmashUpBoard: FC<Props> = ({ G, dispatch, playerID: rawPlayerID, reset, ma
                                                         <div className="bg-slate-900/95 backdrop-blur-sm text-white text-[11px] leading-tight rounded border border-slate-600 shadow-xl px-2 py-1.5 whitespace-nowrap space-y-0.5">
                                                             <div className="flex justify-between gap-3">
                                                                 <span className="text-slate-300">{t('ui.action_global_quota', { defaultValue: '通用额度' })}</span>
-                                                                <span className="font-bold">{actionRemaining}/{myPlayer.actionLimit}</span>
+                                                                <span className="font-bold">{actionRemaining}/{actionLimit}</span>
                                                             </div>
                                                             {hasExtraAction && (
-                                                                <div className="text-amber-300">{t('ui.action_extra_hint', { defaultValue: '含额外行动额度 +{{extra}}', extra: myPlayer.actionLimit - 1 })}</div>
+                                                                <div className="text-amber-300">{t('ui.action_extra_hint', { defaultValue: '含额外行动额度 +{{extra}}', extra: actionLimit - 1 })}</div>
                                                             )}
                                                         </div>
                                                         <div className="absolute right-3 top-full w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[5px] border-t-slate-600" />

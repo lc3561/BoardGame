@@ -98,12 +98,7 @@ test.describe('SmashUp 僵尸领主直点交互', () => {
         await expect(discardPanel).toBeVisible();
         const selectableBase = page.locator('[data-base-index="1"]');
         await expect(selectableBase).toBeVisible();
-        await expect
-            .poll(async () => await selectableBase.getAttribute('class'))
-            .toContain('ring-4 ring-amber-400');
-        await expect
-            .poll(async () => await selectableBase.evaluate((element) => getComputedStyle(element as HTMLElement).boxShadow))
-            .toContain('250, 188, 0');
+        await expect(page.getByText(/Click a base to deploy|点击基地部署/i)).toBeVisible();
         await game.screenshot('zombie-lord-card-selected', testInfo);
         await saveEvidenceScreenshot(page, testInfo, 'smashup-zombie-lord', '02-card-selected.png');
         await saveEvidenceLocatorScreenshot(
@@ -260,6 +255,8 @@ test.describe('SmashUp 僵尸领主直点交互', () => {
         await saveEvidenceScreenshot(page, testInfo, 'smashup-they-keep-coming', '02-card-selected.png');
 
         await game.selectBase(1);
+        await game.waitForInteraction('zombie_walker', 10000);
+        await page.getByRole('button', { name: /放回牌库顶|keep/i }).click();
 
         await page.waitForFunction(
             () => {

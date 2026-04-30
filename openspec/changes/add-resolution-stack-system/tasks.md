@@ -9,15 +9,15 @@
 - [x] 2.1 在引擎层引入最小 resolution state 与基础 helper（push / block / resume / complete）
 - [x] 2.2 为 InteractionSystem / ResponseWindowSystem / FlowSystem 接上 resolution-aware gate
 - [x] 2.3 增加引擎层测试，覆盖 interaction 阻塞恢复、response window 阻塞恢复、phase auto-continue gate
-- [ ] 2.4 将现有 helper 扩成真正的 resolution driver，支持 parent/child frame、resume point 与 completion handoff
-- [ ] 2.5 增加引擎层测试，覆盖“子 frame 打断父 frame -> 子 frame 完成 -> 父 frame 恢复”主链
+- [x] 2.4 将现有 helper 扩成真正的 resolution driver，支持 parent/child frame、resume point 与 completion handoff
+- [x] 2.5 增加引擎层测试，覆盖“子 frame 打断父 frame -> 子 frame 完成 -> 父 frame 恢复”主链
 
 ## 3. SmashUp pilot migration
-- [ ] 3.1 将 SmashUp `scoreBases` 主结算链迁移到通用 resolution frame，去掉“私有 session 栈才是主权威”的现状
-- [ ] 3.2 把 `smashupReactionSession / smashupReactionStack` 收束为 reaction/轮询状态，不再承载主结算恢复点
-- [ ] 3.3 把 `afterScoring` 与计分相关 deferred follow-up 统一收口到 resolution frame ownership
-- [ ] 3.4 补齐多基地、afterScoring、response window、re-score、嵌套本体恢复顺序回归测试
+- [x] 3.1 将 SmashUp `scoreBases` 主结算链迁移到通用 resolution frame，去掉“私有 session 栈才是主权威”的现状
+- [x] 3.2 把 `smashupReactionSession / smashupReactionStack` 收束为 reaction/轮询状态，不再承载主结算恢复点
+- [x] 3.3 把 `afterScoring` 与计分相关 deferred follow-up 统一收口到 resolution frame ownership
+- [x] 3.4 补齐多基地、afterScoring、response window、re-score、嵌套本体恢复顺序回归测试
 
 ## 4. Follow-up validation
-- [ ] 4.1 选择第二个非 SmashUp 连续结算场景做试点验证
-- [ ] 4.2 记录哪些旧 `pending* / continuationContext` 仍需保留为兼容层，哪些可删除
+- [x] 4.1 选择第二个非 SmashUp 连续结算场景做试点验证
+- [x] 4.2 记录哪些旧 `pending* / continuationContext` 仍需保留为兼容层，哪些可删除

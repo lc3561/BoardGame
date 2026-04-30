@@ -75,18 +75,32 @@ import { buildBaseTargetOptions, isSpecialLimitBlocked } from './abilityHelpers'
 import type { PhaseExitResult } from '../../../engine/systems/FlowSystem';
 import { registerInteractionHandler } from './abilityInteractionHandlers';
 import { createSimpleChoice, queueInteraction } from '../../../engine/systems/InteractionSystem';
+import { clearResolutionFrame, getActiveResolutionFrame } from '../../../engine/systems/resolutionStack';
 import type { SpecialAfterScoringConsumedEvent } from './types';
 import { queueImmediateExtraPlayInteractions } from './extraPlay';
 import {
+    buildEventBatchMainFrameId,
+    buildTurnEndMainFrameId,
+    buildTurnStartMainFrameId,
+    ensureSmashUpMainResolutionFrame,
+} from './mainResolutionFrame';
+import {
     buildPendingPostScoringActionEvents,
+    clearPendingPostScoringActions,
+    clearScoringSessionPostReduceBlock,
     clearScoringSession,
     createScoringBaseRef,
     createScoringSession,
+    getPendingPostScoringActions,
     getRemainingScoringBaseRefs,
+    getScoringDeferredEvents,
     getScoringSession,
+    isScoringSessionAwaitingPostReduce,
+    markScoringSessionAwaitingPostReduce,
     markScoringBaseCompleted,
     resolveScoringBaseRefSlotIndex,
     serializePostScoringEvents,
+    setScoringDeferredEvents,
     setScoringSession,
     updateScoringSession,
     type SmashUpScoringBaseRef,
@@ -267,8 +281,9 @@ function finalizeCurrentScoringBase(
     }
     const events: SmashUpEvent[] = [];
 
-    if (session.deferredPostScoringEvents?.length) {
-        events.push(...session.deferredPostScoringEvents.map((event) => ({
+    const deferredEvents = getScoringDeferredEvents(state);
+    if (deferredEvents?.length) {
+        events.push(...deferredEvents.map((event) => ({
             type: event.type,
             payload: event.payload,
             timestamp: event.timestamp,
@@ -282,32 +297,15 @@ function finalizeCurrentScoringBase(
     events.push(
         ...buildPendingPostScoringActionEvents(
             { core: postDeferredCore },
-            session.pendingPostScoringActions ?? state.core.pendingPostScoringActions,
+            getPendingPostScoringActions(state),
             now,
         ),
     );
 
-    const completedState = updateScoringSession(
-        markScoringBaseCompleted(state, currentBaseRef),
-        (currentSession) => currentSession
-            ? {
-                ...currentSession,
-                currentStep: 'awaiting-post-reduce',
-                pendingPostScoringActions: undefined,
-            }
-            : currentSession,
+    const completedState = markScoringBaseCompleted(state, currentBaseRef);
+    const awaitingReduceState = markScoringSessionAwaitingPostReduce(
+        clearPendingPostScoringActions(completedState),
     );
-    const awaitingReduceState = {
-        ...completedState,
-        core: {
-            ...completedState.core,
-            pendingPostScoringActions: undefined,
-        },
-        sys: {
-            ...completedState.sys,
-            _waitForPostScoringReduce: true,
-        } as typeof completedState.sys,
-    };
 
     return {
         updatedState: awaitingReduceState,
@@ -772,17 +770,10 @@ export function scoreOneBase(
                     ...session,
                     currentBaseRef,
                     currentStep: waitingStep,
-                    deferredPostScoringEvents: serializedDeferredEvents,
                 }
                 : session,
             );
-            const firstInteraction = ms.sys.interaction?.current ?? ms.sys.interaction?.queue?.[0];
-            if (firstInteraction?.data) {
-                const data = firstInteraction.data as Record<string, unknown>;
-                const continuationContext = (data.continuationContext ?? {}) as Record<string, unknown>;
-                continuationContext._deferredPostScoringEvents = serializedDeferredEvents;
-                data.continuationContext = continuationContext;
-            }
+            ms = setScoringDeferredEvents(ms, serializedDeferredEvents);
         }
         return { events, newBaseDeck, matchState: ms };
     }
@@ -1111,9 +1102,22 @@ export const smashUpFlowHooks: FlowHooks<SmashUpCore> = {
         const pid = getCurrentPlayerId(core);
         const now = typeof command.timestamp === 'number' ? command.timestamp : 0;
 
+        if (from === 'startTurn') {
+            const clearedState = clearResolutionFrame(state, buildTurnStartMainFrameId(pid, core.turnNumber));
+            if (clearedState !== state) {
+                return { events: [], updatedState: clearedState } as PhaseExitResult;
+            }
+        }
+
         if (from === 'endTurn') {
             const events: SmashUpEvent[] = [];
-            let currentMatchState: MatchState<SmashUpCore> = state;
+            let currentMatchState: MatchState<SmashUpCore> = ensureSmashUpMainResolutionFrame(
+                state,
+                buildTurnEndMainFrameId(pid, core.turnNumber),
+                'smashup:turn-end',
+                'endTurn',
+                'resolve-turn-end',
+            );
             let hasPendingTurnEndResolution = false;
             const turnEndFrameId = `turn-end:${pid}:${core.turnNumber}:${now}`;
 
@@ -1161,13 +1165,20 @@ export const smashUpFlowHooks: FlowHooks<SmashUpCore> = {
             }
 
             const nextIndex = (core.currentPlayerIndex + 1) % core.turnOrder.length;
+            currentMatchState = clearResolutionFrame(
+                currentMatchState,
+                buildTurnEndMainFrameId(pid, core.turnNumber),
+            );
             const evt: TurnEndedEvent = {
                 type: SU_EVENTS.TURN_ENDED,
                 payload: { playerId: pid, nextPlayerIndex: nextIndex },
                 timestamp: now,
             };
             events.push(evt);
-            return events;
+            return {
+                events,
+                updatedState: keepSysUpdatesOnly(state, currentMatchState),
+            } as PhaseExitResult;
         }
 
         if (from === 'scoreBases') {
@@ -1204,7 +1215,7 @@ export const smashUpFlowHooks: FlowHooks<SmashUpCore> = {
                 return { events: [], halt: true, updatedState: currentState } as PhaseExitResult;
             }
 
-            if (currentSession.currentStep === 'awaiting-post-reduce') {
+            if (isScoringSessionAwaitingPostReduce(currentState)) {
                 return { events: [], halt: true, updatedState: currentState } as PhaseExitResult;
             }
 
@@ -1213,7 +1224,11 @@ export const smashUpFlowHooks: FlowHooks<SmashUpCore> = {
                 || currentSession.currentStep === 'awaiting-response-window'
             )) {
                 const finalized = finalizeCurrentScoringBase(currentState, now);
-                return { events: finalized.events, updatedState: finalized.updatedState } as PhaseExitResult;
+                return {
+                    events: finalized.events,
+                    halt: true,
+                    updatedState: finalized.updatedState,
+                } as PhaseExitResult;
             }
 
             if (!currentSession.currentBaseRef) {
@@ -1272,20 +1287,14 @@ export const smashUpFlowHooks: FlowHooks<SmashUpCore> = {
             const activeBaseIndex = resolveScoringBaseRefSlotIndex(currentState, activeBaseRef);
             if (!activeBaseRef || activeBaseIndex === undefined) {
                 if (activeBaseRef) {
-                    const missingBaseState = updateScoringSession(
+                    const missingBaseState = markScoringSessionAwaitingPostReduce(updateScoringSession(
                         markScoringBaseCompleted(currentState, activeBaseRef),
-                        (session) => session ? { ...session, currentStep: 'awaiting-post-reduce' } : session,
-                    );
+                        (session) => session,
+                    ));
                     return {
                         events: [],
                         halt: true,
-                        updatedState: {
-                            ...missingBaseState,
-                            sys: {
-                                ...missingBaseState.sys,
-                                _waitForPostScoringReduce: true,
-                            } as typeof missingBaseState.sys,
-                        },
+                        updatedState: missingBaseState,
                     } as PhaseExitResult;
                 }
                 return events;
@@ -1315,18 +1324,12 @@ export const smashUpFlowHooks: FlowHooks<SmashUpCore> = {
 
             const completedState = updateScoringSession(
                 markScoringBaseCompleted(pipelineReadyState, activeBaseRef),
-                (session) => session ? { ...session, currentStep: 'awaiting-post-reduce' } : session,
+                (session) => session,
             );
             return {
                 events: result.events,
                 halt: true,
-                updatedState: {
-                    ...completedState,
-                    sys: {
-                        ...completedState.sys,
-                        _waitForPostScoringReduce: true,
-                    } as typeof completedState.sys,
-                },
+                updatedState: markScoringSessionAwaitingPostReduce(completedState),
             } as PhaseExitResult;
         }
 
@@ -1365,6 +1368,14 @@ export const smashUpFlowHooks: FlowHooks<SmashUpCore> = {
                 core = currentMatchState.core;
                 hasSysUpdate = true;
             }
+            currentMatchState = ensureSmashUpMainResolutionFrame(
+                currentMatchState,
+                buildTurnStartMainFrameId(nextPlayerId, nextTurnNumber),
+                'smashup:turn-start',
+                'startTurn',
+                'resolve-turn-start',
+            );
+            hasSysUpdate = true;
             currentMatchState = {
                 ...currentMatchState,
                 sys: {
@@ -1599,15 +1610,11 @@ export const smashUpFlowHooks: FlowHooks<SmashUpCore> = {
                 return undefined;
             }
 
+            const scoringSession = getScoringSession(state);
             if ((state.sys as any)._waitForPostScoringReduce) {
                 return undefined;
             }
-
-            const scoringSession = getScoringSession(state);
-            if (scoringSession?.currentStep === 'awaiting-post-reduce') {
-                if ((state.sys as any)._waitForPostScoringReduce) {
-                    return { autoContinue: true, playerId: pid };
-                }
+            if (scoringSession?.currentStep === 'awaiting-post-reduce' || isScoringSessionAwaitingPostReduce(state)) {
                 return undefined;
             }
 
@@ -1893,6 +1900,16 @@ function postProcessSystemEvents(
     }
 
     let ms = matchState ?? { core: state, sys: { interaction: { current: undefined, queue: [] } } } as unknown as MatchState<SmashUpCore>;
+    const seededMainFrameId = !getActiveResolutionFrame(ms) ? buildEventBatchMainFrameId(events, pid) : undefined;
+    if (seededMainFrameId) {
+        ms = ensureSmashUpMainResolutionFrame(
+            ms,
+            seededMainFrameId,
+            'smashup:event-batch',
+            (ms.sys.phase as GamePhase) ?? 'playCards',
+            'post-process-events',
+        );
+    }
     const inputEventsAlreadyReduced = !!(ms.sys as any)?._ppseInputEventsReduced;
     if (inputEventsAlreadyReduced) {
         ms = {
@@ -2240,6 +2257,15 @@ function postProcessSystemEvents(
                 _waitForStartTurnInteractionReduce: undefined,
             } as any,
         };
+    }
+
+    if (
+        seededMainFrameId
+        && !ms.sys.interaction?.current
+        && (ms.sys.interaction?.queue?.length ?? 0) === 0
+        && !getSmashUpReactionSession(ms)
+    ) {
+        ms = clearResolutionFrame(ms, seededMainFrameId);
     }
 
     const immediateExtraEvents = finalEvents.filter((event): event is LimitModifiedEvent =>

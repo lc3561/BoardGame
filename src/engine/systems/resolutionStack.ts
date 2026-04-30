@@ -17,23 +17,73 @@ export function getActiveResolutionFrame<TCore>(state: MatchState<TCore>): Resol
     return resolution.frames.find((frame) => frame.id === resolution.activeFrameId);
 }
 
-export function upsertActiveResolutionFrame<TCore>(
+export function getResolutionFrame<TCore>(
     state: MatchState<TCore>,
+    frameId: string,
+): ResolutionFrame | undefined {
+    return getResolutionState(state)?.frames.find((frame) => frame.id === frameId);
+}
+
+function normalizeResolutionFrameStatus(
     frame: ResolutionFrame,
+    options?: { preserveSuspended?: boolean },
+): ResolutionFrame['status'] {
+    if (frame.status === 'completed') {
+        return 'completed';
+    }
+    if (options?.preserveSuspended && frame.status === 'suspended') {
+        return 'suspended';
+    }
+    return frame.blockedBy ? 'blocked' : 'running';
+}
+
+function replaceResolutionFrame(
+    frames: ResolutionFrame[],
+    frame: ResolutionFrame,
+): ResolutionFrame[] {
+    const existingIndex = frames.findIndex((candidate) => candidate.id === frame.id);
+    if (existingIndex < 0) {
+        return [...frames, frame];
+    }
+    const nextFrames = [...frames];
+    nextFrames[existingIndex] = frame;
+    return nextFrames;
+}
+
+function writeResolutionState<TCore>(
+    state: MatchState<TCore>,
+    resolution: ResolutionState | undefined,
 ): MatchState<TCore> {
-    const resolution = cloneResolutionState(state.sys.resolution);
-    const nextFrames = resolution.frames.filter((candidate) => candidate.id !== frame.id);
-    nextFrames.push(frame);
     return {
         ...state,
         sys: {
             ...state.sys,
-            resolution: {
-                frames: nextFrames,
-                activeFrameId: frame.id,
-            },
+            resolution,
         },
     };
+}
+
+export function upsertResolutionFrame<TCore>(
+    state: MatchState<TCore>,
+    frame: ResolutionFrame,
+    options?: { makeActive?: boolean },
+): MatchState<TCore> {
+    const resolution = cloneResolutionState(state.sys.resolution);
+    const nextFrames = replaceResolutionFrame(resolution.frames, frame);
+    const nextActiveFrameId = options?.makeActive === false
+        ? (resolution.activeFrameId ?? nextFrames[nextFrames.length - 1]?.id)
+        : frame.id;
+    return writeResolutionState(state, {
+        frames: nextFrames,
+        activeFrameId: nextActiveFrameId,
+    });
+}
+
+export function upsertActiveResolutionFrame<TCore>(
+    state: MatchState<TCore>,
+    frame: ResolutionFrame,
+): MatchState<TCore> {
+    return upsertResolutionFrame(state, frame, { makeActive: true });
 }
 
 export function updateActiveResolutionFrame<TCore>(
@@ -48,6 +98,20 @@ export function updateActiveResolutionFrame<TCore>(
     return upsertActiveResolutionFrame(state, updated);
 }
 
+export function updateResolutionFrame<TCore>(
+    state: MatchState<TCore>,
+    frameId: string,
+    updater: (frame: ResolutionFrame | undefined) => ResolutionFrame | undefined,
+    options?: { makeActive?: boolean },
+): MatchState<TCore> {
+    const current = getResolutionFrame(state, frameId);
+    const updated = updater(current);
+    if (!updated) {
+        return clearResolutionFrame(state, frameId);
+    }
+    return upsertResolutionFrame(state, updated, options);
+}
+
 export function clearResolutionFrame<TCore>(
     state: MatchState<TCore>,
     frameId?: string,
@@ -56,35 +120,79 @@ export function clearResolutionFrame<TCore>(
     if (!resolution) return state;
     const targetId = frameId ?? resolution.activeFrameId;
     if (!targetId) return state;
+    const targetFrame = resolution.frames.find((frame) => frame.id === targetId);
+    if (!targetFrame) return state;
 
-    const nextFrames = resolution.frames.filter((frame) => frame.id !== targetId);
+    const nextFrames = resolution.frames
+        .filter((frame) => frame.id !== targetId)
+        .map((frame) => (
+            frame.id === targetFrame.parentFrameId
+                ? {
+                    ...frame,
+                    status: normalizeResolutionFrameStatus(frame),
+                }
+                : frame
+        ));
+    const restoredParentId = nextFrames.some((frame) => frame.id === targetFrame.parentFrameId)
+        ? targetFrame.parentFrameId
+        : undefined;
     const nextActiveFrameId = resolution.activeFrameId === targetId
-        ? nextFrames[nextFrames.length - 1]?.id
+        ? (restoredParentId ?? nextFrames[nextFrames.length - 1]?.id)
         : resolution.activeFrameId;
 
-    return {
-        ...state,
-        sys: {
-            ...state.sys,
-            resolution: nextFrames.length > 0
-                ? {
-                    frames: nextFrames,
-                    activeFrameId: nextActiveFrameId,
-                }
-                : undefined,
-        },
-    };
+    return writeResolutionState(
+        state,
+        nextFrames.length > 0
+            ? {
+                frames: nextFrames,
+                activeFrameId: nextActiveFrameId,
+            }
+            : undefined,
+    );
 }
 
-export function setActiveResolutionBlock<TCore>(
+export function completeActiveResolutionFrame<TCore>(
     state: MatchState<TCore>,
+): MatchState<TCore> {
+    return clearResolutionFrame(state, state.sys.resolution?.activeFrameId);
+}
+
+export function pushChildResolutionFrame<TCore>(
+    state: MatchState<TCore>,
+    frame: ResolutionFrame,
+    options?: { parentFrameId?: string },
+): MatchState<TCore> {
+    const parentFrameId = options?.parentFrameId ?? state.sys.resolution?.activeFrameId;
+    let nextState = state;
+    if (parentFrameId) {
+        nextState = updateResolutionFrame(
+            nextState,
+            parentFrameId,
+            (parentFrame) => parentFrame
+                ? {
+                    ...parentFrame,
+                    status: 'suspended',
+                }
+                : parentFrame,
+            { makeActive: false },
+        );
+    }
+    return upsertActiveResolutionFrame(nextState, {
+        ...frame,
+        parentFrameId,
+        status: normalizeResolutionFrameStatus(frame),
+    });
+}
+
+export function setResolutionFrameBlock<TCore>(
+    state: MatchState<TCore>,
+    frameId: string,
     blocker: ResolutionBlocker,
 ): MatchState<TCore> {
-    return updateActiveResolutionFrame(state, (frame) => {
+    return updateResolutionFrame(state, frameId, (frame) => {
         if (!frame) return frame;
         if (
-            frame.status === 'blocked'
-            && frame.blockedBy?.type === blocker.type
+            frame.blockedBy?.type === blocker.type
             && frame.blockedBy?.id === blocker.id
             && frame.blockedBy?.reason === blocker.reason
         ) {
@@ -92,30 +200,47 @@ export function setActiveResolutionBlock<TCore>(
         }
         return {
             ...frame,
-            status: 'blocked',
+            status: frame.status === 'suspended' ? 'suspended' : 'blocked',
             blockedBy: blocker,
         };
-    });
+    }, { makeActive: false });
+}
+
+export function clearResolutionFrameBlock<TCore>(
+    state: MatchState<TCore>,
+    frameId: string,
+    blockerType?: ResolutionBlocker['type'],
+): MatchState<TCore> {
+    return updateResolutionFrame(state, frameId, (frame) => {
+        if (!frame) return frame;
+        if (blockerType && frame.blockedBy?.type !== blockerType) {
+            return frame;
+        }
+        if (!frame.blockedBy) {
+            return frame;
+        }
+        return {
+            ...frame,
+            blockedBy: undefined,
+            status: frame.status === 'suspended' ? 'suspended' : 'running',
+        };
+    }, { makeActive: false });
+}
+
+export function setActiveResolutionBlock<TCore>(
+    state: MatchState<TCore>,
+    blocker: ResolutionBlocker,
+): MatchState<TCore> {
+    const activeFrameId = state.sys.resolution?.activeFrameId;
+    return activeFrameId ? setResolutionFrameBlock(state, activeFrameId, blocker) : state;
 }
 
 export function clearActiveResolutionBlock<TCore>(
     state: MatchState<TCore>,
     blockerType?: ResolutionBlocker['type'],
 ): MatchState<TCore> {
-    return updateActiveResolutionFrame(state, (frame) => {
-        if (!frame) return frame;
-        if (blockerType && frame.blockedBy?.type !== blockerType) {
-            return frame;
-        }
-        if (frame.status !== 'blocked' && !frame.blockedBy) {
-            return frame;
-        }
-        return {
-            ...frame,
-            status: 'running',
-            blockedBy: undefined,
-        };
-    });
+    const activeFrameId = state.sys.resolution?.activeFrameId;
+    return activeFrameId ? clearResolutionFrameBlock(state, activeFrameId, blockerType) : state;
 }
 
 export function syncActiveResolutionWithInteraction<TCore>(

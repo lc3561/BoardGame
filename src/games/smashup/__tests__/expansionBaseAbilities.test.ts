@@ -30,7 +30,12 @@ import { clearBaseAbilityRegistry, triggerBaseAbility, triggerExtendedBaseAbilit
 import { getInteractionHandler } from '../domain/abilityInteractionHandlers';
 import type { BaseAbilityContext } from '../domain/baseAbilities';
 import { clearOngoingEffectRegistry } from '../domain/ongoingEffects';
-import { createScoringSession, setScoringSession } from '../domain/scoringSession';
+import {
+    createScoringSession,
+    getPendingPostScoringActions,
+    setScoringDeferredEvents,
+    setScoringSession,
+} from '../domain/scoringSession';
 import type { SmashUpCore, PlayerState, BaseInPlay, MinionOnBase, CardInstance } from '../domain/types';
 import { SU_EVENTS, MADNESS_CARD_DEF_ID } from '../domain/types';
 import { SMASHUP_FACTION_IDS } from '../domain/ids';
@@ -723,11 +728,13 @@ describe('stale destroy/deck-bottom regression: 扩展基地 Prompt', () => {
 
         const scoredState = makeMatchState(staleCore);
         const resolved = handler!(
-            setScoringSession(scoredState, {
-                ...createScoringSession(scoredState.core, [0]),
-                currentBaseRef: { slotIndex: 0, baseDefId: 'base_greenhouse' },
-                currentStep: 'awaiting-interactions',
-                deferredPostScoringEvents: [
+            setScoringDeferredEvents(
+                setScoringSession(scoredState, {
+                    ...createScoringSession(scoredState.core, [0]),
+                    currentBaseRef: { slotIndex: 0, baseDefId: 'base_greenhouse' },
+                    currentStep: 'awaiting-interactions',
+                }),
+                [
                     {
                         type: SU_EVENTS.BASE_CLEARED,
                         payload: { baseIndex: 0, baseDefId: 'base_greenhouse' },
@@ -743,7 +750,7 @@ describe('stale destroy/deck-bottom regression: 扩展基地 Prompt', () => {
                         timestamp: 1852,
                     },
                 ],
-            }),
+            ),
             '0',
             option.value,
             interaction.data,
@@ -751,7 +758,7 @@ describe('stale destroy/deck-bottom regression: 扩展基地 Prompt', () => {
             1853,
         );
         expect(resolved?.events ?? []).toHaveLength(0);
-        expect(((resolved?.state.sys as any).smashupScoring?.pendingPostScoringActions) ?? []).toEqual([]);
+        expect(getPendingPostScoringActions(resolved!.state)).toBeUndefined();
     });
 
     it('base_greenhouse: replacement follow-up 应写入 scoring session，不写 core', () => {
@@ -785,11 +792,13 @@ describe('stale destroy/deck-bottom regression: 扩展基地 Prompt', () => {
         }));
 
         const resolved = handler!(
-            setScoringSession(scoredState, {
-                ...createScoringSession(scoredState.core, [0]),
-                currentBaseRef: { slotIndex: 0, baseDefId: 'base_greenhouse' },
-                currentStep: 'awaiting-interactions',
-                deferredPostScoringEvents: [
+            setScoringDeferredEvents(
+                setScoringSession(scoredState, {
+                    ...createScoringSession(scoredState.core, [0]),
+                    currentBaseRef: { slotIndex: 0, baseDefId: 'base_greenhouse' },
+                    currentStep: 'awaiting-interactions',
+                }),
+                [
                     {
                         type: SU_EVENTS.BASE_CLEARED,
                         payload: { baseIndex: 0, baseDefId: 'base_greenhouse' },
@@ -805,7 +814,7 @@ describe('stale destroy/deck-bottom regression: 扩展基地 Prompt', () => {
                         timestamp: 1852,
                     },
                 ],
-            }),
+            ),
             '0',
             option.value,
             interaction.data,
@@ -814,7 +823,7 @@ describe('stale destroy/deck-bottom regression: 扩展基地 Prompt', () => {
         );
 
         expect(resolved?.events ?? []).toHaveLength(0);
-        expect(((resolved?.state.sys as any).smashupScoring?.pendingPostScoringActions) ?? []).toEqual([
+        expect(getPendingPostScoringActions(resolved!.state)).toEqual([
             {
                 kind: 'playMinionOnReplacementBase',
                 playerId: '0',

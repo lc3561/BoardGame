@@ -1,213 +1,228 @@
-/**
- * 大杀四方 - 多基地计分完整流程 E2E 测试
- * 
- * 测试场景：3 个基地同时达到临界点，依次计分，中间有 afterScoring 交互
- * 
- * 验证：
- * 1. 每个基地只计分一次
- * 2. 每个基地只清空和替换一次
- * 3. afterScoring 交互正确触发
- * 4. 延迟事件正确补发
- * 
- * 使用 smashupMatch fixture 创建在线对局，通过 TestHarness.state.patch 注入状态
- */
+import type { Page } from '@playwright/test';
+import { test, expect } from './framework';
 
-import { test, expect } from './fixtures';
+type InteractionOption = {
+    id: string;
+    label?: string;
+    value?: Record<string, unknown>;
+};
 
-test.describe('多基地计分完整流程', () => {
-    test('3个基地依次计分，中间有 afterScoring 交互', async ({ page, smashupMatch }, testInfo) => {
-        const { hostPage } = smashupMatch;
+async function waitForInteractionSource(page: Page, sourceId: string, timeout = 15000): Promise<void> {
+    await page.waitForFunction(
+        (expectedSourceId) => {
+            const state = (window as any).__BG_TEST_HARNESS__?.state?.get?.();
+            return state?.sys?.interaction?.current?.data?.sourceId === expectedSourceId;
+        },
+        sourceId,
+        { timeout, polling: 100 },
+    );
+}
 
-        // 等待游戏开始
-        await hostPage.waitForSelector('[data-testid^="base-zone-"]', { timeout: 10000 });
+async function clickFinishTurn(page: Page): Promise<void> {
+    const finishButton = page.getByRole('button', { name: /^(结束回合|Finish Turn|FINISH|End Turn)$/i }).first();
+    await expect(finishButton).toBeVisible({ timeout: 15000 });
+    await finishButton.click({ force: true, timeout: 5000 });
+}
 
-        // 注入测试场景：3 个基地都达到临界点
-        await hostPage.evaluate(() => {
-            const harness = (window as any).__BG_TEST_HARNESS__;
-            
-            harness.state.patch({
-                'core.bases': [
-                    {
-                        defId: 'base_the_jungle', // breakpoint=12，无 afterScoring
-                        minions: [
-                            {
-                                uid: 'm0',
-                                defId: 'test_minion',
-                                controller: '0',
-                                owner: '0',
-                                basePower: 7,
-                                powerCounters: 0,
-                                powerModifier: 0,
-                                tempPowerModifier: 0,
-                                talentUsed: false,
-                                playedThisTurn: false,
-                                attachedActions: [],
-                            },
-                            {
-                                uid: 'm1',
-                                defId: 'test_minion',
-                                controller: '1',
-                                owner: '1',
-                                basePower: 6,
-                                powerCounters: 0,
-                                powerModifier: 0,
-                                tempPowerModifier: 0,
-                                talentUsed: false,
-                                playedThisTurn: false,
-                                attachedActions: [],
-                            }
-                        ],
-                        ongoingActions: [],
-                    },
-                    {
-                        defId: 'base_ninja_dojo', // breakpoint=18，afterScoring 消灭随从
-                        minions: [
-                            {
-                                uid: 'm2',
-                                defId: 'test_minion',
-                                controller: '0',
-                                owner: '0',
-                                basePower: 10,
-                                powerCounters: 0,
-                                powerModifier: 0,
-                                tempPowerModifier: 0,
-                                talentUsed: false,
-                                playedThisTurn: false,
-                                attachedActions: [],
-                            },
-                            {
-                                uid: 'm3',
-                                defId: 'test_minion',
-                                controller: '1',
-                                owner: '1',
-                                basePower: 9,
-                                powerCounters: 0,
-                                powerModifier: 0,
-                                tempPowerModifier: 0,
-                                talentUsed: false,
-                                playedThisTurn: false,
-                                attachedActions: [],
-                            }
-                        ],
-                        ongoingActions: [],
-                    },
-                    {
-                        defId: 'base_pirate_cove', // breakpoint=20，afterScoring 亚军移动随从
-                        minions: [
-                            {
-                                uid: 'm4',
-                                defId: 'test_minion',
-                                controller: '0',
-                                owner: '0',
-                                basePower: 11,
-                                powerCounters: 0,
-                                powerModifier: 0,
-                                tempPowerModifier: 0,
-                                talentUsed: false,
-                                playedThisTurn: false,
-                                attachedActions: [],
-                            },
-                            {
-                                uid: 'm5',
-                                defId: 'test_minion',
-                                controller: '1',
-                                owner: '1',
-                                basePower: 10,
-                                powerCounters: 0,
-                                powerModifier: 0,
-                                tempPowerModifier: 0,
-                                talentUsed: false,
-                                playedThisTurn: false,
-                                attachedActions: [],
-                            }
-                        ],
-                        ongoingActions: [],
-                    }
-                ],
-                'core.players.0.hand': [],
-                'core.players.1.hand': [],
-            });
+async function chooseInteractionOption(
+    page: Page,
+    predicate: (option: InteractionOption) => boolean,
+    message: string,
+): Promise<InteractionOption> {
+    const interaction = await page.evaluate(() => {
+        const state = (window as any).__BG_TEST_HARNESS__?.state?.get?.();
+        const current = state?.sys?.interaction?.current;
+        return {
+            sourceId: current?.data?.sourceId ?? null,
+            options: current?.data?.options ?? [],
+        };
+    });
+
+    const option = (interaction.options as InteractionOption[]).find(predicate);
+    expect(option, `${message}: ${JSON.stringify(interaction)}`).toBeTruthy();
+
+    await page.evaluate((optionId) => {
+        const harness = (window as any).__BG_TEST_HARNESS__;
+        const state = harness?.state?.get?.();
+        const interaction = state?.sys?.interaction?.current;
+        if (!interaction) {
+            throw new Error(`当前没有交互，无法选择 ${optionId}`);
+        }
+        harness.command.dispatch({
+            type: 'SYS_INTERACTION_RESPOND',
+            playerId: interaction.playerId,
+            payload: { optionId },
+        });
+    }, option!.id);
+    await page.waitForTimeout(300);
+
+    return option!;
+}
+
+test.describe('SmashUp 多基地计分完整流程', () => {
+    test('3 个基地依次计分，afterScoring 不会打断后续基地结算', async ({ page, game }, testInfo) => {
+        test.setTimeout(120000);
+
+        await game.openTestGame('smashup', { skipInitialization: true }, 45000);
+
+        await game.setupScene({
+            gameId: 'smashup',
+            player0: {
+                factions: ['pirates', 'ninjas'],
+                hand: [],
+                deck: [],
+                discard: [],
+                vp: 0,
+                minionsPlayed: 0,
+                minionLimit: 1,
+                actionsPlayed: 0,
+                actionLimit: 1,
+            },
+            player1: {
+                factions: ['robots', 'aliens'],
+                hand: [],
+                deck: [],
+                discard: [],
+                vp: 0,
+                minionsPlayed: 0,
+                minionLimit: 1,
+                actionsPlayed: 0,
+                actionLimit: 1,
+            },
+            bases: [
+                {
+                    defId: 'base_the_jungle',
+                    minions: [
+                        { uid: 'jungle-p0', defId: 'pirate_buccaneer', owner: '0', controller: '0', basePower: 7 },
+                        { uid: 'jungle-p1', defId: 'alien_invader', owner: '1', controller: '1', basePower: 6 },
+                    ],
+                },
+                {
+                    defId: 'base_ninja_dojo',
+                    minions: [
+                        { uid: 'dojo-p0', defId: 'ninja_master', owner: '0', controller: '0', basePower: 10 },
+                        { uid: 'dojo-p1', defId: 'robot_heavy_duty_bot', owner: '1', controller: '1', basePower: 9 },
+                    ],
+                },
+                {
+                    defId: 'base_pirate_cove',
+                    minions: [
+                        { uid: 'cove-p0', defId: 'dinosaur_king_rex', owner: '0', controller: '0', basePower: 11 },
+                        { uid: 'cove-p1', defId: 'wizard_apprentice', owner: '1', controller: '1', basePower: 10 },
+                    ],
+                },
+            ],
+            currentPlayer: '0',
+            phase: 'playCards',
+            extra: {
+                core: {
+                    turnNumber: 7,
+                    baseDeck: ['base_tar_pits', 'base_central_brain', 'base_rhodes_plaza'],
+                },
+            },
         });
 
-        await hostPage.waitForTimeout(2000); // 等待 React 重新渲染
+        await page.waitForFunction(
+            () => {
+                const state = (window as any).__BG_TEST_HARNESS__?.state?.get?.();
+                return state?.sys?.phase === 'playCards'
+                    && state?.core?.bases?.length === 3
+                    && state?.core?.bases?.every((base: any) => Array.isArray(base.minions) && base.minions.length === 2);
+            },
+            { timeout: 15000 },
+        );
 
-        // 截图：初始状态
-        await hostPage.screenshot({ path: testInfo.outputPath('01-initial-state.png'), fullPage: true });
+        await game.screenshot('01-scene-ready', testInfo);
 
-        // Step 1: 推进到 scoreBases 阶段
-        const endTurnButton = hostPage.locator('button').filter({ hasText: '结束回合' });
-        await endTurnButton.click();
-        await hostPage.waitForTimeout(1000);
+        await clickFinishTurn(page);
+        await waitForInteractionSource(page, 'multi_base_scoring', 20000);
+        await game.screenshot('02-first-base-choice', testInfo);
 
-        // 应该出现多基地选择交互
-        await expect(hostPage.locator('text=选择先记分的基地')).toBeVisible({ timeout: 5000 });
-        await hostPage.screenshot({ path: testInfo.outputPath('02-first-choice.png'), fullPage: true });
+        await chooseInteractionOption(
+            page,
+            (option) => option.value?.baseDefId === 'base_the_jungle' || option.value?.baseIndex === 0,
+            '未找到丛林的计分选项',
+        );
 
-        // Step 2: P0 选择先计分基地0（丛林，无 afterScoring）
-        const jungleOption = hostPage.locator('[data-option-id]').filter({ hasText: '丛林' }).first();
-        await jungleOption.click();
-        await hostPage.waitForTimeout(1000);
-
-        // 基地0计分完成，应该创建新的多基地选择交互（剩余基地1和2）
-        await expect(hostPage.locator('text=选择先记分的基地')).toBeVisible({ timeout: 5000 });
-        await hostPage.screenshot({ path: testInfo.outputPath('03-second-choice.png'), fullPage: true });
-
-        // Step 3: P0 选择计分基地2（海盗湾，有 afterScoring）
-        const pirateCoveOption = hostPage.locator('[data-option-id]').filter({ hasText: '海盗湾' }).first();
-        await pirateCoveOption.click();
-        await hostPage.waitForTimeout(1000);
-
-        // 海盗湾 afterScoring 创建交互（P1 亚军移动随从）
-        // 注意：在线对局中，P1 的交互会显示在 guestPage，但我们只用 hostPage 测试
-        await expect(hostPage.locator('text=海盗湾')).toBeVisible({ timeout: 5000 });
-        await hostPage.screenshot({ path: testInfo.outputPath('04-pirate-cove-interaction.png'), fullPage: true });
-
-        // Step 4: 跳过海盗湾交互（如果有跳过按钮）
-        const skipButton = hostPage.locator('button').filter({ hasText: '跳过' });
-        if (await skipButton.isVisible()) {
-            await skipButton.click();
-            await hostPage.waitForTimeout(1000);
-        }
-
-        // 海盗湾交互解决后，应该弹出最后一个 multi_base_scoring 交互
-        await expect(hostPage.locator('text=计分最后一个基地')).toBeVisible({ timeout: 5000 });
-        await hostPage.screenshot({ path: testInfo.outputPath('05-last-base.png'), fullPage: true });
-
-        // Step 5: P0 选择计分最后一个基地（忍者道场）
-        const ninjaDojoOption = hostPage.locator('[data-option-id]').filter({ hasText: '忍者道场' }).first();
-        await ninjaDojoOption.click();
-        await hostPage.waitForTimeout(1000);
-
-        // 忍者道场 afterScoring 创建交互（P0 冠军消灭随从）
-        await expect(hostPage.locator('text=忍者道场')).toBeVisible({ timeout: 5000 });
-        await hostPage.screenshot({ path: testInfo.outputPath('06-ninja-dojo-interaction.png'), fullPage: true });
-
-        // Step 6: P0 响应忍者道场交互（跳过消灭）
-        const noDestroyButton = hostPage.locator('button').filter({ hasText: '不消灭' });
-        if (await noDestroyButton.isVisible()) {
-            await noDestroyButton.click();
-            await hostPage.waitForTimeout(1000);
-        }
-
-        // 所有基地计分完成，应该推进到 draw 阶段
-        await hostPage.screenshot({ path: testInfo.outputPath('07-final.png'), fullPage: true });
-
-        // 验证：3 个基地都被替换了
-        const finalState = await hostPage.evaluate(() => {
-            const harness = (window as any).__BG_TEST_HARNESS__;
-            return harness.state.get();
+        await waitForInteractionSource(page, 'multi_base_scoring', 20000);
+        const secondChoiceState = await page.evaluate(() => {
+            const state = (window as any).__BG_TEST_HARNESS__?.state?.get?.();
+            return state?.sys?.interaction?.current?.data?.options ?? [];
         });
-        
-        expect(finalState.core.bases).toHaveLength(3);
-        expect(finalState.core.bases[0].defId).not.toBe('base_the_jungle');
-        expect(finalState.core.bases[1].defId).not.toBe('base_ninja_dojo');
-        expect(finalState.core.bases[2].defId).not.toBe('base_pirate_cove');
+        expect(secondChoiceState.some((option: any) => option.value?.baseDefId === 'base_the_jungle')).toBe(false);
+        await game.screenshot('03-second-base-choice', testInfo);
 
-        // 验证：玩家分数正确（每个基地冠军 3VP，亚军 2VP，季军 1VP）
-        // 基地0（丛林）：P0 冠军 3VP，P1 亚军 2VP
-        // 基地2（海盗湾）：P0 冠军 3VP，P1 亚军 2VP
-        // 基地1（忍者道场）：P0 冠军 3VP，P1 亚军 2VP
-        expect(finalState.core.players['0'].vp).toBe(9); // 3 + 3 + 3
-        expect(finalState.core.players['1'].vp).toBe(6); // 2 + 2 + 2
+        await chooseInteractionOption(
+            page,
+            (option) => option.value?.baseDefId === 'base_pirate_cove' || option.value?.baseIndex === 2,
+            '未找到海盗湾的计分选项',
+        );
+
+        await waitForInteractionSource(page, 'base_pirate_cove', 20000);
+        await game.screenshot('04-pirate-cove-after-scoring', testInfo);
+        await chooseInteractionOption(
+            page,
+            (option) => option.id === 'skip' || option.value?.skip === true,
+            '海盗湾交互缺少跳过选项',
+        );
+
+        await waitForInteractionSource(page, 'smashup_reaction_choose', 20000);
+        const reactionChooserOptions = await page.evaluate(() => {
+            const state = (window as any).__BG_TEST_HARNESS__?.state?.get?.();
+            return state?.sys?.interaction?.current?.data?.options ?? [];
+        });
+        const dojoTriggerOption = reactionChooserOptions.find(
+            (option: any) =>
+                option.value?.kind === 'trigger'
+                && String(option.value?.triggerId ?? '').includes('base_ninja_dojo'),
+        );
+        expect(dojoTriggerOption).toBeTruthy();
+        await game.screenshot('05-dojo-reaction-chooser', testInfo);
+
+        await chooseInteractionOption(
+            page,
+            (option) =>
+                option.value?.kind === 'trigger'
+                && String(option.value?.triggerId ?? '').includes('base_ninja_dojo'),
+            '未找到忍者道场 afterScoring 触发选项',
+        );
+
+        await waitForInteractionSource(page, 'base_ninja_dojo', 20000);
+        await game.screenshot('06-ninja-dojo-interaction', testInfo);
+        await chooseInteractionOption(
+            page,
+            (option) => option.id === 'skip' || option.value?.skip === true,
+            '忍者道场交互缺少不消灭选项',
+        );
+
+        await game.waitForNoInteraction(20000);
+        await page.waitForFunction(
+            () => {
+                const state = (window as any).__BG_TEST_HARNESS__?.state?.get?.();
+                return !state?.sys?.responseWindow?.current
+                    && state?.sys?.phase === 'playCards'
+                    && state?.core?.currentPlayerIndex === 1;
+            },
+            { timeout: 20000, polling: 100 },
+        );
+
+        const finalState = await game.getState();
+        const baseIds = finalState.core.bases.map((base: any) => base.defId);
+        const remainingUids = finalState.core.bases.flatMap((base: any) => base.minions.map((minion: any) => minion.uid));
+
+        expect(baseIds).not.toContain('base_the_jungle');
+        expect(baseIds).not.toContain('base_ninja_dojo');
+        expect(baseIds).not.toContain('base_pirate_cove');
+        expect(remainingUids).not.toContain('jungle-p0');
+        expect(remainingUids).not.toContain('jungle-p1');
+        expect(remainingUids).not.toContain('dojo-p0');
+        expect(remainingUids).not.toContain('dojo-p1');
+        expect(remainingUids).not.toContain('cove-p0');
+        expect(remainingUids).not.toContain('cove-p1');
+        expect(finalState.core.players['0'].vp).toBe(7);
+        expect(finalState.core.players['1'].vp).toBe(4);
+        expect(finalState.core.currentPlayerIndex).toBe(1);
+
+        await game.screenshot('07-final-state', testInfo);
     });
 });

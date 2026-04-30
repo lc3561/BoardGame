@@ -9,6 +9,8 @@ import { asSimpleChoice, createSimpleChoice } from '../../../engine/systems/Inte
 import type { MatchState, PlayerId, RandomFn } from '../../../engine/types';
 import { initAllAbilities } from '../abilities';
 import { SmashUpDomain } from '../domain';
+import { setSmashUpReactionSession } from '../domain/reactionSession';
+import { createScoringBaseRef, createScoringSession, setScoringSession } from '../domain/scoringSession';
 import { smashUpSystemsForTest } from '../game';
 import type { MinionOnBase, SmashUpCommand, SmashUpCore, SmashUpEvent } from '../domain/types';
 import { SU_COMMANDS, SU_EVENTS } from '../domain/types';
@@ -397,26 +399,36 @@ describe('After Scoring 响应窗口 - 真实链路', () => {
             ];
             core.players['1'].hand = [];
 
-            sys.interaction.current = createSimpleChoice(
+            let state: MatchState<SmashUpCore> = { sys, core };
+            state = setScoringSession(state, {
+                ...createScoringSession(core, [0]),
+                currentBaseRef: createScoringBaseRef(core, 0),
+                currentStep: 'awaiting-response-window',
+            });
+            state = setSmashUpReactionSession(state, {
+                frameId: 'score-after:0:test',
+                frameKind: 'score-after',
+                responseWindowType: 'afterScoring',
+                activePlayerId: '0',
+                currentPlayerId: '0',
+                consecutivePasses: 0,
+                sourceBaseIndex: 0,
+                phase: 'optional',
+            });
+            state.sys.responseWindow = {
+                ...(state.sys.responseWindow ?? {}),
+                current: undefined,
+            };
+
+            state.sys.interaction.current = createSimpleChoice(
                 'existing-base-choice',
                 '0',
                 '已有基地选择',
                 [{ id: 'skip', label: '跳过', value: { skip: true }, displayMode: 'button' }],
                 { sourceId: 'existing-base-choice', targetType: 'button' },
             );
-            (sys as typeof sys & { smashupReactionSession?: ReactionSessionView }).smashupReactionSession = {
-                frameId: 'score-after:0:test',
-                responseWindowType: 'afterScoring',
-                activePlayerId: '0',
-                currentPlayerId: '0',
-                sourceBaseIndex: 0,
-            };
-            sys.responseWindow = {
-                ...(sys.responseWindow ?? {}),
-                current: undefined,
-            };
 
-            return { sys, core };
+            return state;
         });
 
         const directPlay = runner.dispatch(SU_COMMANDS.PLAY_ACTION, {

@@ -19,7 +19,7 @@ import {
     resolveInteraction,
     refreshInteractionOptions,
 } from '../InteractionSystem';
-import { getActiveResolutionFrame, upsertActiveResolutionFrame } from '../resolutionStack';
+import { getActiveResolutionFrame, getResolutionFrame, upsertActiveResolutionFrame, upsertResolutionFrame } from '../resolutionStack';
 import { createSimpleChoiceSystem } from '../SimpleChoiceSystem';
 import type { MatchState } from '../../types';
 
@@ -158,6 +158,44 @@ describe('InteractionSystem - 通用刷新', () => {
             id: 'frame-1',
             status: 'running',
             blockedBy: undefined,
+        });
+    });
+
+    it('upsertResolutionFrame(makeActive=false) 应保留当前 active frame', () => {
+        let state: MatchState<TestCore> = {
+            core: {
+                players: {
+                    p1: { hand: [] },
+                },
+            },
+            sys: {
+                interaction: { queue: [] },
+            },
+        } as any;
+
+        state = upsertActiveResolutionFrame(state, {
+            id: 'child-frame',
+            kind: 'test:child',
+            ordering: 'stack',
+            status: 'running',
+        });
+
+        state = upsertResolutionFrame(state, {
+            id: 'parent-frame',
+            kind: 'test:parent',
+            ordering: 'explicit',
+            status: 'running',
+            metadata: {
+                step: 'parent-step',
+            },
+        }, { makeActive: false });
+
+        expect(getActiveResolutionFrame(state)?.id).toBe('child-frame');
+        expect(getResolutionFrame(state, 'parent-frame')).toMatchObject({
+            id: 'parent-frame',
+            metadata: {
+                step: 'parent-step',
+            },
         });
     });
 
