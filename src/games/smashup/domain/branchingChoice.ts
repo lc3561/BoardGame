@@ -38,8 +38,6 @@ export interface QueueBranchingChoiceArgs {
     upgrade?: BranchingChoiceUpgrade;
 }
 
-type BranchingChoiceSelectionValue = Record<string, unknown> & { branchId?: unknown };
-
 interface BranchingChoiceMeta {
     planContext?: Record<string, unknown>;
     upgrade?: BranchingChoiceUpgrade;
