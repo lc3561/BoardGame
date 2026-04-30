@@ -282,18 +282,6 @@ function triggerExtendedBaseAbilityWithMS(baseDefId: string, timing: string, ctx
 }
 
 /** 检查 MatchState 是否包含指定 sourceId 的交互 */
-function hasInteraction(matchState: any, sourceId: string): boolean {
-    const queue = matchState?.sys?.interaction?.queue ?? [];
-    const current = matchState?.sys?.interaction?.current;
-    
-    // 检查队列中的交互
-    const inQueue = queue.some((i: any) => i.data?.sourceId === sourceId);
-    // 检查当前交互
-    const isCurrent = current?.data?.sourceId === sourceId;
-    
-    return inQueue || isCurrent;
-}
-
 // ============================================================================
 // 克苏鲁扩展
 // ============================================================================
