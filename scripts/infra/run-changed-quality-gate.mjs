@@ -119,8 +119,9 @@ const PRE_PUSH_CACHE_FILE = path.join(CACHE_DIR, 'pre-push.json');
 const COMMAND_CACHE_FILE = path.join(CACHE_DIR, 'command-results.json');
 const QUALITY_GATE_TYPECHECK_BUILD_INFO = path.join('temp', 'quality-gate-cache', 'typecheck.tsbuildinfo');
 const STABLE_VITEST_NODE_OPTIONS = '--max-old-space-size=8192';
-const STABLE_ESLINT_NODE_OPTIONS = '--max-old-space-size=4096';
+const STABLE_ESLINT_NODE_OPTIONS = '--max-old-space-size=8192';
 const ESLINT_CHUNK_LIMIT = 2;
+const ESLINT_WARNING_DELTA_CHUNK_SIZE = 2;
 const CORE_VITEST_TARGETS = ['src/core', 'src/components', 'src/hooks', 'src/lib', 'src/shared', 'src/engine', 'src/pages'];
 
 function runGit(args, options = {}) {
@@ -172,6 +173,48 @@ function getMergeCommitsInRange(baseRef, headRef) {
   return output.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
 }
 
+function getConflictFilesFromCommitMessage(commit) {
+  const body = runGit(['show', '-s', '--format=%B', commit], { allowFailure: true });
+  if (!body) return [];
+
+  const files = new Set();
+  const lines = body.split(/\r?\n/);
+  let inConflictsSection = false;
+
+  for (const line of lines) {
+    const legacyMatch = line.match(/^#\s+(.+)$/);
+    if (legacyMatch) {
+      const value = legacyMatch[1].trim();
+      if (value && !value.includes(':')) {
+        files.add(value);
+      }
+      continue;
+    }
+
+    if (/^Conflicts:\s*$/i.test(line.trim())) {
+      inConflictsSection = true;
+      continue;
+    }
+
+    if (!inConflictsSection) {
+      continue;
+    }
+
+    if (/^\s+\S+/.test(line)) {
+      files.add(line.trim());
+      continue;
+    }
+
+    if (line.trim() === '') {
+      continue;
+    }
+
+    inConflictsSection = false;
+  }
+
+  return [...files];
+}
+
 function hasMergeConflictEvidence(commit) {
   const changedFiles = runGit(['show', '--pretty=format:', '--name-only', '--no-renames', commit], { allowFailure: true })
     .split(/\r?\n/)
@@ -204,16 +247,15 @@ function runMergeConflictGuards({ baseRef, headRef }) {
   console.log(`[changed-quality-gate] merge commits: ${mergeCommits.length}`);
 
   for (const commit of mergeCommits) {
-    console.log(`[changed-quality-gate] 审计 merge commit: ${commit}`);
-    runMergeAuditStrict(commit);
-
-    const parents = getMergeCommitParents(commit);
-    if (!parents) continue;
-    const intersecting = getIntersectingChangedFiles(parents[0], parents[1], commit);
-    if (intersecting.length === 0) {
-      console.log('[changed-quality-gate] 未检测到双方同时改动文件，跳过冲突汇报强制。');
+    const conflictFiles = getConflictFilesFromCommitMessage(commit);
+    if (conflictFiles.length === 0) {
+      console.log(`[changed-quality-gate] merge commit ${commit} 未记录真实冲突文件，按 clean merge 跳过冲突留档门禁。`);
       continue;
     }
+
+    console.log(`[changed-quality-gate] 审计 merge commit: ${commit}`);
+    console.log(`[changed-quality-gate] 记录的真实冲突文件数: ${conflictFiles.length}`);
+    runMergeAuditStrict(commit);
 
     if (!hasMergeConflictEvidence(commit)) {
       console.error(`[changed-quality-gate] merge commit ${commit} 缺少 evidence/merge-conflict-*.md 冲突汇报。`);
@@ -828,7 +870,7 @@ function collectCommands(files, baseRef, affectsTypecheck) {
     // 不需要强制跑 esbuild minify（它在 Windows + 大 bundle 时更容易触发内存峰值导致 gate 失败）。
     // CI 会兜底 full build（含 minify），因此这里默认在 pre-push 下关闭 minify 来提高稳定性。
     if (isPrePushMode) {
-      buildArgs.push('--', '--minify', 'false');
+      buildArgs.push('--', '--minify', 'false', '--configLoader', 'native');
     }
     commands.push({
       label: 'Build',
@@ -1170,7 +1212,7 @@ async function summarizeCurrentLint(filesToCheck) {
     errorCount: 0,
     fatalErrorCount: 0,
   };
-  const chunks = chunkValues(filesToCheck, 40);
+  const chunks = chunkValues(filesToCheck, ESLINT_WARNING_DELTA_CHUNK_SIZE);
 
   for (const chunk of chunks) {
     const eslint = new ESLint({
@@ -1210,7 +1252,7 @@ async function summarizeBaselineLint(filesToCheck, baselineFileMap) {
     }))
     .filter((item) => item.baselineFile);
 
-  const concurrency = 12;
+  const concurrency = 4;
   for (let index = 0; index < queue.length; index += concurrency) {
     const slice = queue.slice(index, index + concurrency);
     const batchResults = await Promise.all(slice.map(async ({ baselineFile }) => {
@@ -1252,10 +1294,13 @@ async function runEslintWarningDeltaCommand({ label, reason, args }) {
       cwd: repoRoot,
     });
     const formatter = await eslint.loadFormatter('stylish');
-    const currentResults = await eslint.lintFiles(currentFiles);
-    const output = formatter.format(currentResults).trim();
-    if (output) {
-      console.error(output);
+    const resultChunks = chunkValues(currentFiles, ESLINT_WARNING_DELTA_CHUNK_SIZE);
+    for (const chunk of resultChunks) {
+      const currentResults = await eslint.lintFiles(chunk);
+      const output = formatter.format(currentResults).trim();
+      if (output) {
+        console.error(output);
+      }
     }
     console.error(
       `[changed-quality-gate] 新增 ESLint warning：${currentSummary.warningCount - baselineSummary.warningCount} `

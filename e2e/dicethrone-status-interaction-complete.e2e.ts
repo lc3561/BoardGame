@@ -53,6 +53,13 @@ const wrapCardInteraction = (
     data: interaction,
 });
 
+const createTokenResponseInteraction = (playerId = '0') => ({
+    id: `dt-token-response-${playerId}`,
+    kind: 'dt:token-response',
+    playerId,
+    data: null,
+});
+
 const openInteractionHarness = async (page: Page, game: any) => {
     await game.openTestGame('dicethrone');
     await game.setupScene({
@@ -173,6 +180,8 @@ const injectSamuraiHonorTokenResponseScene = async (page: Page) => {
 };
 
 test.describe('DiceThrone - Status Interaction Complete', () => {
+    test.describe.configure({ timeout: 120000 });
+
     test('selectStatus: 使用现役 dt-status-effect 选择器，取消后不改状态', async ({ page, game }) => {
         await openInteractionHarness(page, game);
 
@@ -315,6 +324,7 @@ test.describe('DiceThrone - Status Interaction Complete', () => {
                     selected: [],
                     requiresTargetWithStatus: true,
                 }),
+                queue: [createTokenResponseInteraction('0')],
             };
             return state;
         });
@@ -327,6 +337,60 @@ test.describe('DiceThrone - Status Interaction Complete', () => {
         await page.getByTestId('dt-player-target-0').click();
         await expect(confirmButton).toBeEnabled();
         await game.screenshot('select-player-foreground-over-token-response', testInfo);
+    });
+
+    test('selectPlayer 取消后，应恢复排队的 token 响应窗口为前台', async ({ page, game }, testInfo) => {
+        await openInteractionHarness(page, game);
+
+        await applyHarnessState(page, (state) => {
+            state.core.players['0'].statusEffects = { poison: 1 };
+            state.core.players['0'].tokens = { protect: 1 };
+            state.core.players['1'].statusEffects = {};
+            state.core.players['1'].tokens = {};
+            state.core.pendingDamage = {
+                id: 'test-pending-damage-resume-after-cancel',
+                sourcePlayerId: '1',
+                targetPlayerId: '0',
+                originalDamage: 5,
+                currentDamage: 5,
+                responseType: 'beforeDamageReceived',
+                responderId: '0',
+                tokenUsageTotals: {},
+            };
+            state.sys.interaction = {
+                ...(state.sys.interaction ?? {}),
+                current: wrapCardInteraction({
+                    id: 'test-select-player-cancel-resume-token',
+                    type: 'selectPlayer',
+                    sourceCardId: 'test-card',
+                    playerId: '0',
+                    titleKey: 'interaction.selectPlayerToRemoveAllStatus',
+                    selectCount: 1,
+                    targetPlayerIds: ['0', '1'],
+                    selected: [],
+                    requiresTargetWithStatus: true,
+                }),
+                queue: [createTokenResponseInteraction('0')],
+            };
+            return state;
+        });
+
+        await expect(page.getByTestId('dt-player-target-0')).toBeVisible();
+        await expect(page.getByTestId('token-response-modal')).toHaveCount(0);
+        await game.screenshot('select-player-before-token-response-resume', testInfo);
+
+        await page.getByRole('button', { name: /取消|Cancel/i }).last().click();
+
+        await page.waitForFunction(() => {
+            const current = (window as any).__BG_TEST_HARNESS__?.state?.get?.()?.sys?.interaction?.current;
+            return current?.kind === 'dt:token-response';
+        }, { timeout: 5000, polling: 200 });
+
+        const tokenResponseModal = page.getByTestId('token-response-modal');
+        await expect(tokenResponseModal).toBeVisible();
+        await expect(page.getByTestId('dt-player-target-0')).toHaveCount(0);
+        await expect(tokenResponseModal).toContainText(/\b5\b/);
+        await game.screenshot('select-player-cancel-resumes-token-response', testInfo);
     });
 
     test('token 响应窗口在前台时，samurai honor 可连续使用两次并正常收口', async ({ page, game }, testInfo) => {
@@ -368,6 +432,72 @@ test.describe('DiceThrone - Status Interaction Complete', () => {
         expect(finalState.core.players['1'].resources.hp).toBe(43);
         await expect(tokenResponseModal).toBeHidden();
         await game.screenshot('samurai-honor-token-response-finalized', testInfo);
+    });
+
+    test('simple-choice 关闭后，应恢复排队的 token 响应窗口并允许继续收口', async ({ page, game }, testInfo) => {
+        await openInteractionHarness(page, game);
+
+        await applyHarnessState(page, (state) => {
+            state.core.players['0'].statusEffects = {};
+            state.core.players['0'].tokens = { protect: 1 };
+            state.core.players['1'].statusEffects = {};
+            state.core.players['1'].tokens = {};
+            state.core.pendingDamage = {
+                id: 'test-pending-damage-resume-after-choice',
+                sourcePlayerId: '1',
+                targetPlayerId: '0',
+                originalDamage: 5,
+                currentDamage: 5,
+                responseType: 'beforeDamageReceived',
+                responderId: '0',
+                tokenUsageTotals: {},
+            };
+            state.sys.interaction = {
+                ...(state.sys.interaction ?? {}),
+                current: {
+                    id: 'test-simple-choice-foreground',
+                    kind: 'simple-choice',
+                    playerId: '0',
+                    data: {
+                        title: '测试前台选择',
+                        options: [
+                            {
+                                id: 'continue',
+                                label: '继续',
+                                value: 'continue',
+                            },
+                        ],
+                    },
+                },
+                queue: [createTokenResponseInteraction('0')],
+            };
+            return state;
+        });
+
+        await expect(page.getByText('测试前台选择')).toBeVisible();
+        await expect(page.getByTestId('token-response-modal')).toHaveCount(0);
+        await game.screenshot('simple-choice-before-token-response-resume', testInfo);
+
+        await page.getByRole('button', { name: /^继续$/ }).click();
+
+        await page.waitForFunction(() => {
+            const current = (window as any).__BG_TEST_HARNESS__?.state?.get?.()?.sys?.interaction?.current;
+            return current?.kind === 'dt:token-response';
+        }, { timeout: 5000, polling: 200 });
+
+        const tokenResponseModal = page.getByTestId('token-response-modal');
+        await expect(tokenResponseModal).toBeVisible();
+        await expect(page.getByText('测试前台选择')).toHaveCount(0);
+        await game.screenshot('simple-choice-resumes-token-response', testInfo);
+
+        await page.getByRole('button', { name: /跳过|Skip/i }).click();
+        await page.waitForFunction(() => {
+            const state = (window as any).__BG_TEST_HARNESS__?.state?.get?.();
+            return !state?.core?.pendingDamage && !state?.sys?.interaction?.current;
+        }, { timeout: 5000, polling: 200 });
+
+        await expect(tokenResponseModal).toBeHidden();
+        await game.screenshot('simple-choice-token-response-finalized', testInfo);
     });
 
     test('selectTargetStatus: 第二阶段保留锁定来源卡，只显示真实目标卡', async ({ page, game }) => {

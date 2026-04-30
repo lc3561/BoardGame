@@ -61,15 +61,40 @@ function getMergeParents(commit) {
 
 function getConflictFilesFromMessage(commit) {
     const body = runGit(['show', '-s', '--format=%B', commit]);
-    const files = [];
+    const files = new Set();
+    let inConflictsSection = false;
+
     for (const line of body.split(/\r?\n/)) {
         const match = line.match(/^#\s+(.+)$/);
-        if (!match) continue;
-        const value = match[1].trim();
-        if (!value || value.includes(':')) continue;
-        files.push(value);
+        if (match) {
+            const value = match[1].trim();
+            if (value && !value.includes(':')) {
+                files.add(value);
+            }
+            continue;
+        }
+
+        if (/^Conflicts:\s*$/i.test(line.trim())) {
+            inConflictsSection = true;
+            continue;
+        }
+
+        if (!inConflictsSection) {
+            continue;
+        }
+
+        if (/^\s+\S+/.test(line)) {
+            files.add(line.trim());
+            continue;
+        }
+
+        if (line.trim() === '') {
+            continue;
+        }
+
+        inConflictsSection = false;
     }
-    return [...new Set(files)];
+    return [...files];
 }
 
 function getIntersectingChangedFiles(parentA, parentB, commit) {

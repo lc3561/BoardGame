@@ -1221,6 +1221,18 @@ describe('resolveGameImplementationLoadTimeoutMs', () => {
             isNativeAndroid: false,
             isCoarsePointer: true,
         })).toBe(SLOW_DEVICE_GAME_IMPLEMENTATION_LOAD_TIMEOUT_MS);
+
+        expect(resolveGameImplementationLoadTimeoutMs({
+            windowObject: { innerWidth: 1440 },
+            navigatorObject: {
+                connection: { effectiveType: '4g', saveData: false },
+                deviceMemory: 8,
+                hardwareConcurrency: 8,
+            },
+            isNativeAndroid: false,
+            isCoarsePointer: false,
+            isTestMode: true,
+        })).toBe(SLOW_DEVICE_GAME_IMPLEMENTATION_LOAD_TIMEOUT_MS);
     });
 });
 

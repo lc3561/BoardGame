@@ -2450,7 +2450,14 @@ const SmashUpBoard: FC<Props> = ({ G, dispatch, playerID: rawPlayerID, reset, ma
                         <FactionSelection core={core} dispatch={dispatch} playerID={playerID} />
                     </div>
                 </TutorialSelectionGate>
-                <GameDebugPanel G={G} dispatch={dispatch} playerID={playerID} autoSwitch={false} />
+                <GameDebugPanel
+                    G={G}
+                    dispatch={dispatch}
+                    playerID={playerID}
+                    autoSwitch={false}
+                    aiSupport={SMASH_UP_MANIFEST.ai}
+                    playerOptions={SMASH_UP_MANIFEST.playerOptions}
+                />
             </UndoProvider>
         );
     }
@@ -3403,7 +3410,14 @@ const SmashUpBoard: FC<Props> = ({ G, dispatch, playerID: rawPlayerID, reset, ma
                 </AnimatePresence>
 
                 {/* DEBUG PANEL */}
-                <GameDebugPanel G={G} dispatch={dispatch} playerID={playerID} autoSwitch={false}>
+                <GameDebugPanel
+                    G={G}
+                    dispatch={dispatch}
+                    playerID={playerID}
+                    autoSwitch={false}
+                    aiSupport={SMASH_UP_MANIFEST.ai}
+                    playerOptions={SMASH_UP_MANIFEST.playerOptions}
+                >
                     <SmashUpDebugConfig G={G} dispatch={dispatch} />
                 </GameDebugPanel>
 

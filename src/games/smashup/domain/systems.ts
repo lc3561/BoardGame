@@ -47,6 +47,7 @@ interface BodyShopPendingDistribution {
 
 type SmashUpSystemState = SystemState & {
     _waitForStartTurnInteractionReduce?: boolean;
+    _waitForScoreBasesInteractionReduce?: boolean;
     _smashupStartTurnWindowActive?: boolean;
 };
 
@@ -85,6 +86,33 @@ function setPendingBodyShopDistributions(
             ...state.sys,
             [BODY_SHOP_PENDING_DISTRIBUTIONS_KEY]: items.length > 0 ? items : undefined,
         } as typeof state.sys,
+    };
+}
+
+function buildPreviewStateWithPendingDomainEvents(
+    state: MatchState<SmashUpCore>,
+    pendingEvents: readonly GameEvent[],
+): MatchState<SmashUpCore> {
+    const previewEvents = pendingEvents.filter((event): event is SmashUpEvent =>
+        !!event
+        && typeof event.type === 'string'
+        && !event.type.startsWith('SYS_'),
+    );
+    if (previewEvents.length === 0) {
+        return state;
+    }
+
+    const previewCore = previewEvents.reduce(
+        (core, event) => reduce(core, event),
+        state.core,
+    );
+    if (previewCore === state.core) {
+        return state;
+    }
+
+    return {
+        ...state,
+        core: previewCore,
     };
 }
 
@@ -312,6 +340,7 @@ export function createSmashUpEventSystem(): EngineSystem<SmashUpCore> {
             let newState = state;
             const nextEvents: GameEvent[] = [];
             const pendingStartTurnInteractionReduceFlag = '_waitForStartTurnInteractionReduce';
+            const pendingScoreBasesInteractionReduceFlag = '_waitForScoreBasesInteractionReduce';
             const pendingReduceFlag = '_waitForPostScoringReduce';
             let latestTimestamp = 0;
             let reactionChoiceResolved = false;
@@ -382,6 +411,16 @@ export function createSmashUpEventSystem(): EngineSystem<SmashUpCore> {
                     sys: {
                         ...newState.sys,
                         [pendingStartTurnInteractionReduceFlag]: undefined,
+                    } as typeof newState.sys,
+                };
+            }
+
+            if ((newState.sys as any)[pendingScoreBasesInteractionReduceFlag]) {
+                newState = {
+                    ...newState,
+                    sys: {
+                        ...newState.sys,
+                        [pendingScoreBasesInteractionReduceFlag]: undefined,
                     } as typeof newState.sys,
                 };
             }
@@ -486,6 +525,19 @@ export function createSmashUpEventSystem(): EngineSystem<SmashUpCore> {
                                 // 这里不能手动先调用 interceptEvent，否则像 Cthulhu 这类
                                 // “交互返回 MADNESS_DRAWN，再由拦截器补标记”的链路会被重复处理。
                                 nextEvents.push(...emittedEvents);
+
+                                const producedDomainEvents = emittedEvents.some(
+                                    (resultEvent) => typeof resultEvent.type === 'string' && !resultEvent.type.startsWith('SYS_'),
+                                );
+                                if (newState.sys.phase === 'scoreBases' && producedDomainEvents) {
+                                    newState = {
+                                        ...newState,
+                                        sys: {
+                                            ...newState.sys,
+                                            [pendingScoreBasesInteractionReduceFlag]: true,
+                                        } as typeof newState.sys,
+                                    };
+                                }
 
                                 // 补发延迟的 BASE_CLEARED/BASE_REPLACED 事件
                                 // afterScoring 基地能力创建交互时，清除事件被延迟到交互解决后发出，
@@ -602,13 +654,22 @@ export function createSmashUpEventSystem(): EngineSystem<SmashUpCore> {
                         if (!newState.sys.interaction?.current && (newState.sys.interaction?.queue?.length ?? 0) === 0) {
                             const session = getSmashUpReactionSession(newState as MatchState<SmashUpCore>);
                             if (session) {
-                                const resolved = resolveSmashUpReactionChoice(
+                                const previewState = buildPreviewStateWithPendingDomainEvents(
                                     newState as MatchState<SmashUpCore>,
+                                    nextEvents,
+                                );
+                                const resolved = resolveSmashUpReactionChoice(
+                                    previewState,
                                     random,
                                     eventTimestamp,
                                     { kind: 'pass' } as any,
                                 );
-                                newState = resolved.state;
+                                newState = previewState === newState
+                                    ? resolved.state
+                                    : {
+                                        ...resolved.state,
+                                        core: newState.core,
+                                    };
                                 if (resolved.events.length > 0) {
                                     nextEvents.push(...(resolved.events as GameEvent[]));
                                 }

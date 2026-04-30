@@ -53,6 +53,7 @@ type GameImplementationTimeoutRuntimeOptions = {
     } | undefined;
     isNativeAndroid?: boolean;
     isCoarsePointer?: boolean;
+    isTestMode?: boolean;
 };
 
 const SLOW_NETWORK_TYPES = new Set(['slow-2g', '2g', '3g']);
@@ -120,6 +121,11 @@ export const resolveGameImplementationLoadTimeoutMs = (
             ? navigator
             : undefined
     );
+    const isTestMode = options.isTestMode ?? (
+        typeof window !== 'undefined'
+            ? Boolean((window as Window & { __E2E_TEST_MODE__?: boolean }).__E2E_TEST_MODE__)
+            : false
+    );
     const isNativeAndroid = options.isNativeAndroid ?? isNativeAndroidRuntime();
     const isCoarsePointer = options.isCoarsePointer ?? safeMatchMedia('(pointer: coarse)').matches;
     const isMobileWidth = typeof runtimeWindow?.innerWidth === 'number'
@@ -138,6 +144,8 @@ export const resolveGameImplementationLoadTimeoutMs = (
         : false;
 
     if (
+        isTestMode
+        || 
         isNativeAndroid
         || isCoarsePointer
         || isMobileWidth

@@ -7005,7 +7005,6 @@ describe('Mermaids abilities', () => {
         expect(resolved.finalState.core.bases[1].minions.some(minion => minion.uid === 'enemy-1')).toBe(false);
         expect(movedTarget?.metadata?.mermaidsCharmedSuppressedTurn).toBe(resolved.finalState.core.turnNumber);
     });
-
     it('mermaids_ultimate_song 会强制对手额外打出小随从，并跳过其 onPlay，然后给予施放者额外随从和额外行动', () => {
         const core = makeState({
             players: {
@@ -8396,5 +8395,398 @@ describe('Skeletons abilities', () => {
             now: 5001,
         });
         expect(second.events.some(event => event.type === SU_EVENTS.CARDS_DRAWN)).toBe(false);
+    });
+});
+
+describe('Fairies abilities', () => {
+    it('fairies_titania 可以把一个随从移回其拥有者手牌', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0', {
+                    hand: [makeCard('titania-1', 'fairies_titania', 'minion', '0')],
+                }),
+                '1': makePlayer('1'),
+            },
+            bases: [{
+                defId: 'base_a',
+                minions: [makeMinion('enemy-1', 'robot_microbot_alpha', '1', 1, { owner: '1', powerModifier: 0 })],
+                ongoingActions: [],
+            }],
+        });
+
+        const played = runCommand(
+            makeMatchState(core),
+            { type: SU_COMMANDS.PLAY_MINION, playerId: '0', payload: { cardUid: 'titania-1', baseIndex: 0 } },
+            defaultTestRandom,
+        );
+
+        const prompt = getInteractionsFromMS(played.finalState)[0] as any;
+        expect(prompt?.data?.sourceId).toBe('fairies_titania');
+        const returnOption = prompt.data.options.find((entry: any) => entry.value?.minionUid === 'enemy-1');
+        expect(returnOption).toBeDefined();
+
+        const resolved = runCommand(
+            played.finalState,
+            { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: returnOption.id } } as any,
+            defaultTestRandom,
+        );
+
+        expect(resolved.finalState.core.bases[0].minions.some(minion => minion.uid === 'enemy-1')).toBe(false);
+        expect(resolved.finalState.core.players['1'].hand.some(card => card.uid === 'enemy-1')).toBe(true);
+    });
+
+    it('fairies_titania 在丛林之灵在场时选择额外随从后会再结算回手分支', () => {
+        const core = makeState({
+            turnNumber: 1,
+            players: {
+                '0': makePlayer('0', {
+                    hand: [makeCard('titania-1', 'fairies_titania', 'minion', '0')],
+                }),
+                '1': makePlayer('1'),
+            },
+            titans: [{
+                uid: 'spirit-1',
+                defId: 'fairies_spirit_of_the_forest',
+                faction: 'fairies',
+                ownerId: '0',
+                controllerId: '0',
+                powerCounters: 0,
+                talentUsed: false,
+                location: { zone: 'base', baseIndex: 0, enteredAt: 1 },
+            }],
+            bases: [{
+                defId: 'base_a',
+                minions: [makeMinion('enemy-1', 'robot_microbot_alpha', '1', 1, { owner: '1', powerModifier: 0 })],
+                ongoingActions: [],
+            }],
+        });
+
+        const played = runCommand(
+            makeMatchState(core),
+            { type: SU_COMMANDS.PLAY_MINION, playerId: '0', payload: { cardUid: 'titania-1', baseIndex: 0 } },
+            defaultTestRandom,
+        );
+        const prompt = getInteractionsFromMS(played.finalState)[0] as any;
+        const extraMinionOption = prompt.data.options.find((entry: any) => entry.value?.choice === 'extra_minion');
+        expect(extraMinionOption).toBeDefined();
+
+        const firstResolved = runCommand(
+            played.finalState,
+            { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: extraMinionOption.id } } as any,
+            defaultTestRandom,
+        );
+
+        const followup = getInteractionsFromMS(firstResolved.finalState)[0] as any;
+        expect(followup?.data?.sourceId).toBe('fairies_titania_spirit_return');
+        expect(firstResolved.finalState.core.players['0'].minionLimit).toBe(2);
+        expect(firstResolved.finalState.core.titans?.find(titan => titan.uid === 'spirit-1')?.metadata?.spiritOfTheForestUsedTurn).toBe(1);
+
+        const returnOption = followup.data.options.find((entry: any) => entry.value?.minionUid === 'enemy-1');
+        expect(returnOption).toBeDefined();
+
+        const finalResolved = runCommand(
+            firstResolved.finalState,
+            { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: returnOption.id } } as any,
+            defaultTestRandom,
+        );
+
+        expect(finalResolved.finalState.core.bases[0].minions.some(minion => minion.uid === 'enemy-1')).toBe(false);
+        expect(finalResolved.finalState.core.players['1'].hand.some(card => card.uid === 'enemy-1')).toBe(true);
+    });
+
+    it('fairies_glymmer 对其他随从的 -4 力量会在你的下回合开始时结束', () => {
+        const core = makeState({
+            turnOrder: ['0', '1'],
+            currentPlayerIndex: 0,
+            turnNumber: 1,
+            players: {
+                '0': makePlayer('0'),
+                '1': makePlayer('1'),
+            },
+            bases: [{
+                defId: 'base_a',
+                minions: [
+                    makeMinion('glymmer-1', 'fairies_glymmer', '0', 4, { powerModifier: 0 }),
+                    makeMinion('enemy-1', 'robot_microbot_alpha', '1', 3, { powerModifier: 0 }),
+                ],
+                ongoingActions: [],
+            }],
+        });
+
+        const used = runCommand(
+            makeMatchState(core),
+            { type: SU_COMMANDS.USE_TALENT, playerId: '0', payload: { minionUid: 'glymmer-1', baseIndex: 0 } },
+            defaultTestRandom,
+        );
+
+        const prompt = getInteractionsFromMS(used.finalState)[0] as any;
+        expect(prompt?.data?.sourceId).toBe('fairies_glymmer');
+        const targetOption = prompt.data.options.find((entry: any) => entry.value?.minionUid === 'enemy-1');
+        expect(targetOption).toBeDefined();
+
+        const resolved = runCommand(
+            used.finalState,
+            { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: targetOption.id } } as any,
+            defaultTestRandom,
+        );
+
+        const weakened = resolved.finalState.core.bases[0].minions.find(minion => minion.uid === 'enemy-1');
+        expect(weakened).toBeDefined();
+        expect(getEffectivePower(resolved.finalState.core, weakened!, 0)).toBe(0);
+
+        const afterTurnStart = reduce(resolved.finalState.core, {
+            type: SU_EVENTS.TURN_STARTED,
+            payload: { playerId: '0', turnNumber: 3 },
+            timestamp: 4100,
+        } as any);
+        const restored = afterTurnStart.bases[0].minions.find(minion => minion.uid === 'enemy-1');
+        expect(restored).toBeDefined();
+        expect(getEffectivePower(afterTurnStart, restored!, 0)).toBe(3);
+    });
+
+    it('fairies_ladybug 会让附着随从不能被消灭', () => {
+        const protectedMinion = makeMinion('ally-1', 'robot_microbot_alpha', '0', 3, {
+            powerModifier: 0,
+            attachedActions: [{ uid: 'ladybug-1', defId: 'fairies_ladybug', ownerId: '0' }],
+        });
+        const core = makeState({
+            bases: [{
+                defId: 'base_a',
+                minions: [protectedMinion],
+                ongoingActions: [],
+            }],
+        });
+
+        expect(isMinionProtected(core, protectedMinion, 0, '1', 'destroy')).toBe(true);
+        expect(isMinionProtected(core, protectedMinion, 0, '0', 'destroy')).toBe(true);
+    });
+
+    it('fairies_enchantment 选择 -1 模式后会写入 metadata 并降低基地上随从力量', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0', {
+                    hand: [makeCard('enchantment-1', 'fairies_enchantment', 'action', '0')],
+                }),
+                '1': makePlayer('1'),
+            },
+            bases: [{
+                defId: 'base_a',
+                minions: [makeMinion('ally-1', 'robot_microbot_alpha', '0', 3, { powerModifier: 0 })],
+                ongoingActions: [],
+            }],
+        });
+
+        const played = runCommand(
+            makeMatchState(core),
+            { type: SU_COMMANDS.PLAY_ACTION, playerId: '0', payload: { cardUid: 'enchantment-1', targetBaseIndex: 0 } },
+            defaultTestRandom,
+        );
+
+        const prompt = getInteractionsFromMS(played.finalState)[0] as any;
+        expect(prompt?.data?.sourceId).toBe('fairies_enchantment');
+        const minusOption = prompt.data.options.find((entry: any) => entry.value?.choice === 'minus');
+        expect(minusOption).toBeDefined();
+
+        const resolved = runCommand(
+            played.finalState,
+            { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: minusOption.id } } as any,
+            defaultTestRandom,
+        );
+
+        const enchantment = resolved.finalState.core.bases[0].ongoingActions.find(action => action.uid === 'enchantment-1');
+        const targetMinion = resolved.finalState.core.bases[0].minions.find(minion => minion.uid === 'ally-1');
+        expect(enchantment?.metadata?.fairiesEnchantmentMode).toBe('minus');
+        expect(targetMinion).toBeDefined();
+        expect(getEffectivePower(resolved.finalState.core, targetMinion!, 0)).toBe(2);
+    });
+
+    it('fairies_playful_tricks 可以直接把丛林之灵打到场上而不额外消耗通常随从额度', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0', {
+                    hand: [makeCard('playful-1', 'fairies_playful_tricks', 'action', '0')],
+                }),
+                '1': makePlayer('1'),
+            },
+            titans: [{
+                uid: 'spirit-1',
+                defId: 'fairies_spirit_of_the_forest',
+                faction: 'fairies',
+                ownerId: '0',
+                controllerId: '0',
+                powerCounters: 0,
+                talentUsed: false,
+                location: { zone: 'setaside' },
+            }],
+            bases: [{
+                defId: 'base_a',
+                minions: [],
+                ongoingActions: [],
+            }],
+        });
+
+        const played = runCommand(
+            makeMatchState(core),
+            { type: SU_COMMANDS.PLAY_ACTION, playerId: '0', payload: { cardUid: 'playful-1' } },
+            defaultTestRandom,
+        );
+
+        const modePrompt = getInteractionsFromMS(played.finalState)[0] as any;
+        expect(modePrompt?.data?.sourceId).toBe('fairies_playful_tricks_mode');
+        const playSpiritOption = modePrompt.data.options.find((entry: any) => entry.value?.choice === 'play_spirit');
+        expect(playSpiritOption).toBeDefined();
+
+        const choseSpirit = runCommand(
+            played.finalState,
+            { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: playSpiritOption.id } } as any,
+            defaultTestRandom,
+        );
+
+        const basePrompt = getInteractionsFromMS(choseSpirit.finalState)[0] as any;
+        expect(basePrompt?.data?.sourceId).toBe('fairies_playful_tricks_spirit_base');
+
+        const summoned = runCommand(
+            choseSpirit.finalState,
+            { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: basePrompt.data.options[0].id } } as any,
+            defaultTestRandom,
+        );
+
+        const spirit = summoned.finalState.core.titans?.find(titan => titan.uid === 'spirit-1');
+        expect(spirit?.location.zone).toBe('base');
+        expect(spirit?.location.baseIndex).toBe(0);
+        expect(summoned.finalState.core.players['0'].actionsPlayed).toBe(1);
+        expect(summoned.finalState.core.players['0'].minionsPlayed).toBe(0);
+    });
+
+    it('fairies_enchantment 在丛林之灵在场时会记录 both 模式且净力量不变', () => {
+        const core = makeState({
+            turnNumber: 1,
+            players: {
+                '0': makePlayer('0', {
+                    hand: [makeCard('enchantment-1', 'fairies_enchantment', 'action', '0')],
+                }),
+                '1': makePlayer('1'),
+            },
+            titans: [{
+                uid: 'spirit-1',
+                defId: 'fairies_spirit_of_the_forest',
+                faction: 'fairies',
+                ownerId: '0',
+                controllerId: '0',
+                powerCounters: 0,
+                talentUsed: false,
+                location: { zone: 'base', baseIndex: 0, enteredAt: 1 },
+            }],
+            bases: [{
+                defId: 'base_a',
+                minions: [makeMinion('ally-1', 'robot_microbot_alpha', '0', 3, { powerModifier: 0 })],
+                ongoingActions: [],
+            }],
+        });
+
+        const played = runCommand(
+            makeMatchState(core),
+            { type: SU_COMMANDS.PLAY_ACTION, playerId: '0', payload: { cardUid: 'enchantment-1', targetBaseIndex: 0 } },
+            defaultTestRandom,
+        );
+        const prompt = getInteractionsFromMS(played.finalState)[0] as any;
+        const plusOption = prompt.data.options.find((entry: any) => entry.value?.choice === 'plus');
+        expect(plusOption).toBeDefined();
+
+        const resolved = runCommand(
+            played.finalState,
+            { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: plusOption.id } } as any,
+            defaultTestRandom,
+        );
+
+        const enchantment = resolved.finalState.core.bases[0].ongoingActions.find(action => action.uid === 'enchantment-1');
+        const targetMinion = resolved.finalState.core.bases[0].minions.find(minion => minion.uid === 'ally-1');
+        expect(enchantment?.metadata?.fairiesEnchantmentMode).toBe('both');
+        expect(getEffectivePower(resolved.finalState.core, targetMinion!, 0)).toBe(3);
+        expect(resolved.finalState.core.titans?.find(titan => titan.uid === 'spirit-1')?.metadata?.spiritOfTheForestUsedTurn).toBe(1);
+    });
+
+    it('base_fairy_ring 选择额外行动时不会同时授予额外随从额度', () => {
+        const core = makeState({
+            players: {
+                '0': makePlayer('0', {
+                    hand: [makeCard('minion-1', 'robot_microbot_alpha', 'minion', '0')],
+                }),
+                '1': makePlayer('1'),
+            },
+            bases: [{
+                defId: 'base_fairy_ring',
+                minions: [],
+                ongoingActions: [],
+            }],
+        });
+
+        const played = runCommand(
+            makeMatchState(core),
+            { type: SU_COMMANDS.PLAY_MINION, playerId: '0', payload: { cardUid: 'minion-1', baseIndex: 0 } },
+            defaultTestRandom,
+        );
+
+        const prompt = getInteractionsFromMS(played.finalState)[0] as any;
+        expect(prompt?.data?.sourceId).toBe('base_fairy_ring');
+        const actionOption = prompt.data.options.find((entry: any) => entry.value?.choice === 'extra_action');
+        expect(actionOption).toBeDefined();
+
+        const resolved = runCommand(
+            played.finalState,
+            { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: actionOption.id } } as any,
+            defaultTestRandom,
+        );
+
+        expect(resolved.finalState.core.players['0'].actionLimit).toBe(2);
+        expect(resolved.finalState.core.players['0'].baseLimitedMinionQuota).toBeUndefined();
+        expect(resolved.finalState.core.players['0'].minionLimit).toBe(1);
+    });
+
+    it('base_fairy_ring 在丛林之灵在场时会同时授予额外随从到该基地与额外行动', () => {
+        const core = makeState({
+            turnNumber: 1,
+            players: {
+                '0': makePlayer('0', {
+                    hand: [makeCard('minion-1', 'robot_microbot_alpha', 'minion', '0')],
+                }),
+                '1': makePlayer('1'),
+            },
+            titans: [{
+                uid: 'spirit-1',
+                defId: 'fairies_spirit_of_the_forest',
+                faction: 'fairies',
+                ownerId: '0',
+                controllerId: '0',
+                powerCounters: 0,
+                talentUsed: false,
+                location: { zone: 'base', baseIndex: 0, enteredAt: 1 },
+            }],
+            bases: [{
+                defId: 'base_fairy_ring',
+                minions: [],
+                ongoingActions: [],
+            }],
+        });
+
+        const played = runCommand(
+            makeMatchState(core),
+            { type: SU_COMMANDS.PLAY_MINION, playerId: '0', payload: { cardUid: 'minion-1', baseIndex: 0 } },
+            defaultTestRandom,
+        );
+        const prompt = getInteractionsFromMS(played.finalState)[0] as any;
+        const actionOption = prompt.data.options.find((entry: any) => entry.value?.choice === 'extra_action');
+        expect(actionOption).toBeDefined();
+
+        const resolved = runCommand(
+            played.finalState,
+            { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: actionOption.id } } as any,
+            defaultTestRandom,
+        );
+
+        expect(resolved.finalState.core.players['0'].actionLimit).toBe(2);
+        expect(resolved.finalState.core.players['0'].minionLimit).toBe(1);
+        expect(resolved.finalState.core.players['0'].baseLimitedMinionQuota?.[0]).toBe(1);
+        expect(resolved.finalState.core.titans?.find(titan => titan.uid === 'spirit-1')?.metadata?.spiritOfTheForestUsedTurn).toBe(1);
     });
 });

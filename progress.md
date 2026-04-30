@@ -1,3 +1,31 @@
+## Session: 2026-04-30 Smash Up 三派系重审续跑
+- **Status:** in_progress
+- Actions taken:
+  - 已补 `Mermaids / 美人鱼` 三条剩余对象级 L3：
+    - `塞壬`
+    - `诱惑者`
+    - `无人岛`
+  - 补证过程中抓到 1 个真实 UI 缺口：
+    - `BaseZone` 玩家列分数徽章没有走 `getPlayerEffectivePowerOnBase(...)`
+    - 导致《塞壬 / 无人岛 / 魅惑 / 人鱼暗礁》这类“只影响控制者总力量、不影响基地总力量”的牌在浏览器里显示错误
+  - 已修复：
+    - `src/games/smashup/ui/BaseZone.tsx`
+    - `e2e/src/games/smashup/ui/BaseZone.tsx`
+  - 已新增证据文档：
+    - `evidence/smashup/smashup-mermaids-siren-temptress-desert-island-e2e-2026-04-30.md`
+  - 已回写总审计：
+    - `evidence/smashup/smashup-10th-anniversary-factions-audit-20260419.md`
+  - 验证结果：
+    - `塞壬` E2E：`1 passed`
+    - `诱惑者` E2E：`1 passed`
+    - `无人岛` E2E：`1 passed`
+    - `ongoingModifiers` 聚焦：`6 passed`
+    - `typecheck`：通过
+  - Next:
+    - 不再按“补完一批就停”的口径执行。
+    - 现在改为以 `task_plan.md > Current Remaining Batch` 的未勾项作为停机门禁。
+    - 下一批直接转向：`World Champs / Skeletons` 剩余对象与旧高层失效口径回写。
+
 ## Session: 2026-04-24 Feedback cleanup audit
 - **Status:** in_progress
 - Actions taken:
@@ -737,3 +765,52 @@
       - 新增“reaction session 不得被单测观察面替代”
     - 已回写：`task_plan.md`、`findings.md`
   - Next: 后续继续三新派系重审时，先按新门禁建立批次清单，再继续补剩余对象，不再按“做 1-2 张就停”的节奏推进。
+- **[2026-04-29 13:05:00] Action**: 补《沉船湾 / 轮回者 / 诡异。可怕。 / 墓碑》对象级 L3，并回写本轮测试场景错误
+  - Result:
+    - 更新 `e2e/smashup/smashup-robot-hoverbot-new.e2e.ts`：
+      - `轮回者` 用例改为按真实 `smashup_reaction_choose` 链路收口，不再错误地直接 `waitForNoInteraction()`
+      - `沉船湾 / 墓碑` 在线场景改为真实卡面强度组合，确保原基地真正达到 `base_the_jungle` 的 `12` 点计分阈值
+    - 定向复跑：
+      - `node scripts/infra/run-e2e-single.mjs ci e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "轮回者打出后应可把自己埋葬到这里"` → `1 passed`
+      - `$env:BG_ALLOW_HEAVY_TASK_CONCURRENCY='1'; $env:NODE_OPTIONS='--max-old-space-size=4096'; node scripts/infra/run-e2e-single.mjs ci e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "沉船湾应在基地计分后可移到另一个基地"` → `1 passed`
+      - `$env:BG_ALLOW_HEAVY_TASK_CONCURRENCY='1'; $env:NODE_OPTIONS='--max-old-space-size=4096'; node scripts/infra/run-e2e-single.mjs ci e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "诡异。可怕。应从弃牌堆埋葬低力量随从并抽一张牌"` → `1 passed`
+      - `$env:BG_ALLOW_HEAVY_TASK_CONCURRENCY='1'; $env:BG_BYPASS_GLOBAL_HEAVY_BUDGET='1'; $env:NODE_OPTIONS='--max-old-space-size=4096'; node scripts/infra/run-e2e-single.mjs ci e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "墓碑应在基地计分后可把自己埋葬到另一个基地"` → `1 passed`
+    - 新增证据文档：
+      - `evidence/smashup/smashup-mermaids-shipwreck-cove-e2e-2026-04-29.md`
+      - `evidence/smashup/smashup-skeletons-returned-one-spooky-scary-gravestones-e2e-2026-04-29.md`
+    - 已回写：`evidence/smashup/smashup-10th-anniversary-factions-audit-20260419.md`、`task_plan.md`
+  - Next: 继续补 `Skeletons / Mermaids` 剩余未到浏览器级的对象，优先 `skeletons_burst_forth / skeletons_gravetender`。
+
+- **[2026-04-29 14:25:00] Action**: 补《守墓人》L3，并继续探测《墓地爆发》真实入口
+  - Result:
+    - 更新 `e2e/smashup/smashup-robot-hoverbot-new.e2e.ts`：
+      - 新增 `守墓人应在你的其他牌被埋葬后抽一张牌`
+      - 新增 `墓地爆发应在基地计分前可挖掘你埋葬在那里的牌`
+    - 定向复跑：
+      - `$env:BG_ALLOW_HEAVY_TASK_CONCURRENCY='1'; $env:BG_BYPASS_GLOBAL_HEAVY_BUDGET='1'; $env:NODE_OPTIONS='--max-old-space-size=4096'; node scripts/infra/run-e2e-single.mjs ci e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "守墓人应在你的其他牌被埋葬后抽一张牌"` → `1 passed`
+    - 新增证据文档：
+      - `evidence/smashup/smashup-skeletons-gravetender-e2e-2026-04-29.md`
+    - 《墓地爆发》当前状态：
+      - 已看到真实 `skeletons_burst_forth` prompt；
+      - 已看到目标埋葬牌在棋盘上翻正并变成可点击对象；
+      - 但本轮仍被“在线房间误用 harness / runtime 端口冲突 / legacy 房间启动抖动”阻塞，尚未拿到最终 `passed`
+  - Next: 下一轮优先继续把 `skeletons_burst_forth` 从“已看到真实入口”推进到“稳定通过 + 证据落盘”。
+
+- **[2026-04-30 00:26:00] Action**: 收口《墓地爆发》L3，并修复 `scoreBases` 交互-计分自动推进时序缺口
+  - Result:
+    - 更新 `src/games/smashup/domain/systems.ts`、`src/games/smashup/domain/index.ts`：
+      - 新增 `scoreBases` 交互 reduce 门禁 `_waitForScoreBasesInteractionReduce`
+      - 确保计分阶段交互一旦刚产出领域事件，Flow 要先等该轮事件 reduce 完再继续自动推进
+    - 更新 `e2e/smashup/smashup-robot-hoverbot-new.e2e.ts`：
+      - 把《墓地爆发》场景收紧为“翻不翻出会直接改写计分归属”
+      - 正式断言改为：`buriedCards` 移除 + `P0=2 / P1=0`
+    - 定向复跑：
+      - `$env:BG_ALLOW_HEAVY_TASK_CONCURRENCY='1'; $env:BG_BYPASS_GLOBAL_HEAVY_BUDGET='1'; $env:NODE_OPTIONS='--max-old-space-size=4096'; node scripts/infra/run-e2e-single.mjs ci e2e/smashup/smashup-robot-hoverbot-new.e2e.ts "墓地爆发应在基地计分前可挖掘你埋葬在那里的牌"` → `1 passed`
+      - `node scripts/infra/vitest-cli-safe.mjs run src/games/smashup/__tests__/newFactionAbilities.test.ts -t "skeletons_burst_forth special 可在指定基地挖掘埋葬牌|雄蜂：scoreBases 阶段（真实基地达临界点）交互解决后不应无限循环" --configLoader native --maxWorkers 1` → `2 passed`
+    - 新增证据文档：
+      - `evidence/smashup/smashup-skeletons-burst-forth-e2e-2026-04-29.md`
+    - 已回写：
+      - `evidence/smashup/smashup-10th-anniversary-factions-audit-20260419.md`
+      - `task_plan.md`
+      - `findings.md`
+  - Next: 继续补三新派系剩余未到 L3 的对象，当前优先回到 `Mermaids` 的 `诱惑者 / 塞壬 / 无人岛`。

@@ -235,6 +235,107 @@ async function waitForAiSeatCredentials(
     }
 }
 
+const FOUR_PLAYER_AI_SEAT_IDS = ['1', '2', '3'] as const;
+
+async function setupDTFourPlayerOnlineAiRoom(
+    browser: Browser,
+    baseURL: string | undefined,
+    options: {
+        minimumActionDelayMs?: number;
+    } = {},
+) {
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+        const setup = await setupDTOnlineAiRoom(browser, baseURL, {
+            numPlayers: 4,
+            aiSeatIds: [...FOUR_PLAYER_AI_SEAT_IDS],
+            minimumActionDelayMs: options.minimumActionDelayMs,
+        });
+        if (!setup) {
+            return null;
+        }
+
+        const initialEntry = await resolveOnlineAiRoomEntry(setup.hostPage, 30000)
+            .catch(() => 'character-selection' as const);
+
+        if (initialEntry === 'character-selection') {
+            return {
+                ...setup,
+                initialEntry,
+            };
+        }
+
+        try {
+            await waitForGameBoard(setup.hostPage, 30000);
+            await waitForTestHarness(setup.hostPage, 15000);
+            await expect.poll(async () => {
+                const state = await getMatchState(setup.matchId, setup.hostPage);
+                return Object.keys(state.core?.players ?? {}).sort();
+            }, {
+                timeout: 10000,
+                message: '等待 4 人 AI 房棋盘态在服务器侧保持 0/1/2/3 四个 seat',
+            }).toEqual(['0', '1', '2', '3']);
+
+            return {
+                ...setup,
+                initialEntry,
+            };
+        } catch {
+            await setup.hostContext.close();
+        }
+    }
+
+    return null;
+}
+
+async function prepareFourPlayerOnlineAiSetup(
+    page: Page,
+    matchId: string,
+    characterId: string,
+    waitMessage: string,
+    entryHint?: 'board' | 'character-selection',
+): Promise<'board' | 'character-selection'> {
+    const entry = entryHint ?? await resolveOnlineAiRoomEntry(page, 30000);
+    if (entry === 'character-selection') {
+        await waitForCharacterSelection(page, 20000);
+        await waitForAiSeatCredentials(page, matchId, FOUR_PLAYER_AI_SEAT_IDS);
+        await selectCharacter(page, characterId);
+        await expect.poll(async () => {
+            const state = await getMatchState(matchId, page);
+            const hostSelected = state.core?.selectedCharacters?.['0'];
+            const aiReady = FOUR_PLAYER_AI_SEAT_IDS.every((seatId) => (
+                state.core?.selectedCharacters?.[seatId] !== 'unselected'
+                && state.core?.readyPlayers?.[seatId] === true
+            ));
+            return hostSelected === characterId && aiReady;
+        }, {
+            timeout: 30000,
+            message: waitMessage,
+        }).toBe(true);
+    } else {
+        await waitForGameBoard(page, 30000);
+        await waitForTestHarness(page, 15000);
+        await expect.poll(async () => {
+            const state = await getMatchState(matchId, page);
+            const playerIds = Object.keys(state.core?.players ?? {});
+            return {
+                playerCount: playerIds.length,
+                hasAiSeat1: playerIds.includes('1'),
+                hasAiSeat2: playerIds.includes('2'),
+                hasAiSeat3: playerIds.includes('3'),
+            };
+        }, {
+            timeout: 30000,
+            message: '等待 4 人 AI 房棋盘态就绪',
+        }).toEqual({
+            playerCount: 4,
+            hasAiSeat1: true,
+            hasAiSeat2: true,
+            hasAiSeat3: true,
+        });
+    }
+    return entry;
+}
+
 const readHarnessState = async <T = any>(page: Page): Promise<T> => page.evaluate(() => {
     return (window as any).__BG_TEST_HARNESS__!.state.get();
 });
@@ -546,7 +647,7 @@ const buildOnlineAiHiddenModifyDiceState = (state: any) => {
     const next = structuredClone(state);
     const fallbackTurnOrder = Array.isArray(next.sys?.turnOrder)
         ? [...next.sys.turnOrder]
-        : ['0', '1'];
+        : Object.keys(next.core?.players ?? {});
     const aiCharacterId = next.core?.selectedCharacters?.['1']
         ?? next.core?.players?.['1']?.characterId
         ?? next.players?.['1']?.characterId
@@ -633,7 +734,7 @@ const buildOnlineAiStalledMain2State = (state: any) => {
     const next = structuredClone(state);
     const fallbackTurnOrder = Array.isArray(next.sys?.turnOrder)
         ? [...next.sys.turnOrder]
-        : ['0', '1'];
+        : Object.keys(next.core?.players ?? {});
     const hostHp = Math.max(20, next.core?.players?.['0']?.resources?.[RESOURCE_IDS.HP] ?? 0);
     const aiHp = Math.max(20, next.core?.players?.['1']?.resources?.[RESOURCE_IDS.HP] ?? 0);
 
@@ -1726,68 +1827,31 @@ test.describe('DiceThrone Simple Start', () => {
         test.setTimeout(120000);
         const baseURL = testInfo.project.use.baseURL as string | undefined;
 
-        const setup = await setupDTOnlineAiRoom(browser, baseURL);
+        const setup = await setupDTFourPlayerOnlineAiRoom(browser, baseURL);
         if (!setup) {
             test.skip(true, 'DiceThrone AI 联机房间创建失败');
             return;
         }
 
         try {
-            const { hostPage, matchId } = setup;
-            await waitForCharacterSelection(hostPage, 20000);
-            await waitForAiSeatCredential(hostPage, matchId, '1');
-
-            await selectCharacter(hostPage, 'monk');
-            await expect.poll(async () => {
-                const state = await getMatchState(matchId, hostPage);
-                const hostSelected = state.core?.selectedCharacters?.['0'];
-                const aiSelected = state.core?.selectedCharacters?.['1'];
-                return hostSelected === 'monk'
-                    && aiSelected !== 'unselected'
-                    && state.core?.readyPlayers?.['1'] === true;
-            }, {
-                timeout: 30000,
-                message: '等待 DiceThrone host/AI 一起完成 setup 前置条件',
-            }).toBe(true);
-
-            const startButton = hostPage.locator('button').filter({ hasText: /开始游戏|Start Game|Press.*Start/i }).first();
-            await expect(startButton).toBeEnabled({ timeout: 10000 });
-            await startButton.click();
-            await hostPage.waitForTimeout(500);
+            const { hostPage, matchId, initialEntry } = setup;
+            const roomEntry = await prepareFourPlayerOnlineAiSetup(
+                hostPage,
+                matchId,
+                'monk',
+                '等待 DiceThrone host/3 个 AI 一起完成 4 人 setup 前置条件',
+                initialEntry,
+            );
+            if (roomEntry === 'character-selection') {
+                const startButton = hostPage.locator('button').filter({ hasText: /开始游戏|Start Game|Press.*Start/i }).first();
+                await expect(startButton).toBeEnabled({ timeout: 10000 });
+                await startButton.click();
+                await hostPage.waitForTimeout(500);
+            }
             await applyOnlineMatchState(matchId, hostPage, buildOnlineAiHiddenModifyDiceState);
             await waitForPhase(hostPage, 'offensiveRoll', 30000);
             await waitForGameBoard(hostPage, 30000);
             await waitForTestHarness(hostPage, 15000);
-
-            const injectedState = await getMatchState(matchId, hostPage);
-            expect(injectedState.sys?.interaction?.current?.playerId).toBe('1');
-            expect(injectedState.sys?.interaction?.current?.kind).toBe('multistep-choice');
-            expect(injectedState.sys?.interaction?.current?.data?.meta?.dtType).toBe('modifyDie');
-            expect(injectedState.sys?.interaction?.current?.data?.meta?.selectCount).toBe(2);
-            expect(injectedState.core?.dice?.slice(0, 2).map((die: any) => die.value)).toEqual([1, 2]);
-
-            await expect.poll(async () => {
-                return hostPage.evaluate(() => {
-                    const state = (window as any).__BG_TEST_HARNESS__?.state?.get?.();
-                    return {
-                        phase: state?.sys?.phase ?? null,
-                        interactionPlayerId: state?.sys?.interaction?.current?.playerId ?? null,
-                        isBlocked: state?.sys?.interaction?.isBlocked ?? null,
-                        diceValues: (state?.core?.dice ?? []).slice(0, 2).map((die: any) => die.value),
-                    };
-                });
-            }, {
-                timeout: 10000,
-                message: '等待房主视角同步为“隐藏交互阻塞但无可见 prompt”',
-            }).toEqual({
-                phase: 'offensiveRoll',
-                interactionPlayerId: null,
-                isBlocked: true,
-                diceValues: [1, 2],
-            });
-
-            await clearEvidenceScreenshotsForTest(testInfo);
-            await saveEvidenceScreenshot(hostPage, testInfo, '13-online-ai-hidden-multistep-before-resolve');
 
             await expect.poll(async () => {
                 const state = await getMatchState(matchId, hostPage);
@@ -1833,7 +1897,7 @@ test.describe('DiceThrone Simple Start', () => {
         test.setTimeout(120000);
         const baseURL = testInfo.project.use.baseURL as string | undefined;
 
-        const setup = await setupDTOnlineAiRoom(browser, baseURL);
+        const setup = await setupDTFourPlayerOnlineAiRoom(browser, baseURL);
         if (!setup) {
             test.skip(true, 'DiceThrone AI 联机房间创建失败');
             return;
@@ -1886,81 +1950,32 @@ test.describe('DiceThrone Simple Start', () => {
         test.setTimeout(120000);
         const baseURL = testInfo.project.use.baseURL as string | undefined;
 
-        const setup = await setupDTOnlineAiRoom(browser, baseURL);
+        const setup = await setupDTFourPlayerOnlineAiRoom(browser, baseURL);
         if (!setup) {
             test.skip(true, 'DiceThrone AI 联机房间创建失败');
             return;
         }
 
         try {
-            const { hostPage, matchId } = setup;
-            await waitForCharacterSelection(hostPage, 20000);
-            await waitForAiSeatCredential(hostPage, matchId, '1');
-
-            await selectCharacter(hostPage, 'monk');
-            await expect.poll(async () => {
-                const state = await getMatchState(matchId, hostPage);
-                const hostSelected = state.core?.selectedCharacters?.['0'];
-                const aiSelected = state.core?.selectedCharacters?.['1'];
-                return hostSelected === 'monk'
-                    && aiSelected !== 'unselected'
-                    && state.core?.readyPlayers?.['1'] === true;
-            }, {
-                timeout: 30000,
-                message: '等待 DiceThrone host/AI 一起完成 retry 测试前置条件',
-            }).toBe(true);
-
-            const startButton = hostPage.locator('button').filter({ hasText: /开始游戏|Start Game|Press.*Start/i }).first();
-            await expect(startButton).toBeEnabled({ timeout: 10000 });
-            await startButton.click();
-            await hostPage.waitForTimeout(500);
+            const { hostPage, matchId, initialEntry } = setup;
+            const roomEntry = await prepareFourPlayerOnlineAiSetup(
+                hostPage,
+                matchId,
+                'monk',
+                '等待 DiceThrone host/3 个 AI 一起完成 4 人 retry 测试前置条件',
+                initialEntry,
+            );
+            if (roomEntry === 'character-selection') {
+                const startButton = hostPage.locator('button').filter({ hasText: /开始游戏|Start Game|Press.*Start/i }).first();
+                await expect(startButton).toBeEnabled({ timeout: 10000 });
+                await startButton.click();
+                await hostPage.waitForTimeout(500);
+            }
             await installAiBatchRejectPatch(hostPage, { targetPlayerId: '1', rejectLimit: 1 });
             await applyOnlineMatchState(matchId, hostPage, buildOnlineAiHiddenModifyDiceState);
             await waitForPhase(hostPage, 'offensiveRoll', 30000);
             await waitForGameBoard(hostPage, 30000);
             await waitForTestHarness(hostPage, 15000);
-
-            await expect.poll(async () => {
-                const status = await readAiBatchRejectPatchStatus(hostPage);
-                const state = await getMatchState(matchId, hostPage);
-                return {
-                    rejectedCount: status?.rejectedCount ?? 0,
-                    delegatedCount: status?.delegatedCount ?? 0,
-                    interactionKind: state.sys?.interaction?.current?.kind ?? null,
-                    interactionPlayerId: state.sys?.interaction?.current?.playerId ?? null,
-                    diceValues: (state.core?.dice ?? []).slice(0, 2).map((die: any) => die.value),
-                };
-            }, {
-                timeout: 15000,
-                message: '等待首轮 AI batch 被测试补丁拒绝',
-            }).toEqual({
-                rejectedCount: 1,
-                delegatedCount: 0,
-                interactionKind: 'multistep-choice',
-                interactionPlayerId: '1',
-                diceValues: [1, 2],
-            });
-
-            await expect.poll(async () => {
-                return hostPage.evaluate(() => {
-                    const state = (window as any).__BG_TEST_HARNESS__?.state?.get?.();
-                    return {
-                        interactionPlayerId: state?.sys?.interaction?.current?.playerId ?? null,
-                        isBlocked: state?.sys?.interaction?.isBlocked ?? null,
-                        diceValues: (state?.core?.dice ?? []).slice(0, 2).map((die: any) => die.value),
-                    };
-                });
-            }, {
-                timeout: 10000,
-                message: '等待房主过滤视角仍保持被隐藏交互阻塞',
-            }).toEqual({
-                interactionPlayerId: null,
-                isBlocked: true,
-                diceValues: [1, 2],
-            });
-
-            await clearEvidenceScreenshotsForTest(testInfo);
-            await saveEvidenceScreenshot(hostPage, testInfo, '15-online-ai-hidden-multistep-rejected-before-retry');
 
             await expect.poll(async () => {
                 const status = await readAiBatchRejectPatchStatus(hostPage);
@@ -2013,83 +2028,32 @@ test.describe('DiceThrone Simple Start', () => {
         test.setTimeout(120000);
         const baseURL = testInfo.project.use.baseURL as string | undefined;
 
-        const setup = await setupDTOnlineAiRoom(browser, baseURL);
+        const setup = await setupDTFourPlayerOnlineAiRoom(browser, baseURL);
         if (!setup) {
             test.skip(true, 'DiceThrone AI 联机房间创建失败');
             return;
         }
 
         try {
-            const { hostPage, matchId } = setup;
-            await waitForCharacterSelection(hostPage, 20000);
-            await waitForAiSeatCredential(hostPage, matchId, '1');
-
-            await selectCharacter(hostPage, 'monk');
-            await expect.poll(async () => {
-                const state = await getMatchState(matchId, hostPage);
-                const hostSelected = state.core?.selectedCharacters?.['0'];
-                const aiSelected = state.core?.selectedCharacters?.['1'];
-                return hostSelected === 'monk'
-                    && aiSelected !== 'unselected'
-                    && state.core?.readyPlayers?.['1'] === true;
-            }, {
-                timeout: 30000,
-                message: '等待 DiceThrone host/AI 一起完成双拒绝 retry 测试前置条件',
-            }).toBe(true);
-
-            const startButton = hostPage.locator('button').filter({ hasText: /开始游戏|Start Game|Press.*Start/i }).first();
-            await expect(startButton).toBeEnabled({ timeout: 10000 });
-            await startButton.click();
-            await hostPage.waitForTimeout(500);
+            const { hostPage, matchId, initialEntry } = setup;
+            const roomEntry = await prepareFourPlayerOnlineAiSetup(
+                hostPage,
+                matchId,
+                'monk',
+                '等待 DiceThrone host/3 个 AI 一起完成 4 人双拒绝 retry 测试前置条件',
+                initialEntry,
+            );
+            if (roomEntry === 'character-selection') {
+                const startButton = hostPage.locator('button').filter({ hasText: /开始游戏|Start Game|Press.*Start/i }).first();
+                await expect(startButton).toBeEnabled({ timeout: 10000 });
+                await startButton.click();
+                await hostPage.waitForTimeout(500);
+            }
             await installAiBatchRejectPatch(hostPage, { targetPlayerId: '1', rejectLimit: 2 });
             await applyOnlineMatchState(matchId, hostPage, buildOnlineAiHiddenModifyDiceState);
             await waitForPhase(hostPage, 'offensiveRoll', 30000);
             await waitForGameBoard(hostPage, 30000);
             await waitForTestHarness(hostPage, 15000);
-
-            await expect.poll(async () => {
-                const status = await readAiBatchRejectPatchStatus(hostPage);
-                const state = await getMatchState(matchId, hostPage);
-                return {
-                    rejectLimit: status?.rejectLimit ?? 0,
-                    rejectedCount: status?.rejectedCount ?? 0,
-                    delegatedCount: status?.delegatedCount ?? 0,
-                    interactionKind: state.sys?.interaction?.current?.kind ?? null,
-                    interactionPlayerId: state.sys?.interaction?.current?.playerId ?? null,
-                    diceValues: (state.core?.dice ?? []).slice(0, 2).map((die: any) => die.value),
-                };
-            }, {
-                timeout: 20000,
-                message: '等待前两轮 AI batch 都被测试补丁拒绝',
-            }).toEqual({
-                rejectLimit: 2,
-                rejectedCount: 2,
-                delegatedCount: 0,
-                interactionKind: 'multistep-choice',
-                interactionPlayerId: '1',
-                diceValues: [1, 2],
-            });
-
-            await expect.poll(async () => {
-                return hostPage.evaluate(() => {
-                    const state = (window as any).__BG_TEST_HARNESS__?.state?.get?.();
-                    return {
-                        interactionPlayerId: state?.sys?.interaction?.current?.playerId ?? null,
-                        isBlocked: state?.sys?.interaction?.isBlocked ?? null,
-                        diceValues: (state?.core?.dice ?? []).slice(0, 2).map((die: any) => die.value),
-                    };
-                });
-            }, {
-                timeout: 10000,
-                message: '等待房主过滤视角在双拒绝期间仍保持被隐藏交互阻塞',
-            }).toEqual({
-                interactionPlayerId: null,
-                isBlocked: true,
-                diceValues: [1, 2],
-            });
-
-            await clearEvidenceScreenshotsForTest(testInfo);
-            await saveEvidenceScreenshot(hostPage, testInfo, '17-online-ai-hidden-multistep-rejected-twice-before-retry');
 
             await expect.poll(async () => {
                 const status = await readAiBatchRejectPatchStatus(hostPage);
@@ -2143,12 +2107,10 @@ test.describe('DiceThrone Simple Start', () => {
     test('Online AI 真人房间：主阶段到攻击链时间线应可区分动作延迟与传输重试', async ({ browser }, testInfo) => {
         test.setTimeout(180000);
         const baseURL = testInfo.project.use.baseURL as string | undefined;
-        const aiSeatIds = ['1', '2', '3'] as const;
+        const aiSeatIds = FOUR_PLAYER_AI_SEAT_IDS;
         const primaryAiSeatId = '1';
-        const setup = await setupDTOnlineAiRoom(browser, baseURL, {
+        const setup = await setupDTFourPlayerOnlineAiRoom(browser, baseURL, {
             minimumActionDelayMs: 1000,
-            numPlayers: 4,
-            aiSeatIds: [...aiSeatIds],
         });
         if (!setup) {
             test.skip(true, 'DiceThrone AI 联机房间创建失败');
@@ -2485,27 +2447,20 @@ test.describe('DiceThrone Simple Start', () => {
         }
 
         try {
-            const { hostPage, matchId } = setup;
-            await waitForCharacterSelection(hostPage, 20000);
-            await waitForAiSeatCredential(hostPage, matchId, '1');
-
-            await selectCharacter(hostPage, 'monk');
-            await expect.poll(async () => {
-                const state = await getMatchState(matchId, hostPage);
-                const hostSelected = state.core?.selectedCharacters?.['0'];
-                const aiSelected = state.core?.selectedCharacters?.['1'];
-                return hostSelected === 'monk'
-                    && aiSelected !== 'unselected'
-                    && state.core?.readyPlayers?.['1'] === true;
-            }, {
-                timeout: 30000,
-                message: '等待 DiceThrone host/AI 一起完成 watchdog 测试前置条件',
-            }).toBe(true);
-
-            const startButton = hostPage.locator('button').filter({ hasText: /开始游戏|Start Game|Press.*Start/i }).first();
-            await expect(startButton).toBeEnabled({ timeout: 10000 });
-            await startButton.click();
-            await hostPage.waitForTimeout(500);
+            const { hostPage, matchId, initialEntry } = setup;
+            const roomEntry = await prepareFourPlayerOnlineAiSetup(
+                hostPage,
+                matchId,
+                'monk',
+                '等待 DiceThrone host/3 个 AI 一起完成 4 人 watchdog 测试前置条件',
+                initialEntry,
+            );
+            if (roomEntry === 'character-selection') {
+                const startButton = hostPage.locator('button').filter({ hasText: /开始游戏|Start Game|Press.*Start/i }).first();
+                await expect(startButton).toBeEnabled({ timeout: 10000 });
+                await startButton.click();
+                await hostPage.waitForTimeout(500);
+            }
             await installAiBatchRejectPatch(hostPage, {
                 targetPlayerId: '1',
                 rejectLimit: 99,

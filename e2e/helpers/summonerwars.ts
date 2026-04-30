@@ -396,6 +396,17 @@ export const ensureDebugStateTab = async (page: Page) => {
 
 /** 读取当前 core 状态 */
 export const readCoreState = async (page: Page) => {
+  const onlineMatchId = await page.evaluate(() => {
+    const match = window.location.pathname.match(/\/play\/[^/]+\/match\/([^/?#]+)/i);
+    return match?.[1] ?? null;
+  }).catch(() => null);
+
+  if (onlineMatchId) {
+    const liveState = await getMatchState(onlineMatchId, page);
+    const liveStateRecord = liveState as { core?: unknown; G?: { core?: unknown } };
+    return liveStateRecord?.core ?? liveStateRecord?.G?.core ?? liveState;
+  }
+
   await ensureDebugStateTab(page);
   const raw = await page.getByTestId('debug-state-json').innerText();
   const parsed = JSON.parse(raw);

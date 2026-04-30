@@ -1,5 +1,25 @@
 # Findings & Resources
 
+## Addendum（2026-04-30）：Smash Up 美人鱼《塞壬 / 诱惑者 / 无人岛》重审
+
+- 本轮不是单纯补截图，先抓到 1 个真实 UI 口径 bug：
+  - `BaseZone` 玩家列分数徽章此前没有走 `getPlayerEffectivePowerOnBase(...)`
+  - 而是自己手算 `getEffectivePower + ongoing + base bonus`
+  - 结果会漏掉《塞壬 / 无人岛 / 魅惑 / 人鱼暗礁》这类“只影响控制者总力量、不影响基地总力量”的扣减语义
+- 这说明此前返工的一个根因不是“维度名不够多”，而是：
+  - L2 领域断言已经对
+  - 但 L3 浏览器真实出口没有逐对象核到 UI 显示口径
+  - 于是把“规则正确、显示错误”误当成“数据录错 / 效果没触发”
+- 本轮已修复：
+  - `src/games/smashup/ui/BaseZone.tsx`
+  - `e2e/src/games/smashup/ui/BaseZone.tsx`
+- 本轮新增对象级 L3：
+  - `塞壬`
+  - `诱惑者`
+  - `无人岛`
+- 证据：
+  - `evidence/smashup/smashup-mermaids-siren-temptress-desert-island-e2e-2026-04-30.md`
+
 ## Addendum（2026-04-24）：线上反馈 69a440ea（DiceThrone 教程弃牌堆方向）
 - 反馈 `69a440ea1eb921c6091f1231` 指向“教程把右侧弃牌堆写成左侧”。
 - 复核结论：中文文案已正确，英文教程仍残留旧方向描述（`on the left`）。
@@ -866,3 +886,30 @@
   - E2E 场景必须先做 `defId` 真值预检
   - Smash Up 对象补证默认按 `L0-L4` 分层验收
   - 真实入口若出现 `smashup_reaction_choose`，必须单独作为 `reaction session` 证据留档
+## Session: 2026-04-29 《沉船湾 / 轮回者 / 诡异。可怕。 / 墓碑》L3 补证
+- **Status:** in_progress
+- Findings:
+  - 《轮回者》旧 E2E 的失败根因不是实现 bug，而是旧测试把“自埋后直接无交互”当成事实；真实入口会先进入 `smashup_reaction_choose`，再由《轮回者》触发项收口。
+  - 《沉船湾》《墓碑》旧在线场景都没有把《绿洲丛林》推到 `12` 点计分阈值，因此“没进计分后的触发窗”属于 E2E 注入错误，不属于业务实现错误。
+  - 这类错误说明当前重审必须继续坚持两条门禁：
+    1. `reaction session` 不能靠单测观察面代替，浏览器级必须真看 prompt；
+    2. online afterScoring 场景必须先核对原基地是否真的达到 breakpoint，再判断实现是否失效。
+- Evidence:
+  - `evidence/smashup/smashup-mermaids-shipwreck-cove-e2e-2026-04-29.md`
+  - `evidence/smashup/smashup-skeletons-returned-one-spooky-scary-gravestones-e2e-2026-04-29.md`
+
+## Session: 2026-04-29 《守墓人 / 墓地爆发》续推
+- **Status:** in_progress
+- Findings:
+  - 《守墓人》浏览器级正路径已通过，说明“你的其他牌被埋葬后抽 1 张”在真实入口里没有漏掉。
+  - 《墓地爆发》旧“只是测试基础设施阻塞”结论已失效。
+  - 新确认的真实根因：
+    1. 真实链路确实能进入 `skeletons_burst_forth` prompt，且目标埋葬牌会翻正、可点，这部分不是问题；
+    2. 问题出在 `scoreBases` 交互收口后的自动推进时序：交互刚产出的 `MINION_PLAYED` 还没 reduce 进 core，Flow 就继续计分了；
+    3. 结果是 action log 里能先看到《雷克斯王》被挖出来，但同一轮 `BASE_SCORED` 仍按旧总力量 `13` 结算。
+  - 本轮修复后：
+    1. `src/games/smashup/domain/systems.ts` 与 `src/games/smashup/domain/index.ts` 已新增 `scoreBases` 交互 reduce 门禁；
+    2. 《墓地爆发》浏览器级已通过，证明翻出的随从会真实改写本次计分结果。
+- Evidence:
+  - `evidence/smashup/smashup-skeletons-gravetender-e2e-2026-04-29.md`
+  - `evidence/smashup/smashup-skeletons-burst-forth-e2e-2026-04-29.md`

@@ -232,10 +232,70 @@
 - 验收判断：
   - 达标。伤害分支已完成“攻击命中 -> 选择伤害 -> 目标死亡 -> 横幅收口”的完整闭环。
 
+### 18. `fortress_power` 选卡提示真实出现
+
+- 路径：`D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\summonerwars\summonerwars-paladin-discard.e2e\城塞之力：攻击后从弃牌堆拿取城塞单位\城塞之力：攻击阶段选择弃牌堆城塞单位回手-fortress-power-card-selector-visible.png`
+- 我实际看到：
+  - 棋盘中央已经弹出弃牌堆卡牌选择浮层，不是只剩按钮无内容。
+  - 浮层里能直接看到城塞单位卡本体，属于真实 `card-selector` 路线，不是日志或隐藏状态。
+  - 画面里仍能看到先锋召唤师本体与攻击阶段 HUD，说明这条链发生在真实对局上下文内。
+- 验收判断：
+  - 达标。`fortress_power` 的系统选卡提示已经在真实在线 E2E 中重新证明可见。
+
+### 19. `fortress_power` 选卡回手后正常收口
+
+- 路径：`D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\summonerwars\summonerwars-paladin-discard.e2e\城塞之力：攻击后从弃牌堆拿取城塞单位\城塞之力：攻击阶段选择弃牌堆城塞单位回手-fortress-power-retrieve-complete.png`
+- 我实际看到：
+  - 弃牌堆选卡浮层已经关闭，没有残留 selector 或卡死遮罩。
+  - 被选择的城塞单位卡已经回到我方手牌区域，说明 `CARD_RETRIEVED` 的结果写回了真实 UI。
+  - 棋盘与阶段 HUD 仍保持正常显示，流程没有因为系统交互而卡在半完成状态。
+- 验收判断：
+  - 达标。`fortress_power` 已形成“进入选卡 -> 选择弃牌堆城塞单位 -> 回手收口”的完整正向闭环。
+
+### 20. `fire_sacrifice_summon` 牺牲提示真实出现
+
+- 路径：`D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\summonerwars\summonerwars-abilities.e2e\火祀召唤：召唤后选择牺牲友军并移动到牺牲位置\火祀召唤：召唤后选择牺牲友军并移动到牺牲位置-fire-sacrifice-prompt-visible.png`
+- 我实际看到：
+  - 顶部红色横幅明确写着“火祀召唤：选择要消灭的友方单位”，右侧有“取消”按钮。
+  - 棋盘上被高亮的友方非召唤师单位本体可见，不是只剩横幅没有目标。
+  - 手牌里的伊路特-巴尔卡本体也还在画面里，说明这张图对应的是“从手牌打出后进入系统交互”的真实中间态。
+- 验收判断：
+  - 达标。`fire_sacrifice_summon` 的 onSummon prompt 已在真实在线链路里重新证明可见。
+
+### 21. `fire_sacrifice_summon` 牺牲结算后结果真实落地
+
+- 路径：`D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\summonerwars\summonerwars-abilities.e2e\火祀召唤：召唤后选择牺牲友军并移动到牺牲位置\火祀召唤：召唤后选择牺牲友军并移动到牺牲位置-fire-sacrifice-complete.png`
+- 我实际看到：
+  - 伊路特-巴尔本体已经不在原召唤落点，而是出现在先前被选中的友军位置。
+  - 原先作为牺牲品的友军本体已经消失，说明不是只触发了动画，没有真正替换棋盘态。
+  - 顶部不再停留在“火祀召唤”提示，而是回到普通召唤阶段横幅，流程没有被系统交互卡住。
+- 验收判断：
+  - 达标。`fire_sacrifice_summon` 已形成“手牌打出 -> 进入牺牲选择 -> 单位迁移到牺牲位置 -> 横幅收口”的完整正向闭环。
+
+### 22. `life_drain` before-attack 提示真实出现
+
+- 路径：`D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\summonerwars\summonerwars-abilities.e2e\吸取生命：宣告攻击后出现牺牲友军提示并完成牺牲\吸取生命：宣告攻击后出现牺牲友军提示并完成牺牲-life-drain-prompt-visible.png`
+- 我实际看到：
+  - 顶部橙色横幅明确写着“吸取生命：选择2格内的友方单位消灭”，右侧有“跳过”按钮。
+  - 德拉戈斯本体、可牺牲友军本体、敌方攻击目标本体同时在图中可见，说明这是“宣告攻击后”的真实 before-attack 交互，不是脱链的测试壳 prompt。
+  - 这张图还顺手证明了上一轮的漏 prompt 不是文案匹配问题，而是旧场景注入方式本身不稳定。
+- 验收判断：
+  - 达标。`life_drain` 的 before-attack prompt 已重新证明真实上屏。
+
+### 23. `life_drain` 选择牺牲友军后正常回到攻击阶段
+
+- 路径：`D:\gongzuo\webgame\BoardGame\test-results\evidence-screenshots\summonerwars\summonerwars-abilities.e2e\吸取生命：宣告攻击后出现牺牲友军提示并完成牺牲\吸取生命：宣告攻击后出现牺牲友军提示并完成牺牲-life-drain-complete.png`
+- 我实际看到：
+  - 顶部已经回到普通攻击横幅“用最多3个单位进行攻击”，不再停留在“吸取生命”提示。
+  - 右侧攻击剩余次数从 3 变成 2，说明这次攻击已经真正消耗一次攻击次数，而不是只点掉了一个弹窗。
+  - 德拉戈斯与敌方目标本体仍在棋盘上，可见流程已经从 before-attack 交互收口回主攻击态。
+- 验收判断：
+  - 达标。`life_drain` 已形成“宣告攻击 -> 弹出牺牲友军提示 -> 选择目标 -> 回到普通攻击态”的真实正向闭环。
+
 ## 本轮未完全补齐的证据缺口
 
 - `structure_shift` 当前仍缺一张“第二步位置高亮已经出现”的专门截图；现有证据是“第一步 prompt 可见”直接跳到“结果已落地”。
-- `fortress_power / soul_transfer / infection / funeral_pyre / fire_sacrifice_summon / life_drain` 仍缺真实成功 E2E 证据链，不能据此宣称 SummonerWars 交互迁移已全面验收。
+- `soul_transfer / infection / funeral_pyre` 仍缺真实成功 E2E 证据链，不能据此宣称 SummonerWars 交互迁移已全面验收。
 - `StatusBanners.tsx` 的主要横幅分支现已统一挂上 `data-testid="sw-ability-prompt"`；后续新增 interaction 若继续扩展到新横幅分支，仍需保持这条约束，避免再次退回“按文案找横幅”的脆弱断言。
 - 英文 locale 下的真实提示截图仍缺；现阶段更多是中英双语断言，不是英文界面肉眼证据。
 - 已确认一个独立残留风险：当测试场景把目标设成会被攻击直接击杀时，headless Chromium 可能在 destroy/shatter 特效链后整 browser 断开；当前 `withdraw / mind_transmission` 的正向证据通过“非致死目标”绕开以验证交互链，产品级根因仍未正式修复。
@@ -252,6 +312,9 @@
   - `feed_beast`
   - `rapid_fire`
   - `mind_capture`
+  - `fortress_power`
+  - `fire_sacrifice_summon`
+  - `life_drain`
 - 这说明交互迁移主链已经不只是“流程可点”，而是多条真实 prompt 与二段点击链都已重新打通。
 - 但从“全面验收”口径看，任务仍未结束；剩余 blockers 已经收敛成两类：
   - 仍缺正向 E2E 证据的 interaction 分支。

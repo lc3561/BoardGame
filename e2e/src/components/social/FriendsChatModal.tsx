@@ -7,9 +7,7 @@ import { motion } from 'framer-motion';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import { FRIENDS_CHAT_DETAIL_CONTENT_CLASS } from './layoutContracts';
-
-/** 系统通知的固定会话 ID */
-export const SYSTEM_NOTIFICATION_ID = '__system_notification__';
+import { SYSTEM_NOTIFICATION_ID } from './constants';
 
 interface FriendsChatModalProps {
     isOpen: boolean;

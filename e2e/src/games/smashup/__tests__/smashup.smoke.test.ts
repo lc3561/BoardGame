@@ -389,6 +389,75 @@ describe('smashup', () => {
         expect(secondAfter?.location.zone).toBe('setaside');
     });
 
+    it('丛林之灵输掉 titan clash 时可以改为移动到另一个基地', () => {
+        const core = makeState({
+            bases: [
+                makeBase({
+                    defId: 'base_a',
+                    minions: [
+                        makeMinion('ally-0', 'robot_microbot_alpha', '0', 2),
+                        makeMinion('enemy-0', 'robot_microbot_alpha', '1', 4),
+                    ],
+                }),
+                makeBase({ defId: 'base_b', minions: [] }),
+            ],
+            titans: [
+                {
+                    uid: 'spirit-1',
+                    defId: 'fairies_spirit_of_the_forest',
+                    faction: 'fairies',
+                    ownerId: '0',
+                    controllerId: '0',
+                    powerCounters: 0,
+                    talentUsed: false,
+                    location: { zone: 'base', baseIndex: 0, enteredAt: 1 },
+                } as TitanState,
+                {
+                    uid: 'dagon-1',
+                    defId: 'innsmouth_dagon',
+                    faction: 'innsmouth',
+                    ownerId: '1',
+                    controllerId: '1',
+                    powerCounters: 0,
+                    talentUsed: false,
+                    location: { zone: 'base', baseIndex: 0, enteredAt: 2 },
+                } as TitanState,
+            ],
+        });
+
+        const post = postProcessSystemEvents(core, [{
+            type: SU_EVENTS.TITAN_PLAYED,
+            payload: {
+                titanUid: 'dagon-1',
+                defId: 'innsmouth_dagon',
+                ownerId: '1',
+                controllerId: '1',
+                baseIndex: 0,
+                baseDefId: 'base_a',
+                reason: 'test_spirit_clash',
+            },
+            timestamp: 30,
+        } as SmashUpEvent], FIXED_RANDOM, makeMatchState(core));
+
+        expect(post.events.map(event => event.type)).not.toContain(SU_EVENTS.TITAN_REMOVED_FROM_PLAY);
+        const prompt = getInteractionsFromMS(post.matchState!)[0] as any;
+        expect(prompt?.data?.sourceId).toBe('titan_fairies_spirit_of_the_forest_clash_move');
+
+        const moveOption = prompt.data.options.find((entry: any) => entry.value?.baseIndex === 1);
+        expect(moveOption).toBeDefined();
+
+        const moved = runCommand(
+            post.matchState!,
+            { type: 'SYS_INTERACTION_RESPOND', playerId: '0', payload: { optionId: moveOption.id } } as any,
+            FIXED_RANDOM,
+        );
+
+        const spirit = moved.finalState.core.titans?.find(titan => titan.uid === 'spirit-1');
+        const dagon = moved.finalState.core.titans?.find(titan => titan.uid === 'dagon-1');
+        expect(spirit?.location).toMatchObject({ zone: 'base', baseIndex: 1 });
+        expect(dagon?.location).toMatchObject({ zone: 'base', baseIndex: 0 });
+    });
+
     it('奥术守护者满足条件后可通过 special 从牌库旁进场', () => {
         const titanDraft: SmashUpCommand[] = [
             { type: SU_COMMANDS.SELECT_FACTION, playerId: '0', payload: { factionId: SMASHUP_FACTION_IDS.WIZARDS } },
@@ -6107,6 +6176,7 @@ describe('smashup', () => {
             'ninjas_invisible_ninja',
             'bear_cavalry_major_ursa',
             'ghosts_creampuff_man',
+            'fairies_spirit_of_the_forest',
             'changerbots_mergacon',
             'explorers_very_large_boulder',
             'giant_ants_death_on_six_legs',
@@ -6130,7 +6200,13 @@ describe('smashup', () => {
             'sphinx',
             'pecos_bill',
         ]);
-        expect(TITAN_CARD_DEFS).toHaveLength(26);
+        expect(TITAN_CARD_DEFS).toHaveLength(27);
+        expect(getTitanDef('fairies_spirit_of_the_forest')?.abilityTags).toEqual(['special', 'ongoing']);
+        expect(getTitanDef('fairies_spirit_of_the_forest')?.previewRef).toEqual({
+            type: 'atlas',
+            atlasId: 'smashup:titans',
+            index: 3,
+        });
         expect(getTitanDef('sphinx')?.id).toBe('sphinx');
         expect(getTitanDef('sphinx')?.abilityTags).toEqual(['special', 'talent']);
         expect(getTitanDef('sphinx')?.previewRef).toEqual({ type: 'atlas', atlasId: 'tts_atlas_8789f47742', index: 29 });

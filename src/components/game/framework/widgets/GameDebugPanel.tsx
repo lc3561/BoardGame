@@ -14,9 +14,9 @@ import { getOrCreateGuestId, getGuestName as resolveGuestName } from '../../../.
 import { UI_Z_INDEX } from '../../../../core';
 import { useToast } from '../../../../contexts/ToastContext';
 import { copyToClipboard } from '../../../../lib/utils';
-import { getGameById } from '../../../../config/games.config';
 import { DEFAULT_LOCAL_AI_DIFFICULTY, resolveSeatControllersFromSearchParams } from '../../../../engine/ai';
 import { useRuntimeViewport } from '../../../../hooks/ui/useRuntimeViewport';
+import type { GameManifestAiSupport } from '../../../../games/manifest.types';
 
 const DEBUG_BUTTON_SIZE = 48;
 const EDGE_PADDING = 16;
@@ -29,10 +29,21 @@ interface DebugPanelProps {
     events?: any;
     playerID?: string | null;
     autoSwitch?: boolean;
+    aiSupport?: GameManifestAiSupport;
+    playerOptions?: number[];
     children?: React.ReactNode; // 支持自定义调试项
 }
 
-export const GameDebugPanel: React.FC<DebugPanelProps> = ({ G, dispatch, events, playerID, autoSwitch = true, children }) => {
+export const GameDebugPanel: React.FC<DebugPanelProps> = ({
+    G,
+    dispatch,
+    events,
+    playerID,
+    autoSwitch = true,
+    aiSupport,
+    playerOptions,
+    children,
+}) => {
     const { t } = useTranslation(['game', 'lobby']);
     const navigate = useNavigate();
     const toast = useToast();
@@ -45,8 +56,6 @@ export const GameDebugPanel: React.FC<DebugPanelProps> = ({ G, dispatch, events,
     const [activeTab, setActiveTab] = React.useState<'state' | 'actions' | 'controls'>('controls');
     const [isCreatingRoom, setIsCreatingRoom] = React.useState(false);
     const { setPlayerID } = useDebug();
-    const gameManifest = gameId ? getGameById(gameId) : undefined;
-    const aiSupport = gameManifest?.ai;
     const viewport = useRuntimeViewport();
     const viewportWidth = viewport.width;
     const viewportHeight = viewport.height;
@@ -180,8 +189,8 @@ export const GameDebugPanel: React.FC<DebugPanelProps> = ({ G, dispatch, events,
         if (Array.isArray(G?.core?.turnOrder) && G.core.turnOrder.length > 0) {
             return G.core.turnOrder.length;
         }
-        return gameManifest?.playerOptions?.[0] ?? 2;
-    }, [G?.core?.turnOrder, gameManifest?.playerOptions]);
+        return playerOptions?.[0] ?? 2;
+    }, [G?.core?.turnOrder, playerOptions]);
     const aiSeatControllers = React.useMemo(() => {
         if (gameMode?.mode !== 'local' || !aiSupport) return {};
         return resolveSeatControllersFromSearchParams({
