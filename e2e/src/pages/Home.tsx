@@ -508,9 +508,12 @@ export const Home = () => {
         }, []),
     });
     const activeGameModalId = gameUrlModal.paramValue;
-    gameModalNavigateAwayBridgeRef.current = () => {
-        gameUrlModal.navigateAwayRef.current();
-    };
+
+    useEffect(() => {
+        gameModalNavigateAwayBridgeRef.current = () => {
+            gameUrlModal.navigateAwayRef.current();
+        };
+    }, [gameUrlModal]);
 
     useEffect(() => scheduleHomeGameDetailsModalWarmup(loadGameDetailsModalModule), []);
 

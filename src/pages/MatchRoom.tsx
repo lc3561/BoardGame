@@ -425,7 +425,7 @@ const OnlineAiSeatBridge = ({
             onStillStalled();
         }, RECOVERY_FAILURE_SYNC_GRACE_MS);
         pendingRecoveryCheckTimersRef.current.add(timer);
-    }, []);
+    }, [requestSeatResync]);
 
     useEffect(() => {
         const nextClientKeys = new Set(
@@ -527,7 +527,7 @@ const OnlineAiSeatBridge = ({
             }
             clientsRef.current = {};
         };
-    }, [matchId, seatControllers, seatCredentials, server]);
+    }, [engineConfig.gameId, matchId, seatControllers, seatCredentials, server]);
 
     useEffect(() => {
         return onAppVisible(() => {
@@ -692,7 +692,6 @@ const OnlineAiSeatBridge = ({
                     phase: (state as MatchState<unknown>).sys?.phase ?? null,
                     turnNumber: (state as MatchState<unknown>).sys?.turnNumber ?? null,
                     sharedCurrentPlayerId: resolveCurrentPlayerId(state as MatchState<unknown>),
-                    lastAiAttemptKey: lastAiAttemptKeyRef.current,
                 });
                 onlineAiPerfLogger.debug('idle', {
                     gameId: engineConfig.gameId,
@@ -1107,7 +1106,7 @@ const OnlineAiSeatBridge = ({
             pendingDelayHandle?.cancel();
             pendingDelayHandle = null;
         };
-    }, [aiRetryVersion, connectionVersion, engineConfig, matchId, seatControllers, state]);
+    }, [aiRetryVersion, connectionVersion, engineConfig, matchId, requestSeatResync, seatControllers, seatCredentials, state]);
 
     useEffect(() => {
         let timer: ReturnType<typeof setTimeout> | null = null;
