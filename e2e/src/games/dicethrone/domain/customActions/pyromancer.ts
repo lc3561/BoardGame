@@ -684,7 +684,6 @@ export function registerPyromancerCustomActions(): void {
 
     registerCustomActionHandler('pyro-details-dmg-per-fm', resolveDmgPerFM, {
         categories: ['damage'],
-        requiresSelectedDefender: true,
     });
     registerCustomActionHandler('pyro-get-fired-up-roll', resolveGetFiredUpRoll, {
         categories: ['dice', 'damage', 'status', 'token'],

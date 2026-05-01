@@ -352,7 +352,10 @@ export function createDiceThroneEventSystem(): EngineSystem<DiceThroneCore> {
                         payload.playerId,
                         payload.titleKey,
                         promptOptions,
-                        payload.sourceAbilityId
+                        {
+                            sourceId: payload.sourceAbilityId,
+                            allowedCommands: payload.allowedCommands,
+                        }
                     );
                     // 透传 slider 配置到 interaction data
                     if (payload.slider) {

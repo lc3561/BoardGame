@@ -73,8 +73,10 @@ import { useSyncedModalStackEntry } from '../../hooks/ui/useSyncedModalStackEntr
 import { TokenResponseModal } from './ui/TokenResponseModal';
 import { InteractionOverlay } from './ui/InteractionOverlay';
 import { ChoiceModal } from './ui/ChoiceModal';
+import { createScopedLogger } from '../../lib/logger';
 
 type DiceThroneBoardProps = GameBoardProps<DiceThroneCore>;
+const boardBonusDieLogger = createScopedLogger('DT_BOARD_BONUS_DIE');
 
 /** 教程 targetId → 对应的命令类型映射（用于白名单放行） */
 const TUTORIAL_TARGET_COMMAND_MAP: Record<string, string[]> = {
@@ -1770,9 +1772,19 @@ export const DiceThroneBoard: React.FC<DiceThroneBoardProps> = ({ G: rawG, dispa
                     bonusDie={bonusDie}
                     onBonusDieClose={() => {
                         const settlement = G.pendingBonusDiceSettlement;
+                        boardBonusDieLogger.info('overlay-close-request', {
+                            hasSettlement: !!settlement,
+                            settlementId: settlement?.id,
+                            settlementAttackerId: settlement?.attackerId,
+                            currentPlayerId: rootPid,
+                            rerollCount: settlement?.rerollCount,
+                            maxRerollCount: settlement?.maxRerollCount,
+                            diceValues: settlement?.dice?.map(die => die.value),
+                        });
                         handleBonusDieClose();
 
                         if (!settlement) {
+                            boardBonusDieLogger.info('overlay-close-no-settlement');
                             return;
                         }
 
@@ -1780,12 +1792,24 @@ export const DiceThroneBoard: React.FC<DiceThroneBoardProps> = ({ G: rawG, dispa
                         // 防御方/观察者关闭只影响本地特写展示，不触发结算命令。
                         const canSettleFromCurrentView = settlement.attackerId === rootPid;
                         if (canSettleFromCurrentView) {
+                            boardBonusDieLogger.info('overlay-close-settle-dispatch', {
+                                settlementId: settlement.id,
+                                reason: 'attacker-close',
+                            });
                             engineMoves.skipBonusDiceReroll();
+                        } else {
+                            boardBonusDieLogger.info('overlay-close-local-only', {
+                                settlementId: settlement.id,
+                                reason: 'non-attacker-close',
+                            });
                         }
 
                         // 防御方/观察者关闭 displayOnly 面板时，记录已关闭的 settlement id
                         if (settlement.attackerId !== rootPid) {
                             setDismissedBonusDiceId(settlement.id);
+                            boardBonusDieLogger.info('overlay-close-dismiss-display-only', {
+                                settlementId: settlement.id,
+                            });
                         }
                     }}
 
@@ -1807,10 +1831,25 @@ export const DiceThroneBoard: React.FC<DiceThroneBoardProps> = ({ G: rawG, dispa
                             G.pendingBonusDiceSettlement.rerollCount < G.pendingBonusDiceSettlement.maxRerollCount)
                     )}
                     onRerollBonusDie={G.pendingBonusDiceSettlement?.attackerId === rootPid
-                        ? (dieIndex) => engineMoves.rerollBonusDie(dieIndex)
+                        ? (dieIndex) => {
+                            boardBonusDieLogger.info('reroll-dispatch', {
+                                settlementId: G.pendingBonusDiceSettlement?.id,
+                                dieIndex,
+                                rerollCount: G.pendingBonusDiceSettlement?.rerollCount,
+                                maxRerollCount: G.pendingBonusDiceSettlement?.maxRerollCount,
+                            });
+                            engineMoves.rerollBonusDie(dieIndex);
+                        }
                         : undefined}
                     onSkipBonusDiceReroll={G.pendingBonusDiceSettlement?.attackerId === rootPid
-                        ? () => engineMoves.skipBonusDiceReroll()
+                        ? () => {
+                            boardBonusDieLogger.info('skip-reroll-dispatch', {
+                                settlementId: G.pendingBonusDiceSettlement?.id,
+                                rerollCount: G.pendingBonusDiceSettlement?.rerollCount,
+                                maxRerollCount: G.pendingBonusDiceSettlement?.maxRerollCount,
+                            });
+                            engineMoves.skipBonusDiceReroll();
+                        }
                         : undefined}
 
                     // Token 响应

@@ -3114,7 +3114,10 @@ export class GameTransportServer {
             }
 
             // 自动取消 pending interaction（防止游戏卡死）
-            await this.cancelInteractionOnError(match, playerID);
+            // 但如果当前命令本身就是 CANCEL，不能再次递归触发取消.
+            if (commandType !== INTERACTION_COMMANDS.CANCEL) {
+                await this.cancelInteractionOnError(match, playerID);
+            }
 
             return false;
         }

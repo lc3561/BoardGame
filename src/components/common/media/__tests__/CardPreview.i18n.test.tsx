@@ -178,6 +178,36 @@ describe('CardPreview i18n atlas path', () => {
         expect(html).not.toContain('/_capacitor_file_/data/user/0/top.easyboardgame.app/files/game-packages/smashup/current/assets/i18n/zh-CN/smashup/cards/compressed/aiji.webp');
     });
 
+    it('sourceImage 已缓存但候选 URL 变更时，应复用已加载 currentSrc 而非重试加载', () => {
+        setAssetsBaseUrl('https://assets.easyboardgame.top/official');
+
+        const atlasId = 'test:card-preview:source-cache-fallback';
+        registerCardAtlasSource(atlasId, {
+            image: 'smashup/cards/source-cache-fallback',
+            config: TEST_UNIFORM_ATLAS,
+        });
+
+        const img = new Image();
+        Object.defineProperty(img, 'naturalWidth', { value: 512, configurable: true });
+        Object.defineProperty(img, 'naturalHeight', { value: 512, configurable: true });
+        Object.defineProperty(img, 'src', {
+            value: 'https://old-cdn.example.com/i18n/zh-CN/smashup/cards/compressed/source-cache-fallback.webp',
+            configurable: true,
+        });
+        Object.defineProperty(img, 'currentSrc', {
+            value: 'https://old-cdn.example.com/i18n/zh-CN/smashup/cards/compressed/source-cache-fallback.webp',
+            configurable: true,
+        });
+
+        markImageLoaded('smashup/cards/source-cache-fallback', 'zh-CN', img);
+
+        const html = renderToStaticMarkup(
+            <CardPreview previewRef={{ type: 'atlas', atlasId, index: 0 }} locale="zh-CN" />
+        );
+
+        expect(html).toContain('https://old-cdn.example.com/i18n/zh-CN/smashup/cards/compressed/source-cache-fallback.webp');
+    });
+
     it('懒注册图集不应把 1x1 占位图当成有效 atlas', () => {
         const atlasId = 'test:card-preview:lazy-atlas-placeholder';
         registerLazyCardAtlasSource(atlasId, {
@@ -259,6 +289,65 @@ describe('CardPreview i18n atlas path', () => {
             expect(attemptCount.get(primaryUrl)).toBeGreaterThanOrEqual(2);
             expect(atlasNode?.className).not.toContain('atlas-shimmer');
             expect(atlasNode?.style.backgroundImage).toContain(primaryUrl);
+        } finally {
+            vi.useRealTimers();
+            vi.unstubAllGlobals();
+        }
+    });
+
+    it('同一图集并发渲染时应复用 in-flight 加载请求', async () => {
+        vi.useFakeTimers();
+        const atlasId = 'test:card-preview:atlas-shared-inflight';
+        const atlasImage = 'smashup/cards/cards-shared-inflight';
+        registerCardAtlasSource(atlasId, {
+            image: atlasImage,
+            config: TEST_UNIFORM_ATLAS,
+        });
+
+        const candidateUrls = getCardAtlasCandidateUrls(atlasImage, 'zh-CN');
+        const primaryUrl = candidateUrls[0];
+        let primaryRequestCount = 0;
+
+        class MockImage {
+            onload: (() => void) | null = null;
+            onerror: (() => void) | null = null;
+            naturalWidth = 100;
+            naturalHeight = 200;
+            currentSrc = '';
+            private _src = '';
+
+            get src() {
+                return this._src;
+            }
+
+            set src(value: string) {
+                this._src = value;
+                this.currentSrc = value;
+                if (value === primaryUrl) {
+                    primaryRequestCount += 1;
+                }
+                setTimeout(() => {
+                    this.onload?.();
+                }, 0);
+            }
+        }
+
+        vi.stubGlobal('Image', MockImage as unknown as typeof Image);
+
+        try {
+            render(
+                <div>
+                    <CardPreview previewRef={{ type: 'atlas', atlasId, index: 0 }} locale="zh-CN" />
+                    <CardPreview previewRef={{ type: 'atlas', atlasId, index: 0 }} locale="zh-CN" />
+                </div>
+            );
+
+            await act(async () => {
+                await vi.runAllTimersAsync();
+                await Promise.resolve();
+            });
+
+            expect(primaryRequestCount).toBe(1);
         } finally {
             vi.useRealTimers();
             vi.unstubAllGlobals();

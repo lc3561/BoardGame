@@ -563,6 +563,71 @@ describe('BonusDieOverlay', () => {
         });
     });
 
+    it('同一张卡的重复 CARD_PLAYED 事件不应重复入特写队列', async () => {
+        const entries: EventStreamEntry[] = [
+            {
+                id: 1,
+                event: {
+                    type: 'CARD_PLAYED',
+                    payload: {
+                        playerId: '1',
+                        cardId: 'card-boss-generous',
+                    },
+                    timestamp: 1000,
+                },
+            },
+            {
+                id: 2,
+                event: {
+                    type: 'CARD_PLAYED',
+                    payload: {
+                        playerId: '1',
+                        cardId: 'card-boss-generous',
+                    },
+                    timestamp: 1000,
+                },
+            },
+            {
+                id: 3,
+                event: {
+                    type: 'CARD_PLAYED',
+                    payload: {
+                        playerId: '1',
+                        cardId: 'card-boss-generous',
+                    },
+                    timestamp: 1000,
+                },
+            },
+        ];
+
+        function HookProbe({ streamEntries }: { streamEntries: EventStreamEntry[] }) {
+            const state = useCardSpotlight({
+                eventStreamEntries: streamEntries,
+                currentPlayerId: '0',
+                opponentName: '对手',
+                selectedCharacters: {
+                    '0': 'samurai',
+                    '1': 'gunslinger',
+                },
+            });
+
+            return (
+                <pre data-testid="duplicate-card-spotlight-state">
+                    {JSON.stringify(state.cardSpotlightQueue)}
+                </pre>
+            );
+        }
+
+        const view = render(<HookProbe streamEntries={[]} />);
+        view.rerender(<HookProbe streamEntries={entries} />);
+
+        await waitFor(() => {
+            const state = JSON.parse(screen.getByTestId('duplicate-card-spotlight-state').textContent ?? '[]');
+            expect(state).toHaveLength(1);
+            expect(state[0].id).toBe('card-boss-generous-1000');
+        });
+    });
+
     it('自己打出的 Volley 多骰事件应显示独立多骰特写，而不是卡牌特写或单骰特写', async () => {
         const entries: EventStreamEntry[] = [
             {

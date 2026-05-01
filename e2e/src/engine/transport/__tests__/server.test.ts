@@ -869,7 +869,7 @@ describe('resolveLocalAiActionVisibility（可见步骤分类）', () => {
         }, runtime)).toBe('hidden');
     });
 
-    it('无 runtime 配置时，默认将 interaction / advance-phase / fast command 视为隐藏步骤', () => {
+    it('无 runtime 配置时，interaction/response-pass 仍隐藏，advance-phase 强制可见', () => {
         expect(resolveLocalAiActionVisibility({
             actionId: 'interaction-hidden',
             kind: 'interaction-multistep',
@@ -882,7 +882,7 @@ describe('resolveLocalAiActionVisibility（可见步骤分类）', () => {
             kind: 'advance-phase',
             label: '推进阶段',
             commands: [{ type: 'ADVANCE_PHASE', payload: {} }],
-        })).toBe('hidden');
+        })).toBe('visible');
 
         expect(resolveLocalAiActionVisibility({
             actionId: 'response-hidden',
@@ -930,7 +930,7 @@ describe('resolveLocalAiActionDelayPlan（单一延迟预算）', () => {
         expect(plan.remainingDelayMs).toBe(1000);
     });
 
-    it('在线链路已有决策/状态耗时会抵扣剩余延迟预算', () => {
+    it('在线链路已有状态年龄只做观测，不再抵扣可见步骤延迟', () => {
         const observedState = {
             sys: {
                 eventStream: {
@@ -951,8 +951,8 @@ describe('resolveLocalAiActionDelayPlan（单一延迟预算）', () => {
 
         expect(plan.minimumDelayMs).toBe(1000);
         expect(plan.observedStateAgeMs).toBe(600);
-        expect(plan.delayBudgetElapsedMs).toBe(600);
-        expect(plan.remainingDelayMs).toBe(400);
+        expect(plan.delayBudgetElapsedMs).toBe(0);
+        expect(plan.remainingDelayMs).toBe(1000);
     });
 
     it('会忽略 timestamp=0 的占位事件，避免错误吃光可见动作延迟', () => {
@@ -980,8 +980,32 @@ describe('resolveLocalAiActionDelayPlan（单一延迟预算）', () => {
         });
 
         expect(plan.observedStateAgeMs).toBe(0);
-        expect(plan.delayBudgetElapsedMs).toBe(200);
-        expect(plan.remainingDelayMs).toBe(800);
+        expect(plan.delayBudgetElapsedMs).toBe(0);
+        expect(plan.remainingDelayMs).toBe(1000);
+    });
+
+    it('可见步骤应从上一次可见动作提交后重新计时，不区分 seat', () => {
+        const plan = resolveLocalAiActionDelayPlan({
+            controller: { type: 'local-ai' },
+            actionVisibility: 'visible',
+            now: 8_600,
+            lastVisibleActionAt: 8_150,
+            extraElapsedBudgetMs: [900],
+            observedState: {
+                sys: {
+                    eventStream: {
+                        entries: [
+                            { event: { timestamp: 7_000 } },
+                        ],
+                    },
+                },
+            } as any,
+        });
+
+        expect(plan.observedStateAgeMs).toBe(1600);
+        expect(plan.visibleStepElapsedMs).toBe(450);
+        expect(plan.delayBudgetElapsedMs).toBe(450);
+        expect(plan.remainingDelayMs).toBe(550);
     });
 });
 
@@ -6448,6 +6472,79 @@ describe('GameTransportServer（离座与重连）', () => {
         });
     });
 
+    it('命令异常触发 auto-cancel 时，若 CANCEL 自身失败也不应递归爆栈', async () => {
+        const io = new MockIO();
+        const storage = new InMemoryStorage();
+        const executedCommandTypes: string[] = [];
+
+        const guardedEngineConfig: GameEngineConfig = {
+            ...createEngineConfig(),
+            systems: [
+                {
+                    id: 'throw-on-command',
+                    name: 'throw-on-command',
+                    priority: 1,
+                    beforeCommand: ({ command }: { command: { type: string } }) => {
+                        executedCommandTypes.push(command.type);
+                        if (command.type === 'TRIGGER_ERROR' || command.type === INTERACTION_COMMANDS.CANCEL) {
+                            throw new Error(`forced-${command.type}`);
+                        }
+                    },
+                } as any,
+            ],
+        };
+
+        const interaction = createSimpleChoice(
+            'interaction-cancel-recursion-guard',
+            '0',
+            '测试交互',
+            [{ id: 'ok', label: '确认', value: 'ok' }],
+        );
+
+        await storage.createMatch('match-cancel-recursion-guard', {
+            initialState: {
+                G: {
+                    core: { currentPlayer: '0' },
+                    sys: {
+                        phase: 'main',
+                        turnNumber: 1,
+                        interaction: {
+                            current: interaction,
+                            queue: [],
+                            isBlocked: false,
+                        },
+                    },
+                },
+                _stateID: 0,
+                randomSeed: 'seed',
+                randomCursor: 0,
+            },
+            metadata: createMetadata('cred-0'),
+        });
+
+        const server = new GameTransportServer({
+            io: io as unknown as any,
+            storage,
+            games: [guardedEngineConfig],
+        });
+
+        const serverInternal = server as unknown as {
+            loadMatch: (matchID: string) => Promise<any>;
+            executeCommandInternal: (
+                match: any,
+                playerID: string,
+                commandType: string,
+                payload: unknown,
+            ) => Promise<boolean>;
+        };
+
+        const match = await serverInternal.loadMatch('match-cancel-recursion-guard');
+        const success = await serverInternal.executeCommandInternal(match, '0', 'TRIGGER_ERROR', {});
+
+        expect(success).toBe(false);
+        expect(executedCommandTypes).toEqual(['TRIGGER_ERROR', INTERACTION_COMMANDS.CANCEL]);
+    });
+
     it('online AI watchdog 响应循环时应强制关闭响应窗口', async () => {
         const io = new MockIO();
         const storage = new InMemoryStorage();
@@ -6493,7 +6590,6 @@ describe('GameTransportServer（离座与重连）', () => {
         vi.spyOn(serverInternal, 'executeCommandInternal').mockImplementation(async (match, _playerID, commandType) => {
             executed.push(commandType);
             if (commandType === 'RESPONSE_PASS') {
-                // 模拟 RESPONSE_PASS 后响应窗口立刻重开（同一 AI 的循环场景）
                 match.state = {
                     ...match.state,
                     sys: {
@@ -6536,7 +6632,6 @@ describe('GameTransportServer（离座与重连）', () => {
 
         await serverInternal.runOnlineAiRecoveryTick();
         await serverInternal.runOnlineAiRecoveryTick();
-        // recovery sequence is fire-and-forget; need enough microtask cycles for it to complete
         for (let i = 0; i < 10; i++) { await nextTick(); }
         await serverInternal.runOnlineAiRecoveryTick();
         for (let i = 0; i < 10; i++) { await nextTick(); }

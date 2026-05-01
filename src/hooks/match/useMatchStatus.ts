@@ -170,6 +170,32 @@ export interface ExitMatchResult {
     error?: 'not_found' | 'forbidden' | 'server_error' | 'network' | 'unknown';
 }
 
+const resolveExitMatchError = (err: unknown): { error: Exclude<ExitMatchResult['error'], 'unknown'>; status?: number } => {
+    if (isMatchNotFoundError(err)) {
+        return { error: 'not_found', status: 404 };
+    }
+
+    const status = typeof err === 'object' && err !== null && 'status' in err
+        ? (err as { status?: number }).status
+        : undefined;
+    const code = typeof err === 'object' && err !== null && 'code' in err
+        ? String((err as { code?: unknown }).code ?? '')
+        : '';
+
+    if (status === 401 || status === 403 || code === 'INVALID_TOKEN' || code === 'HTTP_401' || code === 'HTTP_403') {
+        return { error: 'forbidden', status: status ?? (code === 'INVALID_TOKEN' ? 401 : undefined) };
+    }
+
+    if (typeof status === 'number' && status >= 500) {
+        return { error: 'server_error', status };
+    }
+
+    return {
+        error: 'network',
+        status: typeof status === 'number' ? status : undefined,
+    };
+};
+
 export type RejoinMatchError =
     | 'not_found'
     | 'room_full'
@@ -784,12 +810,13 @@ export async function leaveMatch(
         return { success: true };
     } catch (err: unknown) {
         console.error('离开房间失败:', err);
+        const resolvedError = resolveExitMatchError(err);
         // 404 说明房间已不存在，视为成功并清理凭据
-        if (isMatchNotFoundError(err)) {
+        if (resolvedError.error === 'not_found') {
             clearMatchCredentials(matchID);
-            return { success: true, cleanedLocal: true, error: 'not_found' };
+            return { success: true, cleanedLocal: true, error: resolvedError.error };
         }
-        return { success: false, error: 'unknown' };
+        return { success: false, error: resolvedError.error };
     }
 }
 

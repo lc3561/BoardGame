@@ -68,6 +68,7 @@ import { GameCursorProvider } from '../core/cursor';
 import { useGameNamespaceReady } from '../hooks/useGameNamespaceReady';
 import { useGameImplementationReady } from '../hooks/useGameImplementationReady';
 import { SmashUpOverlayProvider } from '../games/smashup/ui/SmashUpOverlayContext';
+import { resolveExitMatchErrorMessageKey } from '../components/lobby/roomActions';
 import { resolveGameDisplayName } from '../components/lobby/gameDetailsContent';
 import { resolveOnlineHudPresence } from './matchHudPresence';
 import { haveAiSeatCredentialsChanged, loadOnlineAiSeatState } from './onlineAiSeats';
@@ -216,7 +217,7 @@ const OnlineAiSeatBridge = ({
     const [aiRetryVersion, setAiRetryVersion] = useState(0);
     const [forceSkipCheckVersion, setForceSkipCheckVersion] = useState(0);
     const lastAiAttemptKeyRef = useRef<string | null>(null);
-    const lastVisibleAiActionAtBySeatRef = useRef<Record<string, number | null>>({});
+    const lastVisibleAiActionAtRef = useRef<number | null>(null);
     const forceSkipTrackerRef = useRef<{
         key: string;
         firstSeenAt: number;
@@ -545,7 +546,7 @@ const OnlineAiSeatBridge = ({
         const hasAiSeat = Object.values(seatControllers).some((controller) => controller.type !== 'human');
         if (!hasAiSeat || !state) {
             lastAiAttemptKeyRef.current = null;
-            lastVisibleAiActionAtBySeatRef.current = {};
+            lastVisibleAiActionAtRef.current = null;
             staleSeatRecoveryRef.current = null;
 
             return;
@@ -836,7 +837,7 @@ const OnlineAiSeatBridge = ({
                 controller,
                 actionVisibility,
                 now,
-                lastVisibleActionAt: lastVisibleAiActionAtBySeatRef.current[resolution.playerId] ?? null,
+                lastVisibleActionAt: lastVisibleAiActionAtRef.current,
                 observedState: state as MatchState<unknown>,
                 extraElapsedBudgetMs: [preScheduleElapsedMs],
             });
@@ -955,7 +956,7 @@ const OnlineAiSeatBridge = ({
             const submittedAt = Date.now();
             const submitElapsedMs = submittedAt - startedAt;
             if (delayPlan.actionVisibility === 'visible') {
-                lastVisibleAiActionAtBySeatRef.current[resolution.playerId] = submittedAt;
+                lastVisibleAiActionAtRef.current = submittedAt;
             }
             onlineAiPerfLogger.info('submitted', {
                 gameId: engineConfig.gameId,
@@ -2814,7 +2815,7 @@ export const MatchRoom = () => {
         const result = await leaveMatch(gameId || 'tictactoe', matchId, statusPlayerID, credentials);
         setIsLeaving(false);
         if (!result.success) {
-            toast.error({ kind: 'i18n', key: 'matchRoom.leaveFailed', ns: 'lobby' });
+            toast.error({ kind: 'i18n', key: resolveExitMatchErrorMessageKey(result.error, false), ns: 'lobby' });
             return;
         }
         navigateBackToLobby();

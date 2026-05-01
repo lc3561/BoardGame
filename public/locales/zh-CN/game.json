@@ -5,6 +5,7 @@
     "invalid_phase": "当前阶段不允许此操作",
     "invalid_character": "无效的角色",
     "character_not_selected": "尚未选择角色",
+    "character_already_taken": "该角色已被其他玩家选择",
     "character_selection_not_initialized": "角色选择未初始化",
     "command_failed": "命令执行失败",
     "not_connected": "连接尚未就绪，请稍后重试",

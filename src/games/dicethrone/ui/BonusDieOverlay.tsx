@@ -112,6 +112,58 @@ export const BonusDieOverlay: React.FC<BonusDieOverlayProps> = ({
     const resolvedAutoCloseDelay = hasForceAutoClose
         ? forceAutoCloseDelay
         : (displayOnly ? DISPLAY_ONLY_AUTO_CLOSE_DELAY_MS : autoCloseDelay);
+    const handleOverlayClose = React.useCallback(() => {
+        bonusDieOverlayLogger.info('ui-close-request', {
+            mode: isRerollMode ? 'reroll' : 'single',
+            displayOnly: !!displayOnly,
+            canReroll: !!canReroll,
+            rerollLimitReached: !!rerollLimitReached,
+            bonusDiceCount: bonusDice?.length ?? 0,
+        });
+        onClose();
+    }, [bonusDice?.length, canReroll, displayOnly, isRerollMode, onClose, rerollLimitReached]);
+    const handleDieClick = React.useCallback((dieIndex: number) => {
+        if (!canReroll) {
+            bonusDieOverlayLogger.info('reroll-die-click-ignored', {
+                dieIndex,
+                reason: displayOnly
+                    ? 'display-only'
+                    : rerollLimitReached
+                        ? 'reroll-limit-reached'
+                        : 'can-reroll-false',
+                bonusDiceCount: bonusDice?.length ?? 0,
+            });
+            return;
+        }
+        if (!onReroll) {
+            bonusDieOverlayLogger.info('reroll-die-click-ignored', {
+                dieIndex,
+                reason: 'missing-onReroll-handler',
+                bonusDiceCount: bonusDice?.length ?? 0,
+            });
+            return;
+        }
+
+        bonusDieOverlayLogger.info('reroll-die-click', {
+            dieIndex,
+            bonusDiceCount: bonusDice?.length ?? 0,
+        });
+        onReroll(dieIndex);
+    }, [bonusDice?.length, canReroll, displayOnly, onReroll, rerollLimitReached]);
+    const handleConfirmDamage = React.useCallback(() => {
+        bonusDieOverlayLogger.info('confirm-damage-click', {
+            hasOnSkipReroll: typeof onSkipReroll === 'function',
+            fallbackToClose: typeof onSkipReroll !== 'function',
+            bonusDiceCount: bonusDice?.length ?? 0,
+        });
+
+        if (onSkipReroll) {
+            onSkipReroll();
+            return;
+        }
+
+        handleOverlayClose();
+    }, [bonusDice?.length, handleOverlayClose, onSkipReroll]);
 
     // 调试日志：组件渲染
     React.useEffect(() => {
@@ -164,7 +216,7 @@ export const BonusDieOverlay: React.FC<BonusDieOverlayProps> = ({
             <SpotlightContainer
                 id="bonus-dice-reroll"
                 isVisible={isVisible}
-                onClose={onClose}
+                onClose={handleOverlayClose}
                 disableAutoClose={shouldDisableAutoClose && !hasForceAutoClose}
                 disableBackdropClose={isInteractive}
                 blockPointerEvents={isInteractive}
@@ -209,7 +261,7 @@ export const BonusDieOverlay: React.FC<BonusDieOverlayProps> = ({
                                         ? 'cursor-pointer hover:scale-110 transition-transform'
                                         : ''
                                 }`}
-                                onClick={() => canReroll && onReroll?.(die.index)}
+                                onClick={() => handleDieClick(die.index)}
                             >
                                 <BonusDieSpotlightContent
                                     value={die.value}
@@ -274,7 +326,7 @@ export const BonusDieOverlay: React.FC<BonusDieOverlayProps> = ({
                             transition={{ delay: 0.8 }}
                         >
                             <GameButton
-                                onClick={onSkipReroll ?? onClose}
+                                onClick={handleConfirmDamage}
                                 variant="primary"
                                 size="md"
                                 className="!text-[1.1vw] !px-[2.5vw] !py-[0.8vw]"
@@ -304,7 +356,7 @@ export const BonusDieOverlay: React.FC<BonusDieOverlayProps> = ({
         <SpotlightContainer
             id={`bonus-die-${value}`}
             isVisible={isVisible}
-            onClose={onClose}
+            onClose={handleOverlayClose}
             disableAutoClose={isManualCloseOnly && !hasForceAutoClose}
             autoCloseDelay={resolvedAutoCloseDelay}
             zIndex={UI_Z_INDEX.overlayRaised + 100}

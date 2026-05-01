@@ -748,7 +748,7 @@ export function LocalGameProvider({
     const randomRef = useRef<LocalProviderRandom>(initialRandom);
     const onCommandRejectedRef = useRef(onCommandRejected);
     const lastAiAttemptKeyRef = useRef<string | null>(null);
-    const lastVisibleAiActionAtBySeatRef = useRef<Record<string, number | null>>({});
+    const lastVisibleAiActionAtRef = useRef<number | null>(null);
     const aiCommandEffectByTokenRef = useRef<Record<string, { hasStateDelta: boolean; markerProgressed: boolean }>>({});
     const [aiRetryVersion, setAiRetryVersion] = useState(0);
     const aiActivePhaseRef = useRef<{ key: string; startedAt: number } | null>(null);
@@ -999,7 +999,7 @@ export function LocalGameProvider({
                 return;
             }
             lastAiAttemptKeyRef.current = null;
-            lastVisibleAiActionAtBySeatRef.current = {};
+            lastVisibleAiActionAtRef.current = null;
             aiCommandEffectByTokenRef.current = {};
             setAiRetryVersion((version) => version + 1);
         });
@@ -1203,7 +1203,7 @@ export function LocalGameProvider({
         const hasAiSeat = Object.values(seatControllers).some((controller) => controller.type !== 'human');
         if (!hasAiSeat) {
             lastAiAttemptKeyRef.current = null;
-            lastVisibleAiActionAtBySeatRef.current = {};
+            lastVisibleAiActionAtRef.current = null;
             aiCommandEffectByTokenRef.current = {};
             aiTurnTimelineBySeatRef.current = {};
             return;
@@ -1211,7 +1211,7 @@ export function LocalGameProvider({
 
         if (localPregameControlledPlayerId) {
             lastAiAttemptKeyRef.current = null;
-            lastVisibleAiActionAtBySeatRef.current = {};
+            lastVisibleAiActionAtRef.current = null;
             aiCommandEffectByTokenRef.current = {};
             aiTurnTimelineBySeatRef.current = {};
             return;
@@ -1266,7 +1266,7 @@ export function LocalGameProvider({
                 controller,
                 actionVisibility,
                 now: decisionResolvedAt,
-                lastVisibleActionAt: lastVisibleAiActionAtBySeatRef.current[resolution.playerId] ?? null,
+                lastVisibleActionAt: lastVisibleAiActionAtRef.current,
             });
             const commandTypes = resolution.action.commands.map((command) => command.type);
             const activePhaseElapsedMs = aiActivePhaseRef.current
@@ -1554,7 +1554,7 @@ export function LocalGameProvider({
             }
 
             if (actionVisibility === 'visible' && hasAnyCommandEffect) {
-                lastVisibleAiActionAtBySeatRef.current[resolution.playerId] = Date.now();
+                lastVisibleAiActionAtRef.current = Date.now();
             }
 
             const totalElapsedMs = Date.now() - startedAt;

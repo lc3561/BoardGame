@@ -48,6 +48,7 @@ import { createDamageCalculation } from '../../../engine/primitives';
 import { getUsableTokensForOffensiveRollEnd } from './tokenResponse';
 import { getPlayerAbilityBaseDamage, playerAbilityHasDamage, playerAbilityNeedsSingleOpponentTarget } from './abilityLookup';
 import { evaluateTriggerCondition } from './combat';
+import { findHeroCard } from '../heroes';
 
 const pendingAttackNeedsTargetingRoll = (core: DiceThroneCore): boolean => {
     const pendingAttack = core.pendingAttack;
@@ -782,11 +783,13 @@ export const diceThroneFlowHooks: FlowHooks<DiceThroneCore> = {
                             playerId: choiceOwnerId,
                             sourceAbilityId: 'targeting-roll',
                             titleKey: targetingValue === 5 ? '由对手决定谁承受本次攻击' : '选择本次攻击目标',
+                            allowedCommands: targetingValue === 6 ? ['PLAY_CARD'] : undefined,
                             options: getTargetingRollChoiceOptions(core, attackerId),
                         },
                         sourceCommandType: command.type,
                         timestamp,
                     };
+
                     events.push(choiceEvent);
                     return { events, halt: true };
                 }
@@ -802,7 +805,59 @@ export const diceThroneFlowHooks: FlowHooks<DiceThroneCore> = {
                 return { events, halt: true };
             }
 
-            if (targetingCore.pendingAttack.damageResolved) {
+            const deferredAttackModifierCardIds = targetingCore.pendingAttack.deferredAttackModifierCardIds ?? [];
+            if (deferredAttackModifierCardIds.length > 0) {
+                const resolvedDefenderId = targetingCore.pendingAttack.defenderId;
+                let replayCore = targetingCore;
+
+                deferredAttackModifierCardIds.forEach((cardId, index) => {
+                    const card = findHeroCard(cardId);
+                    if (!card?.effects?.length) {
+                        return;
+                    }
+
+                    const replayTimestamp = timestamp + 0.01 + index * 0.01;
+                    const replayEvents = resolveEffectsToEvents(
+                        card.effects,
+                        'immediate',
+                        {
+                            attackerId,
+                            defenderId: resolvedDefenderId,
+                            sourceAbilityId: cardId,
+                            state: replayCore,
+                            damageDealt: 0,
+                            timestamp: replayTimestamp,
+                        },
+                        { random },
+                    );
+
+                    if (replayEvents.length > 0) {
+                        events.push(...replayEvents);
+                        replayCore = applyEvents(replayCore, replayEvents, reduce);
+                    }
+                });
+
+                const clearDeferredEvent: DiceThroneEvent = {
+                    type: 'PENDING_ATTACK_UPDATED',
+                    payload: {
+                        attackerId,
+                        patch: {
+                            deferredAttackModifierCardIds: [],
+                        },
+                    },
+                    sourceCommandType: command.type,
+                    timestamp: timestamp + 0.02 + deferredAttackModifierCardIds.length * 0.01,
+                };
+                events.push(clearDeferredEvent);
+                targetingCore = applyEvents(replayCore, [clearDeferredEvent], reduce);
+            }
+
+            const pendingAttack = targetingCore.pendingAttack;
+            if (!pendingAttack?.defenderId) {
+                return { events, halt: true };
+            }
+
+            if (pendingAttack.damageResolved) {
                 const coreForPostDamage = getCoreForPostDamageAfterEvasion(targetingCore);
                 const isFullyEvaded = coreForPostDamage !== targetingCore;
                 const postDamageEvents = resolvePostDamageEffects(coreForPostDamage, random, timestamp);
@@ -836,9 +891,9 @@ export const diceThroneFlowHooks: FlowHooks<DiceThroneCore> = {
                 return { events, overrideNextPhase: 'main2' };
             }
 
-            if (targetingCore.pendingAttack.bonusDiceResolved) {
-                const { attackerId: resolvedAttackerId, defenderId, sourceAbilityId, defenseAbilityId } = targetingCore.pendingAttack;
-                const totalDamage = targetingCore.pendingAttack.resolvedDamage ?? 0;
+            if (pendingAttack.bonusDiceResolved) {
+                const { attackerId: resolvedAttackerId, defenderId, sourceAbilityId, defenseAbilityId } = pendingAttack;
+                const totalDamage = pendingAttack.resolvedDamage ?? 0;
                 events.push({
                     type: 'ATTACK_RESOLVED',
                     payload: { attackerId: resolvedAttackerId, defenderId, sourceAbilityId, defenseAbilityId, totalDamage },
@@ -863,20 +918,20 @@ export const diceThroneFlowHooks: FlowHooks<DiceThroneCore> = {
                 return { events, overrideNextPhase: 'main2' };
             }
 
-            const attacker = targetingCore.players[targetingCore.pendingAttack.attackerId];
+            const attacker = targetingCore.players[pendingAttack.attackerId];
             const blindedStacks = attacker?.statusEffects[STATUS_IDS.BLINDED] ?? 0;
             if (blindedStacks > 0 && random) {
                 const blindedValue = random.d(6);
-                const blindedFace = getPlayerDieFace(targetingCore, targetingCore.pendingAttack.attackerId, blindedValue) ?? '';
+                const blindedFace = getPlayerDieFace(targetingCore, pendingAttack.attackerId, blindedValue) ?? '';
                 events.push({
                     type: 'BONUS_DIE_ROLLED',
-                    payload: { value: blindedValue, face: blindedFace, playerId: targetingCore.pendingAttack.attackerId, targetPlayerId: targetingCore.pendingAttack.attackerId, effectKey: 'bonusDie.effect.blinded' },
+                    payload: { value: blindedValue, face: blindedFace, playerId: pendingAttack.attackerId, targetPlayerId: pendingAttack.attackerId, effectKey: 'bonusDie.effect.blinded' },
                     sourceCommandType: command.type,
                     timestamp,
                 } as any);
                 events.push({
                     type: 'STATUS_REMOVED',
-                    payload: { targetId: targetingCore.pendingAttack.attackerId, statusId: STATUS_IDS.BLINDED, stacks: blindedStacks },
+                    payload: { targetId: pendingAttack.attackerId, statusId: STATUS_IDS.BLINDED, stacks: blindedStacks },
                     sourceCommandType: command.type,
                     timestamp,
                 } as any);
@@ -885,11 +940,11 @@ export const diceThroneFlowHooks: FlowHooks<DiceThroneCore> = {
                 }
             }
 
-            const defender = targetingCore.pendingAttack.defenderId
-                ? targetingCore.players[targetingCore.pendingAttack.defenderId]
+            const defender = pendingAttack.defenderId
+                ? targetingCore.players[pendingAttack.defenderId]
                 : undefined;
             const sneakStacks = defender?.tokens[TOKEN_IDS.SNEAK] ?? 0;
-            if (sneakStacks > 0 && !targetingCore.pendingAttack.isUltimate) {
+            if (sneakStacks > 0 && !pendingAttack.isUltimate) {
                 const preDefenseEventsSneak = resolveOffensivePreDefenseEffects(targetingCore, random, timestamp);
                 events.push(...preDefenseEventsSneak);
 
@@ -906,7 +961,7 @@ export const diceThroneFlowHooks: FlowHooks<DiceThroneCore> = {
                     ? applyEvents(targetingCore, [...events] as DiceThroneEvent[], reduce)
                     : targetingCore;
 
-                const sneakBaseDamage = getPendingAttackExpectedDamage(coreAfterPreDefenseSneak, targetingCore.pendingAttack, 1);
+                const sneakBaseDamage = getPendingAttackExpectedDamage(coreAfterPreDefenseSneak, pendingAttack, 1);
                 const coreForPostDamage = {
                     ...coreAfterPreDefenseSneak,
                     pendingAttack: {

@@ -80,6 +80,111 @@ const DICE_FACE_FALLBACK_LABELS: Record<string, string> = {
     bullseye: 'BE',
 };
 
+type DiceSpriteLoadResult = { url: string; img: HTMLImageElement } | null;
+const diceSpriteInFlightLoads = new Map<string, Promise<DiceSpriteLoadResult>>();
+
+const hasUsableSpriteImage = (img: HTMLImageElement | null | undefined): img is HTMLImageElement =>
+    img != null && img.naturalWidth > 0;
+
+const normalizeComparableUrl = (url: string): string => {
+    if (!url) return '';
+    if (typeof window === 'undefined') return url;
+    try {
+        return new URL(url, window.location.href).href;
+    } catch {
+        return url;
+    }
+};
+
+const matchLoadedSpriteCandidateUrl = (
+    img: HTMLImageElement | null | undefined,
+    candidateUrls: string[],
+): string => {
+    if (!hasUsableSpriteImage(img)) return '';
+
+    const normalizedCandidates = candidateUrls.map((candidateUrl) => ({
+        candidateUrl,
+        normalized: normalizeComparableUrl(candidateUrl),
+    }));
+
+    for (const src of [img.currentSrc, img.src]) {
+        const normalizedSrc = normalizeComparableUrl(src);
+        if (!normalizedSrc) continue;
+        const matchedCandidate = normalizedCandidates.find((candidate) => candidate.normalized === normalizedSrc);
+        if (matchedCandidate) {
+            return matchedCandidate.candidateUrl;
+        }
+    }
+
+    return '';
+};
+
+const resolveLoadedSpriteUrl = (
+    candidateUrls: string[],
+    spriteAssetPath?: string | null,
+    locale?: string,
+): string => {
+    for (const candidateUrl of candidateUrls) {
+        const matchedCandidate = matchLoadedSpriteCandidateUrl(getPreloadedImageElement(candidateUrl), candidateUrls);
+        if (matchedCandidate) {
+            return matchedCandidate;
+        }
+    }
+
+    if (spriteAssetPath) {
+        const sourceImg = getPreloadedImageElement(spriteAssetPath, locale);
+        const matchedCandidate = matchLoadedSpriteCandidateUrl(sourceImg, candidateUrls);
+        if (matchedCandidate) {
+            return matchedCandidate;
+        }
+
+        if (hasUsableSpriteImage(sourceImg)) {
+            return sourceImg.currentSrc || sourceImg.src || '';
+        }
+    }
+
+    return '';
+};
+
+const loadDiceSpriteCandidatesShared = (candidateUrls: string[]): Promise<DiceSpriteLoadResult> => {
+    if (candidateUrls.length === 0) {
+        return Promise.resolve(null);
+    }
+
+    const inFlightKey = candidateUrls.join('|');
+    const inFlight = diceSpriteInFlightLoads.get(inFlightKey);
+    if (inFlight) {
+        return inFlight;
+    }
+
+    const promise = new Promise<DiceSpriteLoadResult>((resolve) => {
+        const tryLoad = (index: number) => {
+            if (index >= candidateUrls.length) {
+                resolve(null);
+                return;
+            }
+
+            const url = candidateUrls[index];
+            const img = new Image();
+            img.onload = () => {
+                markImageLoaded(url, undefined, img);
+                resolve({ url, img });
+            };
+            img.onerror = () => {
+                tryLoad(index + 1);
+            };
+            img.src = url;
+        };
+
+        tryLoad(0);
+    }).finally(() => {
+        diceSpriteInFlightLoads.delete(inFlightKey);
+    });
+
+    diceSpriteInFlightLoads.set(inFlightKey, promise);
+    return promise;
+};
+
 const resolveFallbackLabel = (faceValue: number, definitionId?: string) => {
     const symbol = definitionId
         ? getDieFaceByValue(definitionId, faceValue)?.symbols?.[0]
@@ -111,6 +216,15 @@ export const Dice3D = ({
         [characterId, definitionId],
     );
     const effectiveLocale = locale ?? 'zh-CN';
+    const spriteCandidates = React.useMemo(
+        () => (spriteAssetPath ? getLocalizedImageCandidateUrls(spriteAssetPath, effectiveLocale) : []),
+        [effectiveLocale, spriteAssetPath],
+    );
+    const loadedSpriteUrl = React.useMemo(
+        () => resolveLoadedSpriteUrl(spriteCandidates, spriteAssetPath, effectiveLocale),
+        [effectiveLocale, spriteAssetPath, spriteCandidates],
+    );
+    const spriteStateKey = `${spriteAssetPath ?? ''}|${effectiveLocale}`;
 
     const faces = [
         { id: 1, trans: `translateZ(${translateZ})` },
@@ -121,8 +235,19 @@ export const Dice3D = ({
         { id: 5, trans: `rotateX(-90deg) translateZ(${translateZ})` },
     ];
 
-    const [resolvedSpriteUrl, setResolvedSpriteUrl] = React.useState<string | null>(null);
-    const [isSpriteReady, setIsSpriteReady] = React.useState(false);
+    const [spriteState, setSpriteState] = React.useState(() => ({
+        key: spriteStateKey,
+        resolvedSpriteUrl: loadedSpriteUrl || spriteCandidates[0] || null,
+        isSpriteReady: Boolean(loadedSpriteUrl),
+    }));
+    const currentSpriteState = spriteState.key === spriteStateKey
+        ? spriteState
+        : {
+            key: spriteStateKey,
+            resolvedSpriteUrl: loadedSpriteUrl || spriteCandidates[0] || null,
+            isSpriteReady: Boolean(loadedSpriteUrl),
+        };
+    const { resolvedSpriteUrl, isSpriteReady } = currentSpriteState;
 
     React.useEffect(() => {
         if (typeof document === 'undefined') return;
@@ -135,53 +260,64 @@ export const Dice3D = ({
 
     React.useEffect(() => {
         let cancelled = false;
-        setIsSpriteReady(false);
-        setResolvedSpriteUrl(null);
-
         if (!spriteAssetPath) return () => {
             cancelled = true;
         };
 
-        const candidates = getLocalizedImageCandidateUrls(spriteAssetPath, effectiveLocale);
-        const findLoadedCandidate = () => candidates.find((url) => {
-            const el = getPreloadedImageElement(url);
-            return el?.naturalWidth && el.naturalWidth > 0;
-        });
-
-        const loaded = findLoadedCandidate();
-        if (loaded) {
-            setResolvedSpriteUrl(loaded);
-            setIsSpriteReady(true);
-            return () => { cancelled = true; };
+        if (loadedSpriteUrl) {
+            setSpriteState((current) => {
+                if (current.isSpriteReady && current.resolvedSpriteUrl === loadedSpriteUrl) return current;
+                return {
+                    key: spriteStateKey,
+                    resolvedSpriteUrl: loadedSpriteUrl,
+                    isSpriteReady: true,
+                };
+            });
+            return () => {
+                cancelled = true;
+            };
         }
 
-        setResolvedSpriteUrl(candidates[0] ?? null);
-
-        const tryLoad = (index: number) => {
-            if (cancelled) return;
-            if (index >= candidates.length) return;
-            const url = candidates[index];
-            const img = new Image();
-            img.onload = () => {
-                if (cancelled) return;
-                markImageLoaded(url, undefined, img);
-                markImageLoaded(spriteAssetPath, effectiveLocale, img);
-                setResolvedSpriteUrl(url);
-                setIsSpriteReady(true);
+        if (spriteCandidates.length === 0) {
+            setSpriteState((current) => {
+                return {
+                    key: spriteStateKey,
+                    resolvedSpriteUrl: null,
+                    isSpriteReady: false,
+                };
+            });
+            return () => {
+                cancelled = true;
             };
-            img.onerror = () => {
-                if (cancelled) return;
-                tryLoad(index + 1);
-            };
-            img.src = url;
-        };
+        }
 
-        tryLoad(0);
+        setSpriteState((current) => {
+            return {
+                key: spriteStateKey,
+                resolvedSpriteUrl: current.resolvedSpriteUrl ?? spriteCandidates[0] ?? null,
+                isSpriteReady: false,
+            };
+        });
+
+        void loadDiceSpriteCandidatesShared(spriteCandidates).then((result) => {
+            if (cancelled || !result) {
+                return;
+            }
+
+            markImageLoaded(spriteAssetPath, effectiveLocale, result.img);
+            setSpriteState((current) => {
+                return {
+                    key: spriteStateKey,
+                    resolvedSpriteUrl: result.url,
+                    isSpriteReady: true,
+                };
+            });
+        });
 
         return () => {
             cancelled = true;
         };
-    }, [effectiveLocale, spriteAssetPath]);
+    }, [effectiveLocale, loadedSpriteUrl, spriteAssetPath, spriteCandidates, spriteStateKey]);
 
     React.useEffect(() => {
         dice3DLogger.debug('sprite-resolved', {

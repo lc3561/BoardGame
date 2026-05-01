@@ -9,10 +9,13 @@ const FAST_AI_COMMAND_TYPES = new Set([
 ]);
 
 const DEFAULT_HIDDEN_ACTION_KINDS = new Set([
-    'advance-phase',
     'response-pass',
     'token-response',
     'skip-token-response',
+]);
+
+const ALWAYS_VISIBLE_ACTION_KINDS = new Set([
+    'advance-phase',
 ]);
 
 function resolveVisibleStepConfig(runtime?: Pick<GameAiRuntime, 'localVisibleStepDelayConfig' | 'localFollowUpDelayConfig'> | null) {
@@ -23,6 +26,9 @@ export function resolveLocalAiActionVisibility(
     action: Pick<AiLegalAction, 'kind' | 'commands' | 'metadata'>,
     runtime?: Pick<GameAiRuntime, 'localVisibleStepDelayConfig' | 'localFollowUpDelayConfig'> | null,
 ): LocalAiActionVisibility {
+    if (typeof action.kind === 'string' && ALWAYS_VISIBLE_ACTION_KINDS.has(action.kind)) {
+        return 'visible';
+    }
     if (action.metadata?.visibleStepDelayPolicy === 'visible') {
         return 'visible';
     }

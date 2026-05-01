@@ -80,6 +80,10 @@ const CARD_BONUS_BIND_THRESHOLD_MS = 1500;
 const spotlightLogger = createScopedLogger('DT_SPOTLIGHT');
 type SpotlightBonusDie = NonNullable<CardSpotlightItem['bonusDice']>[number];
 
+function buildCardSpotlightDedupKey(cardId: string, playerId: PlayerId, eventTimestamp: number): string {
+    return `${normalizePlayerId(playerId)}|${cardId}|${eventTimestamp}`;
+}
+
 function findExistingCardSpotlightIndex(
     queue: CardSpotlightItem[],
     cardId: string,
@@ -155,6 +159,7 @@ export function useCardSpotlight(config: CardSpotlightConfig): CardSpotlightStat
     // 鍗＄墝鐗瑰啓闃熷垪
     const [cardSpotlightQueue, setCardSpotlightQueue] = useState<CardSpotlightItem[]>([]);
     const cardSpotlightQueueRef = useRef<CardSpotlightItem[]>([]);
+    const processedCardSpotlightKeysRef = useRef<Set<string>>(new Set());
 
     // 棰濆楠板瓙鐘舵€?
     const [bonusDieValue, setBonusDieValue] = useState<number | undefined>(undefined);
@@ -184,7 +189,23 @@ export function useCardSpotlight(config: CardSpotlightConfig): CardSpotlightStat
      * 鏍稿績锛氭秷璐?EventStream 涓殑鏂颁簨浠?
      */
     useEffect(() => {
-        const { entries: newEntries } = consumeNew();
+        const { entries: newEntries, didReset } = consumeNew();
+        if (didReset) {
+            cardSpotlightQueueRef.current = [];
+            processedCardSpotlightKeysRef.current.clear();
+            setCardSpotlightQueue([]);
+            setShowBonusDie(false);
+            setBonusDieValue(undefined);
+            setBonusDieFace(undefined);
+            setBonusDieEffectKey(undefined);
+            setBonusDieEffectParams(undefined);
+            setBonusDiceList(undefined);
+            setBonusDieSummaryEffectKey(undefined);
+            setBonusDieSummaryEffectParams(undefined);
+            setBonusDieShowTotal(undefined);
+            setBonusDieDisplayOnly(undefined);
+            setBonusDieCharacterId(undefined);
+        }
         if (newEntries.length === 0) return;
 
         // 濡傛灉鍚屼竴鎵逛簨浠朵腑鏈?BONUS_DICE_REROLL_REQUESTED锛?
@@ -246,7 +267,18 @@ export function useCardSpotlight(config: CardSpotlightConfig): CardSpotlightStat
                     p.playerId,
                     eventTimestamp,
                 );
+                const dedupKey = buildCardSpotlightDedupKey(p.cardId, p.playerId, eventTimestamp);
+                if (processedCardSpotlightKeysRef.current.has(dedupKey)) {
+                    spotlightLogger.info('card-event-signature-deduped', {
+                        eventType: type,
+                        cardId: p.cardId,
+                        playerId: p.playerId,
+                        dedupKey,
+                    });
+                    continue;
+                }
                 if (existingIndex >= 0) {
+                    processedCardSpotlightKeysRef.current.add(dedupKey);
                     spotlightLogger.info('card-event-deduped', {
                         eventType: type,
                         cardId: p.cardId,
@@ -268,6 +300,7 @@ export function useCardSpotlight(config: CardSpotlightConfig): CardSpotlightStat
                     playerId: p.playerId,
                     playerName: opponentName,
                 };
+                processedCardSpotlightKeysRef.current.add(dedupKey);
                 nextCardSpotlightQueue.push(newItem);
                 didUpdateCardSpotlightQueue = true;
             }

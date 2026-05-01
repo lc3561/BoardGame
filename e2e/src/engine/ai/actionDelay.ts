@@ -114,12 +114,8 @@ export function resolveLocalAiActionDelayPlan(args: {
     const visibleStepElapsedMs = lastVisibleActionAt === null
         ? null
         : Math.max(0, args.now - lastVisibleActionAt);
-    const extraElapsedBudgetMs = [
-        observedStateAgeMs,
-        ...(args.extraElapsedBudgetMs ?? []),
-    ].filter((value): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0);
     const delayBudgetElapsedMs = args.actionVisibility === 'visible'
-        ? Math.max(0, visibleStepElapsedMs ?? 0, ...extraElapsedBudgetMs)
+        ? Math.max(0, visibleStepElapsedMs ?? 0)
         : 0;
     const minimumDelayMs = args.actionVisibility === 'visible'
         ? resolveAiMinimumActionDelayMs(args.controller)

@@ -3,7 +3,7 @@
  * 从 GameDetailsModal 中提取，供子模块复用
  */
 
-import type { StoredMatchCredentials, OwnerActiveMatch } from '../../hooks/match/useMatchStatus';
+import type { StoredMatchCredentials, OwnerActiveMatch, ExitMatchResult } from '../../hooks/match/useMatchStatus';
 
 // ============================================================================
 // 类型
@@ -77,6 +77,19 @@ export const resolveActiveMatchExitPayload = (
         || 'tictactoe';
 
     return { gameName: activeGameName, playerID, credentials };
+};
+
+export const resolveExitMatchErrorMessageKey = (
+    error: ExitMatchResult['error'],
+    isHost: boolean
+): string => {
+    if (error === 'forbidden') {
+        return isHost ? 'error.destroyForbidden' : 'error.leaveForbidden';
+    }
+    if (error === 'network' || error === 'server_error') {
+        return isHost ? 'error.destroyNetwork' : 'error.leaveNetwork';
+    }
+    return 'error.actionFailed';
 };
 
 type CreateRoomErrorLike = {

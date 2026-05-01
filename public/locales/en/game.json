@@ -5,6 +5,7 @@
     "invalid_phase": "This action is not allowed in the current phase",
     "invalid_character": "Invalid character",
     "character_not_selected": "No character selected",
+    "character_already_taken": "This character has already been selected by another player",
     "character_selection_not_initialized": "Character selection not initialized",
     "command_failed": "Command failed",
     "not_connected": "Connection is not ready yet. Please try again.",

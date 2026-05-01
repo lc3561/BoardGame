@@ -1398,7 +1398,7 @@ test.describe('DiceThrone hand card preview regression', () => {
     test.setTimeout(240000);
     const evidenceDir = ensureEvidenceDir();
 
-    await test.step('枪手打出 card-wild-west', async () => {
+    await test.step('枪手打出 card-wild-west（Loaded 特写 + 重投 + 点击收口）', async () => {
       await openAndInjectGunslingerAttackModifierScene(page, game, {
         cardId: 'card-wild-west',
         sourceAbilityId: 'showdown',
@@ -1406,24 +1406,67 @@ test.describe('DiceThrone hand card preview regression', () => {
       });
       await clickHandCard(page, 'card-wild-west');
 
-      await expect(page.locator('[data-testid="bonus-die-overlay"]')).toBeVisible({ timeout: 5000 });
       await expect.poll(async () => {
         const state = await readState(game);
         return {
           reject: await page.evaluate(() => (window as any).__BG_LAST_COMMAND_REJECTED__ ?? null),
-          handIds: getHandIds(state?.core?.players?.['0']),
-          attackModifierBonusDamage: state?.core?.pendingAttack?.attackModifierBonusDamage ?? 0,
-          totalBonusDamage: state?.core?.pendingAttack?.bonusDamage ?? 0,
-          settlementDiceCount: state?.core?.pendingBonusDiceSettlement?.dice?.length ?? 0,
+          loadedTokens: state?.core?.players?.['0']?.tokens?.loaded ?? 0,
+          boostAdds: state?.core?.pendingAttack?.loadedBonusDieBoost?.postSettleBonusDamageAdds?.length ?? 0,
+          settlement: state?.core?.pendingBonusDiceSettlement ?? null,
         };
       }, { timeout: 15000 }).toMatchObject({
         reject: null,
-        attackModifierBonusDamage: 1,
-        totalBonusDamage: 1,
-        settlementDiceCount: 1,
+        loadedTokens: 1,
+        boostAdds: 1,
+        settlement: null,
       });
 
-      await closeVisibleBonusDieOverlay(page);
+      const resolveAttackButton = page.getByRole('button', { name: /^(Resolve Attack|结算攻击)$/i }).first();
+      await expect(resolveAttackButton).toBeVisible({ timeout: 5000 });
+      await expect(resolveAttackButton).toBeEnabled({ timeout: 5000 });
+      await resolveAttackButton.click();
+
+      await expect(page.getByText(/技能结算选择/i)).toBeVisible({ timeout: 5000 });
+      const loadedOption = page.getByText(/^装填$/).first();
+      await expect(loadedOption).toBeVisible({ timeout: 5000 });
+      await loadedOption.click({ force: true });
+
+      const overlay = page.locator('[data-testid="bonus-die-overlay"]').first();
+      await expect(overlay).toBeVisible({ timeout: 5000 });
+      const bonusDie = overlay.locator('.dice3d-perspective').first();
+      await expect(bonusDie).toBeVisible({ timeout: 5000 });
+      await bonusDie.click({ force: true });
+
+      await expect.poll(async () => {
+        const state = await readState(game);
+        return {
+          loadedTokens: state?.core?.players?.['0']?.tokens?.loaded ?? 0,
+          settlementDiceCount: state?.core?.pendingBonusDiceSettlement?.dice?.length ?? 0,
+          rerollCount: state?.core?.pendingBonusDiceSettlement?.rerollCount ?? 0,
+        };
+      }, { timeout: 15000 }).toMatchObject({
+        loadedTokens: 0,
+        settlementDiceCount: 1,
+        rerollCount: 1,
+      });
+
+      await overlay.click({ force: true });
+      await expect(overlay).toBeHidden({ timeout: 5000 });
+
+      await expect.poll(async () => {
+        const state = await readState(game);
+        return {
+          settlement: state?.core?.pendingBonusDiceSettlement ?? null,
+          loadedBonusDieBoost: state?.core?.pendingAttack?.loadedBonusDieBoost ?? null,
+          attackModifierBonusDamage: state?.core?.pendingAttack?.attackModifierBonusDamage ?? 0,
+          totalBonusDamage: state?.core?.pendingAttack?.bonusDamage ?? 0,
+        };
+      }, { timeout: 15000 }).toMatchObject({
+        settlement: null,
+        loadedBonusDieBoost: null,
+        attackModifierBonusDamage: 1,
+        totalBonusDamage: 2,
+      });
     });
 
     await test.step('枪手打出 card-eat-my-lead', async () => {

@@ -26,6 +26,11 @@ function isSamePlayerId(a: unknown, b: unknown): boolean {
     return String(a) === String(b);
 }
 
+function asPlainRecord(value: unknown): Record<string, unknown> {
+    if (!value || typeof value !== 'object') return {};
+    return value as Record<string, unknown>;
+}
+
 function resolveDecisionEpochValue(state: MatchState<unknown>): number {
     return typeof state.sys?.decisionEpoch === 'number' ? state.sys.decisionEpoch : 0;
 }
@@ -251,6 +256,11 @@ export interface SimpleChoiceData<T = unknown> {
      */
     responseValidationMode?: SimpleChoiceResponseValidationMode;
     revalidateOnRespond?: boolean;
+    /**
+     * 在该 simple-choice 挂起期间允许继续执行的命令白名单。
+     * 仅对当前交互所属玩家生效。
+     */
+    allowedCommands?: string[];
 }
 
 /**
@@ -491,6 +501,11 @@ export interface SimpleChoiceConfig {
      */
     responseValidationMode?: SimpleChoiceResponseValidationMode;
     revalidateOnRespond?: boolean;
+    /**
+     * 在该 simple-choice 挂起期间允许继续执行的命令白名单。
+     * 仅对当前交互所属玩家生效。
+     */
+    allowedCommands?: string[];
 }
 
 /**
@@ -550,6 +565,7 @@ export function createSimpleChoice<T>(
             autoRefresh: config.autoRefresh,
             responseValidationMode: config.responseValidationMode ?? (config.revalidateOnRespond ? 'live' : undefined),
             revalidateOnRespond: config.revalidateOnRespond,
+            allowedCommands: config.allowedCommands,
         } as any,
     };
 }
@@ -776,13 +792,13 @@ export function resolveInteraction<TCore>(
 
     // 传递延迟的 afterScoring 事件给下一个交互（避免链式交互丢失）
     if (current && next) {
-        const currentData = current.data as Record<string, unknown>;
-        const currentCtx = (currentData.continuationContext ?? {}) as Record<string, unknown>;
+        const currentData = asPlainRecord(current.data);
+        const currentCtx = asPlainRecord(currentData.continuationContext);
         const deferredEvents = currentCtx._deferredPostScoringEvents;
 
         if (Array.isArray(deferredEvents) && deferredEvents.length > 0) {
-            const nextData = next.data as Record<string, unknown>;
-            const nextCtx = (nextData.continuationContext ?? {}) as Record<string, unknown>;
+            const nextData = asPlainRecord(next.data);
+            const nextCtx = asPlainRecord(nextData.continuationContext);
             if (!nextCtx._deferredPostScoringEvents) {
                 next = {
                     ...next,

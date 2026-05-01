@@ -79,6 +79,35 @@ describe('InteractionSystem', () => {
         });
     });
 
+    it('SYS_INTERACTION_CANCEL 在 current.data 为 null 时不应崩溃', () => {
+        const system = createInteractionSystem<TestCore>();
+        const state = createTestState();
+        const current = state.sys.interaction.current!;
+        state.sys.interaction.current = {
+            ...current,
+            data: null as unknown as typeof current.data,
+        };
+
+        const command: Command = {
+            type: INTERACTION_COMMANDS.CANCEL,
+            playerId: '0',
+            payload: {},
+            timestamp: 101,
+        };
+
+        const result = system.beforeCommand?.({
+            state,
+            command,
+            events: [],
+            random: mockRandom,
+            playerIds: ['0', '1'],
+        });
+
+        expect(result?.halt).toBe(false);
+        expect(result?.state?.sys.interaction.current?.id).toBe('interaction-queued');
+        expect(result?.state?.sys.interaction.queue).toHaveLength(0);
+    });
+
     it('非交互拥有者无法取消交互', () => {
         const system = createInteractionSystem<TestCore>();
         const state = createTestState();

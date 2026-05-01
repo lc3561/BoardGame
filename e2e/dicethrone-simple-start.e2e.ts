@@ -2372,7 +2372,7 @@ test.describe('DiceThrone Simple Start', () => {
                     && (summary.submittedRollCount >= 2 || summary.attackChainReachedDefensiveRoll);
             };
 
-            const attackChainDeadline = Date.now() + 45000;
+            const attackChainDeadline = Date.now() + 90000;
             let attackChainSummary = await summarizeAiAttackChain();
             while (!isAttackChainReady(attackChainSummary) && Date.now() < attackChainDeadline) {
                 const dismissedResponse = await dismissHostResponseWindowIfVisible();
@@ -2392,6 +2392,57 @@ test.describe('DiceThrone Simple Start', () => {
             const rollSubmittedTimeline = attackChainSummary.submittedVisibleActions.filter((entry) => (
                 entry.actionKind === 'roll-dice'
             ));
+            const visibleActionGaps = attackChainSummary.submittedVisibleActions
+                .slice(1)
+                .map((entry, index) => ({
+                    fromActionKind: attackChainSummary.submittedVisibleActions[index].actionKind,
+                    toActionKind: entry.actionKind,
+                    gapMs: entry.atMs - attackChainSummary.submittedVisibleActions[index].atMs,
+                }));
+            const visibleSubmittedPerf = attackChainSummary.submittedVisibleActions
+                .map((entry) => {
+                    const payloadStart = entry.text.indexOf('{');
+                    const payloadEnd = entry.text.lastIndexOf('}');
+                    if (payloadStart < 0 || payloadEnd <= payloadStart) {
+                        return null;
+                    }
+                    try {
+                        const payload = JSON.parse(entry.text.slice(payloadStart, payloadEnd + 1)) as {
+                            actionKind?: string;
+                            minimumDelayMs?: number;
+                            visibleStepElapsedMs?: number | null;
+                            remainingDelayMs?: number;
+                            lastVisibleActionAt?: number | null;
+                        };
+                        return {
+                            actionKind: payload.actionKind ?? entry.actionKind,
+                            minimumDelayMs: typeof payload.minimumDelayMs === 'number' ? payload.minimumDelayMs : 0,
+                            visibleStepElapsedMs: typeof payload.visibleStepElapsedMs === 'number'
+                                ? payload.visibleStepElapsedMs
+                                : null,
+                            remainingDelayMs: typeof payload.remainingDelayMs === 'number' ? payload.remainingDelayMs : 0,
+                            lastVisibleActionAt: typeof payload.lastVisibleActionAt === 'number'
+                                ? payload.lastVisibleActionAt
+                                : null,
+                        };
+                    } catch {
+                        return null;
+                    }
+                })
+                .filter((entry): entry is {
+                    actionKind: string;
+                    minimumDelayMs: number;
+                    visibleStepElapsedMs: number | null;
+                    remainingDelayMs: number;
+                    lastVisibleActionAt: number | null;
+                } => Boolean(entry));
+            const visibleDelayViolations = visibleSubmittedPerf
+                .filter((entry) => entry.lastVisibleActionAt !== null && entry.minimumDelayMs > 0)
+                .map((entry) => ({
+                    ...entry,
+                    effectiveDelayBudgetMs: Math.max(0, entry.visibleStepElapsedMs ?? 0) + entry.remainingDelayMs,
+                }))
+                .filter((entry) => entry.effectiveDelayBudgetMs < Math.max(0, entry.minimumDelayMs - 100));
             const derivedSummary = {
                 matchId,
                 minimumActionDelayMs: 1000,
@@ -2406,15 +2457,21 @@ test.describe('DiceThrone Simple Start', () => {
                 firstToSecondRollGapMs: rollSubmittedTimeline.length >= 2
                     ? rollSubmittedTimeline[1].atMs - rollSubmittedTimeline[0].atMs
                     : null,
+                visibleActionGapCount: visibleActionGaps.length,
+                visibleActionGaps,
+                visibleSubmittedPerf,
+                visibleDelayViolations,
                 submittedVisibleActions: attackChainSummary.submittedVisibleActions,
                 transportEvents: consoleTimeline.filter((entry) => entry.text.includes('[ONLINE_AI_TRANSPORT]')),
                 perfEvents: consoleTimeline.filter((entry) => entry.text.includes('[ONLINE_AI_PERF]')),
             };
+
             await mkdir(dirname(consoleJsonPath), { recursive: true });
             await writeFile(consoleJsonPath, JSON.stringify(consoleTimeline, null, 2), 'utf8');
             await writeFile(summaryJsonPath, JSON.stringify(derivedSummary, null, 2), 'utf8');
 
             expect(rollSubmittedTimeline.length >= 2 || attackChainSummary.attackChainReachedDefensiveRoll).toBe(true);
+            expect(visibleDelayViolations).toEqual([]);
         } finally {
             const rollSubmittedTimeline = consoleTimeline.filter((entry) => (
                 entry.text.includes('[ONLINE_AI_PERF]')

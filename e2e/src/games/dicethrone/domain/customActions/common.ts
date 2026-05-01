@@ -284,14 +284,39 @@ function handleResolveCardEffectsOnSelectedOpponent({
         return [];
     }
 
-    return resolveEffectsToEvents(card.effects, 'immediate', {
+    const events: DiceThroneEvent[] = [];
+
+    if (
+        card.isAttackModifier
+        && state.pendingAttack
+        && state.pendingAttack.attackerId === attackerId
+        && !state.pendingAttack.defenderId
+    ) {
+        events.push({
+            type: 'PENDING_ATTACK_UPDATED',
+            payload: {
+                attackerId,
+                patch: {
+                    defenderId: targetId,
+                    targetingSelectionPending: false,
+                    targetingSelectionResolved: true,
+                },
+            },
+            sourceCommandType: 'ABILITY_EFFECT',
+            timestamp,
+        } as DiceThroneEvent);
+    }
+
+    events.push(...resolveEffectsToEvents(card.effects, 'immediate', {
         attackerId,
         defenderId: targetId,
         sourceAbilityId,
         state,
         damageDealt: 0,
         timestamp,
-    }, { random });
+    }, { random }));
+
+    return events;
 }
 
 // ============================================================================

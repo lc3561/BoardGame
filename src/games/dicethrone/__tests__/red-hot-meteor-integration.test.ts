@@ -24,22 +24,22 @@ const eatMyLeadCard = GUNSLINGER_CARDS.find(c => c.id === 'card-eat-my-lead')!;
 const righteousnessCard = SAMURAI_CARDS.find(c => c.id === 'card-righteousness')!;
 const zanshinCard = SAMURAI_CARDS.find(c => c.id === 'card-zanshin')!;
 
-const fourPlayerAttackModifierCases = [
+type AttackModifierCase = {
+    label: string;
+    heroId: string;
+    card: unknown;
+    tokens?: Record<string, number>;
+};
+
+const fourPlayerTargetLockedAttackModifierCases: AttackModifierCase[] = [
     { label: 'barbarian: card-more-please', heroId: 'barbarian', card: morePleaseCard },
-    { label: 'pyromancer: card-red-hot', heroId: 'pyromancer', card: redHotCard },
     { label: 'pyromancer: card-get-fired-up', heroId: 'pyromancer', card: getFiredUpCard },
     { label: 'moon_elf: volley', heroId: 'moon_elf', card: volleyCard },
     { label: 'moon_elf: watch-out', heroId: 'moon_elf', card: watchOutCard },
-    {
-        label: 'gunslinger: card-wild-west',
-        heroId: 'gunslinger',
-        card: wildWestCard,
-        tokens: { [TOKEN_IDS.LOADED]: 1 },
-    },
     { label: 'gunslinger: card-eat-my-lead', heroId: 'gunslinger', card: eatMyLeadCard },
     { label: 'samurai: card-righteousness', heroId: 'samurai', card: righteousnessCard },
     { label: 'samurai: card-zanshin', heroId: 'samurai', card: zanshinCard },
-] as const;
+];
 
 const makeRuleCheckCore = (overrides: Partial<DiceThroneCore> = {}): DiceThroneCore => ({
     activePlayerId: '0',
@@ -156,6 +156,78 @@ const makeFourPlayerAttackModifierCore = (
     } as any,
 });
 
+const makeFourPlayerAttackModifierOffensiveCore = (
+    heroId: string,
+    card: unknown,
+    extraTokens: Record<string, number> = {},
+): DiceThroneCore => makeRuleCheckCore({
+    turnPhase: 'offensiveRoll',
+    dice: [1, 2, 3, 4, 5] as any,
+    players: {
+        '0': {
+            heroId,
+            health: 50,
+            resources: { cp: 10 },
+            hand: [card],
+            deck: [],
+            discard: [],
+            statusEffects: {},
+            tokens: extraTokens,
+            abilityLevels: {},
+            abilities: [],
+            upgradeCardByAbilityId: {},
+        } as any,
+        '1': {
+            heroId: 'monk',
+            health: 50,
+            resources: { cp: 10 },
+            hand: [],
+            deck: [],
+            discard: [],
+            statusEffects: {},
+            tokens: {},
+            abilityLevels: {},
+            abilities: [],
+            upgradeCardByAbilityId: {},
+        } as any,
+        '2': {
+            heroId: 'samurai',
+            health: 50,
+            resources: { cp: 10 },
+            hand: [],
+            deck: [],
+            discard: [],
+            statusEffects: {},
+            tokens: {},
+            abilityLevels: {},
+            abilities: [],
+            upgradeCardByAbilityId: {},
+        } as any,
+        '3': {
+            heroId: 'shadow_thief',
+            health: 50,
+            resources: { cp: 10 },
+            hand: [],
+            deck: [],
+            discard: [],
+            statusEffects: {},
+            tokens: {},
+            abilityLevels: {},
+            abilities: [],
+            upgradeCardByAbilityId: {},
+        } as any,
+    } as any,
+    pendingAttack: {
+        attackerId: '0',
+        defenderId: undefined,
+        isDefendable: true,
+        sourceAbilityId: 'team-attack-test',
+        damageResolved: false,
+        resolvedDamage: 0,
+        attackDiceFaceCounts: {},
+    } as any,
+});
+
 describe('红热攻击修正出牌边界', () => {
     it('没有当前攻击时不能打出攻击修正卡', () => {
         const result = checkPlayCard(makeRuleCheckCore(), '0', redHotCard, 'offensiveRoll');
@@ -164,7 +236,7 @@ describe('红热攻击修正出牌边界', () => {
         expect((result as any).reason).toBe('attackModifierRequiresSelectedAttack');
     });
 
-    it('4 人模式未选定 defender 时不能提前打出需要单一受击者的攻击修正卡', () => {
+    it('4 人模式未选定 defender 时，红热仍可先行打出', () => {
         const result = checkPlayCard(makeRuleCheckCore({
             players: {
                 '0': {
@@ -231,8 +303,7 @@ describe('红热攻击修正出牌边界', () => {
             } as any,
         }), '0', redHotCard, 'offensiveRoll');
 
-        expect(result.ok).toBe(false);
-        expect((result as any).reason).toBe('attackModifierRequiresSelectedDefender');
+        expect(result.ok).toBe(true);
     });
 
     it('已有当前攻击时攻击方可以在 offensiveRoll 打出攻击修正卡', () => {
@@ -339,7 +410,7 @@ describe('红热攻击修正出牌边界', () => {
         expect(result.ok).toBe(true);
     });
 
-    it('4 人模式 targetingRoll 掷出 5/6 且尚未选目标时，仍不能提前打出再来点儿', () => {
+    it('4 人模式 targetingRoll 掷出 5 且尚未选目标时，也允许先打出再来点儿', () => {
         const result = checkPlayCard(makeRuleCheckCore({
             turnPhase: 'targetingRoll',
             dice: [{ value: 5 }] as any,
@@ -408,11 +479,104 @@ describe('红热攻击修正出牌边界', () => {
             } as any,
         }), '0', morePleaseCard, 'targetingRoll');
 
-        expect(result.ok).toBe(false);
-        expect((result as any).reason).toBe('attackModifierRequiresSelectedDefender');
+        expect(result.ok).toBe(true);
     });
 
-    it.each(fourPlayerAttackModifierCases)('4 人模式 targetingRoll 自动目标窗口允许攻击修正卡: %s', ({ heroId, card, tokens }) => {
+    it('4 人模式 targetingRoll 掷出 6 且由攻击方手选目标时，可以先打出再来点儿', () => {
+        const result = checkPlayCard(makeRuleCheckCore({
+            turnPhase: 'targetingRoll',
+            dice: [{ value: 6 }] as any,
+            players: {
+                '0': {
+                    heroId: 'barbarian',
+                    health: 50,
+                    resources: { cp: 10 },
+                    hand: [morePleaseCard],
+                    deck: [],
+                    discard: [],
+                    statusEffects: {},
+                    tokens: {},
+                    abilityLevels: {},
+                    abilities: [],
+                    upgradeCardByAbilityId: {},
+                } as any,
+                '1': {
+                    heroId: 'monk',
+                    health: 50,
+                    resources: { cp: 10 },
+                    hand: [],
+                    deck: [],
+                    discard: [],
+                    statusEffects: {},
+                    tokens: {},
+                    abilityLevels: {},
+                    abilities: [],
+                    upgradeCardByAbilityId: {},
+                } as any,
+                '2': {
+                    heroId: 'samurai',
+                    health: 50,
+                    resources: { cp: 10 },
+                    hand: [],
+                    deck: [],
+                    discard: [],
+                    statusEffects: {},
+                    tokens: {},
+                    abilityLevels: {},
+                    abilities: [],
+                    upgradeCardByAbilityId: {},
+                } as any,
+                '3': {
+                    heroId: 'shadow_thief',
+                    health: 50,
+                    resources: { cp: 10 },
+                    hand: [],
+                    deck: [],
+                    discard: [],
+                    statusEffects: {},
+                    tokens: {},
+                    abilityLevels: {},
+                    abilities: [],
+                    upgradeCardByAbilityId: {},
+                } as any,
+            } as any,
+            pendingAttack: {
+                attackerId: '0',
+                defenderId: undefined,
+                isDefendable: true,
+                sourceAbilityId: 'barbarian-offense',
+                damageResolved: false,
+                resolvedDamage: 0,
+                attackDiceFaceCounts: {},
+            } as any,
+        }), '0', morePleaseCard, 'targetingRoll');
+
+        expect(result.ok).toBe(true);
+    });
+
+    it('4 人模式 targetingRoll 手选目标窗口也允许红热先行打出', () => {
+        const result = checkPlayCard(
+            makeFourPlayerAttackModifierCore('pyromancer', redHotCard, 5),
+            '0',
+            redHotCard,
+            'targetingRoll'
+        );
+
+        expect(result.ok).toBe(true);
+    });
+
+    it('4 人模式 targetingRoll 手选目标窗口也允许荒野西部先行打出', () => {
+        const result = checkPlayCard(
+            makeFourPlayerAttackModifierCore('gunslinger', wildWestCard, 5, { [TOKEN_IDS.LOADED]: 1 }),
+            '0',
+            wildWestCard,
+            'targetingRoll'
+        );
+
+        expect(result.ok).toBe(true);
+    });
+
+    it.each(fourPlayerTargetLockedAttackModifierCases)('4 人模式 targetingRoll 自动目标窗口允许攻击修正卡: %s', ({ heroId, card, tokens }) => {
         const result = checkPlayCard(
             makeFourPlayerAttackModifierCore(heroId, card, 2, tokens ?? {}),
             '0',
@@ -450,7 +614,7 @@ describe('红热攻击修正出牌边界', () => {
         expect(nextCore.players['2'].statusEffects.knockdown ?? 0).toBe(0);
     });
 
-    it.each(fourPlayerAttackModifierCases)('4 人模式 targetingRoll 手选目标窗口仍禁止提前打出攻击修正卡: %s', ({ heroId, card, tokens }) => {
+    it.each(fourPlayerTargetLockedAttackModifierCases)('4 人模式 targetingRoll 手选目标窗口也允许提前打出攻击修正卡: %s', ({ heroId, card, tokens }) => {
         const result = checkPlayCard(
             makeFourPlayerAttackModifierCore(heroId, card, 5, tokens ?? {}),
             '0',
@@ -458,8 +622,53 @@ describe('红热攻击修正出牌边界', () => {
             'targetingRoll'
         );
 
-        expect(result.ok).toBe(false);
-        expect((result as any).reason).toBe('attackModifierRequiresSelectedDefender');
+        expect(result.ok).toBe(true);
+    });
+
+    it('4 人模式 targetingRoll 手选目标窗口打出万箭齐发时，不应额外弹出选受击者交互', () => {
+        const core = makeFourPlayerAttackModifierCore('moon_elf', volleyCard, 5);
+        const events = execute(
+            { core, sys: { phase: 'targetingRoll' } } as any,
+            {
+                type: 'PLAY_CARD',
+                playerId: '0',
+                payload: { cardId: 'volley' },
+                timestamp: 1,
+            } as any,
+            fixedRandom,
+        );
+
+        const interactionEvent = events.find((event) => event.type === 'INTERACTION_REQUESTED') as any;
+        expect(interactionEvent).toBeUndefined();
+
+        const nextCore = events.reduce(
+            (state, event) => reduce(state, event as DiceThroneEvent),
+            core,
+        );
+        expect(nextCore.pendingAttack?.deferredAttackModifierCardIds).toEqual(['volley']);
+    });
+
+    it('4 人模式 offensiveRoll 打出万箭齐发时，不应提前弹出选受击者交互', () => {
+        const core = makeFourPlayerAttackModifierOffensiveCore('moon_elf', volleyCard);
+        const events = execute(
+            { core, sys: { phase: 'offensiveRoll' } } as any,
+            {
+                type: 'PLAY_CARD',
+                playerId: '0',
+                payload: { cardId: 'volley' },
+                timestamp: 1,
+            } as any,
+            fixedRandom,
+        );
+
+        const interactionEvent = events.find((event) => event.type === 'INTERACTION_REQUESTED') as any;
+        expect(interactionEvent).toBeUndefined();
+
+        const nextCore = events.reduce(
+            (state, event) => reduce(state, event as DiceThroneEvent),
+            core,
+        );
+        expect(nextCore.pendingAttack?.deferredAttackModifierCardIds).toEqual(['volley']);
     });
 
     it('已有当前攻击时防守方不能打出攻击修正卡', () => {

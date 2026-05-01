@@ -17,7 +17,7 @@ import {
     resolveSpriteAssetUrls,
 } from '../ui/assets';
 import { getStatusEffectIconNode, loadStatusAtlases, type StatusIconAtlasConfig } from '../ui/statusEffects';
-import { getAssetsBaseUrl, setAssetsBaseUrl } from '../../../core';
+import { getAssetsBaseUrl, markImageLoaded, setAssetsBaseUrl } from '../../../core';
 
 registerDiceDefinition(moonElfDiceDefinition);
 
@@ -153,7 +153,7 @@ describe('StatusEffectsIcons', () => {
             fireEvent.load(sprite);
         }
         await waitFor(() => {
-            expect(getByTestId('dice-3d')).toHaveAttribute('data-sprite-ready', 'true');
+            expect(getByTestId('dice-3d').getAttribute('data-sprite-ready')).toBe('true');
         });
         expect(fetchMock).not.toHaveBeenCalled();
     });
@@ -193,15 +193,96 @@ describe('StatusEffectsIcons', () => {
         );
 
         await waitFor(() => {
-            expect(getByTestId('dice-3d')).toHaveAttribute('data-sprite-ready', 'true');
+            expect(getByTestId('dice-3d').getAttribute('data-sprite-ready')).toBe('true');
         });
         expect(fetchMock).not.toHaveBeenCalled();
         const expectedUrl = getDiceSpriteUrls('moon_elf-dice', 'moon_elf', 'zh-CN')[0];
         if (expectedUrl) {
-            expect(getByTestId('dice-3d')).toHaveAttribute('data-sprite-url', expectedUrl);
+            expect(getByTestId('dice-3d').getAttribute('data-sprite-url')).toBe(expectedUrl);
         } else {
-            expect(getByTestId('dice-3d')).toHaveAttribute('data-sprite-url', '');
+            expect(getByTestId('dice-3d').getAttribute('data-sprite-url')).toBe('');
         }
+    });
+
+    it('同一骰图并发渲染时应复用 in-flight 加载请求', async () => {
+        const expectedUrl = getDiceSpriteUrls('moon_elf-dice', 'moon_elf', 'zh-CN')[0];
+        let primaryRequestCount = 0;
+
+        class MockImage {
+            onload: null | (() => void) = null;
+            onerror: null | (() => void) = null;
+            naturalWidth = 256;
+            naturalHeight = 256;
+            currentSrc = '';
+            private _src = '';
+
+            get src() {
+                return this._src;
+            }
+
+            set src(value: string) {
+                this._src = value;
+                this.currentSrc = value;
+                if (value === expectedUrl) {
+                    primaryRequestCount += 1;
+                }
+                queueMicrotask(() => {
+                    this.onload?.();
+                });
+            }
+        }
+
+        vi.stubGlobal('Image', MockImage as unknown as typeof Image);
+
+        const { getAllByTestId } = render(
+            <div>
+                <Dice3D value={1} isRolling={false} locale="zh-CN" characterId="moon_elf" definitionId="moon_elf-dice" />
+                <Dice3D value={2} isRolling={false} locale="zh-CN" characterId="moon_elf" definitionId="moon_elf-dice" />
+            </div>
+        );
+
+        await waitFor(() => {
+            const nodes = getAllByTestId('dice-3d');
+            expect(nodes.every((node) => node.getAttribute('data-sprite-ready') === 'true')).toBe(true);
+        });
+
+        if (expectedUrl) {
+            expect(primaryRequestCount).toBe(1);
+        }
+    });
+
+    it('候选 URL 变化但 source 缓存已命中时应直接复用 currentSrc', () => {
+        const spriteAssetPath = getDiceSpriteAssetPath('moon_elf-dice', 'moon_elf');
+        if (!spriteAssetPath) {
+            throw new Error('expected moon_elf dice sprite asset path');
+        }
+
+        const img = new Image();
+        Object.defineProperty(img, 'naturalWidth', { value: 256, configurable: true });
+        Object.defineProperty(img, 'naturalHeight', { value: 256, configurable: true });
+        Object.defineProperty(img, 'src', {
+            value: 'https://old-cdn.example.com/i18n/zh-CN/dicethrone/images/moon_elf/compressed/dice.webp',
+            configurable: true,
+        });
+        Object.defineProperty(img, 'currentSrc', {
+            value: 'https://old-cdn.example.com/i18n/zh-CN/dicethrone/images/moon_elf/compressed/dice.webp',
+            configurable: true,
+        });
+        markImageLoaded(spriteAssetPath, 'zh-CN', img);
+
+        const html = renderToStaticMarkup(
+            <Dice3D
+                value={6}
+                isRolling={false}
+                size="48px"
+                locale="zh-CN"
+                characterId="moon_elf"
+                definitionId="moon_elf-dice"
+            />
+        );
+
+        expect(html).toContain('data-sprite-ready="true"');
+        expect(html).toContain('https://old-cdn.example.com/i18n/zh-CN/dicethrone/images/moon_elf/compressed/dice.webp');
     });
 
     it('状态图集 JSON 在远程资源模式下应优先走官方资源域名', async () => {
@@ -268,15 +349,14 @@ describe('StatusEffectsIcons', () => {
                 value={6}
                 isRolling={false}
                 size="48px"
-                characterId="moon_elf"
-                definitionId="moon_elf-dice"
+                characterId="__missing__"
             />
         );
 
         expect(html).toContain('data-sprite-ready="false"');
         expect(html).toContain('data-face-id="1"');
         expect(html).toContain('data-face-fallback="glyph"');
-        expect(html).toContain('data-face-symbol="moon"');
-        expect(html).toContain('MN');
+        expect(html).toContain('data-face-symbol=""');
+        expect(html).toContain('>6<');
     });
 });

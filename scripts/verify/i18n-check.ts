@@ -348,6 +348,24 @@ const looksLikeHumanReadableValidationError = (value: string): boolean => {
     return trimmed.includes(' ') || /[:!]/.test(trimmed);
 };
 
+const detectValidationFailHelperNames = (content: string): string[] => {
+    const helperNames = new Set<string>();
+    const helperPatterns = [
+        /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*\(\s*([A-Za-z_$][\w$]*)[\s\S]{0,100}?\)\s*(?::[\s\S]{0,100})?=>\s*(?:\(\s*)?\{\s*(?:valid\s*:\s*false\s*,\s*error\s*:\s*\2|error\s*:\s*\2\s*,\s*valid\s*:\s*false)\s*\}(?:\s*\))?/g,
+        /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*\(\s*([A-Za-z_$][\w$]*)[\s\S]{0,100}?\)\s*(?::[\s\S]{0,100})?=>\s*\{\s*return\s*\{\s*(?:valid\s*:\s*false\s*,\s*error\s*:\s*\2|error\s*:\s*\2\s*,\s*valid\s*:\s*false)\s*\}\s*;?\s*\}/g,
+        /\bfunction\s+([A-Za-z_$][\w$]*)\s*\(\s*([A-Za-z_$][\w$]*)[\s\S]{0,100}?\)\s*(?::[\s\S]{0,100})?\{\s*return\s*\{\s*(?:valid\s*:\s*false\s*,\s*error\s*:\s*\2|error\s*:\s*\2\s*,\s*valid\s*:\s*false)\s*\}\s*;?\s*\}/g,
+    ];
+
+    for (const pattern of helperPatterns) {
+        let match: RegExpExecArray | null;
+        while ((match = pattern.exec(content)) !== null) {
+            helperNames.add(match[1]);
+        }
+    }
+
+    return Array.from(helperNames);
+};
+
 const extractLiteralKeysFromExpression = (expression: string): { keys: string[]; dynamic: boolean } => {
     const trimmed = expression.trim();
     if (trimmed.includes('`') && trimmed.includes('${')) {
@@ -1369,6 +1387,29 @@ export const collectReferencesFromContent = (
             source: 'validation.error',
             detail: '命令校验直接返回了自然语言 error 文案，请改用稳定错误码',
         });
+    }
+
+    // 检测本文件内 fail-helper('error_code') 调用并注册 error.<code> 引用
+    const validationFailHelperNames = detectValidationFailHelperNames(content);
+    for (const helperName of validationFailHelperNames) {
+        const escapedHelperName = helperName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const helperCallRegex = new RegExp(`\\b${escapedHelperName}\\s*\\(\\s*(['"\`])((?:\\\\.|(?!\\1).)*)\\1\\s*\\)`, 'g');
+        let helperCallMatch: RegExpExecArray | null;
+        while ((helperCallMatch = helperCallRegex.exec(content)) !== null) {
+            const literal = parseStringLiteral(helperCallMatch[1], helperCallMatch[2]);
+            if (literal.dynamic || !/^[A-Za-z0-9_.-]+$/.test(literal.value)) continue;
+            const line = getLineNumber(content, helperCallMatch.index);
+            const gameId = getGameIdFromPath(filePath);
+            const namespaces: string[] = [];
+            if (gameId) {
+                const gameNs = `game-${gameId}`;
+                if (knownNamespaces.has(gameNs)) namespaces.push(gameNs);
+            }
+            if (knownNamespaces.has('game')) namespaces.push('game');
+            if (namespaces.length > 0) {
+                pushReference(`error.${literal.value}`, namespaces, line, `${helperName}()`);
+            }
+        }
     }
 
     return { references, warnings };

@@ -215,6 +215,11 @@ export interface PendingAttack {
     bonusDamage?: number;
     /** 仅来自攻击修正卡的额外伤害，用于右上角攻击修正 UI，避免混入暴击等其他来源 */
     attackModifierBonusDamage?: number;
+    /**
+     * 在 2v2 targetingRoll 的手选目标窗口内提前打出的攻击修正卡。
+     * 这些卡会在主攻击 defenderId 最终确定后按出牌顺序补结算，避免额外弹出二次选人交互。
+     */
+    deferredAttackModifierCardIds?: string[];
     extraRoll?: {
         value?: number;
         resolved?: boolean;

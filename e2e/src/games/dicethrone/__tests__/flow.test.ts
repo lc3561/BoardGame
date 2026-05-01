@@ -1770,6 +1770,229 @@ describe('王权骰铸流程测试', () => {
             expect(state.core.pendingAttack?.defenderId).toBe('1');
         });
 
+        it('4 人模式 targetingRoll 掷出 6 且目标面板已打开时，仍可打出攻击修正并把所选敌人同步为当前攻击目标', () => {
+            const playerIds: PlayerId[] = ['0', '1', '2', '3'];
+            const pipelineConfig = {
+                domain: DiceThroneDomain,
+                systems: testSystems,
+            };
+            const random = createQueuedRandom([1, 1, 1, 1, 1]);
+            let state = createInitializedStateWithCharacters(playerIds, random, {
+                '0': 'barbarian',
+                '1': 'monk',
+                '2': 'samurai',
+                '3': 'shadow_thief',
+            });
+
+            for (const pid of playerIds) {
+                state.core.players[pid].hand = [];
+                state.core.players[pid].deck = [];
+                state.core.players[pid].discard = [];
+                state.core.players[pid].statusEffects = {};
+            }
+
+            state.core.players['0'].hand = [getCardById('card-more-please')];
+            state.core.players['0'].resources[RESOURCE_IDS.CP] = 10;
+            state.core.activePlayerId = '0';
+            state.core.turnPhase = 'targetingRoll';
+            state.core.dice = [{ id: 0, value: 6, locked: true, ownerId: '0' }] as any;
+            state.core.rollCount = 1;
+            state.core.rollConfirmed = true;
+            state.core.rollsRemaining = 0;
+            state.core.pendingAttack = {
+                attackerId: '0',
+                defenderId: undefined,
+                targetingSelectionPending: false,
+                targetingSelectionResolved: false,
+                isDefendable: true,
+                damage: 4,
+                sourceAbilityId: 'barbarian-offense',
+                defenseAbilityId: undefined,
+                preDefenseResolved: false,
+                bonusDamage: 0,
+                attackModifierBonusDamage: 0,
+                damageResolved: false,
+                resolvedDamage: 0,
+                offensiveRollEndTokenResolved: true,
+                bonusDiceResolved: false,
+            } as any;
+            state.sys.phase = 'targetingRoll';
+            state.sys.interaction.current = createSimpleChoice(
+                'targeting-roll-test',
+                '0',
+                '选择本次攻击目标',
+                [
+                    { id: 'target-right', label: '玩家 2', value: { customId: 'select-target:1' } },
+                    { id: 'target-left', label: '玩家 4', value: { customId: 'select-target:3' } },
+                ],
+                {
+                    sourceId: 'targeting-roll',
+                    allowedCommands: ['PLAY_CARD'],
+                },
+            ) as any;
+
+            const playResult = executePipeline(
+                pipelineConfig,
+                state,
+                {
+                    type: 'PLAY_CARD',
+                    playerId: '0',
+                    payload: { cardId: 'card-more-please' },
+                    timestamp: Date.now(),
+                } as DiceThroneCommand,
+                random,
+                playerIds,
+            );
+            expect(playResult.success).toBe(true);
+            state = playResult.state as MatchState<DiceThroneCore>;
+            expect(state.core.players['0'].discard.some((card) => card.id === 'card-more-please')).toBe(true);
+            expect(state.core.pendingAttack?.deferredAttackModifierCardIds).toEqual(['card-more-please']);
+
+            const interaction = state.sys.interaction.current as {
+                data?: {
+                    options?: Array<{ id: string; value?: { customId?: string } }>;
+                    resolveCustomActionId?: string;
+                };
+            } | undefined;
+            expect(interaction).toBeDefined();
+            expect(interaction?.data?.resolveCustomActionId).not.toBe('resolve-card-effects-on-selected-opponent');
+
+            const chooseTargetOption = interaction?.data?.options?.find((option) => option.value?.customId === 'select-target:1');
+            expect(chooseTargetOption).toBeDefined();
+            const targetResolveResult = executePipeline(
+                pipelineConfig,
+                state,
+                {
+                    type: 'SYS_INTERACTION_RESPOND',
+                    playerId: '0',
+                    payload: { optionId: chooseTargetOption!.id },
+                    timestamp: Date.now(),
+                } as DiceThroneCommand,
+                random,
+                playerIds,
+            );
+            expect(targetResolveResult.success).toBe(true);
+            state = targetResolveResult.state as MatchState<DiceThroneCore>;
+
+            expect(state.core.pendingAttack?.defenderId).toBe('1');
+            expect(state.core.pendingAttack?.targetingSelectionResolved).toBe(true);
+            expect(state.core.pendingAttack?.deferredAttackModifierCardIds).toEqual([]);
+            expect(state.core.players['1'].statusEffects[STATUS_IDS.CONCUSSION]).toBe(1);
+            expect(state.core.players['3'].statusEffects[STATUS_IDS.CONCUSSION] ?? 0).toBe(0);
+        });
+
+        it('4 人模式 targetingRoll 掷出 6 时先打出荒野西部，不应卡死且应保留主目标选择交互', () => {
+            const playerIds: PlayerId[] = ['0', '1', '2', '3'];
+            const pipelineConfig = {
+                domain: DiceThroneDomain,
+                systems: testSystems,
+            };
+            const random = createQueuedRandom([1, 1, 1, 1, 1]);
+            let state = createInitializedStateWithCharacters(playerIds, random, {
+                '0': 'gunslinger',
+                '1': 'monk',
+                '2': 'samurai',
+                '3': 'shadow_thief',
+            });
+
+            for (const pid of playerIds) {
+                state.core.players[pid].hand = [];
+                state.core.players[pid].deck = [];
+                state.core.players[pid].discard = [];
+                state.core.players[pid].statusEffects = {};
+            }
+
+            state.core.players['0'].hand = [getCardById('card-wild-west')];
+            state.core.players['0'].resources[RESOURCE_IDS.CP] = 10;
+            state.core.players['0'].tokens[TOKEN_IDS.LOADED] = 1;
+            state.core.activePlayerId = '0';
+            state.core.turnPhase = 'targetingRoll';
+            state.core.dice = [{ id: 0, value: 6, locked: true, ownerId: '0' }] as any;
+            state.core.rollCount = 1;
+            state.core.rollConfirmed = true;
+            state.core.rollsRemaining = 0;
+            state.core.pendingAttack = {
+                attackerId: '0',
+                defenderId: undefined,
+                targetingSelectionPending: false,
+                targetingSelectionResolved: false,
+                isDefendable: true,
+                damage: 4,
+                sourceAbilityId: 'revolver-3',
+                defenseAbilityId: undefined,
+                preDefenseResolved: false,
+                bonusDamage: 0,
+                attackModifierBonusDamage: 0,
+                damageResolved: false,
+                resolvedDamage: 0,
+                offensiveRollEndTokenResolved: true,
+                bonusDiceResolved: false,
+            } as any;
+            state.sys.phase = 'targetingRoll';
+            state.sys.interaction.current = createSimpleChoice(
+                'targeting-roll-test',
+                '0',
+                '选择本次攻击目标',
+                [
+                    { id: 'target-right', label: '玩家 2', value: { customId: 'select-target:1' } },
+                    { id: 'target-left', label: '玩家 4', value: { customId: 'select-target:3' } },
+                ],
+                {
+                    sourceId: 'targeting-roll',
+                    allowedCommands: ['PLAY_CARD'],
+                },
+            ) as any;
+
+            const playResult = executePipeline(
+                pipelineConfig,
+                state,
+                {
+                    type: 'PLAY_CARD',
+                    playerId: '0',
+                    payload: { cardId: 'card-wild-west' },
+                    timestamp: Date.now(),
+                } as DiceThroneCommand,
+                random,
+                playerIds,
+            );
+            expect(playResult.success).toBe(true);
+            state = playResult.state as MatchState<DiceThroneCore>;
+
+            expect(state.core.players['0'].discard.some((card) => card.id === 'card-wild-west')).toBe(true);
+            expect(state.core.pendingAttack?.loadedBonusDieBoost?.allowReroll).toBe(true);
+            expect(state.core.pendingAttack?.deferredAttackModifierCardIds ?? []).toEqual([]);
+
+            const interaction = state.sys.interaction.current as {
+                data?: {
+                    options?: Array<{ id: string; value?: { customId?: string } }>;
+                    resolveCustomActionId?: string;
+                };
+            } | undefined;
+            expect(interaction).toBeDefined();
+            expect(interaction?.data?.resolveCustomActionId).not.toBe('resolve-card-effects-on-selected-opponent');
+
+            const chooseTargetOption = interaction?.data?.options?.find((option) => option.value?.customId === 'select-target:1');
+            expect(chooseTargetOption).toBeDefined();
+            const targetResolveResult = executePipeline(
+                pipelineConfig,
+                state,
+                {
+                    type: 'SYS_INTERACTION_RESPOND',
+                    playerId: '0',
+                    payload: { optionId: chooseTargetOption!.id },
+                    timestamp: Date.now(),
+                } as DiceThroneCommand,
+                random,
+                playerIds,
+            );
+            expect(targetResolveResult.success).toBe(true);
+            state = targetResolveResult.state as MatchState<DiceThroneCore>;
+
+            expect(state.core.pendingAttack?.defenderId).toBe('1');
+            expect(state.core.pendingAttack?.targetingSelectionResolved).toBe(true);
+            expect(state.sys.phase === 'targetingRoll' || state.sys.phase === 'defensiveRoll').toBe(true);
+        });
+
         it('4 人模式 targetingRoll 选目标交互意外丢失后，再次推进应重建交互而不是静默卡住', () => {
             const playerIds: PlayerId[] = ['0', '1', '2', '3'];
             const pipelineConfig = {

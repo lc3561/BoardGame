@@ -142,6 +142,85 @@ async function createTicTacToeRoom(page: Page): Promise<string> {
     return matchId;
 }
 
+async function createJoinedTicTacToeRoom(page: Page, playerID: '0' | '1' = '1'): Promise<string> {
+    const gameServerBaseURL = getGameServerBaseURL();
+    const ownerGuestId = `home-banner-owner-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+    const ownerName = `Owner_${ownerGuestId.slice(-4)}`;
+
+    const createResponse = await page.request.post(`${gameServerBaseURL}/games/tictactoe/create`, {
+        data: {
+            numPlayers: 2,
+            setupData: { guestId: ownerGuestId },
+        },
+    });
+    if (!createResponse.ok()) {
+        throw new Error(`井字棋建房失败: ${createResponse.status()}`);
+    }
+    const createData = await createResponse.json() as { matchID?: string };
+    const matchId = createData.matchID;
+    if (!matchId) throw new Error('建房响应缺少 matchID');
+
+    const ownerJoinResponse = await page.request.post(`${gameServerBaseURL}/games/tictactoe/${matchId}/join`, {
+        data: {
+            playerID: '0',
+            playerName: ownerName,
+            data: { guestId: ownerGuestId },
+        },
+    });
+    if (!ownerJoinResponse.ok()) {
+        throw new Error(`房主加入失败: ${ownerJoinResponse.status()}`);
+    }
+    const ownerJoinData = await ownerJoinResponse.json() as { playerCredentials?: string };
+    if (!ownerJoinData.playerCredentials) {
+        throw new Error('房主加入后未返回 playerCredentials');
+    }
+
+    let activeGuestId = ownerGuestId;
+    let activeCredentials = ownerJoinData.playerCredentials;
+
+    if (playerID === '1') {
+        const guestId = `home-banner-guest-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+        const guestName = `Guest_${guestId.slice(-4)}`;
+        const guestJoinResponse = await page.request.post(`${gameServerBaseURL}/games/tictactoe/${matchId}/join`, {
+            data: {
+                playerID: '1',
+                playerName: guestName,
+                data: { guestId },
+            },
+        });
+        if (!guestJoinResponse.ok()) {
+            throw new Error(`玩家 1 加入失败: ${guestJoinResponse.status()}`);
+        }
+        const guestJoinData = await guestJoinResponse.json() as { playerCredentials?: string };
+        if (!guestJoinData.playerCredentials) {
+            throw new Error('玩家 1 加入后未返回 playerCredentials');
+        }
+        activeGuestId = guestId;
+        activeCredentials = guestJoinData.playerCredentials;
+    }
+
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.evaluate(({ mid, pid, creds, guestId }) => {
+        localStorage.setItem('guest_id', guestId);
+        try {
+            sessionStorage.setItem('guest_id', guestId);
+        } catch {
+            // ignore
+        }
+        document.cookie = `bg_guest_id=${encodeURIComponent(guestId)}; path=/; SameSite=Lax`;
+        localStorage.setItem(`match_creds_${mid}`, JSON.stringify({
+            matchID: mid,
+            playerID: pid,
+            credentials: creds,
+            gameName: 'tictactoe',
+            updatedAt: Date.now(),
+        }));
+        window.dispatchEvent(new Event('match-credentials-changed'));
+    }, { mid: matchId, pid: playerID, creds: activeCredentials, guestId: activeGuestId });
+
+    return matchId;
+}
+
 async function createLockedTicTacToeRoom(page: Page): Promise<{ matchId: string; roomName: string; password: string }> {
     const gameServerBaseURL = getGameServerBaseURL();
     const guestId = `private-room-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
@@ -803,6 +882,73 @@ test.describe('Lobby E2E', () => {
         expect(hasHorizontalOverflow).toBeFalsy();
 
         await game.screenshot('lobby-home-active-match-mobile-safe', testInfo);
+    });
+
+    test('首页活跃房间非房主离房遇到 403 时显示凭证失效提示，而不是销毁错误', async ({ page, game }, testInfo) => {
+        const matchId = await createJoinedTicTacToeRoom(page, '1');
+        let interceptedLeave = false;
+
+        await page.route(new RegExp(`/games/tictactoe/${matchId}/leave(?:\\?.*)?$`), async (route) => {
+            interceptedLeave = true;
+            await route.fulfill({
+                status: 403,
+                contentType: 'text/plain; charset=utf-8',
+                body: 'Invalid credentials',
+            });
+        });
+
+        await ensureLobbyReady(page);
+
+        const banner = page.getByTestId('home-active-match-banner');
+        const actions = page.getByTestId('home-active-match-actions');
+        await expect(banner).toBeVisible({ timeout: 15000 });
+        await actions.getByRole('button', { name: '离开' }).click();
+        await expect(page.getByText('离开房间').last()).toBeVisible({ timeout: 10000 });
+        await expect(page.getByText('确定要离开房间吗？').last()).toBeVisible({ timeout: 10000 });
+        await page.getByRole('button', { name: '确定' }).last().evaluate((button) => {
+            if (!(button instanceof HTMLButtonElement)) {
+                throw new Error('离房确认按钮节点不是 button');
+            }
+            button.click();
+        });
+
+        await expect.poll(() => interceptedLeave).toBeTruthy();
+        await expect(page.getByText('无法离开房间：凭证无效或已失效，请重新进入房间后再试。').last()).toBeVisible({ timeout: 10000 });
+        await expect(page.getByText('无法销毁房间：凭证无效或已失效，请重新进入房间后再试。')).toHaveCount(0);
+
+        await game.screenshot('lobby-home-active-match-leave-forbidden-toast', testInfo);
+    });
+
+    test('首页活跃房间非房主离房遇到 500 时显示离房网络错误提示', async ({ page, game }, testInfo) => {
+        const matchId = await createJoinedTicTacToeRoom(page, '1');
+        let interceptedLeave = false;
+
+        await page.route(new RegExp(`/games/tictactoe/${matchId}/leave(?:\\?.*)?$`), async (route) => {
+            interceptedLeave = true;
+            await route.fulfill({
+                status: 500,
+                contentType: 'text/plain; charset=utf-8',
+                body: 'server error',
+            });
+        });
+
+        await ensureLobbyReady(page);
+
+        const actions = page.getByTestId('home-active-match-actions');
+        await actions.getByRole('button', { name: '离开' }).click();
+        await expect(page.getByText('离开房间').last()).toBeVisible({ timeout: 10000 });
+        await expect(page.getByText('确定要离开房间吗？').last()).toBeVisible({ timeout: 10000 });
+        await page.getByRole('button', { name: '确定' }).last().evaluate((button) => {
+            if (!(button instanceof HTMLButtonElement)) {
+                throw new Error('离房确认按钮节点不是 button');
+            }
+            button.click();
+        });
+
+        await expect.poll(() => interceptedLeave).toBeTruthy();
+        await expect(page.getByText('离开房间失败：网络或服务异常，请稍后重试。').last()).toBeVisible({ timeout: 10000 });
+
+        await game.screenshot('lobby-home-active-match-leave-network-toast', testInfo);
     });
 
     test(MOBILE_AUTHOR_ENTRY_TEST_NAME, async ({ page, game }, testInfo) => {

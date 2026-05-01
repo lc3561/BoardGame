@@ -626,6 +626,11 @@ export interface ChoiceRequestedEvent extends GameEvent<'CHOICE_REQUESTED'> {
             hintKey?: string;
             skipLabelKey?: string;
         };
+        /**
+         * simple-choice 挂起期间允许继续执行的命令白名单。
+         * 仅对当前 choice 的 playerId 生效。
+         */
+        allowedCommands?: string[];
         options: Array<{
             /** 被动状态 ID（如 STATUS_IDS.KNOCKDOWN） */
             statusId?: string;

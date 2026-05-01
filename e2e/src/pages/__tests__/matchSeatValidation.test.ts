@@ -3,7 +3,7 @@ import { createElement, useEffect } from 'react';
 import { act, cleanup, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as matchApi from '../../services/matchApi';
-import { isMatchNotFoundError, useMatchStatus, validateStoredMatchSeat, type StoredMatchCredentials } from '../../hooks/match/useMatchStatus';
+import { isMatchNotFoundError, leaveMatch, useMatchStatus, validateStoredMatchSeat, type StoredMatchCredentials } from '../../hooks/match/useMatchStatus';
 import { haveAiSeatCredentialsChanged, loadOnlineAiSeatState } from '../onlineAiSeats';
 import type { GameManifestEntry } from '../../games/manifest.types';
 import type { MatchState } from '../../engine/types';
@@ -26,6 +26,7 @@ import {
     submitOnlineAiResolution,
 } from '../onlineAiForceSkip';
 import { resolveOnlineHudPresence } from '../matchHudPresence';
+import { resolveExitMatchErrorMessageKey } from '../../components/lobby/roomActions';
 
 type Player = { id: number; name?: string | null };
 
@@ -121,6 +122,44 @@ describe('isMatchNotFoundError', () => {
 
     it('忽略非 404 错误', () => {
         expect(isMatchNotFoundError(new Error('500: network error'))).toBe(false);
+    });
+});
+
+describe('leaveMatch 错误分类', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('403 凭证异常会返回 forbidden，供 UI 显示明确提示', async () => {
+        vi.spyOn(matchApi, 'leaveMatch').mockRejectedValue({ status: 403, message: 'Invalid credentials', code: 'HTTP_403' });
+
+        await expect(leaveMatch('tictactoe', 'match-1', '1', 'stale-creds')).resolves.toMatchObject({
+            success: false,
+            error: 'forbidden',
+        });
+    });
+
+    it('500 服务异常会返回 server_error，而不是吞成 unknown', async () => {
+        vi.spyOn(matchApi, 'leaveMatch').mockRejectedValue({ status: 500, message: 'server exploded', code: 'HTTP_500' });
+
+        await expect(leaveMatch('tictactoe', 'match-1', '1', 'creds')).resolves.toMatchObject({
+            success: false,
+            error: 'server_error',
+        });
+    });
+});
+
+describe('resolveExitMatchErrorMessageKey', () => {
+    it('非房主离房 forbidden 应映射到 leaveForbidden', () => {
+        expect(resolveExitMatchErrorMessageKey('forbidden', false)).toBe('error.leaveForbidden');
+    });
+
+    it('非房主离房 server_error 应映射到 leaveNetwork', () => {
+        expect(resolveExitMatchErrorMessageKey('server_error', false)).toBe('error.leaveNetwork');
+    });
+
+    it('房主销毁 network 应映射到 destroyNetwork', () => {
+        expect(resolveExitMatchErrorMessageKey('network', true)).toBe('error.destroyNetwork');
     });
 });
 

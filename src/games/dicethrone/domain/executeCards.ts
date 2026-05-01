@@ -209,8 +209,30 @@ export function executeCardCommand(
                 && selectedOpponentId === undefined
                 && getOpponents(state, actingPlayerId).length > 1
                 && cardNeedsSelectedDefender(card);
+            const hasPendingUnresolvedTarget =
+                !!state.pendingAttack
+                && state.pendingAttack.attackerId === actingPlayerId
+                && state.pendingAttack.defenderId === undefined;
+            const deferAttackModifierUntilTargetResolved =
+                card.isAttackModifier
+                && needsSelectedOpponent
+                && hasPendingUnresolvedTarget
+                && (phase === 'targetingRoll' || phase === 'offensiveRoll');
             if (card.effects && card.effects.length > 0) {
-                if (needsSelectedOpponent) {
+                if (deferAttackModifierUntilTargetResolved) {
+                    const queuedIds = state.pendingAttack?.deferredAttackModifierCardIds ?? [];
+                    events.push({
+                        type: 'PENDING_ATTACK_UPDATED',
+                        payload: {
+                            attackerId: actingPlayerId,
+                            patch: {
+                                deferredAttackModifierCardIds: [...queuedIds, card.id],
+                            },
+                        },
+                        sourceCommandType: command.type,
+                        timestamp,
+                    } as DiceThroneEvent);
+                } else if (needsSelectedOpponent) {
                     const interactionEvent: InteractionRequestedEvent = {
                         type: 'INTERACTION_REQUESTED',
                         payload: {
@@ -248,7 +270,7 @@ export function executeCardCommand(
             // 条件：卡牌效果对对手生效 && 有玩家有可响应内容 && 当前不在响应窗口中
             // 规则：在响应窗口中打出的卡牌不再触发新的响应窗口（避免无限嵌套）
             const isInResponseWindow = !!matchState.sys?.responseWindow?.current;
-            if (hasOpponentTargetEffect(card) && !isInResponseWindow && !needsSelectedOpponent) {
+            if (hasOpponentTargetEffect(card) && !isInResponseWindow && !needsSelectedOpponent && !deferAttackModifierUntilTargetResolved) {
                 // 先应用已产生的事件，然后检查响应队列（排除出牌玩家，因为可以主动出牌）
                 const stateAfterCard = applyEvents(state, events, reduce);
                 if (hasAfterCardPlayedWindowBeenHandled(stateAfterCard)) {

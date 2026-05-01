@@ -712,10 +712,6 @@ const getAttackModifierPlayFailureReason = (
     if (pendingAttack.attackerId !== playerId) {
         return 'wrongPhaseForCard';
     }
-    const selectedOpponentId = getSelectedCombatOpponentId(state, playerId, phase);
-    if (isTeamMode(state) && selectedOpponentId === undefined && cardNeedsSelectedDefender(card)) {
-        return 'attackModifierRequiresSelectedDefender';
-    }
     return null;
 };
 
