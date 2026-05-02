@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { buildSplendorAiLegalActions, splendorScorers, extendedScorers, AI_ACTION_KINDS } from '../ai';
+import { buildSplendorAiLegalActions, splendorAiRuntime, splendorScorers, extendedScorers, AI_ACTION_KINDS } from '../ai';
 import { engineConfig } from '../game';
 import { createInitialSystemState, createSeededRandom } from '../../../engine/pipeline';
-import { resolveNextLocalAiAction } from '../../../engine/ai';
+import { applyPlayerViewToState, buildAiDecisionContext, resolveNextLocalAiAction } from '../../../engine/ai';
 import type { AiDecisionContext, AiDifficultyLevel, AiLegalAction } from '../../../engine/ai';
 import { resolveAiDifficultyProfile } from '../../../engine/ai/difficulty';
 import type { SplendorCommand, SplendorCore } from '../domain/types';
@@ -129,10 +129,14 @@ async function runAiMatch(args: {
     }
 
     const finalResult = core.gameResult ?? computeGameResult(core);
+    const scores = finalResult.scores ?? computeGameResult(core).scores;
+    if (!scores) {
+        throw new Error('Splendor AI benchmark expected final scores.');
+    }
 
     return {
         winner: finalResult.draw ? null : (finalResult.winner ?? null),
-        scores: finalResult.scores,
+        scores,
         rounds: round,
     };
 }
@@ -620,6 +624,24 @@ function createScorerContext(state: MatchState<SplendorCore>, playerId = '0', di
     };
 }
 
+function createPolicyContext(
+    state: MatchState<SplendorCore>,
+    playerId = '0',
+    difficultyLevel: AiDifficultyLevel = 'hard',
+): AiDecisionContext {
+    const visibleState = applyPlayerViewToState(engineConfig, state as unknown as MatchState<unknown>, playerId);
+    return buildAiDecisionContext({
+        gameId: 'splendor',
+        matchId: 'test',
+        playerId,
+        visibleState,
+        rulesVersion: null,
+        decisionBudgetMs: 250,
+        source: 'local',
+        seatController: { type: 'local-ai', difficulty: difficultyLevel },
+    }) as AiDecisionContext;
+}
+
 function getScore(result: number | { score: number } | null | undefined): number {
     if (result == null) return 0;
     return typeof result === 'number' ? result : result.score;
@@ -725,6 +747,33 @@ describe('Scorer 单元测试', () => {
             const takeTwo = takeGemsScorer.score(context, createTestAction(AI_ACTION_KINDS.TAKE_TWO, { color: 'white' }));
             expect(takeThree).not.toBeNull();
             expect(takeTwo).not.toBeNull();
+        });
+
+        it('已预留高价值目标卡时，应优先给能缩短其缺口的拿宝石动作加分', () => {
+            const reservedTargetId = findCardId(
+                (card) => card.points >= 3 && card.cost.white > 0 && card.cost.blue > 0 && card.tier >= 2,
+                'reserved-target-priority',
+            );
+            const state = createTestState({
+                players: {
+                    '0': {
+                        ...createPlayerState('0'),
+                        reservedCardIds: [reservedTargetId],
+                        tokens: { white: 0, blue: 0, green: 0, red: 0, black: 0, gold: 0 },
+                    },
+                    '1': createPlayerState('1'),
+                },
+            });
+            const context = createScorerContext(state);
+            const helpsReserved = takeGemsScorer.score(
+                context,
+                createTestAction(AI_ACTION_KINDS.TAKE_THREE, { colors: ['white', 'blue', 'green'] }),
+            );
+            const offPlan = takeGemsScorer.score(
+                context,
+                createTestAction(AI_ACTION_KINDS.TAKE_THREE, { colors: ['green', 'red', 'black'] }),
+            );
+            expect(getScore(helpsReserved)).toBeGreaterThan(getScore(offPlan));
         });
     });
 
@@ -1063,6 +1112,41 @@ describe('难度策略测试', () => {
         expect(resolution).not.toBeNull();
         // 专家难度在终局阶段应选择购买动作
         expect(resolution?.action.kind).toMatch(/^buy-/);
+    });
+
+    it('hard 策略应在 providerMetadata 中输出 searched lookahead trace', async () => {
+        const state = createTestState();
+        const context = createPolicyContext(state, '0', 'hard');
+        const decision = await splendorAiRuntime.localPolicies?.hard?.decide(context);
+        const evaluations = ((decision as { providerMetadata?: { evaluations?: Array<Record<string, unknown>> } } | null)
+            ?.providerMetadata?.evaluations) ?? [];
+        expect(evaluations.some((item) => item.searched === true)).toBe(true);
+    });
+
+    it('expert 策略的 lookahead trace 应包含 follow-up metadata', async () => {
+        const state = createTestState();
+        const context = createPolicyContext(state, '0', 'expert');
+        const decision = await splendorAiRuntime.localPolicies?.expert?.decide(context);
+        const evaluations = ((decision as { providerMetadata?: { evaluations?: Array<Record<string, unknown>> } } | null)
+            ?.providerMetadata?.evaluations) ?? [];
+        expect(evaluations.some((item) => {
+            const metadata = item.metadata as Record<string, unknown> | undefined;
+            return item.searched === true && metadata && Object.hasOwn(metadata, 'followUpScore');
+        })).toBe(true);
+    });
+
+    it('reserve-deck projection trace 不应泄露真实 deck top card id', async () => {
+        const hiddenDeckTop = findCardId((card) => card.tier === 1, 'hidden-deck-top');
+        const state = createTestState({
+            market: { 1: [], 2: [], 3: [] },
+            decks: { 1: [hiddenDeckTop], 2: ['t2-black-5'], 3: ['t3-black-5'] },
+        });
+        const context = createPolicyContext(state, '0', 'hard');
+        const decision = await splendorAiRuntime.localPolicies?.hard?.decide(context);
+        const evaluations = ((decision as { providerMetadata?: { evaluations?: Array<Record<string, unknown>> } } | null)
+            ?.providerMetadata?.evaluations) ?? [];
+        const reserveDeckTrace = evaluations.find((item) => item.kind === AI_ACTION_KINDS.RESERVE_DECK);
+        expect(JSON.stringify(reserveDeckTrace ?? {})).not.toContain(hiddenDeckTop);
     });
 });
 
