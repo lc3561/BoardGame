@@ -964,8 +964,7 @@ function buildSplendorFeatureSnapshot(
     ]),
   ) as Record<string, SplendorCardInsight>;
   const targetCards = [...marketCards, ...reservedCards]
-    .sort((left, right) => right.utility - left.utility)
-    .slice(0, 12);
+    .sort((left, right) => right.utility - left.utility);
   const opponentThreats = getOpponentThreats(core, args.playerId);
   const hotColors = [...GEM_COLORS].sort(
     (left, right) => demandByColor[right] - demandByColor[left],
@@ -1239,13 +1238,17 @@ function buildProjectedActionState(
     ...state,
     core: projectedCore,
   } as SplendorState;
+  const preAdvanceState = {
+    ...nextState,
+    core: { ...projectedCore, currentPlayer: playerId },
+  } as SplendorState;
   const legalActions = buildSplendorAiLegalActions({
     playerId,
-    state: nextState,
+    state: preAdvanceState,
   });
   const featureSnapshot = buildSplendorFeatureSnapshot({
     playerId,
-    state: nextState,
+    state: preAdvanceState,
     legalActions,
     interaction: null,
     responseWindow: null,
@@ -2077,7 +2080,13 @@ const chooseNobleScorer: LocalAiActionScorer = {
     const noble = NOBLE_DEFS_BY_ID[action.metadata.nobleId];
     if (!noble) return null;
     const missing = getMissingNobleRequirementCount(resolved.player, noble);
-    const score = W_EVAL_NOBLE_BASE - missing * W_EVAL_NOBLE_MISSING;
+    const base = W_EVAL_NOBLE_BASE - missing * W_EVAL_NOBLE_MISSING;
+    const discounts = calculateDiscounts(resolved.player);
+    let alignment = 0;
+    for (const color of GEM_COLORS) {
+      alignment += Math.min(discounts[color], noble.requirement[color]);
+    }
+    const score = base + alignment * 2;
     return { score, reason: `选择贵族(3分)` };
   },
 };
@@ -2385,7 +2394,7 @@ const easyDriftScorer: LocalAiActionScorer = {
       const card = cardId ? getCardDef(cardId) : null;
       if (!card) return null;
       return {
-        score: card.points > 0 ? -22 : -48,
+        score: card.points > 0 ? -160 : -260,
         reason: "简单难度更容易错过更优购买时机",
       };
     }
@@ -2409,11 +2418,13 @@ export const extendedScorers: LocalAiActionScorer[] = [
   tempoScorer,
 ];
 
-const expertScorers: LocalAiActionScorer[] = [
+export const expertScorers: LocalAiActionScorer[] = [
   ...extendedScorers,
   expertTempoScorer,
   expertEndgameRaceScorer,
 ];
+
+export const easyDriftScorerRef = easyDriftScorer;
 
 // --- 策略工厂 ---
 function pickEasyWeightedActionId(

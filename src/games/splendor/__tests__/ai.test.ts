@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildSplendorAiLegalActions, splendorAiRuntime, splendorScorers, extendedScorers, AI_ACTION_KINDS } from '../ai';
+import { buildSplendorAiLegalActions, splendorAiRuntime, splendorScorers, extendedScorers, expertScorers, easyDriftScorerRef, AI_ACTION_KINDS } from '../ai';
 import { engineConfig } from '../game';
 import { createInitialSystemState, createSeededRandom } from '../../../engine/pipeline';
 import { applyPlayerViewToState, buildAiDecisionContext, resolveNextLocalAiAction } from '../../../engine/ai';
@@ -940,6 +940,186 @@ describe('Scorer 单元测试', () => {
             const result = nobleProgressScorer.score(context, createTestAction(AI_ACTION_KINDS.TAKE_THREE, { colors: ['white', 'blue', 'red'] }));
             // 具体得分取决于 noble 定义和市场卡红利，但不应抛异常
             expect(result === null || getScore(result) >= 0).toBe(true);
+        });
+    });
+
+    describe('chooseNobleScorer 差异化', () => {
+        it('多个合格贵族应根据 bonus 对齐度产生不同分数', () => {
+            // noble-1 需要 {white:4, blue:4}，noble-3 需要 {white:3, blue:3, green:3}
+            // 给玩家大量 white/blue bonus → noble-1 对齐度更高
+            const state = createTestState({
+                nobleIds: ['noble-1', 'noble-3'],
+                players: {
+                    '0': {
+                        ...createPlayerState('0'),
+                        purchasedCardIds: ['t1-white-1', 't1-white-1', 't1-blue-1', 't1-blue-1'],
+                    },
+                    '1': createPlayerState('1'),
+                },
+            });
+            const context = createScorerContext(state);
+            const noble1 = chooseNobleScorer.score(context, createTestAction(AI_ACTION_KINDS.CHOOSE_NOBLE, { nobleId: 'noble-1' }));
+            const noble3 = chooseNobleScorer.score(context, createTestAction(AI_ACTION_KINDS.CHOOSE_NOBLE, { nobleId: 'noble-3' }));
+            expect(noble1).not.toBeNull();
+            expect(noble3).not.toBeNull();
+            // noble-1 需要 white+blue，玩家已有更多 white/blue bonus → 对齐度更高
+            expect(getScore(noble1)).toBeGreaterThan(getScore(noble3));
+        });
+    });
+
+    describe('tempoScorer', () => {
+        const tempoScorerUnit = extendedScorers.find((s) => s.id === 'tempo')!;
+
+        it('easy 难度返回 null', () => {
+            const state = createTestState();
+            const context = createScorerContext(state, '0', 'easy');
+            expect(tempoScorerUnit.score(context, createTestAction(AI_ACTION_KINDS.BUY_OPEN, { cardId: 't1-black-1' }))).toBeNull();
+        });
+
+        it('可买牌时 buy 正分，take-gems 负分', () => {
+            const card = CARD_DEFS_BY_ID['t1-black-1'];
+            const tokens = { white: 0, blue: 0, green: 0, red: 0, black: 0, gold: 0 };
+            for (const color of ['white', 'blue', 'green', 'red', 'black'] as const) {
+                tokens[color] = card.cost[color];
+            }
+            const state = createTestState({
+                players: {
+                    '0': { ...createPlayerState('0'), tokens },
+                    '1': createPlayerState('1'),
+                },
+            });
+            const context = createScorerContext(state, '0', 'normal');
+            const buyResult = tempoScorerUnit.score(context, createTestAction(AI_ACTION_KINDS.BUY_OPEN, { cardId: 't1-black-1' }));
+            const takeResult = tempoScorerUnit.score(context, createTestAction(AI_ACTION_KINDS.TAKE_THREE, { colors: ['white', 'blue', 'green'] }));
+            expect(getScore(buyResult)).toBeGreaterThan(0);
+            expect(getScore(takeResult)).toBeLessThan(0);
+        });
+
+        it('无法买牌且 token<8 时返回 null', () => {
+            const state = createTestState({
+                players: {
+                    '0': { ...createPlayerState('0'), tokens: { white: 1, blue: 0, green: 0, red: 0, black: 0, gold: 0 } },
+                    '1': createPlayerState('1'),
+                },
+            });
+            const context = createScorerContext(state, '0', 'normal');
+            expect(tempoScorerUnit.score(context, createTestAction(AI_ACTION_KINDS.TAKE_THREE, { colors: ['white', 'blue', 'green'] }))).toBeNull();
+        });
+    });
+
+    describe('expertTempoScorer', () => {
+        const expertTempoScorerUnit = expertScorers.find((s) => s.id === 'expert-tempo')!;
+
+        it('非 expert 难度返回 null', () => {
+            const state = createTestState();
+            const context = createScorerContext(state, '0', 'hard');
+            expect(expertTempoScorerUnit?.score(context, createTestAction(AI_ACTION_KINDS.BUY_OPEN, { cardId: 't1-black-1' }))).toBeNull();
+        });
+
+        it('expert 可买牌时 buy 正分，take-gems 负分', () => {
+            const card = CARD_DEFS_BY_ID['t1-black-1'];
+            const tokens = { white: 0, blue: 0, green: 0, red: 0, black: 0, gold: 0 };
+            for (const color of ['white', 'blue', 'green', 'red', 'black'] as const) {
+                tokens[color] = card.cost[color];
+            }
+            const state = createTestState({
+                players: {
+                    '0': { ...createPlayerState('0'), tokens },
+                    '1': createPlayerState('1'),
+                },
+            });
+            const context = createScorerContext(state, '0', 'expert');
+            const buyResult = expertTempoScorerUnit?.score(context, createTestAction(AI_ACTION_KINDS.BUY_OPEN, { cardId: 't1-black-1' }));
+            const takeResult = expertTempoScorerUnit?.score(context, createTestAction(AI_ACTION_KINDS.TAKE_THREE, { colors: ['white', 'blue', 'green'] }));
+            expect(getScore(buyResult)).toBeGreaterThan(0);
+            expect(getScore(takeResult)).toBeLessThan(0);
+        });
+    });
+
+    describe('expertEndgameRaceScorer', () => {
+        const expertEndgameScorerUnit = expertScorers.find((s) => s.id === 'expert-endgame-race')!;
+
+        it('非 expert 难度返回 null', () => {
+            const state = createTestState({
+                players: {
+                    '0': { ...createPlayerState('0'), points: 10 },
+                    '1': createPlayerState('1'),
+                },
+            });
+            const context = createScorerContext(state, '0', 'hard');
+            expect(expertEndgameScorerUnit?.score(context, createTestAction(AI_ACTION_KINDS.BUY_OPEN, { cardId: 't1-black-1' }))).toBeNull();
+        });
+
+        it('分数 <7 且对手 <9 时返回 null', () => {
+            const state = createTestState({
+                players: {
+                    '0': { ...createPlayerState('0'), points: 5 },
+                    '1': { ...createPlayerState('1'), points: 5 },
+                },
+            });
+            const context = createScorerContext(state, '0', 'expert');
+            expect(expertEndgameScorerUnit?.score(context, createTestAction(AI_ACTION_KINDS.BUY_OPEN, { cardId: 't1-black-1' }))).toBeNull();
+        });
+
+        it('自己 7+ 分时 buy 正分，take-gems 负分', () => {
+            const state = createTestState({
+                players: {
+                    '0': { ...createPlayerState('0'), points: 8 },
+                    '1': createPlayerState('1'),
+                },
+            });
+            const context = createScorerContext(state, '0', 'expert');
+            const buyResult = expertEndgameScorerUnit?.score(context, createTestAction(AI_ACTION_KINDS.BUY_OPEN, { cardId: 't3-black-1' }));
+            const takeResult = expertEndgameScorerUnit?.score(context, createTestAction(AI_ACTION_KINDS.TAKE_THREE, { colors: ['white', 'blue', 'green'] }));
+            expect(getScore(buyResult)).toBeGreaterThan(0);
+            expect(getScore(takeResult)).toBeLessThan(0);
+        });
+
+        it('对手 9+ 分时同样激活', () => {
+            const state = createTestState({
+                players: {
+                    '0': { ...createPlayerState('0'), points: 3 },
+                    '1': { ...createPlayerState('1'), points: 10 },
+                },
+            });
+            const context = createScorerContext(state, '0', 'expert');
+            const buyResult = expertEndgameScorerUnit?.score(context, createTestAction(AI_ACTION_KINDS.BUY_OPEN, { cardId: 't3-black-1' }));
+            expect(getScore(buyResult)).toBeGreaterThan(0);
+        });
+    });
+
+    describe('easyDriftScorer', () => {
+        const easyDriftScorerUnit = easyDriftScorerRef;
+
+        it('非 easy 难度返回 null', () => {
+            const state = createTestState();
+            const context = createScorerContext(state, '0', 'normal');
+            expect(easyDriftScorerUnit?.score(context, createTestAction(AI_ACTION_KINDS.TAKE_THREE, { colors: ['white', 'blue', 'green'] }))).toBeNull();
+        });
+
+        it('easy 难度下 take-three/two/reserve 正分', () => {
+            const state = createTestState();
+            const context = createScorerContext(state, '0', 'easy');
+            expect(getScore(easyDriftScorerUnit?.score(context, createTestAction(AI_ACTION_KINDS.TAKE_THREE, { colors: ['white', 'blue', 'green'] })))).toBeGreaterThan(0);
+            expect(getScore(easyDriftScorerUnit?.score(context, createTestAction(AI_ACTION_KINDS.TAKE_TWO, { color: 'white' })))).toBeGreaterThan(0);
+            expect(getScore(easyDriftScorerUnit?.score(context, createTestAction(AI_ACTION_KINDS.RESERVE_DECK, { tier: 2 })))).toBeGreaterThan(0);
+            expect(getScore(easyDriftScorerUnit?.score(context, createTestAction(AI_ACTION_KINDS.RESERVE_OPEN, { cardId: 't1-black-1', tier: 1 })))).toBeGreaterThan(0);
+        });
+
+        it('easy 难度下 buy 动作负分且幅度显著', () => {
+            const state = createTestState({
+                players: {
+                    '0': { ...createPlayerState('0'), tokens: { white: 5, blue: 5, green: 5, red: 5, black: 0, gold: 0 } },
+                    '1': createPlayerState('1'),
+                },
+            });
+            const context = createScorerContext(state, '0', 'easy');
+            const buyScored = easyDriftScorerUnit?.score(context, createTestAction(AI_ACTION_KINDS.BUY_OPEN, { cardId: 't3-black-1' }));
+            const buyUnscored = easyDriftScorerUnit?.score(context, createTestAction(AI_ACTION_KINDS.BUY_OPEN, { cardId: 't1-black-1' }));
+            expect(getScore(buyScored)).toBeLessThan(-100);
+            expect(getScore(buyUnscored)).toBeLessThan(-100);
+            // 无分卡惩罚更重
+            expect(getScore(buyUnscored)).toBeLessThan(getScore(buyScored));
         });
     });
 });
